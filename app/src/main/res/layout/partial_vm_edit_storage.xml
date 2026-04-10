@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_disks">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_disks"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_disk_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_disk_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_shared_dirs">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_shared_dirs"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_shared_dir_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_shared_dir_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

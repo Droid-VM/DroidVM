@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/nav_home"
+        android:icon="@drawable/ic_home"
+        android:title="@string/nav_home" />
+
+    <item
+        android:id="@+id/nav_vm"
+        android:icon="@drawable/ic_nav_vm"
+        android:title="@string/nav_vm" />
+
+    <item
+        android:id="@+id/nav_disk"
+        android:icon="@drawable/ic_nav_disk"
+        android:title="@string/nav_disk" />
+
+    <item
+        android:id="@+id/nav_network"
+        android:icon="@drawable/ic_nav_network"
+        android:title="@string/nav_network" />
+
+    <item
+        android:id="@+id/nav_settings"
+        android:icon="@drawable/ic_nav_settings"
+        android:title="@string/nav_settings" />
+
+</menu>
+

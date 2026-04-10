@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:background="@color/black"
+    android:orientation="vertical"
+    tools:parentTag="android.widget.LinearLayout">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:id="@+id/touchpad_area"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="@color/vnc_touchpad_background">
+
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:padding="24dp"
+                tools:ignore="UseCompoundDrawables">
+
+                <ImageView
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:alpha="0.15"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_touchpad"
+                    app:tint="@android:color/white"
+                    tools:ignore="ImageContrastCheck" />
+
+                <TextView
+                    android:id="@+id/tv_touchpad_hint"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:alpha="0.3"
+                    android:text="@string/display_touchpad_hint"
+                    android:textAlignment="center"
+                    android:textColor="@android:color/white"
+                    android:textSize="14sp"
+                    tools:ignore="TextContrastCheck" />
+
+            </LinearLayout>
+
+        </FrameLayout>
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#40FFFFFF" />
+
+        <FrameLayout
+            android:id="@+id/scroll_bar"
+            android:layout_width="48dp"
+            android:layout_height="match_parent"
+            android:background="@color/vnc_touchpad_background">
+
+            <View
+                android:layout_width="24dp"
+                android:layout_height="48dp"
+                android:layout_gravity="center"
+                android:background="#40FFFFFF" />
+
+        </FrameLayout>
+
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#40FFFFFF" />
+
+    <LinearLayout
+        android:id="@+id/mouse_buttons_row"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@color/vnc_touchpad_background"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_mouse_left"
+            style="@style/TouchpadButton"
+            android:layout_weight="2"
+            android:contentDescription="@string/display_mouse_left"
+            tools:ignore="VisualLintButtonSize" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#40FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_mouse_middle"
+            style="@style/TouchpadButton"
+            android:layout_weight="1"
+            android:contentDescription="@string/display_mouse_middle"
+            tools:ignore="VisualLintButtonSize" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="match_parent"
+            android:background="#40FFFFFF" />
+
+        <Button
+            android:id="@+id/btn_mouse_right"
+            style="@style/TouchpadButton"
+            android:layout_weight="2"
+            android:contentDescription="@string/display_mouse_right"
+            tools:ignore="VisualLintButtonSize" />
+
+    </LinearLayout>
+
+</merge>

@@ -1,0 +1,12 @@
+[submodule "app/src/main/cpp/jsoncpp"]
+	path = app/src/main/cpp/jsoncpp
+	url = https://github.com/open-source-parsers/jsoncpp
+[submodule "app/src/main/cpp/udisasm"]
+	path = app/src/main/cpp/udisasm
+	url = https://gitlab.com/bztsrc/udisasm
+[submodule "app/src/main/cpp/libvncserver"]
+	path = app/src/main/cpp/libvncserver
+	url = https://github.com/Droid-VM/libvncserver
+[submodule "app/src/main/assets/prebuilts"]
+	path = app/src/main/assets/prebuilts
+	url = https://github.com/Droid-VM/DroidVM-Prebuilts

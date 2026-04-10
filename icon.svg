@@ -1,0 +1,22 @@
+<svg width="96" height="96" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+    <!-- Android head -->
+    <path d="M7 9C7 6.8 8.8 5 11 5H13C15.2 5 17 6.8 17 9V10H7V9Z" fill="#3DDC84"/>
+    
+    <!-- Shorter Antennas -->
+    <path d="M10 5.5L9.2 4.2" stroke="#3DDC84" stroke-width="1.5" stroke-linecap="round"/>
+    <path d="M14 5.5L14.8 4.2" stroke="#3DDC84" stroke-width="1.5" stroke-linecap="round"/>
+    
+    <!-- Eyes -->
+    <circle cx="10" cy="8" r="0.8" fill="#FFFFFF"/>
+    <circle cx="14" cy="8" r="0.8" fill="#FFFFFF"/>
+
+    <!-- Spacing gap (implicit by moving body down) -->
+
+    <!-- VM body (blue tone) -->
+    <rect x="6" y="11" width="12" height="8" rx="2.5" fill="#4285F4"/>
+    
+    <!-- VM layers (stacked instances, blue variants) -->
+    <rect x="7.5" y="12.5" width="9" height="5" rx="1" fill="#FFFFFF"/>
+    <rect x="9" y="13" width="7" height="4" rx="1" fill="#8AB4F8"/>
+    <rect x="10" y="12" width="7" height="4" rx="1" fill="#CFE1FD"/>
+</svg>

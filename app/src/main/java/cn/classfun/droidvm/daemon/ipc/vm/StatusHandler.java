@@ -1,0 +1,36 @@
+package cn.classfun.droidvm.daemon.ipc.vm;
+
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
+import androidx.annotation.NonNull;
+
+import com.google.auto.service.AutoService;
+
+import cn.classfun.droidvm.daemon.server.ClientRequest;
+import cn.classfun.droidvm.daemon.server.RequestException;
+import cn.classfun.droidvm.daemon.server.RequestHandler;
+
+@AutoService(RequestHandler.class)
+public final class StatusHandler extends RequestHandler {
+    @NonNull
+    @Override
+    public String getName() {
+        return "vm_status";
+    }
+
+    @Override
+    public void handle(@NonNull ClientRequest request) throws Exception {
+        var params = request.getParams();
+        var vmId = params.optString("vm_id", "");
+        if (vmId.isEmpty())
+            throw new RequestException("missing vm_id");
+        var vms = request.getContext().getVMs();
+        var inst = vms.findById(vmId);
+        if (inst == null)
+            throw new RequestException(fmt("VM not found: %s", vmId));
+        var state = inst.getState();
+        var res = request.res();
+        res.put("vm_id", vmId);
+        res.put("state", state.name().toLowerCase());
+    }
+}

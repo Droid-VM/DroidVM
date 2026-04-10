@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
+    tools:context=".ui.vm.console.VMConsoleActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:titleTextColor="@android:color/white" />
+
+    <com.termux.view.TerminalView
+        android:id="@+id/terminal_view"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/black" />
+
+    <LinearLayout
+        android:id="@+id/extra_keys_row1"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@color/extra_keys_background"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_esc"
+            style="@style/ExtraKey"
+            android:text="@string/key_esc"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_slash"
+            style="@style/ExtraKey"
+            android:text="@string/key_slash"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_dash"
+            style="@style/ExtraKey"
+            android:text="@string/key_dash"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_home"
+            style="@style/ExtraKey"
+            android:text="@string/key_home"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_up"
+            style="@style/ExtraKey"
+            android:text="@string/key_up"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_end"
+            style="@style/ExtraKey"
+            android:text="@string/key_end"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_pgup"
+            style="@style/ExtraKey"
+            android:text="@string/key_pgup"
+            tools:ignore="TouchTargetSizeCheck" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/extra_keys_row2"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@color/extra_keys_background"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_tab"
+            style="@style/ExtraKey"
+            android:text="@string/key_tab"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_ctrl"
+            style="@style/ExtraKey"
+            android:text="@string/key_ctrl"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_alt"
+            style="@style/ExtraKey"
+            android:text="@string/key_alt"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_left"
+            style="@style/ExtraKey"
+            android:text="@string/key_left"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_down"
+            style="@style/ExtraKey"
+            android:text="@string/key_down"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_right"
+            style="@style/ExtraKey"
+            android:text="@string/key_right"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_pgdn"
+            style="@style/ExtraKey"
+            android:text="@string/key_pgdn"
+            tools:ignore="TouchTargetSizeCheck" />
+    </LinearLayout>
+
+</LinearLayout>
+

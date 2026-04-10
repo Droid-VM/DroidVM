@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="nullptr">#00000000</color>
+    <color name="black">#FF000000</color>
+
+    <color name="vnc_background">#FF333333</color>
+    <color name="vnc_status_bar_background">#FF1A1A1A</color>
+    <color name="vnc_status_connected">#FF4CAF50</color>
+    <color name="vnc_status_error">#FFFF5252</color>
+    <color name="vnc_status_connecting">#FFFF9800</color>
+
+    <color name="extra_keys_background">#FF222222</color>
+    <color name="extra_key_text">#FFCCCCCC</color>
+    <color name="extra_key_text_active">#FF4FC3F7</color>
+    <color name="extra_key_bg_active">#FF37474F</color>
+
+    <color name="vnc_fab_background">#FF4FC3F7</color>
+    <color name="vnc_touchpad_background">#FF2A2A2A</color>
+
+    <color name="daemon_card_background_running">#FFDFFAE4</color>
+    <color name="daemon_card_background_checking">#FFFFF9E0</color>
+    <color name="daemon_card_background_stopped">#FFFADFE0</color>
+</resources>

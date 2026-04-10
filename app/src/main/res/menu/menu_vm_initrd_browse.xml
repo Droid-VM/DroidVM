@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_initrd_clear"
+        android:icon="@drawable/ic_close"
+        android:title="@string/edit_vm_initrd_clear" />
+
+    <item
+        android:id="@+id/menu_initrd_builtin"
+        android:icon="@drawable/ic_linux"
+        android:title="@string/edit_vm_initrd_builtin" />
+
+    <item
+        android:id="@+id/menu_initrd_microdroid"
+        android:icon="@drawable/ic_android"
+        android:title="@string/edit_vm_initrd_microdroid" />
+
+    <item
+        android:id="@+id/menu_initrd_microdroid_debug"
+        android:icon="@drawable/ic_android"
+        android:title="@string/edit_vm_initrd_microdroid_debug" />
+
+    <item
+        android:id="@+id/menu_initrd_external"
+        android:icon="@drawable/ic_open_in"
+        android:title="@string/edit_vm_initrd_external" />
+
+</menu>

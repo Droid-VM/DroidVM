@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_disk_clone"
+        android:icon="@drawable/ic_card_multiple"
+        android:title="@string/disk_clone" />
+
+    <item
+        android:id="@+id/menu_disk_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/disk_delete" />
+
+</menu>

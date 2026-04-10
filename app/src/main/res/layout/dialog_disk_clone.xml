@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="8dp"
+    android:paddingTop="16dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="8dp">
+
+    <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+        android:id="@+id/input_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/disk_clone_name_hint"
+        android:icon="@drawable/ic_edit"
+        android:inputType="text" />
+
+    <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+        android:id="@+id/input_folder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/disk_clone_folder_hint"
+        android:icon="@drawable/ic_folder"
+        android:inputType="textUri"
+        app:ti_iconButtonHint="@string/disk_create_browse"
+        app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+</LinearLayout>

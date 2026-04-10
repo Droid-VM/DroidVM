@@ -1,0 +1,333 @@
+repos:
+  rocky:
+    name:
+      en: Rocky Linux
+      zh: Rocky Linux
+    url: https://download.rockylinux.org/pub/rocky/
+    image-discovery:
+      enabled: yes
+  freebsd:
+    name:
+      en: FreeBSD
+      zh: FreeBSD
+    url: https://download.freebsd.org/
+    image-discovery:
+      enabled: yes
+      folders:
+        - releases/
+  ubuntu:
+    name:
+      en: Ubuntu
+      zh: Ubuntu
+    url: https://archive.ubuntu.com/ubuntu/
+  ubuntu-ports:
+    name:
+      en: Ubuntu Ports
+      zh: Ubuntu Ports
+    url: https://ports.ubuntu.com/ubuntu-ports/
+  ubuntu-cdimage:
+    name:
+      en: Ubuntu CDROM Image
+      zh: Ubuntu 光盘镜像
+    url: https://cdimage.ubuntu.com/
+    image-discovery:
+      enabled: yes
+  ubuntu-releases:
+    name:
+      en: Ubuntu Releases
+      zh: Ubuntu 发行版
+    url: https://releases.ubuntu.com/
+    image-discovery:
+      enabled: yes
+  ubuntu-cloud-images:
+    name:
+      en: Ubuntu Cloud Images
+      zh: Ubuntu 云镜像
+    url: https://cloud-images.ubuntu.com/
+    image-discovery:
+      enabled: yes
+  debian:
+    name:
+      en: Debian
+      zh: Debian
+    url: https://deb.debian.org/debian/
+  debian-cd:
+    name:
+      en: Debian CDROM Image
+      zh: Debian 光盘镜像
+    url: https://cdimage.debian.org/debian-cd/
+    image-discovery:
+      enabled: yes
+  fedora:
+    name:
+      en: Fedora
+      zh: Fedora
+    url: https://dl.fedoraproject.org/pub/fedora/linux/
+    image-discovery:
+      enabled: yes
+      folders:
+        - releases
+  archlinux:
+    name:
+      en: Arch Linux
+      zh: Arch Linux
+    url: https://geo.mirror.pkgbuild.com/
+    image-discovery:
+      enabled: yes
+      folders:
+        - iso/
+        - images/
+  archlinuxarm:
+    name:
+      en: Arch Linux ARM
+      zh: Arch Linux ARM
+    url: https://mirrors.archlinuxarm.org/
+  lxc-images:
+    name:
+      en: LXC Images
+      zh: LXC 镜像
+    url: https://images.linuxcontainers.org/
+  gentoo:
+    name:
+      en: Gentoo
+      zh: Gentoo
+    url: https://distfiles.gentoo.org/
+    image-discovery:
+      enabled: yes
+  openwrt:
+    name:
+      en: OpenWrt
+      zh: OpenWrt
+    url: https://downloads.openwrt.org/
+  deepin-cd:
+    name:
+      en: Deepin CDROM Image
+      zh: Deepin 光盘镜像
+    url: https://cdimage.deepin.com/
+    image-discovery:
+      enabled: yes
+  alpine:
+    name:
+      en: Alpine Linux
+      zh: Alpine Linux
+    url: https://dl-cdn.alpinelinux.org/alpine/
+    image-discovery:
+      enabled: yes
+  proxmox:
+    name:
+      en: Proxmox VE
+      zh: Proxmox 虚拟环境
+    url: http://download.proxmox.com/
+    image-discovery:
+      enabled: yes
+      folders:
+        - iso/
+  linuxmint-cd:
+    name:
+      en: Linux Mint CDROM Image
+      zh: Linux Mint 光盘镜像
+    url: https://pub.linuxmint.io/
+    image-discovery:
+      enabled: yes
+  opensuse:
+    name:
+      en: openSUSE
+      zh: openSUSE
+    url: https://download.opensuse.org/
+    image-discovery:
+      enabled: yes
+  nixos-images:
+    name:
+      en: NixOS Images
+      zh: NixOS 镜像
+    url: https://channels.nixos.org/
+    image-discovery:
+      enabled: yes
+  kali-images:
+    name:
+      en: Kali Linux Images
+      zh: Kali Linux 镜像
+    url: https://cdimage.kali.org/
+    image-discovery:
+      enabled: yes
+  openeuler:
+    name:
+      en: openEuler
+      zh: openEuler
+    url: https://repo.openeuler.openatom.cn/
+    image-discovery:
+      enabled: yes
+mirrors:
+  ustc:
+    name:
+      en: University of Science and Technology of China
+      zh: 中国科学技术大学(USTC)
+    region: CN
+    url: https://mirrors.ustc.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      archlinuxarm: archlinuxarm/
+      gentoo: gentoo/
+      openwrt: openwrt/
+      deepin-cd: deepin-cd/
+      alpine: alpine/
+      proxmox: proxmox/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/
+      rocky: rocky/
+      kali-images: kali-images/
+      freebsd: freebsd/
+      openeuler: openeuler/
+  tuna:
+    name:
+      en: Tsinghua University
+      zh: 清华大学(TUNA)
+    region: CN
+    url: https://mirrors.tuna.tsinghua.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      archlinuxarm: archlinuxarm/
+      lxc-images: lxc-images/
+      gentoo: gentoo/
+      openwrt: openwrt/
+      deepin-cd: deepin-cd/
+      alpine: alpine/
+      proxmox: proxmox/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/
+      nixos-images: nixos-images/
+      kali-images: kali-images/
+      openeuler: openeuler/
+  bfsu:
+    name:
+      en: Beijing Foreign Studies University
+      zh: 北京外国语大学(BFSU)
+    region: CN
+    url: https://mirror.bfsu.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      archlinuxarm: archlinuxarm/
+      lxc-images: lxc-images/
+      gentoo: gentoo/
+      openwrt: openwrt/
+      deepin-cd: deepin-cd/
+      proxmox: proxmox/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/
+      kali-images: kali-images/
+  pku:
+    name:
+      en: Peking University
+      zh: 北京大学(PKU)
+    region: CN
+    url: https://mirrors.pku.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      openwrt: openwrt/
+      opensuse: opensuse/
+      rocky: rocky/
+      openeuler: openeuler/
+  nju:
+    name:
+      en: Nanjing University
+      zh: 南京大学(NJU)
+    region: CN
+    url: https://mirrors.nju.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      archlinuxarm: archlinuxarm/
+      lxc-images: lxc-images/
+      gentoo: gentoo/
+      openwrt: openwrt/
+      deepin-cd: deepin-cd/
+      alpine: alpine/
+      proxmox: proxmox/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/
+      nixos-images: nixos-images/
+      kali-images: kali-images/
+      rocky: rocky/
+      openeuler: openeuler/
+      freebsd: freebsd/
+  cernet:
+    name:
+      en: China Education and Research Network
+      zh: 中国教育和科研计算机网(CERNET)
+    region: CN
+    url: https://mirrors.cernet.edu.cn/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-ports: ubuntu-ports/
+      ubuntu-cdimage: ubuntu-cdimage/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      archlinuxarm: archlinuxarm/
+      lxc-images: lxc-images/
+      gentoo: gentoo/
+      openwrt: openwrt/
+      deepin-cd: deepin-cd/
+      alpine: alpine/
+      proxmox: proxmox/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/
+      nixos-images: nixos-images/
+      kali-images: kali-images/
+      rocky: rocky/
+      openeuler: openeuler/
+      freebsd: freebsd/
+  kernel:
+    name:
+      en: Kernel.org
+      zh: Kernel.org
+    region: GLOBAL
+    url: https://mirrors.edge.kernel.org/
+    repos:
+      ubuntu: ubuntu/
+      ubuntu-releases: ubuntu-releases/
+      debian: debian/
+      debian-cd: debian-cd/
+      fedora: fedora/
+      archlinux: archlinux/
+      gentoo: gentoo/
+      deepin-cd: deepin-cd/
+      alpine: alpine/
+      linuxmint-cd: linuxmint-cd/
+      opensuse: opensuse/

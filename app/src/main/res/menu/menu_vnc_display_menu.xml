@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_keyboard"
+        android:icon="@drawable/ic_keyboard"
+        android:title="@string/vnc_menu_keyboard" />
+
+    <item
+        android:id="@+id/menu_extra_keys"
+        android:icon="@drawable/ic_keyboard_esc"
+        android:title="@string/vnc_menu_extra_keys" />
+
+    <item
+        android:id="@+id/menu_fullscreen"
+        android:icon="@drawable/ic_fullscreen"
+        android:title="@string/vnc_menu_fullscreen" />
+
+    <item
+        android:id="@+id/menu_rotate"
+        android:icon="@drawable/ic_rotate"
+        android:title="@string/vnc_menu_rotate" />
+
+    <item
+        android:id="@+id/menu_reconnect"
+        android:icon="@drawable/ic_refresh"
+        android:title="@string/vnc_menu_reconnect" />
+
+    <item
+        android:id="@+id/menu_external"
+        android:icon="@drawable/ic_open_in"
+        android:title="@string/vnc_menu_external_app" />
+
+    <item
+        android:id="@+id/menu_view_url"
+        android:icon="@drawable/ic_nav_network"
+        android:title="@string/vnc_menu_view_url" />
+
+</menu>

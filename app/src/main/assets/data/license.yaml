@@ -1,0 +1,105 @@
+license:
+  - name: droidvm
+    description: DroidVM App
+    license: GPL-3.0-or-later
+    urls:
+      - https://github.com/Droid-VM/DroidVM
+
+  - name: crosvm
+    description: Virtualization engine
+    license: BSD-3-Clause
+    urls:
+      - https://github.com/Droid-VM/crosvm
+      - https://android.googlesource.com/platform/external/crosvm
+      - https://github.com/google/crosvm
+
+  - name: qemu
+    description: Image converter
+    license: GPL-2.0
+    urls:
+      - https://gitlab.com/qemu-project/qemu
+      - https://www.qemu.org/
+
+  - name: edk2
+    description: UEFI firmware
+    license: BSD-2-Clause-Patent
+    urls:
+      - https://github.com/Droid-VM/edk2-gunyah
+      - https://github.com/tianocore/edk2
+
+  - name: linux
+    description: Builtin Linux kernel
+    license: GPL-2.0
+    urls:
+      - https://github.com/Droid-VM/linux
+      - https://android.googlesource.com/kernel/common/
+      - https://kernel.org/
+
+  - name: libvncserver
+    description: VNC client and CrosVM VNC server
+    license: GPL-2.0
+    urls:
+      - https://github.com/Droid-VM/libvncserver
+      - https://github.com/LibVnc/libvncserver
+
+  - name: magisk
+    description: Prebuilt binaries and libsu
+    license: GPL-3.0
+    urls:
+      - https://github.com/topjohnwu/Magisk
+
+  - name: libsu
+    description: Root helper
+    license: Apache-2.0
+    urls:
+      - https://github.com/topjohnwu/libsu
+
+  - name: busybox
+    description: Prebuilt binaries
+    license: GPL-2.0
+    urls:
+      - https://busybox.net/
+
+  - name: termux
+    description: Terminal view
+    license: GPL-3.0
+    urls:
+      - https://termux.dev/
+      - https://github.com/termux/termux-app
+
+  - name: snakeyaml
+    description: YAML parser
+    license: Apache-2.0
+    urls:
+      - https://bitbucket.org/snakeyaml/snakeyaml/
+
+  - name: pv
+    description: Progress viewer for image clone
+    license: GPL-3.0-or-later
+    urls:
+      - https://www.ivarch.com/programs/pv.shtml
+
+  - name: 7-zip
+    description: Assets extractor
+    license: LGPL-2.1
+    urls:
+      - https://www.7-zip.org/
+
+  - name: udisasm
+    description: Disassembler for libsimpledump.so
+    license: MIT
+    urls:
+      - https://gitlab.com/bztsrc/udisasm
+
+  - name: jsoncpp
+    description: JSON parser for droidvm cli
+    license: MIT
+    urls:
+      - https://github.com/open-source-parsers/jsoncpp
+
+  - name: gfxstream
+    description: Graphics virtualization
+    license: Apache-2.0
+    urls:
+      - https://android.googlesource.com/platform/hardware/google/gfxstream/
+      - https://github.com/google/gfxstream

@@ -1,0 +1,763 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nullptr" translatable="false" />
+    <string name="app_name">DroidVM</string>
+
+    <string name="start_app_desc">A virtual machine manager powered by Qualcomm Gunyah Hypervisor. Create and manage lightweight Linux VMs directly on your device.</string>
+    <string name="start_faq_title">Frequently Asked Questions</string>
+
+    <string name="faq1_title">What is Gunyah?</string>
+    <string name="faq1_body">Gunyah is a Type-1 hypervisor developed by Qualcomm that runs directly on the hardware beneath the Android host OS. It allows creating isolated virtual machines with near-native performance and strong security guarantees, without relying on kernel-level virtualization (KVM).</string>
+
+    <string name="faq2_title">Which devices are supported?</string>
+    <string name="faq2_body">Currently only devices with Qualcomm Snapdragon 8 Elite (SM8750) or newer SoCs that ship with Gunyah support enabled are supported. Older Snapdragon chipsets do not include the necessary hypervisor firmware.</string>
+
+    <string name="faq3_title">What are the environment requirements?</string>
+    <string name="faq3_body">1. Root access (e.g. Magisk or KernelSU).\n2. The virtualization APEX (com.android.virt) must be installed, which provides the crosvm binary.\n3. A supported Qualcomm SoC with Gunyah hypervisor enabled in firmware.</string>
+
+    <string name="unimplement">Function not implement</string>
+
+    <string name="status_icon_desc">Status icon</string>
+    <string name="fab_action_desc">Action</string>
+    <string name="ic_expand_desc">Expand or collapse</string>
+    <string name="setup_step_icon_desc">Step icon</string>
+    <string name="setup_skip_title">Skip this step?</string>
+    <string name="setup_skip_message">This check did not pass. Skipping may cause unexpected issues. Are you sure you want to continue?</string>
+    <string name="setup_skip_confirm">Skip</string>
+    <string name="setup_grant">Grant</string>
+
+    <string name="setup_root_title">Request Root Access</string>
+    <string name="setup_root_desc">Requesting root privileges&#8230;</string>
+    <string name="setup_root_success">\u2705 Root access granted.</string>
+    <string name="setup_root_fail">\u274C Root access denied. Please grant root permission and retry.</string>
+    <string name="setup_root_detail">Kernel: %1$s\nSELinux: %2$s</string>
+
+    <string name="setup_soc_title">Check SoC Model</string>
+    <string name="setup_soc_desc">Checking SoC compatibility&#8230;</string>
+    <string name="setup_soc_success">\u2705 SoC supported: %1$s</string>
+    <string name="setup_soc_fail">\u274C Unsupported SoC: %1$s.</string>
+    <string name="setup_soc_detail">Chip: %1$s</string>
+
+    <string name="setup_virt_title">Check Virtualization</string>
+    <string name="setup_virt_desc">Checking virtualization support&#8230;</string>
+    <string name="setup_virt_success">\u2705 Virtualization support found.</string>
+    <string name="setup_virt_fail">\u274C Virtualization support not found. Please ensure the com.android.virt APEX is available.</string>
+    <string name="setup_virt_detail">KVM: %1$s\nGunyah: %2$s\n</string>
+
+    <string name="setup_storage_title">File Access</string>
+    <string name="setup_storage_desc">Checking file access permission&#8230;</string>
+    <string name="setup_storage_success">\u2705 All files access granted.</string>
+    <string name="setup_storage_fail">\u274C All files access is required to manage VM disk images. Tap to grant permission.</string>
+
+    <string name="setup_extract_title">Extract Prebuilt Files</string>
+    <string name="setup_extract_desc">Extracting prebuilt files&#8230;</string>
+    <string name="setup_extract_success">\u2705 Prebuilt files extracted successfully.</string>
+    <string name="setup_extract_uptodate">\u2705 Prebuilt files are up to date.</string>
+    <string name="setup_extract_fail">\u274C Failed to extract prebuilt files. Please retry.</string>
+
+    <string name="setup_done_title">Setup Complete</string>
+    <string name="setup_done_desc">All checks and prepares passed.\nYou are ready to use DroidVM.</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_vm">VM</string>
+    <string name="nav_disk">Disks</string>
+    <string name="nav_network">Networks</string>
+    <string name="nav_settings">Settings</string>
+
+    <string name="home_card_daemon_running">Running</string>
+    <string name="home_card_daemon_stopped">Stopped</string>
+    <string name="home_card_daemon_pid">PID: %1$d</string>
+    <string name="home_card_droidvm_daemon">DroidVM Daemon</string>
+    <string name="home_card_vm_title">Virtual Machines</string>
+    <string name="home_card_vm_summary">%1$d/%2$d</string>
+    <string name="home_card_vm_empty">No virtual machines</string>
+    <string name="home_card_disk_title">Disks</string>
+    <string name="home_card_disk_summary">%1$d %2$s</string>
+    <string name="home_card_disk_empty">No disks</string>
+    <string name="home_card_network_title">Networks</string>
+    <string name="home_card_network_summary">%1$d/%2$d</string>
+    <string name="home_card_network_empty">No networks</string>
+    <string name="home_card_update_available">New version available: v%1$s</string>
+    <string name="home_card_update_action">View Update</string>
+    <string name="home_card_wizard_title">Create Wizard</string>
+    <string name="home_card_import_title">Import VM</string>
+    <string name="home_card_sysinfo_kernel">Kernel Version</string>
+    <string name="home_card_sysinfo_soc">SoC Model</string>
+    <string name="home_card_help_title">Help &amp; Documentation</string>
+    <string name="home_card_feedback_title">Report Issue</string>
+    <string name="home_card_loading">Loading\u2026</string>
+
+    <string name="vm_empty">No virtual machines yet.</string>
+    <string name="disk_empty">No disks yet.</string>
+    <string name="network_empty">No networks yet.</string>
+    <string name="empty_hint">Tap the + button to create one.</string>
+    <string name="empty_icon_desc">Empty state icon</string>
+
+    <string name="fab_add_desc">Create</string>
+
+    <string name="menu_refresh">Refresh</string>
+
+    <string name="vm_icon_desc">Virtual machine icon</string>
+    <string name="vm_item_info">%1$d vCPU \u00B7 %2$d MB RAM</string>
+    <string name="vm_edit">Edit</string>
+    <string name="vm_delete">Delete</string>
+    <string name="vm_delete_confirm">Are you sure you want to delete this virtual machine?</string>
+    <string name="vm_state_stopped">Stopped</string>
+    <string name="vm_state_starting">Starting</string>
+    <string name="vm_state_running">Running</string>
+    <string name="vm_state_stopping">Stopping</string>
+
+    <string name="vm_exited_success">VM \"%1$s\" has stopped.</string>
+    <string name="vm_exited_error">VM \"%1$s\" exited with code %2$d.</string>
+    <string name="vm_exit_dialog_title">VM \"%1$s\" Failed</string>
+    <string name="vm_exit_dialog_message">The virtual machine exited with code %1$d.\n\nLogs:</string>
+    <string name="vm_exit_no_logs">No logs available.</string>
+
+    <string name="vm_info_start">Start</string>
+    <string name="vm_info_stop">Stop</string>
+    <string name="vm_info_restart">Restart</string>
+    <string name="vm_info_console">Console</string>
+    <string name="vm_info_console_chooser_title">Open Console</string>
+    <string name="vm_info_created">Created</string>
+    <string name="vm_info_cpu_value">%1$d vCPU</string>
+    <string name="vm_info_memory_value">%1$d MiB</string>
+    <plurals name="vm_info_disks_value">
+        <item quantity="one">%1$d disk</item>
+        <item quantity="other">%1$d disks</item>
+    </plurals>
+    <string name="vm_info_disks_none">None</string>
+    <string name="vm_info_restart_confirm">Restart this virtual machine?</string>
+    <string name="vm_info_delete_success">Virtual machine deleted.</string>
+    <string name="vm_info_state_active">Process active</string>
+    <string name="vm_info_console_not_found">No any console found</string>
+    <string name="vm_info_console_text_select">Text Console %1$s</string>
+    <string name="vm_info_console_vnc_select">VNC Console</string>
+    <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
+
+    <string name="vm_info_logs">Logs</string>
+    <string name="vm_info_logs_chooser_title">View Logs</string>
+    <string name="vm_info_logs_title">Logs - %1$s</string>
+    <string name="vm_info_logs_no_logs">No logs available.</string>
+    <string name="vm_info_logs_copy">Copy</string>
+    <string name="vm_info_logs_save">Save</string>
+    <string name="vm_info_logs_copied">Logs copied to clipboard.</string>
+    <string name="vm_info_logs_save_failed">Failed to save logs.</string>
+
+    <string name="notif_channel_vm_events">VM Events</string>
+    <string name="notif_channel_vm_events_desc">Virtual machine state change notifications</string>
+    <string name="notif_vm_stopped_title">VM Stopped</string>
+    <string name="notif_vm_failed_title">VM Failed</string>
+
+    <string name="create_vm_title">Create Virtual Machine</string>
+    <string name="edit_vm_title">Edit Virtual Machine</string>
+    <string name="create_vm_category_basic">Basic</string>
+    <string name="create_vm_name_hint">Name</string>
+    <string name="create_vm_memory_hint">Memory</string>
+    <string name="create_vm_cpu_hint">CPU Count</string>
+    <string name="create_vm_btn">Create</string>
+    <string name="create_vm_error_name_empty">Name is required</string>
+    <string name="create_vm_error_name_invalid">Name contains invalid characters</string>
+    <string name="create_vm_error_name_duplicate">A VM with this name already exists</string>
+    <string name="create_vm_error_save">Error while saving config</string>
+    <string name="create_vm_error_invalid_number">Invalid number</string>
+    <string name="create_vm_error_path_invalid">Invalid absolute path</string>
+    <string name="create_vm_category_kernel">Linux Kernel</string>
+    <string name="create_vm_kernel_hint">Kernel</string>
+    <string name="create_vm_initrd_hint">Initrd</string>
+    <string name="create_vm_cmdline_hint">Kernel Cmdline</string>
+    <string name="create_vm_category_options">VM Options</string>
+    <string name="create_vm_balloon">Balloon</string>
+    <string name="create_vm_pmu">PMU (Performance Monitor Unit)</string>
+    <string name="create_vm_rng">RNG (Random Number Generator)</string>
+    <string name="create_vm_smt">SMT (Simultaneous MultiThread)</string>
+    <string name="create_vm_usb">USB (Universal Serial Bus)</string>
+    <string name="create_vm_protected_vm">Protected VM</string>
+    <string name="create_vm_sandbox">Sandbox</string>
+    <string name="create_vm_hugepages">Hugepages</string>
+    <string name="create_vm_protected_normal">Normal</string>
+    <string name="create_vm_protected_protected">Protected</string>
+    <string name="create_vm_protected_without_firmware">Protected without firmware</string>
+    <string name="create_vm_category_gpu">Graphics Accelerator</string>
+    <string name="create_vm_gpu_enabled">Enable GPU</string>
+    <string name="create_vm_gpu_backend">Renderer</string>
+    <string name="create_vm_gpu_backend_2d">2D (Software)</string>
+    <string name="create_vm_gpu_backend_virglrenderer">VirGL</string>
+    <string name="create_vm_gpu_backend_gfxstream">GfxStream</string>
+    <string name="create_vm_gpu_api">GPU API</string>
+    <string name="create_vm_gpu_api_vulkan">Vulkan</string>
+    <string name="create_vm_gpu_api_egl">EGL</string>
+    <string name="create_vm_gpu_api_opengles">OpenGL ES</string>
+    <string name="create_vm_gpu_api_angle">ANGLE</string>
+    <string name="create_vm_category_display">Display</string>
+    <string name="create_vm_display_enabled">Enable Display</string>
+    <string name="create_vm_display_backend">Display Backend</string>
+    <string name="create_vm_display_backend_simplefb">SimpleFB</string>
+    <string name="create_vm_display_backend_virtio_gpu">Virtio-GPU</string>
+    <string name="create_vm_display_width">Width</string>
+    <string name="create_vm_display_height">Height</string>
+    <string name="create_vm_display_refresh_rate">Rate (Hz)</string>
+    <string name="create_vm_display_dpi_h">DPI Horizontal</string>
+    <string name="create_vm_display_dpi_v">DPI Vertical</string>
+    <string name="create_vm_category_vnc">VNC Server</string>
+    <string name="create_vm_vnc_enabled">Enable VNC</string>
+    <string name="create_vm_vnc_host">Host</string>
+    <string name="create_vm_vnc_port">Port</string>
+    <string name="create_vm_vnc_password_auth">Password Auth</string>
+    <string name="create_vm_vnc_password">Password</string>
+    <string name="create_vm_vnc_password_clear">Clear password</string>
+    <string name="create_vm_vnc_password_generate">Generate password</string>
+    <string name="create_vm_category_disks">Disks</string>
+    <string name="create_vm_category_network">Network</string>
+    <string name="create_vm_tab_basic">Basic</string>
+    <string name="create_vm_tab_boot">Boot</string>
+    <string name="create_vm_tab_storage">Storage</string>
+    <string name="create_vm_tab_network">Network</string>
+    <string name="create_vm_tab_graphics">Graphics</string>
+    <string name="create_vm_network_label">Bridge Network</string>
+    <string name="create_vm_network_none">None</string>
+    <string name="edit_vm_net_add">Add Network</string>
+    <string name="edit_vm_net_empty">No networks added.</string>
+    <string name="edit_vm_net_delete">Remove network</string>
+    <string name="edit_vm_net_mac_hint">MAC address (optional)</string>
+    <string name="edit_vm_net_mac_random">Random</string>
+    <string name="edit_vm_disk_path_hint">Path</string>
+    <string name="edit_vm_disk_readonly">Read-only</string>
+    <string name="edit_vm_disk_bus">Bus</string>
+    <string name="edit_vm_disk_delete">Remove disk</string>
+    <string name="edit_vm_disk_browse">Browse</string>
+    <string name="edit_vm_disk_browse_title">Select disk source</string>
+    <string name="edit_vm_disk_browse_file">Select file</string>
+    <string name="edit_vm_disk_browse_registered">Select registered disk</string>
+    <string name="edit_vm_disk_browse_import_create">Import or create disk</string>
+    <string name="edit_vm_disk_no_registered">No registered disks found.</string>
+    <string name="edit_vm_disk_add">Add Disk</string>
+    <string name="edit_vm_disk_empty">No disks added.</string>
+
+    <string name="create_vm_category_shared_dirs">Filesystem</string>
+    <string name="edit_vm_shared_dir_add">Add Shared Directory</string>
+    <string name="edit_vm_shared_dir_empty">No shared directories added.</string>
+    <string name="edit_vm_shared_dir_path_hint">Host directory path</string>
+    <string name="edit_vm_shared_dir_tag_hint">Tag</string>
+    <string name="edit_vm_shared_dir_type">Type</string>
+    <string name="edit_vm_shared_dir_cache">Cache</string>
+    <string name="edit_vm_shared_dir_writeback">Writeback</string>
+    <string name="edit_vm_shared_dir_dax">DAX</string>
+    <string name="edit_vm_shared_dir_posix_acl">POSIX ACL</string>
+    <string name="edit_vm_shared_dir_delete">Remove shared directory</string>
+    <string name="edit_vm_shared_dir_browse">Browse</string>
+
+    <string name="edit_vm_kernel_browse_title">Select Kernel</string>
+    <string name="edit_vm_kernel_clear">Clear</string>
+    <string name="edit_vm_kernel_builtin">DroidVM built-in Linux kernel</string>
+    <string name="edit_vm_kernel_microdroid">System MicroDroid kernel</string>
+    <string name="edit_vm_kernel_external">Select an external file</string>
+    <string name="edit_vm_kernel_not_found">Target kernel is not exists: %1$s</string>
+    <string name="edit_vm_boot_uefi">Boot with UEFI</string>
+    <string name="edit_vm_boot_uefi_hint">To boot a Linux kernel directly, please disable UEFI</string>
+    <string name="edit_vm_initrd_browse_title">Select initramfs</string>
+    <string name="edit_vm_initrd_clear">Clear</string>
+    <string name="edit_vm_initrd_builtin">DroidVM built-in Linux initrd</string>
+    <string name="edit_vm_initrd_microdroid">System MicroDroid initrd</string>
+    <string name="edit_vm_initrd_microdroid_debug">System MicroDroid initrd (debuggable)</string>
+    <string name="edit_vm_initrd_external">Select an external file</string>
+    <string name="edit_vm_initrd_not_found">Target initramfs is not exists: %1$s</string>
+
+    <string name="settings_category_general">General</string>
+    <string name="settings_language_title">Language</string>
+    <string name="settings_language_summary">Change the app display language</string>
+    <string name="settings_language_system_default">System Default</string>
+    <string name="settings_category_vm">Virtual Machine</string>
+    <string name="settings_vm_auto_console_title">Open console on start</string>
+    <string name="settings_vm_auto_console_summary">Automatically open the console when a VM is started</string>
+    <string name="settings_category_about">About</string>
+    <string name="settings_feedback_title">Feedback</string>
+    <string name="settings_feedback_summary">Report issues on GitHub</string>
+    <string name="settings_license_title">Open Source Licenses</string>
+    <string name="settings_license_summary">View third-party software licenses</string>
+    <string name="settings_privacy_title">Privacy Policy</string>
+    <string name="settings_privacy_summary">View the privacy policy</string>
+    <string name="settings_category_update">Update</string>
+    <string name="settings_auto_check_update_title">Auto check for updates</string>
+    <string name="settings_auto_check_update_summary">Automatically check for updates when the app starts</string>
+    <string name="settings_check_update_title">Check for updates</string>
+    <string name="settings_check_update_summary">Check for new version now</string>
+    <string name="settings_check_update_checking">Checking for updates\u2026</string>
+    <string name="settings_check_update_no_update">You are using the latest version</string>
+    <string name="settings_check_update_error">Failed to check for updates</string>
+    <string name="settings_api_manager_title">API Services</string>
+    <string name="settings_api_manager_summary">Manage cloud API services</string>
+    <string name="settings_api_manager_not_loaded">API information not loaded. Please agree to the privacy policy first.</string>
+    <string name="license_detail_description">Description</string>
+    <string name="license_detail_license">License</string>
+    <string name="license_detail_urls">Links</string>
+
+    <string name="key_esc" translatable="false">ESC</string>
+    <string name="key_slash" translatable="false">/</string>
+    <string name="key_dash" translatable="false">-</string>
+    <string name="key_home" translatable="false">HOME</string>
+    <string name="key_up" translatable="false">\u2191</string>
+    <string name="key_end" translatable="false">END</string>
+    <string name="key_pgup" translatable="false">PGUP</string>
+    <string name="key_tab" translatable="false">TAB</string>
+    <string name="key_ctrl" translatable="false">CTRL</string>
+    <string name="key_alt" translatable="false">ALT</string>
+    <string name="key_left" translatable="false">\u2190</string>
+    <string name="key_down" translatable="false">\u2193</string>
+    <string name="key_right" translatable="false">\u2192</string>
+    <string name="key_pgdn" translatable="false">PGDN</string>
+    <string name="key_win" translatable="false">WIN</string>
+    <string name="key_cap" translatable="false">CAPS</string>
+    <string name="key_del" translatable="false">DEL</string>
+    <string name="key_ins" translatable="false">INS</string>
+    <string name="key_shift" translatable="false">SHIFT</string>
+    <string name="key_enter" translatable="false">ENTER</string>
+    <string name="key_fnx" translatable="false">FNx</string>
+    <string name="key_f1" translatable="false">F1</string>
+    <string name="key_f2" translatable="false">F2</string>
+    <string name="key_f3" translatable="false">F3</string>
+    <string name="key_f4" translatable="false">F4</string>
+    <string name="key_f5" translatable="false">F5</string>
+    <string name="key_f6" translatable="false">F6</string>
+    <string name="key_f7" translatable="false">F7</string>
+    <string name="key_f8" translatable="false">F8</string>
+    <string name="key_f9" translatable="false">F9</string>
+    <string name="key_f10" translatable="false">F10</string>
+    <string name="key_f11" translatable="false">F11</string>
+    <string name="key_f12" translatable="false">F12</string>
+
+    <string name="vm_daemon_error">Failed to communicate with daemon.</string>
+
+    <string name="disk_icon_desc">Disk icon</string>
+    <string name="disk_meta">%1$s space \u00B7 %2$s on disk \u00B7 %3$s</string>
+    <string name="disk_size_unknown">N/A</string>
+    <string name="disk_delete_confirm">Are you sure you want to remove this disk entry?</string>
+    <string name="disk_delete_file">Also delete the disk file</string>
+    <string name="disk_add_title">Add Disk</string>
+    <string name="disk_add_import">Import existing file</string>
+    <string name="disk_add_create">Create new disk</string>
+    <string name="disk_delete">Delete</string>
+    <string name="disk_optimize">Optimize</string>
+    <string name="disk_optimize_backing_title">Incremental image detected</string>
+    <string name="disk_optimize_backing_message">You are trying to optimize an incremental image. Please choose an action.\nKeep incremental image and optimize only\nConvert to a standalone image</string>
+    <string name="disk_optimize_backing_btn_keep">Keep</string>
+    <string name="disk_optimize_backing_btn_flatten">Convert</string>
+    <string name="disk_create_increment">Create increment image</string>
+    <string name="disk_show_info">Show more info</string>
+    <string name="disk_clone">Clone</string>
+    <string name="disk_clone_title">Clone Disk</string>
+    <string name="disk_clone_name_hint">New file name</string>
+    <string name="disk_clone_folder_hint">Save folder</string>
+    <string name="disk_clone_error_name_empty">File name is required</string>
+    <string name="disk_clone_error_folder_empty">Save folder is required</string>
+    <string name="disk_clone_error_file_exists">A disk with this name already exists</string>
+
+    <string name="disk_info_section_basic">Basic Information</string>
+    <string name="disk_info_section_details">Image Details</string>
+    <string name="disk_info_section_raw">Raw Output</string>
+    <string name="disk_info_filename">File Name</string>
+    <string name="disk_info_folder">Folder</string>
+    <string name="disk_info_format">Format</string>
+    <string name="disk_info_copy">Copy</string>
+    <string name="disk_info_virtual_size">Virtual Size</string>
+    <string name="disk_info_actual_size">Actual Size</string>
+    <string name="disk_info_cluster_size">Cluster Size</string>
+    <string name="disk_info_backing_file">Backing File</string>
+    <string name="disk_info_encryption">Encryption</string>
+    <string name="disk_info_compression">Compression</string>
+    <string name="disk_info_dirty_flag">Status</string>
+    <string name="disk_info_encrypted_yes">Encrypted</string>
+    <string name="disk_info_dirty_yes">Dirty (corrupt flag set)</string>
+    <string name="disk_info_lazy_refcounts">Lazy refcounts enabled</string>
+    <string name="disk_info_loading">Loading\u2026</string>
+    <string name="disk_info_load_failed">Failed to load disk info</string>
+    <string name="disk_info_tab_info">Info</string>
+    <string name="disk_info_tab_tree">Tree</string>
+    <string name="disk_info_tab_snapshot">Snapshot</string>
+    <string name="disk_info_tree_current">Current Image</string>
+    <string name="disk_info_tree_root">Root Image</string>
+    <string name="disk_info_tree_no_chain">No backing chain found</string>
+    <string name="disk_info_tree_not_in_store">This image is not managed by DroidVM</string>
+    <string name="disk_info_snapshot_id">ID: %s</string>
+    <string name="disk_info_snapshot_vm_size">VM State Size: %s</string>
+    <string name="disk_info_snapshot_disk_size">Disk Size: %s</string>
+    <string name="disk_info_snapshot_date">Date: %s</string>
+    <string name="disk_info_snapshot_vm_clock">VM Clock: %s</string>
+    <string name="disk_info_no_snapshots">No snapshots found</string>
+    <string name="disk_info_snapshot_create_title">Create Snapshot</string>
+    <string name="disk_info_snapshot_create_hint">Snapshot name</string>
+    <string name="disk_info_snapshot_create_error_empty">Please enter a snapshot name</string>
+    <string name="disk_info_snapshot_apply">Apply Snapshot</string>
+    <string name="disk_info_snapshot_apply_message">Apply snapshot \"%s\"? This will overwrite the current disk state.</string>
+    <string name="disk_info_snapshot_delete">Delete Snapshot</string>
+    <string name="disk_info_snapshot_delete_message">Delete snapshot \"%s\"?</string>
+    <string name="disk_info_snapshot_success">Snapshot operation completed</string>
+    <string name="disk_info_snapshot_failed_title">Snapshot Operation Failed</string>
+
+    <string name="disk_create_title">Create Disk Image</string>
+    <string name="disk_create_category_basic">Basic</string>
+    <string name="disk_create_name_hint">File name</string>
+    <string name="disk_create_folder_hint">Save folder</string>
+    <string name="disk_create_size_hint">Size</string>
+    <string name="disk_create_category_format">Format</string>
+    <string name="disk_create_category_options">Options</string>
+    <string name="disk_create_preallocate">Allocate all space immediately</string>
+    <string name="disk_create_preallocate_desc">Write zeros to fill the entire file now</string>
+    <string name="disk_create_compress">Compression</string>
+    <string name="disk_create_compress_disabled">Disabled</string>
+    <string name="disk_create_compress_deflate">Deflate (zlib)</string>
+    <string name="disk_create_compress_zstd">Zstandard (zstd)</string>
+    <string name="disk_create_backing_hint">Backing image</string>
+    <string name="disk_create_browse">Browse</string>
+    <string name="disk_create_fab_desc">Create disk</string>
+    <string name="disk_create_error_name_empty">File name is required</string>
+    <string name="disk_create_error_name_invalid">File name contains invalid characters</string>
+    <string name="disk_create_error_exists">Disk image already exists</string>
+    <string name="disk_create_error_folder_empty">Save folder is required</string>
+    <string name="disk_create_error_folder_invalid">Invalid folder path</string>
+    <string name="disk_create_error_size_zero">Size must be greater than 0</string>
+    <string name="disk_create_error_backing_same">Backing image cannot be the same as the target disk</string>
+    <string name="disk_create_error_backing_invalid">Invalid backing image path</string>
+    <string name="disk_create_success">Disk \"%1$s\" created successfully.</string>
+    <string name="disk_create_preview">Preview: %1$s</string>
+    <string name="disk_create_preview_desc">Disk file path preview</string>
+
+    <string name="lxc_title">Import LXC Image</string>
+    <string name="lxc_category_source">Source</string>
+    <string name="lxc_meta_source_hint">Metadata source</string>
+    <string name="lxc_download_source_hint">Download source</string>
+    <string name="lxc_source_classfun">ClassFun API</string>
+    <string name="lxc_source_official">Official (LXC)</string>
+    <string name="lxc_source_custom">Custom URL</string>
+    <string name="lxc_custom_meta_url_hint">Metadata mirror base URL</string>
+    <string name="lxc_custom_download_url_hint">Download mirror base URL</string>
+    <string name="lxc_meta_idle">Please load metadata first</string>
+    <string name="lxc_meta_loading">Loading\u2026</string>
+    <plurals name="lxc_meta_count">
+        <item quantity="one">Metadata: %1$d image</item>
+        <item quantity="other">Metadata: %1$d images</item>
+    </plurals>
+    <string name="lxc_meta_error">Failed: %1$s</string>
+    <string name="lxc_meta_load">Load</string>
+    <string name="lxc_category_image">Image</string>
+    <string name="lxc_distro_hint">Distribution</string>
+    <string name="lxc_version_hint">Version</string>
+    <string name="lxc_variant_hint">Variant</string>
+    <string name="lxc_build_hint">Build</string>
+    <string name="lxc_category_output">Output</string>
+    <string name="lxc_info_size">Download size: %1$s</string>
+    <string name="lxc_info_path">Remote path: %1$s</string>
+    <string name="lxc_fab_import">Import</string>
+    <string name="lxc_fab_desc">Import image</string>
+    <string name="lxc_import_success">Image \"%1$s\" added to disk list.</string>
+    <string name="lxc_error_no_image">Please select an image first.</string>
+    <string name="lxc_error_name_empty">File name is required.</string>
+    <string name="lxc_error_folder_empty">Save folder is required.</string>
+    <string name="lxc_error_custom_url">Please enter a valid mirror URL.</string>
+    <string name="lxc_no_images">No disk-kvm images found.</string>
+    <string name="lxc_default_download_source">official</string>
+    <string name="disk_add_lxc">Import LXC image</string>
+    <string name="disk_add_url">Download from URL</string>
+    <string name="disk_add_images">Download distro image</string>
+
+    <string name="images_title">Download Image</string>
+    <string name="images_search_hint">Search images\u2026</string>
+    <string name="images_empty">No images found</string>
+    <string name="images_category_image">Image</string>
+    <string name="images_category_mirror">Mirror</string>
+    <string name="images_mirror_hint">Download mirror</string>
+    <string name="images_mirror_official">Official</string>
+    <string name="images_category_output">Output</string>
+    <string name="images_fab_download">Download</string>
+    <string name="images_fab_desc">Download image</string>
+    <string name="images_info_size">Size: %1$s</string>
+    <string name="images_info_url">URL: %1$s</string>
+    <string name="images_error_no_image">Please select an image first.</string>
+    <string name="images_error_name_empty">File name is required.</string>
+    <string name="images_error_folder_empty">Save folder is required.</string>
+    <string name="images_error_file_exists">File already exists.</string>
+    <string name="images_success">Image \"%1$s\" added to disk list.</string>
+    <string name="images_pick_tap_hint">Tap to select an image</string>
+    <string name="images_confirm_title">Confirm Image</string>
+    <string name="images_confirm_repo">Repository: %1$s</string>
+    <string name="images_confirm_path">Path: %1$s</string>
+    <string name="images_confirm_arch">Architecture: %1$s</string>
+    <string name="images_confirm_size">Size: %1$s</string>
+    <string name="images_confirm_date">Modified: %1$s</string>
+
+    <string name="import_url_title">Import from URL</string>
+    <string name="import_url_category_source">Source</string>
+    <string name="import_url_url_hint">Image URL</string>
+    <string name="import_url_status_idle">Enter a URL and tap Load to fetch info</string>
+    <string name="import_url_status_loading">Loading\u2026</string>
+    <string name="import_url_status_size">Size: %1$s</string>
+    <string name="import_url_status_error">Failed: %1$s</string>
+    <string name="import_url_unknown">unknown</string>
+    <string name="import_url_load">Load</string>
+    <string name="import_url_info_type">Type: %1$s</string>
+    <string name="import_url_category_output">Output</string>
+    <string name="import_url_fab_desc">Import image</string>
+    <string name="import_url_error_url_empty">Please enter a URL</string>
+    <string name="import_url_error_url_invalid">Invalid URL</string>
+    <string name="import_url_error_name_empty">File name is required</string>
+    <string name="import_url_error_folder_empty">Save folder is required</string>
+    <string name="import_url_error_file_exists">File already exists</string>
+    <string name="import_url_success">Image \"%1$s\" added to disk list.</string>
+
+    <string name="disk_operation_title">Disk Operation</string>
+    <string name="disk_operation_running">Running\u2026</string>
+    <string name="disk_operation_success">Completed successfully.</string>
+    <string name="disk_operation_failed">Failed (exit code %1$d).</string>
+    <string name="disk_operation_bad_task">Invalid task parameters.</string>
+    <string name="disk_operation_cancel_title">Cancel operation?</string>
+    <string name="disk_operation_cancel_message">The disk operation is still in progress. Are you sure you want to cancel?</string>
+
+    <string name="disk_change_password">Change Password</string>
+    <string name="change_password_title">Change Password</string>
+    <string name="change_password_disk_label">Disk: %1$s</string>
+    <string name="change_password_hint">New password</string>
+    <string name="change_password_confirm_hint">Confirm password</string>
+    <string name="change_password_normal_users">Also change password for normal users</string>
+    <string name="change_password_confirm">Confirm</string>
+    <string name="change_password_error_empty">Password cannot be empty</string>
+    <string name="change_password_error_mismatch">Passwords do not match</string>
+
+    <string name="agent_operation_title">Agent Operation</string>
+    <string name="agent_operation_preparing">Preparing\u2026</string>
+    <string name="agent_operation_creating_vm">Creating temporary VM\u2026</string>
+    <string name="agent_operation_starting_vm">Starting temporary VM\u2026</string>
+    <string name="agent_operation_running">Running\u2026</string>
+    <string name="agent_operation_success">Operation completed successfully.</string>
+    <string name="agent_operation_failed">Operation failed (exit code %1$d).</string>
+    <string name="agent_operation_failed_detail">Operation failed: %1$s</string>
+    <string name="agent_operation_prepare_failed">Failed to prepare agent VM.</string>
+    <string name="agent_operation_start_failed">Failed to start agent VM: %1$s</string>
+    <string name="agent_operation_daemon_disconnected">Daemon connection lost.</string>
+    <string name="agent_operation_vm_exited">VM exited</string>
+    <string name="agent_operation_cancel_title">Cancel operation?</string>
+    <string name="agent_operation_cancel_message">The operation is still in progress. Cancelling will stop and delete the temporary VM. Are you sure?</string>
+    <string name="agent_operation_log_preparing">Preparing agent VM\u2026\n</string>
+    <string name="agent_operation_log_creating_vm">Creating temporary VM on daemon\u2026\n</string>
+    <string name="agent_operation_log_starting_vm">Starting temporary VM\u2026\n</string>
+    <string name="agent_operation_log_running">Temporary VM is running\u2026\n</string>
+    <string name="agent_operation_log_success">\nPassword changed successfully.\n</string>
+    <string name="agent_operation_log_failed">\nOperation failed. Please check the logs above.\n</string>
+
+    <string name="disk_resize">Resize</string>
+    <string name="disk_resize_title">Resize Disk</string>
+    <string name="disk_resize_new_size">New size</string>
+    <string name="disk_resize_current">Current size: %1$s</string>
+    <string name="disk_resize_filename">Filename: %1$s</string>
+    <string name="disk_resize_folder">Folder: %1$s</string>
+    <string name="disk_resize_loading">Loading\u2026</string>
+    <string name="disk_resize_shrink_title">Shrink Disk</string>
+    <string name="disk_resize_shrink_message">The new size is smaller than the current size. Shrinking the disk may cause data loss. Are you sure you want to continue?</string>
+    <string name="disk_resize_error_invalid">Please enter a valid size</string>
+    <string name="disk_resize_error_info">Failed to get disk info</string>
+
+    <string name="disk_set_format">Convert Format</string>
+    <string name="disk_set_format_title">Convert Disk Format</string>
+    <string name="disk_set_format_name">File name</string>
+    <string name="disk_set_format_target">Target format</string>
+    <string name="disk_set_format_current">Current format: %1$s</string>
+    <string name="disk_set_format_loading">Loading\u2026</string>
+    <string name="disk_set_format_error_name">File name is required</string>
+    <string name="disk_set_format_error_same">Target format is the same as current</string>
+    <string name="disk_set_format_error_info">Failed to detect current format</string>
+
+    <string name="download_cancel_title">Cancel download</string>
+    <string name="download_cancel_message">Are you sure you want to cancel downloading \"%1$s\"?</string>
+    <string name="download_percent">%1$.1f%%</string>
+    <string name="download_speed">%1$s/s</string>
+    <string name="download_size_progress">%1$s / %2$s</string>
+    <string name="download_size_unknown">%1$s / unknown</string>
+    <string name="download_eta">%1$s left</string>
+    <string name="download_eta_unknown">unknown</string>
+    <string name="download_connecting">Connecting\u2026</string>
+    <string name="download_finished">Finished</string>
+    <string name="download_failed">Failed: %1$s</string>
+    <string name="download_cancelled">Cancelled</string>
+    <string name="download_file_icon_desc">File icon</string>
+    <string name="download_exit_title">Download in progress</string>
+    <string name="download_exit_message">A download is still in progress. Leaving now will cancel it and delete the partial file. Are you sure?</string>
+
+    <string name="vm_state_suspended">Suspended</string>
+    <string name="vm_info_state_suspended">VM is suspended</string>
+
+    <string name="vm_info_suspend">Suspend</string>
+    <string name="vm_info_resume">Resume</string>
+    <string name="vm_info_powerbtn">Power</string>
+    <string name="vm_info_sleepbtn">Sleep</string>
+
+    <string name="settings_category_daemon">Daemon Service</string>
+    <string name="settings_daemon_status_title">Service Status</string>
+    <string name="settings_daemon_running">Running</string>
+    <string name="settings_daemon_stopped">Stopped</string>
+    <string name="settings_daemon_checking">Checking\u2026</string>
+    <string name="settings_daemon_start">Start Service</string>
+    <string name="settings_daemon_start_summary">Start the droidvmd daemon process</string>
+    <string name="settings_daemon_stop">Stop Service</string>
+    <string name="settings_daemon_stop_summary">Stop the droidvmd daemon process</string>
+    <string name="settings_daemon_restart">Restart Service</string>
+    <string name="settings_daemon_restart_summary">Restart the droidvmd daemon process</string>
+
+    <string name="daemon_outdated_title">Outdated Daemon Detected</string>
+    <string name="daemon_outdated_message">An outdated daemon is running. Would you like to restart it?\n\nNote: All running VMs will be stopped.</string>
+    <string name="daemon_outdated_restart">Restart</string>
+    <string name="daemon_outdated_ignore">Ignore</string>
+    <string name="daemon_connected">Daemon connected</string>
+    <string name="daemon_disconnected">Daemon disconnected</string>
+
+    <string name="test_build_warning_title">Test Build</string>
+    <string name="test_build_warning_message">You are running a test build of DroidVM.\n\nThis version is for testing purposes only and may contain bugs or incomplete features. Data loss or instability may occur.\n\nPlease report any issues on GitHub.</string>
+    <string name="test_build_warning_hide">Don\'t show again</string>
+
+    <plurals name="network_item_info">
+        <item quantity="one">bridge: %1$s \u00B7 %2$d address</item>
+        <item quantity="other">bridge: %1$s \u00B7 %2$d addresses</item>
+    </plurals>
+    <string name="network_state_stopped">Stopped</string>
+    <string name="network_state_starting">Starting</string>
+    <string name="network_state_running">Running</string>
+    <string name="network_state_stopping">Stopping</string>
+    <string name="network_delete">Delete</string>
+    <string name="network_delete_confirm">Are you sure you want to delete this network?</string>
+    <string name="network_delete_in_use">Cannot delete: network is in use by running VM: %1$s</string>
+    <string name="network_create_title">Create Network</string>
+    <string name="network_create_success">Network \"%1$s\" created successfully.</string>
+    <string name="network_edit_title">Edit Network</string>
+    <string name="network_edit_saved">Network \"%1$s\" saved.</string>
+    <string name="network_edit_category_basic">Basic</string>
+    <string name="network_edit_name_hint">Network name</string>
+    <string name="network_edit_bridge_hint">Bridge name (e.g. br0)</string>
+    <string name="network_edit_mac_hint">MAC address (e.g. 02:42:ac:11:00:01)</string>
+    <string name="network_edit_auto_up">Bring up on start</string>
+    <string name="network_edit_stp">Spanning Tree Protocol (STP)</string>
+    <string name="network_edit_nat">NAT (Network Address Translate)</string>
+    <string name="network_edit_category_ipv4">IPv4 Addresses</string>
+    <string name="network_edit_ipv4_hint">IPv4 CIDR (e.g. 192.168.1.1/24)</string>
+    <string name="network_edit_category_ipv6">IPv6 Addresses</string>
+    <string name="network_edit_ipv6_hint">IPv6 CIDR (e.g. fd00::1/64)</string>
+    <string name="network_edit_no_addresses">No addresses configured.</string>
+    <string name="network_edit_remove_address">Remove address</string>
+    <string name="network_edit_category_dhcp">DHCP Server</string>
+    <string name="network_edit_dhcp_enabled">Enable DHCP server</string>
+    <string name="network_edit_dhcp_start_hint">Pool start (e.g. 192.168.1.100)</string>
+    <string name="network_edit_dhcp_end_hint">Pool end (e.g. 192.168.1.200)</string>
+    <string name="network_edit_btn_save">Save</string>
+    <string name="network_edit_error_name_empty">Network name is required</string>
+    <string name="network_edit_error_name_duplicate">A network with this name already exists</string>
+    <string name="network_edit_error_bridge_empty">Bridge name is required</string>
+    <string name="network_edit_error_bridge_invalid">Must start with a letter and contain only letters, digits, hyphens, or underscores</string>
+    <string name="network_edit_error_address_invalid">Invalid CIDR address</string>
+    <string name="network_edit_error_mac_invalid">Invalid MAC address format</string>
+    <string name="network_edit_error_not_found">Network configuration not found</string>
+    <string name="network_edit_error_bridge_duplicate">A network with this bridge name already exists</string>
+    <string name="network_edit_error_mac_duplicate">A network with this MAC address already exists</string>
+    <string name="network_edit_error_ipv4_overlap">IPv4 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
+    <string name="network_edit_error_ipv6_overlap">IPv6 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
+    <string name="network_edit_error_dhcp_invalid">DHCP pool start must be before pool end</string>
+    <string name="network_edit_error_dhcp_start_invalid">Invalid DHCP pool start address</string>
+    <string name="network_edit_error_dhcp_end_invalid">Invalid DHCP pool end address</string>
+    <string name="network_edit_error_ipv4_not_added">IPv4 address input is not empty, please add it first or clear the field</string>
+    <string name="network_edit_error_ipv6_not_added">IPv6 address input is not empty, please add it first or clear the field</string>
+
+    <string name="network_info_start">Start</string>
+    <string name="network_info_stop">Stop</string>
+    <string name="network_info_state_active">Network is active and forwarding traffic</string>
+    <string name="network_info_state_idle">Network is not running</string>
+    <string name="network_info_tab_basic">Basic</string>
+    <string name="network_info_tab_addresses">Addresses</string>
+    <string name="network_info_tab_ports">Ports</string>
+    <string name="network_info_tab_dhcp">DHCP</string>
+    <string name="network_info_tab_neighbors">Neighbors</string>
+    <string name="network_info_bridge">Bridge</string>
+    <string name="network_info_mac">MAC Address</string>
+    <string name="network_info_auto_up">Auto start</string>
+    <string name="network_info_stp">STP</string>
+    <string name="network_info_nat">NAT</string>
+    <string name="network_info_dhcp">DHCP Server</string>
+    <string name="network_info_dhcp_range">DHCP Range</string>
+    <plurals name="network_info_dhcp_pool">
+        <item quantity="one">%1$s - %2$s (%3$d address)</item>
+        <item quantity="other">%1$s - %2$s (%3$d addresses)</item>
+    </plurals>
+    <string name="network_info_created">Created</string>
+    <string name="network_info_enabled">Enabled</string>
+    <string name="network_info_disabled">Disabled</string>
+    <string name="network_info_no_addresses">No addresses</string>
+    <string name="network_info_no_ports">No ports connected</string>
+    <string name="network_info_no_leases">No DHCP leases</string>
+    <string name="network_info_no_neighbors">No neighbors</string>
+    <string name="network_info_dhcp_expires">Expires: %1$s</string>
+
+    <string name="vnc_display_title">VNC Display</string>
+    <string name="vnc_display_connecting">Connecting\u2026</string>
+    <string name="vnc_display_connected">Connected - %1$dx%2$d</string>
+    <string name="vnc_display_disconnected">Disconnected</string>
+    <string name="vnc_display_reconnecting">Reconnecting (%1$d/%2$d)\u2026</string>
+    <string name="vnc_display_reconnect_failed">Reconnect failed after %1$d attempts</string>
+    <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
+    <string name="vnc_display_fullscreen">Fullscreen</string>
+
+    <string name="vnc_menu">Menu</string>
+    <string name="vnc_menu_keyboard">Soft Keyboard</string>
+    <string name="vnc_menu_extra_keys">Extra Keys</string>
+    <string name="vnc_menu_fullscreen">Fullscreen</string>
+    <string name="vnc_menu_rotate">Rotate Screen</string>
+    <string name="vnc_menu_reconnect">Reconnect</string>
+    <string name="vnc_menu_external_app">Open with External App</string>
+    <string name="vnc_menu_view_url">View Connection URL</string>
+    <string name="vnc_menu_no_vnc_app">No app found to handle VNC connections</string>
+    <string name="vnc_menu_url_copied">Copied to clipboard</string>
+    <string name="vnc_presentation_title">Touchpad</string>
+    <string name="vnc_presentation_title_with_name">%1$s - Touchpad</string>
+
+    <string name="vnc_external_title">Open with External App</string>
+    <string name="vnc_external_message">About to open with an external app</string>
+    <string name="vnc_external_hint_target">Target</string>
+    <string name="vnc_external_hint_password">Password</string>
+    <string name="vnc_external_cancel">Cancel</string>
+    <string name="vnc_external_connect">Connect</string>
+    <string name="vnc_external_copy_password">Copy Password</string>
+    <string name="text_input_item_range">Range: %1$s - %2$s</string>
+
+    <string name="display_select_display">Select Display</string>
+    <string name="display_no_display">No external displays available</string>
+    <string name="display_lost">External display disconnected</string>
+    <string name="display_not_on_title">Display Not Active</string>
+    <string name="display_not_on_message">The selected display \"%1$s\" is currently %2$s. Casting may not work properly.\n\nDo you want to continue anyway?</string>
+    <string name="display_start_failed">Display start failed</string>
+    <string name="display_state_off">OFF</string>
+    <string name="display_state_on">ON</string>
+    <string name="display_state_doze">DOZE</string>
+    <string name="display_state_doze_suspend">DOZE SUSPEND</string>
+    <string name="display_state_on_suspend">ON SUSPEND</string>
+    <string name="display_state_unknown">UNKNOWN</string>
+    <string name="display_touchpad_hint">Slide to move cursor\nTap to click\nTwo-finger scroll</string>
+    <string name="display_mouse_left">Mouse left</string>
+    <string name="display_mouse_middle">Mouse middle</string>
+    <string name="display_mouse_right">Mouse right</string>
+
+    <string name="logs_title">Logs</string>
+    <string name="logs_scroll_bottom">Scroll to bottom</string>
+    <string name="logs_clear">Clear</string>
+    <string name="logs_save">Save</string>
+    <string name="logs_save_success">Logs saved successfully</string>
+    <string name="logs_save_failed">Failed to save logs: %1$s</string>
+
+    <string name="privacy_step_title">Privacy Policy</string>
+    <string name="privacy_step_desc">Please read and agree to the privacy policy before continuing</string>
+    <string name="privacy_accept">Accept</string>
+    <string name="privacy_decline">Decline</string>
+    <string name="privacy_decline_title">Decline Privacy Policy?</string>
+    <string name="privacy_decline_message">If you decline the privacy policy, some features may not be available. Are you sure you want to decline?</string>
+    <string name="privacy_decline_confirm">Decline</string>
+
+    <string name="update_title">Update Available</string>
+    <string name="update_current_version">Current version: %1$s</string>
+    <string name="update_new_version">New version: %1$s</string>
+    <string name="update_changelog">Changelog:</string>
+    <string name="update_cancel">Cancel</string>
+    <string name="update_download">Download</string>
+    <string name="update_browser">Browser</string>
+</resources>

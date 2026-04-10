@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_disk_resize"
+        android:icon="@drawable/ic_resize"
+        android:title="@string/disk_resize" />
+
+    <item
+        android:id="@+id/menu_disk_convert"
+        android:icon="@drawable/ic_file_swap"
+        android:title="@string/disk_set_format" />
+
+    <item
+        android:id="@+id/menu_disk_optimize"
+        android:icon="@drawable/ic_wand"
+        android:title="@string/disk_optimize" />
+
+    <item
+        android:id="@+id/menu_disk_create_increment"
+        android:icon="@drawable/ic_file_multiple"
+        android:title="@string/disk_create_increment" />
+
+    <item
+        android:id="@+id/menu_disk_show_info"
+        android:icon="@drawable/ic_info"
+        android:title="@string/disk_show_info" />
+
+    <item
+        android:id="@+id/menu_disk_change_password"
+        android:icon="@drawable/ic_lock"
+        android:title="@string/disk_change_password" />
+
+    <item
+        android:id="@+id/menu_disk_clone"
+        android:icon="@drawable/ic_card_multiple"
+        android:title="@string/disk_clone" />
+
+    <item
+        android:id="@+id/menu_disk_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/disk_delete" />
+
+</menu>

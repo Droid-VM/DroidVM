@@ -1,0 +1,47 @@
+DroidVM Privacy Policy
+Last Updated: April 8, 2026
+Effective Date: April 8, 2026
+
+Thank you for using DroidVM (hereinafter referred to as "this Application"). This Application runs virtual machines on Android devices.
+This Privacy Policy is intended to explain how this Application collects, uses, and protects your information when you use certain features.
+
+I. Information Collection and Use
+By default, this Application does not collect any personal information. Only after you explicitly agree to this policy will this Application send minimal technical information to the API server (https://api.classfun.cn/) for specific features (image download index, update check):
+IP Address: Used to establish network connections and for server access logging.
+UserAgent: Required by HTTP to identify the client type and ensure API compatibility. Includes application version, Android version, device model, and device SoC model.
+
+Server Processing Method:
+The above information appears only in server access logs.
+The server does not actively store this information for analysis, profiling, or any other purpose.
+Log files are automatically rotated and overwritten according to standard maintenance practices.
+
+II. Information Storage and Sharing
+No Storage: Except for transient access logs, the server does not retain your IP address or UserAgent.
+No Sharing: This Application and the server will not sell, exchange, or transfer the above information to any third party.
+No Association: The above information will not be associated with your device identifier, account, or any other identifiable information.
+
+III. Your Choices
+Accept the Policy: You may use features that rely on the API, such as image download index and update check.
+Reject the Policy: This Application will not call any API and will not send any information to the server. However, API-dependent features (image download index, update check) will be unavailable. Other local virtualization features remain unaffected.
+You may choose whether to agree when first using the relevant features, and you can change your authorization status at any time in the application settings.
+
+IV. Data Security
+Since this Application only collects IP addresses and UserAgent from transient logs and does not store them persistently, we cannot "delete" logs that have already been automatically rotated and overwritten.
+The API server employs standard security measures (such as HTTPS and access controls) to prevent unauthorized access to logs.
+
+V. Protection of Minors
+This Application is not intended for individuals under the age of 14. If you are under 14 years old, please do not agree to this policy or use API-dependent features.
+
+VI. Policy Changes
+If there are material changes to this Privacy Policy (such as adding new types of data collection), we will notify you via an in-app update prompt and ask for your consent again.
+Minor revisions (such as wording improvements or server address updates) will be directly updated on this page.
+
+VII. Contact Us
+If you have any questions regarding this Privacy Policy, please contact the developer at:
+Email: bigfoot@classfun.cn
+
+Note: This policy only covers API calls made to https://api.classfun.cn/. As a local virtual machine management tool, DroidVM does not actively collect any device files, location data, contacts, or other sensitive information.
+
+API Website Registration Information:
+Fujian ICP License No. 闽ICP备2021000369号
+Fujian Public Security Record No. 闽公网安备 35052102000336号

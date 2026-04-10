@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+   <include domain="sharedpref" path="."/>
+   <exclude domain="sharedpref" path="setup_prefs.xml"/>
+   <include domain="file" path="disks.json"/>
+   <include domain="file" path="vms.json"/>
+   <include domain="file" path="networks.json"/>
+</full-backup-content>

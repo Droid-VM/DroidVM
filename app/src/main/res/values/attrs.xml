@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="SwitchRowWidget">
+        <attr name="android:icon" format="reference" />
+        <attr name="android:text" format="string|reference" />
+        <attr name="android:subtitle" format="string|reference" />
+        <attr name="android:checked" format="boolean" />
+    </declare-styleable>
+
+    <declare-styleable name="ChooseRowWidget">
+        <attr name="android:icon" format="reference" />
+        <attr name="android:text" format="string|reference" />
+        <attr name="android:subtitle" format="string|reference" />
+    </declare-styleable>
+
+    <declare-styleable name="DropdownRowWidget">
+        <attr name="android:icon" format="reference" />
+        <attr name="android:hint" format="string|reference" />
+    </declare-styleable>
+
+    <declare-styleable name="PickerButtonWidget">
+        <attr name="android:title" format="string|reference" />
+        <attr name="pb_mode" format="enum">
+            <enum name="dialog" value="0" />
+            <enum name="rotate" value="1" />
+            <enum name="popup" value="2" />
+        </attr>
+    </declare-styleable>
+
+    <declare-styleable name="CollapsibleContainer">
+        <attr name="android:title" format="string|reference" />
+        <attr name="cc_expanded" format="boolean" />
+        <attr name="cc_collapsible" format="boolean" />
+    </declare-styleable>
+
+    <declare-styleable name="CardItemListView">
+        <attr name="android:hint" format="string|reference" />
+        <attr name="android:text" format="string|reference" />
+        <attr name="android:icon" format="reference" />
+    </declare-styleable>
+
+    <declare-styleable name="TextRowWidget">
+        <attr name="android:icon" format="reference" />
+        <attr name="android:text" format="string|reference" />
+        <attr name="android:subtitle" format="string|reference" />
+        <attr name="android:value" format="string|reference" />
+    </declare-styleable>
+
+    <declare-styleable name="TextInputRowWidget">
+        <attr name="android:icon" format="reference" />
+        <attr name="android:hint" format="string|reference" />
+        <attr name="android:inputType" />
+        <attr name="ti_endIcon" format="reference" />
+        <attr name="ti_endIconMode" format="enum">
+            <enum name="none" value="0" />
+            <enum name="password_toggle" value="1" />
+            <enum name="clear_text" value="2" />
+            <enum name="dropdown_menu" value="3" />
+            <enum name="custom" value="-1" />
+        </attr>
+        <attr name="ti_textButton" format="boolean"/>
+        <attr name="ti_iconButtonIcon" format="reference" />
+        <attr name="ti_iconButtonHint" format="string|reference" />
+        <attr name="ti_maxLines" format="integer" />
+        <attr name="ti_mode" format="enum">
+            <enum name="normal" value="0" />
+            <enum name="number" value="1" />
+            <enum name="size" value="2" />
+        </attr>
+        <attr name="ti_min" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->
+        <attr name="ti_max" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->
+        <attr name="ti_precision" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->
+    </declare-styleable>
+</resources>

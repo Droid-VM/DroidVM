@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+        android:id="@+id/sw_auto_up"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:icon="@drawable/ic_power"
+        android:text="@string/network_edit_auto_up" />
+
+    <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+        android:id="@+id/sw_uefi"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:checked="true"
+        android:icon="@drawable/ic_uefi_nocolor"
+        android:text="@string/edit_vm_boot_uefi" />
+
+    <TextView
+        android:id="@+id/tv_uefi_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="72dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp"
+        android:text="@string/edit_vm_boot_uefi_hint"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="13sp"/>
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:id="@+id/container_kernel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_kernel"
+        android:visibility="gone">
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_kernel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_kernel_hint"
+            android:icon="@drawable/ic_linux"
+            android:inputType="text"
+            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_initrd"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_initrd_hint"
+            android:icon="@drawable/ic_floppy"
+            android:inputType="text"
+            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_cmdline"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_cmdline_hint"
+            android:icon="@drawable/ic_edit"
+            android:inputType="text" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

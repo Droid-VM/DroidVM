@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="daemon_card_background_running">#FF1A3825</color>
+    <color name="daemon_card_background_checking">#FF382D1A</color>
+    <color name="daemon_card_background_stopped">#FF3A1B1B</color>
+</resources>

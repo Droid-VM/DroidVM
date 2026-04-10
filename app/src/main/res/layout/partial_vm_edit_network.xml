@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_network">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_nets"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_net_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_net_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

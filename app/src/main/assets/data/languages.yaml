@@ -1,0 +1,6 @@
+languages:
+  - tag: en
+    name: English
+
+  - tag: zh-Hans-CN
+    name: 简体中文

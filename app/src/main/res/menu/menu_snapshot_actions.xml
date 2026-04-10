@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_snapshot_apply"
+        android:icon="@drawable/ic_resume"
+        android:title="@string/disk_info_snapshot_apply" />
+
+    <item
+        android:id="@+id/menu_snapshot_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/disk_info_snapshot_delete" />
+
+</menu>

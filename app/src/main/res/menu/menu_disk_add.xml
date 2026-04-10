@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_disk_add_import"
+        android:icon="@drawable/ic_open_in"
+        android:title="@string/disk_add_import" />
+
+    <item
+        android:id="@+id/menu_disk_add_url"
+        android:icon="@drawable/ic_download"
+        android:title="@string/disk_add_url" />
+
+    <item
+        android:id="@+id/menu_disk_add_images"
+        android:icon="@drawable/ic_cdrom"
+        android:title="@string/disk_add_images" />
+
+    <item
+        android:id="@+id/menu_disk_add_lxc"
+        android:icon="@drawable/ic_linux"
+        android:title="@string/disk_add_lxc" />
+
+    <item
+        android:id="@+id/menu_disk_add_create"
+        android:icon="@drawable/ic_add"
+        android:title="@string/disk_add_create" />
+
+</menu>

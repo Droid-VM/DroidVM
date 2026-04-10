@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_vm_edit"
+        android:icon="@drawable/ic_edit"
+        android:title="@string/vm_edit" />
+
+    <item
+        android:id="@+id/menu_vm_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/vm_delete" />
+
+</menu>

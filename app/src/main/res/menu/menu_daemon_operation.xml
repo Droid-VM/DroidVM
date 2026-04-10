@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_daemon_start"
+        android:icon="@drawable/ic_start"
+        android:title="@string/settings_daemon_start" />
+
+    <item
+        android:id="@+id/menu_daemon_stop"
+        android:icon="@drawable/ic_stop"
+        android:title="@string/settings_daemon_stop" />
+
+    <item
+        android:id="@+id/menu_daemon_restart"
+        android:icon="@drawable/ic_refresh"
+        android:title="@string/settings_daemon_restart" />
+
+</menu>

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_basic">
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_name_hint"
+            android:icon="@drawable/ic_edit"
+            android:inputType="text" />
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_memory"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_memory_hint"
+            android:icon="@drawable/ic_memory"
+            android:inputType="number"
+            app:ti_max="64GiB"
+            app:ti_min="32MiB"
+            app:ti_mode="size"
+            app:ti_precision="1MiB" />
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_cpu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_cpu_hint"
+            android:icon="@drawable/ic_cpu"
+            android:inputType="number"
+            app:ti_max="64"
+            app:ti_min="1"
+            app:ti_mode="number" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_options">
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_balloon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_ballon"
+            android:text="@string/create_vm_balloon" />
+
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_protected_vm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_shield"
+            android:text="@string/create_vm_protected_vm" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_sandbox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_package"
+            android:text="@string/create_vm_sandbox" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_hugepages"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_memory"
+            android:text="@string/create_vm_hugepages" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_pmu"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_speedometer"
+            android:text="@string/create_vm_pmu" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_rng"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_counter"
+            android:text="@string/create_vm_rng" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_smt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_card_multiple"
+            android:text="@string/create_vm_smt" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_usb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_usb"
+            android:text="@string/create_vm_usb" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

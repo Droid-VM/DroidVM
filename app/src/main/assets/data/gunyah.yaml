@@ -1,0 +1,33 @@
+gunyah:
+  # Qualcomm Snapdragon 8 Gen 3
+  - socs:
+      - SG8350P
+      - SM8650
+      - SM8650AA
+      - SM8650AB
+      - SM8650AC
+      - SM8650Q
+      - SM8650QAA
+      - SM8650QAB
+    capabilities:
+      gunyah: yes
+
+  # Qualcomm Snapdragon 8 Elite
+  - socs:
+      - SM8735
+      - SM8750
+      - SM87503AB
+      - SM8750AB
+      - SM8750AC
+      - SM8750P
+    capabilities:
+      gunyah: yes
+
+  # Qualcomm Snapdragon 8 Elite Gen 5
+  - socs:
+      - SM8845
+      - SM8850
+      - SM8850AC
+      - SM8850P
+    capabilities:
+      gunyah: yes
