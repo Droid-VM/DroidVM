@@ -12,16 +12,20 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.Closeable;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 
+import cn.classfun.droidvm.lib.store.base.JSONSerialize;
 import cn.classfun.droidvm.lib.utils.FileUtils;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
-public abstract class ConsoleStream implements Closeable {
+public abstract class ConsoleStream implements Closeable, JSONSerialize {
     private static final String TAG = "ConsoleStream";
     public static final int MAX_BUFFER_SIZE = 1 << 20;
     protected final VMConfig config;
@@ -163,5 +167,18 @@ public abstract class ConsoleStream implements Closeable {
             }
             logWriter = null;
         }
+    }
+
+    @NonNull
+    @Override
+    public JSONObject toJson() throws JSONException {
+        var obj = new JSONObject();
+        obj.put("type", getClass().getSimpleName());
+        obj.put("name", name);
+        obj.put("path", getPersistentPath());
+        obj.put("length", buffer.length());
+        obj.put("readable", isReadable());
+        obj.put("writable", isWritable());
+        return obj;
     }
 }

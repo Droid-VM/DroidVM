@@ -5,6 +5,9 @@ import android.os.ParcelFileDescriptor;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -99,5 +102,15 @@ public final class FDPipeConsoleStream extends ConsoleStream {
             }
             writePfd = null;
         }
+    }
+
+    @NonNull
+    @Override
+    public JSONObject toJson() throws JSONException {
+        var obj = super.toJson();
+        obj.put("read_fd", readPfd != null ? readPfd.getFd() : -1);
+        obj.put("write_fd", writePfd != null ? writePfd.getFd() : -1);
+        obj.put("ready", isReady());
+        return obj;
     }
 }

@@ -3,6 +3,9 @@ package cn.classfun.droidvm.daemon.console;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
 import java.io.InputStream;
 import java.io.OutputStream;
 
@@ -59,5 +62,14 @@ public final class FDSocketConsoleStream extends ConsoleStream {
             socket.close();
             socket = null;
         }
+    }
+
+    @NonNull
+    @Override
+    public JSONObject toJson() throws JSONException {
+        var obj = super.toJson();
+        obj.put("fd", getFd());
+        obj.put("ready", isReady());
+        return obj;
     }
 }
