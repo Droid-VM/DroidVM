@@ -37,7 +37,6 @@
             android:name=".ui.setup.SetupActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -45,7 +44,6 @@
             android:name=".ui.main.MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -53,7 +51,6 @@
             android:name=".ui.vm.edit.VMEditActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -61,7 +58,6 @@
             android:name=".ui.vm.info.VMInfoActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -69,7 +65,6 @@
             android:name=".ui.vm.console.VMConsoleActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
             android:windowSoftInputMode="adjustResize" />
 
@@ -77,7 +72,6 @@
             android:name=".ui.vm.display.vnc.display.VMVncDisplayActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
             android:windowSoftInputMode="adjustResize" />
 
@@ -85,7 +79,6 @@
             android:name=".ui.vm.display.vnc.display.VMVncPresentationActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
             android:windowSoftInputMode="adjustResize" />
 
@@ -93,7 +86,6 @@
             android:name=".ui.disk.lxc.ImportLxcImagesActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -101,7 +93,6 @@
             android:name=".ui.disk.images.ImportImagesActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -109,7 +100,6 @@
             android:name=".ui.disk.download.ImportURLActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -117,7 +107,6 @@
             android:name=".ui.disk.operation.DiskOperationActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
             android:windowSoftInputMode="adjustResize" />
 
@@ -125,7 +114,6 @@
             android:name=".ui.agent.password.ChangePasswordActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -133,7 +121,6 @@
             android:name=".ui.agent.AgentOperationActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
             android:windowSoftInputMode="adjustResize" />
 
@@ -141,7 +128,6 @@
             android:name=".ui.disk.create.DiskCreateActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -149,7 +135,6 @@
             android:name=".ui.disk.info.DiskInfoActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -157,7 +142,6 @@
             android:name=".ui.network.edit.NetworkEditActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -165,7 +149,6 @@
             android:name=".ui.network.info.NetworkInfoActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="standard"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
@@ -173,7 +156,6 @@
             android:name=".ui.logs.LogsActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"
-            android:launchMode="singleInstance"
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
