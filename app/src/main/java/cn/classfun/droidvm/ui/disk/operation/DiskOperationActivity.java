@@ -276,7 +276,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     }
 
     private void sendSigint() {
-        if (session != null && !finished) {
+        if (session != null && !finished && session.isRunning()) {
             Log.i(TAG, "Sending SIGINT to process");
             shellKillProcess(session.getPid(), SIGINT);
         }
