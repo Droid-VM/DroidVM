@@ -187,7 +187,9 @@ public final class DaemonConnection {
                 consecutiveFailures.set(0);
                 callConnected();
                 disconnectLatch.await();
-            } catch (IOException e) {
+            } catch (InterruptedException ignored) {
+                continue;
+            } catch (Exception e) {
                 if (running) {
                     int failures = consecutiveFailures.incrementAndGet();
                     if (failures <= 3) {
@@ -196,8 +198,6 @@ public final class DaemonConnection {
                         Log.w(TAG, "Daemon still not available, suppressing further logs");
                     }
                 }
-            } catch (InterruptedException ignored) {
-                continue;
             } finally {
                 if (newClient.isConnected()) newClient.close();
                 client = null;
