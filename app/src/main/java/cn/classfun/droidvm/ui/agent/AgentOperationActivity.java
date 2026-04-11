@@ -35,7 +35,6 @@ import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
-import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
@@ -303,7 +302,8 @@ public final class AgentOperationActivity extends AppCompatActivity
     private void killTerminalSession() {
         if (terminalSession != null) {
             try {
-                shellKillProcess(terminalSession.getPid());
+                if (terminalSession.isRunning())
+                    shellKillProcess(terminalSession.getPid());
             } catch (Exception ignored) {
             }
             terminalSession = null;
