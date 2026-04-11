@@ -47,6 +47,7 @@ void ConsoleCommand::console_attach(
     auto ipc = IPCClient::get();
     auto vm_id = resolve_vm_id(vm);
     bool tty = isatty(STDIN_FILENO);
+    bool readable, writable;
     const std::string &filter_vm = vm_id;
     {
         Json::Value req;
@@ -74,6 +75,19 @@ void ConsoleCommand::console_attach(
         if (!buf.empty()) {
             fwrite(buf.c_str(), 1, buf.size(), stdout);
             fflush(stdout);
+        }
+    }
+    {
+        Json::Value req;
+        req["command"] = "vm_console_info";
+        req["vm_id"] = vm_id;
+        req["stream"] = stream;
+        auto resp = ipc->send_request(req);
+        readable = resp["data"]["readable"].asBool();
+        writable = resp["data"]["writable"].asBool();
+        if (!readable) {
+            fprintf(stderr, "\n[droidvm] Console stream is not readable.\n");
+            return;
         }
     }
     int event_fd = ipc->get_fd();
@@ -171,12 +185,22 @@ void ConsoleCommand::console_attach(
                         continue;
                     }
                 }
-                Json::Value write_req;
-                write_req["command"] = "vm_console_write";
-                write_req["vm_id"] = filter_vm;
-                write_req["stream"] = stream;
-                write_req["data"] = std::string(buf, n);
-                ipc->send_request(write_req);
+                if (!writable) {
+                    static bool warned = false;
+                    if (!warned) {
+                        fprintf(stderr,
+                                "\n[droidvm] Console stream is not writable. "
+                                "Input will be ignored.\n");
+                        warned = true;
+                    }
+                } else {
+                    Json::Value write_req;
+                    write_req["command"] = "vm_console_write";
+                    write_req["vm_id"] = filter_vm;
+                    write_req["stream"] = stream;
+                    write_req["data"] = std::string(buf, n);
+                    ipc->send_request(write_req);
+                }
             }
         }
     }
