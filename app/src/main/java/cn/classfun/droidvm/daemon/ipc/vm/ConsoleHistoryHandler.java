@@ -29,11 +29,13 @@ public final class ConsoleHistoryHandler extends RequestHandler {
         var res = request.res();
         res.put("vm_id", vmId);
         if (!stream.isEmpty()) {
-            res.put(stream, inst.getStreamBuffer(stream));
+            var sio = inst.getStream(stream);
+            if (sio == null)
+                throw new RequestException("stream not found");
+            res.put(stream, sio.getBuffer());
         } else {
-            var names = inst.getStreamNames();
-            for (var name : names)
-                res.put(name, inst.getStreamBuffer(name));
+            for (var sio : inst.getStreams())
+                res.put(sio.getName(), sio.getBuffer());
         }
     }
 }

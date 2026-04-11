@@ -29,7 +29,10 @@ public final class ConsoleWriteHandler extends RequestHandler {
         var inst = request.getContext().getVMs().findById(vmId);
         if (inst == null)
             throw new RequestException("VM not found");
-        if (!inst.writeStream(stream, data))
+        var sio = inst.getStream(stream);
+        if (sio == null)
+            throw new RequestException("stream not found");
+        if (!sio.write(data))
             throw new RequestException("failed to write to stream");
     }
 }

@@ -15,7 +15,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -85,7 +84,7 @@ public final class VMInstance extends VMConfig {
             data.put("event", event);
             if (event.equals("exited")) {
                 data.put("exit_code", exitCode);
-                var sio = backendInstance.streams.get("stdio");
+                var sio = getStream("stdio");
                 if (sio != null) data.put("stdio", sio.getBuffer());
             }
             if (extra != null) JsonUtils.mergeJSONObject(data, extra);
@@ -250,33 +249,18 @@ public final class VMInstance extends VMConfig {
     }
 
     @NonNull
-    public String getStreamBuffer(@NonNull String streamName) {
-        var stream = backendInstance.streams.get(streamName);
-        return stream != null ? stream.getBuffer() : "";
-    }
-
-    @NonNull
     public List<String> getStreamNames() {
         return new ArrayList<>(backendInstance.streams.keySet());
     }
 
-    public boolean writeStream(@NonNull String streamName, @NonNull String data) {
-        var stream = backendInstance.streams.get(streamName);
-        if (stream == null) return false;
+    @NonNull
+    public List<ConsoleStream> getStreams() {
+        return new ArrayList<>(backendInstance.streams.values());
+    }
 
-        OutputStream os = stream.getOutputStream();
-        if (os == null) {
-            Log.w(TAG, fmt("Stream '%s' on VM %s is read-only", streamName, getId()));
-            return false;
-        }
-        try {
-            os.write(data.getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            return true;
-        } catch (Exception e) {
-            Log.w(TAG, fmt("writeStream failed: %s", e.getMessage()));
-            return false;
-        }
+    @Nullable
+    public ConsoleStream getStream(@NonNull String streamName) {
+        return backendInstance.streams.get(streamName);
     }
 
     public void joinThreads(long timeoutMs) {
@@ -377,8 +361,9 @@ public final class VMInstance extends VMConfig {
         } catch (JSONException ignored) {
         }
     }
+
     private void addStreamData(@NonNull String name, @NonNull String data) {
-        var stream = backendInstance.streams.get(name);
+        var stream = getStream(name);
         if (stream != null) addStreamData(stream, data);
     }
 
