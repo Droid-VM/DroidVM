@@ -4,6 +4,36 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+fun runGit(vararg args: String): String {
+    require(rootDir.resolve(".git").exists()) { "Not a git repository: $rootDir" }
+    val proc = ProcessBuilder("git", *args)
+        .directory(rootDir)
+        .redirectErrorStream(false)
+        .start()
+    val output = proc.inputStream.bufferedReader().readText().trim()
+    val exitCode = proc.waitFor()
+    require(exitCode == 0) { "git ${args.joinToString(" ")} failed with exit code $exitCode" }
+    return output
+}
+
+val gitCommitCount = runGit("rev-list", "--count", "HEAD").toInt()
+val gitShortSha = runGit("rev-parse", "--short", "HEAD")
+
+val gitDescribe = runGit("describe", "--long", "--tags")
+    .removePrefix("v").removePrefix("V")
+val generatedVersionName: String = if (gitDescribe.matches(Regex(".*-0-g[0-9a-f]+$"))) {
+    gitDescribe.replace(Regex("-0-g[0-9a-f]+$"), "")
+} else {
+    gitDescribe
+        .replace(Regex("([^-]*-g)"), "r\$1")
+        .replace("-", ".")
+}
+
+val generatedVersionCode: Int = gitCommitCount * 10
+
+println("Version name: $generatedVersionName")
+println("Version code: $generatedVersionCode")
+
 android {
     namespace = "cn.classfun.droidvm"
     compileSdk {
@@ -16,8 +46,8 @@ android {
         applicationId = "cn.classfun.droidvm"
         minSdk = 33
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.0.3"
+        versionCode = generatedVersionCode
+        versionName = generatedVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {

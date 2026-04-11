@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;36.0.0
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease
+
+      - name: Sign release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
+        env:
+          HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
+          APP_SIGN_KEY_JKS: ${{ secrets.APP_SIGN_KEY_JKS }}
+          APP_SIGN_KEY_PASS: ${{ secrets.APP_SIGN_KEY_PASS }}
+        run: |
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/36.0.0"
+          echo "$APP_SIGN_KEY_JKS" | base64 -d > /tmp/keystore.jks
+          UNSIGNED=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          ALIGNED="${UNSIGNED%.apk}-aligned.apk"
+          "${BUILD_TOOLS}/zipalign" -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "${BUILD_TOOLS}/apksigner" sign \
+            --ks /tmp/keystore.jks \
+            --ks-pass "pass:${APP_SIGN_KEY_PASS}" \
+            --key-pass "pass:${APP_SIGN_KEY_PASS}" \
+            --out "$UNSIGNED" \
+            "$ALIGNED"
+          rm -f "$ALIGNED" /tmp/keystore.jks
+
+      - name: Get version name
+        id: version
+        run: |
+          desc="$(git describe --long --tags | sed 's/^[vV]//')"
+          if echo "$desc" | grep -qE '\-0\-g[0-9a-f]+$'; then
+            ver="$(echo "$desc" | sed 's/-0-g[0-9a-f]*$//')"
+          else
+            ver="$(echo "$desc" | sed 's/\([^-]*-g\)/r\1/;s/-/./g')"
+          fi
+          echo "name=${ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DroidVM-${{ steps.version.outputs.name }}-debug
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DroidVM-${{ steps.version.outputs.name }}-release
+          path: app/build/outputs/apk/release/*.apk
