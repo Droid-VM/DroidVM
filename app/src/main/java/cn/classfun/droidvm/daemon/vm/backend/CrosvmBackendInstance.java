@@ -70,8 +70,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         run("echo madvise > /sys/kernel/mm/transparent_hugepage/enabled");
         run("echo madvise > /sys/kernel/mm/transparent_hugepage/defrag");
         run("echo advise > /sys/kernel/mm/transparent_hugepage/shmem_enabled");
-        run("echo 0 > /dev/memcg/apps/memory.force_empty");
-        run("echo 0 > /dev/memcg/system/memory.force_empty");
         run("echo 3 > /proc/sys/vm/drop_caches");
         run("echo 1 > /proc/sys/vm/compact_memory");
     }
