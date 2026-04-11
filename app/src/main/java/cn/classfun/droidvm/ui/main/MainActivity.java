@@ -17,6 +17,7 @@ import android.view.animation.OvershootInterpolator;
 import android.widget.CheckBox;
 import android.widget.LinearLayout;
 
+import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.coordinatorlayout.widget.CoordinatorLayout;
 import androidx.core.view.ViewCompat;
@@ -83,6 +84,12 @@ public final class MainActivity extends SwipeableTabActivity {
         appBarLayout = findViewById(R.id.app_bar);
         fab = findViewById(R.id.fab_add);
         bottomNav = findViewById(R.id.bottom_nav);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                moveTaskToBack(true);
+            }
+        });
         initSwipeHelper();
         initialize(savedInstanceState);
     }
