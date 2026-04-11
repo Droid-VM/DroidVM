@@ -141,7 +141,8 @@ public final class VMConsoleActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         if (terminalSession != null) try {
-            shellKillProcess(terminalSession.getPid());
+            if (terminalSession.isRunning())
+                shellKillProcess(terminalSession.getPid());
         } catch (Exception ignored) {
         }
         terminalSession = null;
