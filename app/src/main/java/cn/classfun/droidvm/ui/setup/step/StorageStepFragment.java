@@ -25,12 +25,17 @@ import androidx.annotation.Nullable;
 import com.google.android.material.button.MaterialButton;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
 public final class StorageStepFragment extends BaseCheckStepFragment {
     private static final String TAG = "StorageStepFragment";
     private ActivityResultLauncher<Intent> manageStorageLauncher;
     private MaterialButton btnGrant;
+
+    public StorageStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {

@@ -15,12 +15,17 @@ import androidx.transition.AutoTransition;
 import androidx.transition.TransitionManager;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
 
 public final class StartStepFragment extends BaseStepFragment {
     private TextView[] faqTitles;
     private TextView[] faqBodies;
     private ViewGroup rootLayout;
+
+    public StartStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Nullable
     @Override

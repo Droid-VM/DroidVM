@@ -14,9 +14,13 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.Privacy;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
 
 public final class PrivacyStepFragment extends BaseStepFragment {
+    public PrivacyStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Override
     public boolean isHiddenStep() {

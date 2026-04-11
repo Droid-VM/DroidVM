@@ -17,10 +17,15 @@ import androidx.annotation.Nullable;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.QcomChipName;
 import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
 public final class SocStepFragment extends BaseCheckStepFragment {
     private static final String TAG = "SocStepFragment";
+
+    public SocStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Nullable
     @Override

@@ -13,9 +13,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
 
 public final class DoneStepFragment extends BaseStepFragment {
+    public DoneStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
+
     @Nullable
     @Override
     public View onCreateView(

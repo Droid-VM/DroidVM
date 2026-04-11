@@ -19,17 +19,22 @@ import com.topjohnwu.superuser.Shell;
 import com.topjohnwu.superuser.internal.MainShell;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
 public final class RootStepFragment extends BaseCheckStepFragment {
     private static final String TAG = "RootStepFragment";
 
+    public RootStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
+
     @Nullable
     @Override
     public View onCreateView(
-            @NonNull LayoutInflater inflater,
-            @Nullable ViewGroup container,
-            @Nullable Bundle savedInstanceState
+        @NonNull LayoutInflater inflater,
+        @Nullable ViewGroup container,
+        @Nullable Bundle savedInstanceState
     ) {
         return inflater.inflate(R.layout.fragment_setup_step_root, container, false);
     }

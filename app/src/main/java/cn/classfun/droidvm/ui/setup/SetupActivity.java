@@ -72,14 +72,14 @@ public final class SetupActivity extends AppCompatActivity {
         setContentView(R.layout.activity_setup);
         fab = findViewById(R.id.fab_action);
         ALL_STEPS = new BaseStepFragment[]{
-            new StartStepFragment(),
-            new RootStepFragment(),
-            new SocStepFragment(),
-            new VirtualizationStepFragment(),
-            new StorageStepFragment(),
-            new PrivacyStepFragment(),
-            new ExtractStepFragment(),
-            new DoneStepFragment(),
+            new StartStepFragment(this),
+            new RootStepFragment(this),
+            new SocStepFragment(this),
+            new VirtualizationStepFragment(this),
+            new StorageStepFragment(this),
+            new PrivacyStepFragment(this),
+            new ExtractStepFragment(this),
+            new DoneStepFragment(this),
         };
         var targetStep = getIntent().getStringExtra(EXTRA_TARGET_STEP);
         if (targetStep != null) {
@@ -92,8 +92,6 @@ public final class SetupActivity extends AppCompatActivity {
                 steps = lst;
         }
         if (steps == null) steps = List.of(ALL_STEPS);
-        for (var step : steps)
-            step.activity = this;
         if (savedInstanceState == null)
             showStep(false, true);
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {

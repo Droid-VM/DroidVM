@@ -17,11 +17,16 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
 public final class ExtractStepFragment extends BaseCheckStepFragment {
     private static final String TAG = "ExtractStepFragment";
     private boolean extractNeeded = true;
+
+    public ExtractStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Override
     public void onAttach(@NonNull Context context) {

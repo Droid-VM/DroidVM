@@ -16,10 +16,15 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
 public final class VirtualizationStepFragment extends BaseCheckStepFragment {
     private static final String TAG = "VirtualizationStepFragment";
+
+    public VirtualizationStepFragment(SetupActivity activity) {
+        this.activity = activity;
+    }
 
     @Nullable
     @Override
