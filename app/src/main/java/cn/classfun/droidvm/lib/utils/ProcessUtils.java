@@ -6,10 +6,13 @@ import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
+import android.util.Log;
+
 import androidx.annotation.NonNull;
 
 @SuppressWarnings({"unused", "UnusedReturnValue"})
 public final class ProcessUtils {
+    private static final String TAG = "ProcessUtils";
     public static final int SIGHUP = 1;
     public static final int SIGINT = 2;
     public static final int SIGQUIT = 3;
@@ -52,6 +55,7 @@ public final class ProcessUtils {
     }
 
     public static boolean shellKillProcess(int pid, int signal) {
+        if (pid <= 1) throw new IllegalArgumentException(fmt("Invalid PID: %d", pid));
         return runList("kill", fmt("-%d", signal), String.valueOf(pid)).isSuccess();
     }
 
@@ -65,6 +69,7 @@ public final class ProcessUtils {
             var pid = parseInt(content.trim());
             return shellKillProcess(pid, signal);
         } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to kill process from pid file: %s", pidFile), e);
             return false;
         }
     }
