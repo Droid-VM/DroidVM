@@ -20,6 +20,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 
 import cn.classfun.droidvm.lib.store.base.JSONSerialize;
 import cn.classfun.droidvm.lib.utils.FileUtils;
@@ -44,6 +45,29 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     @NonNull
     public String getName() {
         return name;
+    }
+
+    public final boolean write(@NonNull String data) {
+        if (!isWritable()) {
+            Log.w(TAG, fmt("Stream '%s' on VM %s is not writable", name, config.getId()));
+            return false;
+        }
+        var os = getOutputStream();
+        if (os == null) {
+            Log.w(TAG, fmt("Stream '%s' on VM %s is read-only", name, config.getId()));
+            return false;
+        }
+        try {
+            os.write(data.getBytes(StandardCharsets.UTF_8));
+            os.flush();
+            return true;
+        } catch (Exception e) {
+            Log.w(TAG, fmt(
+                "writeStream '%s' on VM %s failed",
+                name, config.getId()
+            ), e);
+            return false;
+        }
     }
 
     public synchronized void appendBuffer(@NonNull String data) {
