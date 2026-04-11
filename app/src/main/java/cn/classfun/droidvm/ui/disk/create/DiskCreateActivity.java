@@ -2,17 +2,17 @@ package cn.classfun.droidvm.ui.disk.create;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
+import static cn.classfun.droidvm.lib.store.disk.DiskConfig.supportsCompress;
+import static cn.classfun.droidvm.lib.store.disk.DiskConfig.supportsPreallocate;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFilePath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.externalPath;
+import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 import static cn.classfun.droidvm.lib.utils.StringUtils.stripExtension;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
-import static cn.classfun.droidvm.lib.store.disk.DiskConfig.supportsCompress;
-import static cn.classfun.droidvm.lib.store.disk.DiskConfig.supportsPreallocate;
 import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.createIntent;
 
 import android.content.Intent;
@@ -28,7 +28,6 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.chip.Chip;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
@@ -38,10 +37,11 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
+import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
-import cn.classfun.droidvm.lib.size.SizeUnit;
+import cn.classfun.droidvm.lib.ui.BackAskHelper;
+import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
@@ -61,7 +61,6 @@ public final class DiskCreateActivity extends AppCompatActivity {
     private ChooseRowWidget chooseCompress;
     private SwitchRowWidget switchPreallocate;
     private FloatingActionButton fabCreate;
-    private MaterialToolbar toolbar;
     private CollapsingToolbarLayout collapsingToolbar;
     private ActivityResultLauncher<Uri> folderPickerLauncher;
     private ActivityResultLauncher<String[]> filePickerLauncher;
@@ -71,7 +70,6 @@ public final class DiskCreateActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_disk_create);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
-        toolbar = findViewById(R.id.toolbar);
         inputName = findViewById(R.id.input_name);
         inputFolder = findViewById(R.id.input_folder);
         inputSize = findViewById(R.id.input_size);
@@ -90,7 +88,7 @@ public final class DiskCreateActivity extends AppCompatActivity {
         var doc = new ActivityResultContracts.OpenDocument();
         filePickerLauncher = registerForActivityResult(doc, this::onFilePickerResult);
         collapsingToolbar.setTitle(getString(R.string.disk_create_title));
-        toolbar.setNavigationOnClickListener(v -> finish());
+        new BackAskHelper(this);
         var defaultFolder = pathJoin(externalPath(), "DroidVM");
         inputFolder.setText(defaultFolder);
         inputSize.setValue(1, SizeUnit.GB);

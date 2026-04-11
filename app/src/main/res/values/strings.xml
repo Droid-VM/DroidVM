@@ -760,4 +760,9 @@
     <string name="update_cancel">Cancel</string>
     <string name="update_download">Download</string>
     <string name="update_browser">Browser</string>
+
+    <string name="back_ask_title">Discard changes?</string>
+    <string name="back_ask_message">Are you sure you want to go back? All changes will be lost.</string>
+    <string name="back_ask_discard">Discard</string>
+    <string name="back_ask_keep_editing">Keep editing</string>
 </resources>

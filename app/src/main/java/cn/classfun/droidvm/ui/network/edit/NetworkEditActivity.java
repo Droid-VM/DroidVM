@@ -22,7 +22,6 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.util.ArrayList;
@@ -39,6 +38,7 @@ import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
+import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -57,7 +57,6 @@ public final class NetworkEditActivity extends AppCompatActivity {
     private TextView tvIPv4Empty, tvIPv6Empty;
     private TextInputRowWidget inputDhcpStart, inputDhcpEnd;
     private FloatingActionButton fab;
-    private MaterialToolbar toolbar;
     private NetworkStore store;
     @SuppressWarnings("unused")
     private boolean macManuallyEdited = false;
@@ -79,7 +78,6 @@ public final class NetworkEditActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_network_edit);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
-        toolbar = findViewById(R.id.toolbar);
         inputName = findViewById(R.id.input_name);
         inputBridgeName = findViewById(R.id.input_bridge_name);
         inputMac = findViewById(R.id.input_mac);
@@ -101,7 +99,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
     }
 
     private void initialize() {
-        toolbar.setNavigationOnClickListener(v -> finish());
+        new BackAskHelper(this);
         store = new NetworkStore();
         store.load(this);
         inputIPv4.setEndIconOnClickListener(v -> onAddIPv4());

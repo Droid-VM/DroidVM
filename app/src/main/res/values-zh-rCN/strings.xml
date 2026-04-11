@@ -721,4 +721,9 @@
     <string name="update_cancel">取消</string>
     <string name="update_download">下载</string>
     <string name="update_browser">浏览器</string>
+
+    <string name="back_ask_title">放弃更改？</string>
+    <string name="back_ask_message">确定要返回吗？所有更改将会丢失。</string>
+    <string name="back_ask_discard">放弃</string>
+    <string name="back_ask_keep_editing">继续编辑</string>
 </resources>

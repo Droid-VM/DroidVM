@@ -15,7 +15,6 @@ import androidx.annotation.NonNull;
 import androidx.core.widget.NestedScrollView;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.tabs.TabLayout;
 
@@ -25,6 +24,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.SwipeableTabActivity;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -36,7 +36,6 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public static final String EXTRA_VM_ID = "vm_id";
     private FloatingActionButton fab;
     private CollapsingToolbarLayout collapsingToolbar;
-    private MaterialToolbar toolbar;
     private TabLayout tabLayout;
     private NestedScrollView scrollView;
     private VMEditTab currentTab = VMEditTab.DEFAULT;
@@ -65,7 +64,6 @@ public final class VMEditActivity extends SwipeableTabActivity {
         setContentView(R.layout.activity_vm_edit);
         tabs = createTabInstances();
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
-        toolbar = findViewById(R.id.toolbar);
         tabLayout = findViewById(R.id.tab_layout);
         scrollView = findViewById(R.id.scroll_view);
         fab = findViewById(R.id.fab_create);
@@ -135,7 +133,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
         if (editVMId != null)
             this.editVMId = UUID.fromString(editVMId);
         editMode = editVMId != null;
-        toolbar.setNavigationOnClickListener(v -> finish());
+        new BackAskHelper(this);
         if (editMode) collapsingToolbar.setTitle(getString(R.string.edit_vm_title));
         fab.setOnClickListener(v -> doSave());
         setupTabs();
