@@ -2,7 +2,7 @@
   "hash": [
     {
       "file": "prebuilts/prebuilt-arm64-v8a.7z",
-      "sha256": "540278225a52b00a59515b5b752d894e530f497edeb7f259ccf2338c41cdf705"
+      "sha256": "263e905b4d33fecdaba1f0744384ff6bc4b7b478e65ecafd6ac8a50b0eeec55c"
     }, {
       "file": "bin/arm64-v8a/7za",
       "sha256": "8443af0bd27d694f0431c0e46fc33d149004e5d9f8c03d484cffb8b03e928531"
