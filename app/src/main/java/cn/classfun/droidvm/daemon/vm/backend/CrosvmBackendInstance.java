@@ -2,18 +2,16 @@ package cn.classfun.droidvm.daemon.vm.backend;
 
 import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static cn.classfun.droidvm.lib.natives.NativeProcess.RLIM_INFINITY;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
-import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
-import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
-import static cn.classfun.droidvm.lib.utils.RunUtils.run;
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
-import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.SIMPLEFB;
 import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.VIRTIO_GPU;
 import static cn.classfun.droidvm.lib.store.vm.GpuApi.VULKAN;
+import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
+import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
@@ -30,18 +28,18 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
-import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
+import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
-import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
-import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
+import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -65,14 +63,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         addStream(stderrStream);
         addStream(stdioStream);
         addStream(uartStream);
-    }
-
-    private void cleanUpMemory() {
-        run("echo madvise > /sys/kernel/mm/transparent_hugepage/enabled");
-        run("echo madvise > /sys/kernel/mm/transparent_hugepage/defrag");
-        run("echo advise > /sys/kernel/mm/transparent_hugepage/shmem_enabled");
-        run("echo 3 > /proc/sys/vm/drop_caches");
-        run("echo 1 > /proc/sys/vm/compact_memory");
     }
 
     @NonNull
@@ -99,18 +89,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
         try {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
-            String[] preload = {
-                pathJoin(DATA_DIR, "lib", "libsimpledump.so"),
-            };
-            builder.environment("LD_PRELOAD", String.join(":", preload));
-            builder.environment("LD_LIBRARY_PATH", pathJoin(DATA_DIR, "usr", "lib"));
+            prepareProcess(builder);
             if (uart != null) {
                 builder.preserveFd(uart.getOutputRemoteFd());
                 builder.preserveFd(uart.getInputRemoteFd());
             }
-            builder.maxOpenFiles(65536);
-            builder.maxLockedMemory(RLIM_INFINITY);
-            cleanUpMemory();
             var process = builder.start();
             if (uart != null)
                 uart.closeRemoteFd();
