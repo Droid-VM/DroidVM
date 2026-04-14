@@ -17,6 +17,8 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 
+import android.widget.TextView;
+
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
@@ -46,6 +48,7 @@ public final class TextInputRowWidget extends FrameLayout {
     private BigInteger maxValue = BigInteger.valueOf(Long.MAX_VALUE);
     private BigInteger precision = BigInteger.ONE;
     private final AtomicBoolean updatingValue = new AtomicBoolean(false);
+    private Runnable onFocusLostListener;
 
     public TextInputRowWidget(@NonNull Context context) {
         super(context);
@@ -211,7 +214,10 @@ public final class TextInputRowWidget extends FrameLayout {
             }
         });
         editText.setOnFocusChangeListener((v, hasFocus) -> {
-            if (!hasFocus) applyPrecision();
+            if (!hasFocus) {
+                applyPrecision();
+                if (onFocusLostListener != null) onFocusLostListener.run();
+            }
         });
         if (mode == MODE_SIZE)
             buttonView.setOnValueChangedListener(this::onUnitChanged);
@@ -339,6 +345,16 @@ public final class TextInputRowWidget extends FrameLayout {
 
     public void addTextChangedListener(@NonNull TextWatcher watcher) {
         editText.addTextChangedListener(watcher);
+    }
+
+    public void setOnFocusLostListener(@Nullable Runnable listener) {
+        this.onFocusLostListener = listener;
+    }
+
+    public void setOnEditorActionListener(
+        @Nullable TextView.OnEditorActionListener listener
+    ) {
+        editText.setOnEditorActionListener(listener);
     }
 
     @SuppressWarnings("unused")
