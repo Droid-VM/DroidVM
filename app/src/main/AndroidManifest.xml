@@ -159,5 +159,12 @@
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".ui.hugepage.HugePageActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="true"
+            android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+
     </application>
 </manifest>

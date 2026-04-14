@@ -31,6 +31,7 @@ import cn.classfun.droidvm.lib.api.Privacy;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.data.Language;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.base.MainBaseFragment;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.step.PrivacyStepFragment;
@@ -61,6 +62,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemCheckUpdate;
     private TextRowWidget itemPrivacy;
     private TextRowWidget itemApiManager;
+    private TextRowWidget itemHugepageReserve;
     private DaemonHelper daemon;
 
     @Override
@@ -107,6 +109,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemCheckUpdate = view.findViewById(R.id.item_check_update);
         itemPrivacy = view.findViewById(R.id.item_privacy);
         itemApiManager = view.findViewById(R.id.item_api_manager);
+        itemHugepageReserve = view.findViewById(R.id.item_hugepage_reserve);
         initSettings();
     }
 
@@ -124,6 +127,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
         bindOnClick(itemApiManager, this::showApiManager);
+        bindOnClick(itemHugepageReserve, this::showHugePageReserve);
         itemDaemonStatus.setSubtitle(R.string.settings_daemon_checking);
         itemDaemonStart.setVisibility(GONE);
         itemDaemonStop.setVisibility(GONE);
@@ -278,5 +282,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
                 new ApiManagerDialog(requireContext(), api).show();
             });
         });
+    }
+
+    private void showHugePageReserve() {
+        startActivity(new Intent(requireContext(), HugePageActivity.class));
     }
 }
