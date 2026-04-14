@@ -14,9 +14,10 @@ license:
       - https://github.com/google/crosvm
 
   - name: qemu
-    description: Image converter
+    description: QEMU System and Image converter
     license: GPL-2.0
     urls:
+      - https://github.com/qemu-gunyah/qemu-android-gunyah
       - https://gitlab.com/qemu-project/qemu
       - https://www.qemu.org/
 
