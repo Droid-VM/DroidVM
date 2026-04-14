@@ -11,7 +11,7 @@ public final class SimpleConsoleStream extends ConsoleStream {
 
     @Override
     public boolean isReadable() {
-        return false;
+        return true;
     }
 
     @Override
