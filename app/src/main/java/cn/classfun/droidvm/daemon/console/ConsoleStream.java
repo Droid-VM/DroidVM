@@ -170,7 +170,10 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
         if (!file.exists()) return;
         try {
             buffer.setLength(0);
-            appendBuffer(FileUtils.readFile(file));
+            var data = FileUtils.readFile(file);
+            if (data.length() > MAX_BUFFER_SIZE)
+                data = data.substring(data.length() - MAX_BUFFER_SIZE);
+            buffer.append(data);
         } catch (Exception e) {
             Log.w(TAG, fmt("Failed to load console log from %s", path), e);
         }
