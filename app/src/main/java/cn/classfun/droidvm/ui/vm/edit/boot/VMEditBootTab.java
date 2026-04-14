@@ -4,12 +4,11 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
-import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
 import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_INITRD_DEBUG;
 import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_KERNEL;
-import static cn.classfun.droidvm.lib.utils.FileUtils.shellAsyncCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFilePath;
+import static cn.classfun.droidvm.lib.utils.FileUtils.shellAsyncCheckExists;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 
 import android.view.MenuItem;
@@ -69,20 +68,15 @@ public final class VMEditBootTab extends VMEditBaseTab {
     @Override
     public void loadConfig(@NonNull VMConfig config) {
         var item = config.item;
-        boolean isUefi = true;
+        var useUefi = item.optBoolean("use_uefi", true);
         var kernel = item.optString("kernel", "");
         var initrd = item.optString("initrd", "");
         var cmdline = item.optString("cmdline", "");
-        if (!kernel.equals(PATH_EDK2_FIRMWARE)) isUefi = false;
-        if (!initrd.isEmpty()) isUefi = false;
-        if (!cmdline.isEmpty()) isUefi = false;
-        swUefi.setChecked(isUefi);
-        setUefiMode(isUefi);
-        if (!isUefi) {
-            inputKernel.setTextAndMoveCursor(kernel);
-            inputInitrd.setTextAndMoveCursor(initrd);
-            inputCmdline.setTextAndMoveCursor(cmdline);
-        }
+        swUefi.setChecked(useUefi);
+        setUefiMode(useUefi);
+        inputKernel.setTextAndMoveCursor(kernel);
+        inputInitrd.setTextAndMoveCursor(initrd);
+        inputCmdline.setTextAndMoveCursor(cmdline);
         swAutoUp.setChecked(item.optBoolean("auto_up", false));
     }
 
@@ -108,15 +102,10 @@ public final class VMEditBootTab extends VMEditBaseTab {
     @Override
     public void saveConfig(@NonNull VMConfig config) {
         var item = config.item;
-        if (swUefi.isChecked()) {
-            item.set("kernel", PATH_EDK2_FIRMWARE);
-            item.set("initrd", "");
-            item.set("cmdline", "");
-        } else {
-            item.set("kernel", inputKernel.getText());
-            item.set("initrd", inputInitrd.getText());
-            item.set("cmdline", inputCmdline.getText());
-        }
+        item.set("use_uefi", swUefi.isChecked());
+        item.set("kernel", inputKernel.getText());
+        item.set("initrd", inputInitrd.getText());
+        item.set("cmdline", inputCmdline.getText());
         item.set("auto_up", swAutoUp.isChecked());
     }
 

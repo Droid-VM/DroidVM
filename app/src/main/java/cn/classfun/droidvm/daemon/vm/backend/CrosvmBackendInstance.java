@@ -4,6 +4,7 @@ import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static cn.classfun.droidvm.lib.natives.NativeProcess.RLIM_INFINITY;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
+import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
@@ -184,9 +185,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildGpuCommand(args);
         buildVncCommand(args);
         buildSerialCommand(args);
-        var kernel = item.optString("kernel", "");
-        if (!kernel.isEmpty())
-            args.add(kernel);
+        if (item.optBoolean("use_uefi", true)) {
+            args.add(PATH_EDK2_FIRMWARE);
+        } else {
+            var kernel = item.optString("kernel", "");
+            if (!kernel.isEmpty())
+                args.add(kernel);
+        }
         return args;
     }
 
