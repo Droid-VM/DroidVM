@@ -152,6 +152,9 @@
     <string name="create_vm_name_hint">名称</string>
     <string name="create_vm_memory_hint">内存</string>
     <string name="create_vm_cpu_hint">CPU 数量</string>
+    <string name="create_vm_backend">后端</string>
+    <string name="create_vm_backend_crosvm">CrosVM</string>
+    <string name="create_vm_backend_qemu">QEMU</string>
     <string name="create_vm_btn">创建</string>
     <string name="create_vm_error_name_empty">名称不能为空</string>
     <string name="create_vm_error_name_invalid">名称包含无效字符</string>

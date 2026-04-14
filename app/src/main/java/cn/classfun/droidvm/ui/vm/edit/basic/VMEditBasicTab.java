@@ -11,6 +11,7 @@ import androidx.annotation.NonNull;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -32,6 +33,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
     private ChooseRowWidget chooseProtectedVm;
+    private ChooseRowWidget chooseBackend;
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -50,6 +52,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
+        chooseBackend = view.findViewById(R.id.choose_backend);
     }
 
     @Override
@@ -57,6 +60,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
+        chooseBackend.configure(VMBackend.class, VMBackend.CROSVM);
     }
 
     @Override
@@ -73,6 +77,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
+        chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
     }
 
     private boolean validateInputName(@NonNull VMStore store) {
@@ -146,5 +151,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("hugepages", swHugepages.isChecked());
         ProtectedVM pvm = chooseProtectedVm.getSelectedItem();
         item.set("protected_vm", pvm);
+        VMBackend backend = chooseBackend.getSelectedItem();
+        item.set("backend", backend);
     }
 }

@@ -154,6 +154,9 @@
     <string name="create_vm_name_hint">Name</string>
     <string name="create_vm_memory_hint">Memory</string>
     <string name="create_vm_cpu_hint">CPU Count</string>
+    <string name="create_vm_backend">Backend</string>
+    <string name="create_vm_backend_crosvm">CrosVM</string>
+    <string name="create_vm_backend_qemu">QEMU</string>
     <string name="create_vm_btn">Create</string>
     <string name="create_vm_error_name_empty">Name is required</string>
     <string name="create_vm_error_name_invalid">Name contains invalid characters</string>
