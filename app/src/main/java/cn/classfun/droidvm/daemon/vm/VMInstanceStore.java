@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
-import cn.classfun.droidvm.daemon.vm.backend.CrosvmBackend;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.base.DataStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -26,14 +25,14 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 public final class VMInstanceStore extends DataStore<VMInstance> {
     private static final String TAG = "VMInstanceStore";
     public final ServerContext context;
-    final BackendBase backend = new CrosvmBackend();
     volatile VMInstance.VMEventCallback eventCallback = null;
     NetworkInstanceStore networkStore;
 
     public VMInstanceStore(@NonNull ServerContext context) {
         super();
         this.context = context;
-        Log.i(TAG, fmt("VM store initialized (backend=%s)", backend.name()));
+        BackendBase.loadAll();
+        Log.i(TAG, "VM store initialized");
     }
 
     public void setEventCallback(@Nullable VMInstance.VMEventCallback cb) {

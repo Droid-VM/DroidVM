@@ -1,7 +1,9 @@
 package cn.classfun.droidvm.daemon.vm;
 
 import static java.util.Objects.requireNonNull;
+import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomAvailablePort;
+import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.generateRandomPassword;
 
@@ -22,9 +24,11 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
+import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
@@ -35,7 +39,8 @@ public final class VMInstance extends VMConfig {
     private NativeProcess process;
     private boolean stoppedByUser = false;
     private int exitCode = -1;
-    private final VMBackendInstance backendInstance;
+    private BackendBase backend;
+    private VMBackendInstance backendInstance;
     private Thread workerThread;
     private final VMInstanceStore store;
 
@@ -47,14 +52,32 @@ public final class VMInstance extends VMConfig {
     public VMInstance(@NonNull VMInstanceStore store) {
         super();
         this.store = store;
-        this.backendInstance = store.backend.create(this);
     }
 
     public VMInstance(@NonNull VMInstanceStore store, @NonNull JSONObject obj) throws JSONException {
         super(obj);
         this.store = store;
-        this.backendInstance = store.backend.create(this);
         if (obj.has("state")) state = VMState.valueOf(obj.getString("state"));
+    }
+
+    @NonNull
+    public BackendBase getBackend() {
+        if (this.backend == null) {
+            VMBackend backend = optEnum(this.item, "backend", VMBackend.DEFAULT);
+            this.backend = BackendBase.find(backend.name().toLowerCase());
+            if (this.backend == null) throw new RuntimeException(fmt(
+                "Backend %s not found for VM %s",
+                backend.name(), getName()
+            ));
+        }
+        return this.backend;
+    }
+
+    @NonNull
+    VMBackendInstance getBackendInstance() {
+        if (this.backendInstance == null)
+            this.backendInstance = getBackend().create(this);
+        return this.backendInstance;
     }
 
     @NonNull
@@ -95,11 +118,7 @@ public final class VMInstance extends VMConfig {
     }
 
     public boolean runControlCommand(@NonNull String command) {
-        if (backendInstance == null) {
-            Log.w(TAG, fmt("No backend instance for VM %s, cannot run %s", getId().toString(), command));
-            return false;
-        }
-        return backendInstance.runControlCommand(command) == 0;
+        return getBackendInstance().runControlCommand(command) == 0;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -118,7 +137,10 @@ public final class VMInstance extends VMConfig {
         workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
         workerThread.setDaemon(true);
         workerThread.start();
-        Log.i(TAG, fmt("Start requested for VM: %s [%s] via %s", getName(), vmIdStr, store.backend.name()));
+        Log.i(TAG, fmt(
+            "Start requested for VM: %s [%s] via %s",
+            getName(), vmIdStr, getBackend().name()
+        ));
         return true;
     }
 
@@ -212,7 +234,7 @@ public final class VMInstance extends VMConfig {
         }
         stoppedByUser = true;
         setState(VMState.STOPPING);
-        if (backendInstance != null && backendInstance.hasControlSocket()) {
+        if (getBackendInstance().hasControlSocket()) {
             Log.i(TAG, fmt("Stopping VM %s via control socket", getName()));
             if (runControlCommand("stop")) return true;
             Log.w(TAG, fmt("Control stop failed for VM %s, falling back to destroy", getName()));
@@ -220,6 +242,7 @@ public final class VMInstance extends VMConfig {
         if (process != null && process.isAlive()) {
             Log.i(TAG, fmt("Destroying VM %s process", getName()));
             process.destroy();
+            shellKillProcess(process.pid());
         }
         return true;
     }
@@ -250,17 +273,17 @@ public final class VMInstance extends VMConfig {
 
     @NonNull
     public List<String> getStreamNames() {
-        return new ArrayList<>(backendInstance.streams.keySet());
+        return new ArrayList<>(getBackendInstance().streams.keySet());
     }
 
     @NonNull
     public List<ConsoleStream> getStreams() {
-        return new ArrayList<>(backendInstance.streams.values());
+        return new ArrayList<>(getBackendInstance().streams.values());
     }
 
     @Nullable
     public ConsoleStream getStream(@NonNull String streamName) {
-        return backendInstance.streams.get(streamName);
+        return getBackendInstance().streams.get(streamName);
     }
 
     public void joinThreads(long timeoutMs) {
@@ -270,7 +293,7 @@ public final class VMInstance extends VMConfig {
             } catch (InterruptedException ignored) {
             }
         }
-        for (var stream : backendInstance.streams.values()) {
+        for (var stream : getBackendInstance().streams.values()) {
             var reader = stream.getReaderThread();
             if (reader != null && reader.isAlive()) {
                 try {
@@ -282,8 +305,9 @@ public final class VMInstance extends VMConfig {
     }
 
     private void runVM() {
+        var inst = getBackendInstance();
         var vmId = getId().toString();
-        var result = backendInstance.start();
+        var result = inst.start();
         if (!result.isSuccess()) {
             exitCode = -1;
             setState(VMState.STOPPED);
@@ -291,7 +315,7 @@ public final class VMInstance extends VMConfig {
             return;
         }
         process = result.getProcess();
-        for (var entry : backendInstance.streams.entrySet()) {
+        for (var entry : inst.streams.entrySet()) {
             var name = entry.getKey();
             var stream = entry.getValue();
             if (stream.isReadable() && stream.getInputStream() != null) {
@@ -300,7 +324,7 @@ public final class VMInstance extends VMConfig {
         }
         setState(VMState.RUNNING);
         int code = process.waitFor();
-        for (var stream : backendInstance.streams.values()) {
+        for (var stream : inst.streams.values()) {
             var reader = stream.getReaderThread();
             if (reader != null && reader.isAlive()) {
                 try {
@@ -311,7 +335,7 @@ public final class VMInstance extends VMConfig {
         }
         process = null;
         exitCode = code;
-        for (var stream : backendInstance.streams.values()) {
+        for (var stream : inst.streams.values()) {
             try {
                 stream.close();
             } catch (Exception ignored) {
@@ -324,7 +348,7 @@ public final class VMInstance extends VMConfig {
             Log.i(TAG, fmt("VM %s exited with code %d", getName(), code));
         }
         cleanupTap();
-        backendInstance.cleanup();
+        inst.cleanup();
         setState(VMState.STOPPED);
         fireEvent("exited", null);
     }
@@ -388,7 +412,7 @@ public final class VMInstance extends VMConfig {
         obj.put("state", state.name());
         obj.put("pid", getPid());
         var streamNames = new JSONArray();
-        for (var name : backendInstance.streams.keySet())
+        for (var name : getBackendInstance().streams.keySet())
             streamNames.put(name);
         obj.put("streams", streamNames);
         return obj;
