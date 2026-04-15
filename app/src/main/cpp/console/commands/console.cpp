@@ -1,5 +1,6 @@
 #include "../command.h"
 #include "../ipc_proto.h"
+#include <fcntl.h>
 #include <cstdlib>
 #include <unistd.h>
 #include <termios.h>
@@ -39,6 +40,17 @@ void ConsoleCommand::console_list(const std::string &vm) {
     printf("Available console streams for VM %s:\n", vm_id.c_str());
     for (const auto &n: data)
         printf("  %s\n", n.asCString());
+}
+
+static void clear_read_buffer(int fd) {
+    char buff[64];
+    int fl = fcntl(fd, F_GETFL);
+    if (fl >= 0) fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+    while (true) {
+        auto ret = read(fd, buff, sizeof(buff));
+        if (ret <= 0) break;
+    }
+    if (fl >= 0) fcntl(fd, F_SETFL, fl);
 }
 
 void ConsoleCommand::console_attach(
@@ -102,6 +114,9 @@ void ConsoleCommand::console_attach(
         tcsetattr(STDIN_FILENO, TCSANOW, &raw);
     }
     bool running = true;
+    signal(SIGHUP, exit);
+    usleep(200000);
+    clear_read_buffer(STDIN_FILENO);
     while (running) {
         pollfd fds[2];
         int nfds = 0;
