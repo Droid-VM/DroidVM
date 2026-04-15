@@ -111,7 +111,7 @@ public final class ClientHandler implements Closeable {
         try {
             var handler = req.findHandler();
             if (handler == null) throw new RequestException(fmt(
-                "command handler %s found", cmd
+                "command handler %s not found", cmd
             ));
             if (!authorized && handler.needAuthorization())
                 throw new RequestException("client is not authorized to perform this action");
