@@ -62,7 +62,7 @@ void ConsoleCommand::console_attach(
         fprintf(
             stderr,
             "[droidvm] Attached to VM \"%s\" stream \"%s\"\n"
-            "Press Ctrl-[ to detach.\n", vm_id.c_str(), stream.c_str()
+            "Press Ctrl-] to detach.\n", vm_id.c_str(), stream.c_str()
         );
     }
     {
@@ -167,23 +167,10 @@ void ConsoleCommand::console_attach(
             char buf[256];
             ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
             if (n > 0) {
-                if (n == 1 && buf[0] == 0x1B) {
-                    pollfd esc_poll{};
-                    esc_poll.fd = STDIN_FILENO;
-                    esc_poll.events = POLLIN;
-                    int esc_ret = poll(&esc_poll, 1, 50);
-                    if (esc_ret > 0
-                        && (esc_poll.revents & POLLIN)) {
-                        ssize_t extra = read(
-                            STDIN_FILENO, buf + 1, sizeof(buf) - 1
-                        );
-                        if (extra > 0) n += extra;
-                    } else {
-                        fprintf(stderr,
-                                "\n[droidvm] Detached.\n");
-                        running = false;
-                        continue;
-                    }
+                if (n == 1 && buf[0] == 0x1D) {
+                    fprintf(stderr, "\n[droidvm] Detached.\n");
+                    running = false;
+                    continue;
                 }
                 if (!writable) {
                     static bool warned = false;
