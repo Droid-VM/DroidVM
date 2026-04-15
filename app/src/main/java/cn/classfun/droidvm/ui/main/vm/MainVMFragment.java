@@ -82,7 +82,7 @@ public final class MainVMFragment
         var id = item.getItemId();
         if (id == R.id.menu_vm_edit) {
             var intent = new Intent(ctx, VMEditActivity.class);
-            intent.putExtra(VMEditActivity.EXTRA_VM_ID, config.getId());
+            intent.putExtra(VMEditActivity.EXTRA_VM_ID, config.getId().toString());
             startActivity(intent);
         } else if (id == R.id.menu_vm_delete) {
             confirmDeleteVM(config);
