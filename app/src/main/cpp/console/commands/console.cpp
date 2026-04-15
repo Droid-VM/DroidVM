@@ -12,7 +12,7 @@ public:
     [[nodiscard]] const char *
     description() const override { return "List or attach to VM console stream"; }
 
-    [[nodiscard]] const char *usage() const override { return "<vm_id> [stream]"; }
+    [[nodiscard]] const char *usage() const override { return "[--raw] <vm_id> [stream]"; }
 
     [[nodiscard]] int min_args() const override { return 1; }
 
@@ -21,7 +21,7 @@ public:
 private:
     static void console_list(const std::string &vm);
 
-    static void console_attach(const std::string &vm, const std::string &stream);
+    static void console_attach(bool is_raw, const std::string &vm, const std::string &stream);
 };
 
 void ConsoleCommand::console_list(const std::string &vm) {
@@ -42,7 +42,7 @@ void ConsoleCommand::console_list(const std::string &vm) {
 }
 
 void ConsoleCommand::console_attach(
-    const std::string &vm, const std::string &stream
+    bool is_raw, const std::string &vm, const std::string &stream
 ) {
     auto ipc = IPCClient::get();
     auto vm_id = resolve_vm_id(vm);
@@ -61,9 +61,10 @@ void ConsoleCommand::console_attach(
     if (tty) {
         fprintf(
             stderr,
-            "[droidvm] Attached to VM \"%s\" stream \"%s\"\n"
-            "Press Ctrl-] to detach.\n", vm_id.c_str(), stream.c_str()
+            "[droidvm] Attached to VM \"%s\" stream \"%s\"\n",
+            vm_id.c_str(), stream.c_str()
         );
+        if (!is_raw) fprintf(stderr, "Press Ctrl-] to detach.\n");
     }
     {
         Json::Value req;
@@ -167,7 +168,7 @@ void ConsoleCommand::console_attach(
             char buf[256];
             ssize_t n = read(STDIN_FILENO, buf, sizeof(buf));
             if (n > 0) {
-                if (n == 1 && buf[0] == 0x1D) {
+                if (!is_raw && n == 1 && buf[0] == 0x1D) {
                     fprintf(stderr, "\n[droidvm] Detached.\n");
                     running = false;
                     continue;
@@ -196,10 +197,20 @@ void ConsoleCommand::console_attach(
 }
 
 int ConsoleCommand::run(int argc, char *argv[]) {
+    bool is_raw = false;
+    if (argc >= 3 && strcmp(argv[2], "--raw") == 0) {
+        is_raw = true;
+        argc--;
+        argv++;
+    }
+    if (argc < 3) {
+        fprintf(stderr, "Usage: %s %s %s\n", argv[0], name(), usage());
+        return 1;
+    }
     if (argc < 4) {
         console_list(argv[2]);
     } else {
-        console_attach(argv[2], argv[3]);
+        console_attach(is_raw, argv[2], argv[3]);
     }
     return 0;
 }
