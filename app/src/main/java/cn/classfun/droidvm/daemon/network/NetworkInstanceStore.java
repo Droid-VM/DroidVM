@@ -56,6 +56,31 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
         return netIdStr;
     }
 
+    @Nullable
+    public String modifyNetwork(@NonNull NetworkConfig config) {
+        var netId = config.getId();
+        if (netId == null) {
+            Log.e(TAG, "Cannot modify network: missing id");
+            return null;
+        }
+        var netIdStr = netId.toString();
+        var existing = findById(netId);
+        if (existing == null) {
+            Log.w(TAG, fmt("Network %s not found", netIdStr));
+            return null;
+        }
+        if (existing.getState() != STOPPED) {
+            Log.w(TAG, fmt("Network %s is not stopped, cannot modify", netIdStr));
+            return null;
+        }
+        removeById(netId);
+        var inst = getNetworkInstance(config, netIdStr);
+        add(inst);
+        Log.i(TAG, fmt("Modified network: %s [%s] bridge=%s",
+            config.getName(), netIdStr, config.item.optString("bridge_name", "")));
+        return netIdStr;
+    }
+
     @NonNull
     private NetworkInstance getNetworkInstance(@NonNull NetworkConfig config, String netIdStr) {
         var inst = new NetworkInstance(this);
