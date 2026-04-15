@@ -5,6 +5,7 @@ import static android.view.KeyEvent.*;
 import static android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getAssetBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
+import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -142,7 +143,7 @@ public final class VMConsoleActivity extends AppCompatActivity {
         super.onDestroy();
         if (terminalSession != null) try {
             if (terminalSession.isRunning())
-                shellKillProcess(terminalSession.getPid());
+                shellKillProcess(terminalSession.getPid(), SIGHUP);
         } catch (Exception ignored) {
         }
         terminalSession = null;

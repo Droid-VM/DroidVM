@@ -3,7 +3,7 @@ package cn.classfun.droidvm.ui.disk.operation;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
-import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGINT;
+import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.dirname;
@@ -278,7 +278,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private void sendSigint() {
         if (session != null && !finished && session.isRunning()) {
             Log.i(TAG, "Sending SIGINT to process");
-            shellKillProcess(session.getPid(), SIGINT);
+            shellKillProcess(session.getPid(), SIGHUP);
         }
     }
 }

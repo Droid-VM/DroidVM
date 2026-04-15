@@ -3,6 +3,7 @@ package cn.classfun.droidvm.ui.agent;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
+import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
@@ -303,7 +304,7 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (terminalSession != null) {
             try {
                 if (terminalSession.isRunning())
-                    shellKillProcess(terminalSession.getPid());
+                    shellKillProcess(terminalSession.getPid(), SIGHUP);
             } catch (Exception ignored) {
             }
             terminalSession = null;
