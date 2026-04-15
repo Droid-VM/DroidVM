@@ -104,6 +104,18 @@ public final class NetworkEditActivity extends AppCompatActivity {
         store.load(this);
         inputIPv4.setEndIconOnClickListener(v -> onAddIPv4());
         inputIPv6.setEndIconOnClickListener(v -> onAddIPv6());
+        inputIPv4.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                inputIPv4.setError(null);
+            }
+        });
+        inputIPv6.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                inputIPv6.setError(null);
+            }
+        });
         swDhcp.setOnCheckedChangeListener((btn, checked) ->
             groupDhcp.setVisibility(checked ? VISIBLE : GONE));
         fab.setOnClickListener(v -> onSaveClicked());
