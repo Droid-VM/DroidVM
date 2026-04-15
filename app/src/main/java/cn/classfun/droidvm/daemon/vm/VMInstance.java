@@ -16,7 +16,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -26,6 +25,7 @@ import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -316,11 +316,9 @@ public final class VMInstance extends VMConfig {
         }
         process = result.getProcess();
         for (var entry : inst.streams.entrySet()) {
-            var name = entry.getKey();
             var stream = entry.getValue();
-            if (stream.isReadable() && stream.getInputStream() != null) {
-                startReaderThread(vmId, name, stream);
-            }
+            if (stream.isReadable() && stream.getInputStream() != null)
+                startReaderThread(vmId, stream);
         }
         setState(VMState.RUNNING);
         int code = process.waitFor();
@@ -366,10 +364,13 @@ public final class VMInstance extends VMConfig {
         }
     }
 
-    private void startReaderThread(@NonNull String vmId, @NonNull String streamName, @NonNull ConsoleStream stream) {
-        var is = stream.getInputStream();
-        if (is == null) return;
-        var reader = new Thread(() -> readStream(vmId, streamName, is), fmt("Reader-%s-%s", vmId, streamName));
+    private void startReaderThread(@NonNull String vmId, @NonNull ConsoleStream stream) {
+        var streamName = stream.getName();
+        if (!stream.isReadable()) return;
+        var reader = new Thread(
+            () -> readStream(vmId, stream),
+            fmt("Reader-%s-%s", vmId, streamName)
+        );
         reader.setDaemon(true);
         stream.setReaderThread(reader);
         reader.start();
@@ -391,11 +392,25 @@ public final class VMInstance extends VMConfig {
         if (stream != null) addStreamData(stream, data);
     }
 
-    private void readStream(@NonNull String vmId, @NonNull String streamName, @NonNull InputStream inputStream) {
+    private void readStream(@NonNull String vmId, @NonNull ConsoleStream stream) {
         byte[] buf = new byte[4096];
+        var streamName = stream.getName();
+        if (!stream.isReadable()) return;
+        var fd = stream.getPosixReadFd();
+        var is = stream.getInputStream();
         try {
             int n;
-            while ((n = inputStream.read(buf)) > 0) {
+            while (true) {
+                if (fd > 0) {
+                    int pollRet = UnixHelper.nativePollIn(fd, 1000);
+                    if (pollRet < 0) break;
+                    if (pollRet == 0) continue;
+                    n = UnixHelper.nativeRead(fd, buf, buf.length);
+                    if (n <= 0) break;
+                } else if (is != null) {
+                    n = is.read(buf);
+                    if (n <= 0) break;
+                } else break;
                 var chunk = new String(buf, 0, n, StandardCharsets.UTF_8);
                 addStreamData(streamName, chunk);
                 if (streamName.equals("stdout") || streamName.equals("stderr"))
