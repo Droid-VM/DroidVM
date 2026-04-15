@@ -78,6 +78,16 @@ void ConsoleCommand::console_attach(
         );
         if (!is_raw) fprintf(stderr, "Press Ctrl-] to detach.\n");
     }
+    int event_fd = ipc->get_fd();
+    struct termios orig_termios{};
+    if (tty) {
+        tcgetattr(STDIN_FILENO, &orig_termios);
+        struct termios raw = orig_termios;
+        raw.c_lflag &= ~(ICANON | ECHO | ISIG);
+        raw.c_cc[VMIN] = 0;
+        raw.c_cc[VTIME] = 0;
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    }
     {
         Json::Value req;
         req["command"] = "vm_console_history";
@@ -99,19 +109,11 @@ void ConsoleCommand::console_attach(
         readable = resp["data"]["readable"].asBool();
         writable = resp["data"]["writable"].asBool();
         if (!readable) {
+            if (tty)
+                tcsetattr(STDIN_FILENO, TCSANOW, &orig_termios);
             fprintf(stderr, "\n[droidvm] Console stream is not readable.\n");
             return;
         }
-    }
-    int event_fd = ipc->get_fd();
-    struct termios orig_termios{};
-    if (tty) {
-        tcgetattr(STDIN_FILENO, &orig_termios);
-        struct termios raw = orig_termios;
-        raw.c_lflag &= ~(ICANON | ECHO | ISIG);
-        raw.c_cc[VMIN] = 0;
-        raw.c_cc[VTIME] = 0;
-        tcsetattr(STDIN_FILENO, TCSANOW, &raw);
     }
     bool running = true;
     signal(SIGHUP, exit);
