@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <android/log.h>
@@ -193,4 +194,43 @@ JNI_PREFIX(nativeCloseFd)(
     (void) env;
     (void) clazz;
     if (fd >= 0) close(fd);
+}
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativePollIn)(
+    JNIEnv *env, jclass clazz, jint fd, jint timeoutMs
+) {
+    (void) env;
+    (void) clazz;
+    struct pollfd pfd;
+    pfd.fd = fd;
+    pfd.events = POLLIN;
+    pfd.revents = 0;
+    int ret;
+    do {
+        ret = poll(&pfd, 1, timeoutMs);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) return -1;
+    if (ret == 0) return 0;
+    if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) return -2;
+    if (pfd.revents & POLLIN) return 1;
+    return 0;
+}
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeRead)(
+    JNIEnv *env, jclass clazz, jint fd, jbyteArray buf, jint len
+) {
+    (void) clazz;
+    if (!buf) return -1;
+    jint arrLen = (*env)->GetArrayLength(env, buf);
+    if (len > arrLen) len = arrLen;
+    jbyte *bytes = (*env)->GetByteArrayElements(env, buf, NULL);
+    if (!bytes) return -1;
+    ssize_t n;
+    do {
+        n = read(fd, bytes, len);
+    } while (n < 0 && errno == EINTR);
+    (*env)->ReleaseByteArrayElements(env, buf, bytes, n > 0 ? 0 : JNI_ABORT);
+    return (jint) n;
 }

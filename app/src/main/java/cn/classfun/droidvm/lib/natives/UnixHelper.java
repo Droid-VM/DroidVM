@@ -43,6 +43,10 @@ public final class UnixHelper {
     @SuppressWarnings("unused")
     public static native int[] nativePipe();
 
+    public static native int nativePollIn(int fd, int timeoutMs);
+
+    public static native int nativeRead(int fd, @NonNull byte[] buf, int len);
+
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     public static void load() {
         if (loaded) return;
