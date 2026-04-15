@@ -116,7 +116,7 @@ public final class VMConsoleActivity extends AppCompatActivity {
         var shell = findExecute("su", "/system/bin/su");
         var cwd = getFilesDir().getAbsolutePath();
         var cmd = fmt(
-            "%s console %s %s",
+            "exec %s console --raw %s %s",
             escapedString(consoleBin),
             escapedString(vmId),
             escapedString(streamName)
