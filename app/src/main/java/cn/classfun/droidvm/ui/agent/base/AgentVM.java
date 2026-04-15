@@ -107,6 +107,7 @@ public final class AgentVM implements JSONSerialize {
         vm.item.set("temporary", true);
         vm.item.set("cpu_count", 1);
         vm.item.set("memory_mb", 384);
+        vm.item.set("use_uefi", false);
         vm.item.set("kernel", PATH_BUILTIN_KERNEL);
         vm.item.set("initrd", PATH_BUILTIN_INITRD);
         vm.item.set("cmdline", "rd.systemd.unit=host-agent.target");
