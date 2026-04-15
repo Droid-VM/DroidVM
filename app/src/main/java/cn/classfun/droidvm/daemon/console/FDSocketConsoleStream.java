@@ -25,6 +25,16 @@ public final class FDSocketConsoleStream extends ConsoleStream {
         return socket != null ? socket.getFd() : -1;
     }
 
+    @Override
+    public int getPosixReadFd() {
+        return getFd();
+    }
+
+    @Override
+    public int getPosixWriteFd() {
+        return getFd();
+    }
+
     public boolean isReady() {
         return socket != null && socket.isOpen();
     }

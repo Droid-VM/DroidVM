@@ -47,6 +47,16 @@ public final class FDPipeConsoleStream extends ConsoleStream {
         }
     }
 
+    @Override
+    public int getPosixReadFd() {
+        return readPfd == null ? -1 : readPfd.getFd();
+    }
+
+    @Override
+    public int getPosixWriteFd() {
+        return writePfd == null ? -1 : writePfd.getFd();
+    }
+
     public boolean isReady() {
         return readPfd != null || writePfd != null;
     }

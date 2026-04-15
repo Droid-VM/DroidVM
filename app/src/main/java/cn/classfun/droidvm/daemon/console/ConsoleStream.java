@@ -121,6 +121,16 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     @SuppressWarnings("unused")
     public abstract boolean isWritable();
 
+    @SuppressWarnings("unused")
+    public int getPosixReadFd() {
+        return -1;
+    }
+
+    @SuppressWarnings("unused")
+    public int getPosixWriteFd() {
+        return -1;
+    }
+
     @Nullable
     @SuppressWarnings("unused")
     public InputStream getInputStream() {
