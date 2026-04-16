@@ -7,23 +7,28 @@ public:
 
     [[nodiscard]] const char *description() const override { return "Get VM console history"; }
 
-    [[nodiscard]] const char *usage() const override { return "<vm_id> [stream]"; }
+    [[nodiscard]] const char *usage() const override { return "<vm_id> <stream>"; }
 
-    [[nodiscard]] int min_args() const override { return 1; }
+    [[nodiscard]] int min_args() const override { return 2; }
 
     int run(int argc, char *argv[]) override;
 };
 
-int ConsoleHistoryCommand::run(int argc, char *argv[]) {
+int ConsoleHistoryCommand::run(int, char *argv[]) {
     auto ipc = IPCClient::get();
     auto vm_id = resolve_vm_id(argv[2]);
     Json::Value req;
     req["command"] = "vm_console_history";
     req["vm_id"] = vm_id;
-    if (argc >= 4 && argv[3][0])
-        req["stream"] = argv[3];
+    req["stream"] = argv[3];
     auto resp = ipc->send_request(req);
-    print_response(resp);
+    auto data = resp.get(argv[3], "");
+    if (data.empty()) return 0;
+    auto chunk = url_decode_all(data.asString());
+    if (chunk.empty()) return 0;
+    fwrite(chunk.c_str(), 1, chunk.size(), stdout);
+    fwrite("\r\n", 1, 2, stdout);
+    fflush(stdout);
     return 0;
 }
 

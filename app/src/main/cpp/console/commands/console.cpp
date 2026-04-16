@@ -22,7 +22,27 @@ public:
 private:
     static void console_list(const std::string &vm);
 
-    static void console_attach(bool is_raw, const std::string &vm, const std::string &stream);
+    void console_attach(bool is_raw, const std::string &vm, const std::string &stream);
+
+    void process_event(
+        const Json::Value &msg,
+        const std::string &filter_vm,
+        const std::string &stream
+    );
+
+    void iter_events(
+        const std::shared_ptr<IPCClient> &ipc,
+        const std::string &filter_vm,
+        const std::string &stream
+    );
+
+    void drain_events(
+        const std::shared_ptr<IPCClient> &ipc,
+        const std::string &filter_vm,
+        const std::string &stream
+    );
+
+    bool running = false;
 };
 
 void ConsoleCommand::console_list(const std::string &vm) {
@@ -51,6 +71,68 @@ static void clear_read_buffer(int fd) {
         if (ret <= 0) break;
     }
     if (fl >= 0) fcntl(fd, F_SETFL, fl);
+}
+
+void ConsoleCommand::process_event(
+    const Json::Value &msg,
+    const std::string &filter_vm,
+    const std::string &stream
+) {
+    auto edata = msg.get("data", Json::Value::null);
+    if (edata.isNull()) return;
+    auto event = edata.get("event", "").asString();
+    auto evt_vm = edata.get("vm_id", "").asString();
+    if (evt_vm != filter_vm) return;
+    if (event == "output") {
+        auto evt_stream = edata.get("stream", "").asString();
+        if (evt_stream != stream) return;
+        auto raw = edata.get("data", "").asString();
+        if (!raw.empty()) {
+            fwrite(raw.c_str(), 1, raw.size(), stdout);
+            fflush(stdout);
+        }
+    } else if (event == "exited" || event == "state") {
+        auto state = edata.get("state", "").asString();
+        if (state == "stopped") {
+            int code = edata.get("exit_code", -1).asInt();
+            fprintf(stderr, "\n[droidvm] VM exited (code %d).\n", code);
+            running = false;
+        }
+    }
+}
+
+void ConsoleCommand::iter_events(
+    const std::shared_ptr<IPCClient> &ipc,
+    const std::string &filter_vm,
+    const std::string &stream
+) {
+    for (auto iter = ipc->messages.begin(); iter != ipc->messages.end();) {
+        auto &msg = *iter;
+        auto type = msg.get("type", "").asString();
+        if (type == "event") {
+            process_event(msg, filter_vm, stream);
+            iter = ipc->messages.erase(iter);
+            continue;
+        }
+        iter++;
+    }
+}
+
+void ConsoleCommand::drain_events(
+    const std::shared_ptr<IPCClient> &ipc,
+    const std::string &filter_vm,
+    const std::string &stream
+) {
+    ipc->wait_for_message();
+    iter_events(ipc, filter_vm, stream);
+    pollfd pfd{};
+    pfd.fd = ipc->get_fd();
+    pfd.events = POLLIN;
+    while (poll(&pfd, 1, 0) > 0 && (pfd.revents & POLLIN)) {
+        ipc->wait_for_message();
+        iter_events(ipc, filter_vm, stream);
+        if (!running) break;
+    }
 }
 
 void ConsoleCommand::console_attach(
@@ -96,8 +178,11 @@ void ConsoleCommand::console_attach(
         auto resp = ipc->send_request(req);
         auto buf = resp.get(stream, "").asString();
         if (!buf.empty()) {
-            fwrite(buf.c_str(), 1, buf.size(), stdout);
-            fflush(stdout);
+            auto chunk = url_decode_all(buf);
+            if (!chunk.empty()) {
+                fwrite(chunk.c_str(), 1, chunk.size(), stdout);
+                fflush(stdout);
+            }
         }
     }
     {
@@ -115,11 +200,12 @@ void ConsoleCommand::console_attach(
             return;
         }
     }
-    bool running = true;
+    running = true;
     signal(SIGHUP, exit);
     usleep(200000);
     clear_read_buffer(STDIN_FILENO);
     while (running) {
+        iter_events(ipc, filter_vm, stream);
         pollfd fds[2];
         int nfds = 0;
         fds[nfds].fd = event_fd;
@@ -130,7 +216,6 @@ void ConsoleCommand::console_attach(
             fds[nfds].events = POLLIN;
             nfds++;
         }
-
         int ret = poll(fds, nfds, 1000);
         if (ret < 0) {
             if (errno == EINTR) continue;
@@ -139,39 +224,7 @@ void ConsoleCommand::console_attach(
         }
         if (fds[0].revents & POLLIN) {
             try {
-                auto msg = ipc->recv_packet();
-                auto type = msg.get("type", "").asString();
-                if (type == "event") {
-                    auto edata = msg.get("data", Json::Value::null);
-                    if (!edata.isNull()) {
-                        auto event = edata.get("event", "").asString();
-                        auto evt_vm = edata.get("vm_id", "").asString();
-                        if (event == "output" && evt_vm == filter_vm) {
-                            auto evt_stream =
-                                edata.get("stream", "").asString();
-                            if (evt_stream != stream) continue;
-                            auto chunk =
-                                edata.get("data", "").asString();
-                            if (!chunk.empty()) {
-                                fwrite(chunk.c_str(), 1,
-                                       chunk.size(), stdout);
-                                fflush(stdout);
-                            }
-                        } else if ((event == "exited" || event == "state")
-                                   && evt_vm == filter_vm) {
-                            auto state =
-                                edata.get("state", "").asString();
-                            if (state == "stopped") {
-                                int code =
-                                    edata.get("exit_code", -1).asInt();
-                                fprintf(stderr,
-                                        "\n[droidvm] VM exited "
-                                        "(code %d).\n", code);
-                                running = false;
-                            }
-                        }
-                    }
-                }
+                drain_events(ipc, filter_vm, stream);
             } catch (const std::exception &e) {
                 fprintf(stderr, "\n[droidvm] Daemon disconnected: %s\n", e.what());
                 break;

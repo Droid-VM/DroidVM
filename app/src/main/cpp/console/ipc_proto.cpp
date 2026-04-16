@@ -196,16 +196,20 @@ Json::Value IPCClient::wait_for_request(const std::string &request_id) {
         if (msg.get("request_id", "").asString() != request_id) return false;
         return true;
     };
-    for (auto &msg: messages) {
-        if (!check(msg)) continue;
-        messages.remove(msg);
-        return msg;
-    }
     while (true) {
-        auto msg = recv_packet();
-        if (check(msg)) return msg;
-        messages.push_back(msg);
+        for (auto iter = messages.begin(); iter != messages.end(); ++iter) {
+            if (!check(*iter)) continue;
+            Json::Value result = std::move(*iter);
+            messages.erase(iter);
+            return result;
+        }
+        wait_for_message();
     }
+}
+
+void IPCClient::wait_for_message() {
+    auto msg = recv_packet();
+    messages.push_back(msg);
 }
 
 Json::Value IPCClient::send_request(const Json::Value &req) {
@@ -237,4 +241,29 @@ std::shared_ptr<IPCClient> IPCClient::get() {
     if (!instance)
         instance = std::make_shared<IPCClient>();
     return instance;
+}
+
+static inline int hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+std::string url_decode_all(const std::string &src) {
+    std::string out;
+    out.reserve(src.size() / 3);
+    for (size_t i = 0; i < src.size();) {
+        if (src[i] == '%' && i + 2 < src.size()) {
+            int hi = hex_val(src[i + 1]);
+            int lo = hex_val(src[i + 2]);
+            if (hi >= 0 && lo >= 0) {
+                out += static_cast<char>((hi << 4) | lo);
+                i += 3;
+                continue;
+            }
+        }
+        out += src[i++];
+    }
+    return out;
 }

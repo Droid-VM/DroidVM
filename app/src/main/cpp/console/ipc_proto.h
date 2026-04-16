@@ -49,10 +49,15 @@ public:
 
     Json::Value wait_for_request(const std::string &request_id);
 
+    void wait_for_message();
+
     bool authenticate();
+
+    std::list<Json::Value> messages{};
 
 private:
     int fd = -1;
 
-    std::list<Json::Value> messages{};
 };
+
+extern std::string url_decode_all(const std::string &src);
