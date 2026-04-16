@@ -190,4 +190,23 @@ public final class StringUtils {
     public static String base64DecodeToString(@NonNull String data) {
         return new String(base64DecodeToBytes(data), UTF_8);
     }
+
+    private static final char[] HEX = "0123456789ABCDEF".toCharArray();
+
+    @NonNull
+    public static String urlEncodeBytesAll(@NonNull byte[] data, int off, int len) {
+        var chars = new char[len * 3];
+        for (int i = 0, j = 0; i < len; i++) {
+            int b = data[off + i] & 0xFF;
+            chars[j++] = '%';
+            chars[j++] = HEX[b >>> 4];
+            chars[j++] = HEX[b & 0x0F];
+        }
+        return new String(chars);
+    }
+
+    @NonNull
+    public static String urlEncodeBytesAll(@NonNull byte[] data) {
+        return urlEncodeBytesAll(data, 0, data.length);
+    }
 }
