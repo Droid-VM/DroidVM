@@ -30,6 +30,7 @@ import com.termux.view.TerminalView;
 
 import org.json.JSONObject;
 
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 
 import cn.classfun.droidvm.DroidVMApp;
@@ -234,7 +235,7 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (!eventVmId.equals(vmId)) return;
         var event = data.optString("event", "");
         if (event.equals("output")) {
-            var text = data.optString("data", "");
+            var text = URLDecoder.decode(data.optString("data", ""), StandardCharsets.UTF_8);
             var stream = data.optString("stream", "");
             if (!text.isEmpty() && (stream.equals("stdio") || stream.equals("uart")))
                 mainHandler.post(() -> appendLog(text));

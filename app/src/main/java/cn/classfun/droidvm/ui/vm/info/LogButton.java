@@ -26,6 +26,8 @@ import org.json.JSONArray;
 
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -107,6 +109,7 @@ public final class LogButton {
         if (parent.isFinishing()) return;
         var text = logText.trim();
         if (text.isEmpty()) text = parent.getString(R.string.vm_info_logs_no_logs);
+        text = URLDecoder.decode(text, StandardCharsets.UTF_8);
         var scrollView = new ScrollView(parent);
         var tvLog = new TextView(parent);
         int pad = (int) (16 * parent.getResources().getDisplayMetrics().density);

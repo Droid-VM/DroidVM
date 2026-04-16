@@ -6,6 +6,7 @@ import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomAvailablePort
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.generateRandomPassword;
+import static cn.classfun.droidvm.lib.utils.StringUtils.urlEncodeBytesAll;
 
 import android.util.Log;
 
@@ -16,7 +17,6 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -376,20 +376,20 @@ public final class VMInstance extends VMConfig {
         reader.start();
     }
 
-    private void addStreamData(@NonNull ConsoleStream stream, @NonNull String data) {
-        stream.appendBuffer(data);
+    private void addStreamData(@NonNull ConsoleStream stream, @NonNull byte[] data, int len) {
+        stream.appendBuffer(data, 0, len);
         try {
             var extra = new JSONObject();
             extra.put("stream", stream.getName());
-            extra.put("data", data);
+            extra.put("data", urlEncodeBytesAll(data, 0, len));
             fireEvent("output", extra);
         } catch (JSONException ignored) {
         }
     }
 
-    private void addStreamData(@NonNull String name, @NonNull String data) {
+    private void addStreamData(@NonNull String name, @NonNull byte[] data, int len) {
         var stream = getStream(name);
-        if (stream != null) addStreamData(stream, data);
+        if (stream != null) addStreamData(stream, data, len);
     }
 
     private void readStream(@NonNull String vmId, @NonNull ConsoleStream stream) {
@@ -411,10 +411,9 @@ public final class VMInstance extends VMConfig {
                     n = is.read(buf);
                     if (n <= 0) break;
                 } else break;
-                var chunk = new String(buf, 0, n, StandardCharsets.UTF_8);
-                addStreamData(streamName, chunk);
+                addStreamData(streamName, buf, n);
                 if (streamName.equals("stdout") || streamName.equals("stderr"))
-                    addStreamData("stdio", chunk);
+                    addStreamData("stdio", buf, n);
             }
         } catch (Exception e) {
             Log.d(TAG, fmt("Stream reader %s for VM %s ended: %s", streamName, vmId, e.getMessage()));

@@ -5,6 +5,7 @@ import static cn.classfun.droidvm.daemon.server.Server.getDroidVMUid;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
+import static cn.classfun.droidvm.lib.utils.StringUtils.urlEncodeBytesAll;
 
 import android.system.Os;
 import android.util.Log;
@@ -116,6 +117,12 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     @SuppressWarnings("unused")
     public byte[] getRawBuffer() {
         return buffer.peekAll();
+    }
+
+    @NonNull
+    @SuppressWarnings("unused")
+    public String toSerializedString() {
+        return urlEncodeBytesAll(buffer.peekAll());
     }
 
     @SuppressWarnings("unused")

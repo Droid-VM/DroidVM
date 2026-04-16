@@ -32,10 +32,10 @@ public final class ConsoleHistoryHandler extends RequestHandler {
             var sio = inst.getStream(stream);
             if (sio == null)
                 throw new RequestException("stream not found");
-            res.put(stream, sio.getBuffer());
+            res.put(stream, sio.toSerializedString());
         } else {
             for (var sio : inst.getStreams())
-                res.put(sio.getName(), sio.getBuffer());
+                res.put(sio.getName(), sio.toSerializedString());
         }
     }
 }

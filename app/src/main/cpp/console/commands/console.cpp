@@ -88,8 +88,11 @@ void ConsoleCommand::process_event(
         if (evt_stream != stream) return;
         auto raw = edata.get("data", "").asString();
         if (!raw.empty()) {
-            fwrite(raw.c_str(), 1, raw.size(), stdout);
-            fflush(stdout);
+            auto chunk = url_decode_all(raw);
+            if (!chunk.empty()) {
+                fwrite(chunk.c_str(), 1, chunk.size(), stdout);
+                fflush(stdout);
+            }
         }
     } else if (event == "exited" || event == "state") {
         auto state = edata.get("state", "").asString();
