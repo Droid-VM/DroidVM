@@ -20,6 +20,8 @@ import java.util.ArrayList;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
@@ -91,7 +93,9 @@ public final class ConsoleButton {
             titles.add(parent.getString(R.string.vm_info_console_text_select, name));
             icons.add(R.drawable.ic_serial_port);
         }
-        var hasVnc = parent.config != null && parent.config.item.optBoolean("vnc_enabled", false);
+        var running = parent.currentState != VMState.STOPPED;
+        var cfg = parent.config == null ? DataItem.newObject() : parent.config.item;
+        var hasVnc = running && cfg.optBoolean("vnc_enabled", false);
         if (hasVnc) {
             names.add("vnc");
             titles.add(parent.getString(R.string.vm_info_console_vnc_select));
@@ -130,6 +134,7 @@ public final class ConsoleButton {
         intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, parent.vmId.toString());
         intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, parent.config.getName());
         intent.putExtra(VMConsoleActivity.EXTRA_STREAM, stream);
+        intent.putExtra(VMConsoleActivity.EXTRA_LOGS, parent.currentState == VMState.STOPPED);
         parent.startActivity(intent);
     }
 

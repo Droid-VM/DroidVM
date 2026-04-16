@@ -38,7 +38,6 @@ import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
-import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -54,9 +53,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private final UIContext ui = UIContext.fromActivity(this);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean wantOpenConsole = new AtomicBoolean(false);
-    private final LogButton toolLog = new LogButton(this);
     private final ConsoleButton toolConsole = new ConsoleButton(this);
-    private VMState currentState = VMState.STOPPED;
     private VMState oldState = VMState.STOPPED;
     private CollapsingToolbarLayout collapsingToolbar;
     private TextView tvState;
@@ -77,6 +74,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private TextRowWidget rowDisks;
     private TextRowWidget rowOptions;
     private TextRowWidget rowCreated;
+    public VMState currentState = VMState.STOPPED;
     public UUID vmId;
     public VMConfig config;
     public VMStore store;
@@ -120,7 +118,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         btnStartStop.setOnClickListener(v -> onStartStopClicked());
         btnRestart.setOnClickListener(v -> doRestart());
         btnSuspendResume.setOnClickListener(v -> onSuspendResumeClicked());
-        btnConsole.setOnClickListener(v -> onConsoleClicked());
+        btnConsole.setOnClickListener(v -> toolConsole.showConsoleChooser());
         btnEdit.setOnClickListener(v -> openEdit());
         btnDelete.setOnClickListener(v -> doDelete());
         btnPowerBtn.setOnClickListener(v ->
@@ -294,14 +292,6 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             tvStateDetail.setText(R.string.vm_info_state_suspended);
         } else {
             tvStateDetail.setText("");
-        }
-    }
-
-    private void onConsoleClicked() {
-        if (currentState == VMState.STOPPED) {
-            toolLog.showLogsChooser();
-        } else {
-            toolConsole.showConsoleChooser();
         }
     }
 
