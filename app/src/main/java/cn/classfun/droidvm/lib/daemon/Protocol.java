@@ -16,7 +16,7 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 
 public final class Protocol {
-    public static final int IPC_MAX_PAYLOAD = 1 << 20; // 1 MiB
+    public static final int IPC_MAX_PAYLOAD = 8 << 20; // 8 MiB
     public static final long IPC_REQUEST_TIMEOUT_MS = 30_000;
     private final InputStream in;
     private final OutputStream out;

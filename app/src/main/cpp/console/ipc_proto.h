@@ -7,7 +7,7 @@
 #include <list>
 #include <json/json.h>
 
-#define IPC_MAX_PAYLOAD (1u << 20)
+#define IPC_MAX_PAYLOAD (8u << 20)
 
 struct ipc_packet_header {
     uint32_t len;
