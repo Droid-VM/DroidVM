@@ -17,13 +17,14 @@ import org.json.JSONObject;
 
 import java.io.Closeable;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 import cn.classfun.droidvm.lib.store.base.JSONSerialize;
-import cn.classfun.droidvm.lib.utils.FileUtils;
+import cn.classfun.droidvm.lib.store.base.RingBuffer;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
 public abstract class ConsoleStream implements Closeable, JSONSerialize {
@@ -31,7 +32,7 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     public static final int MAX_BUFFER_SIZE = 1 << 20;
     protected final VMConfig config;
     protected final String name;
-    protected final StringBuilder buffer = new StringBuilder();
+    protected final RingBuffer buffer = new RingBuffer(MAX_BUFFER_SIZE);
     private Thread readerThread;
     private OutputStream logWriter = null;
     private boolean disableSave = false;
@@ -70,28 +71,24 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
         }
     }
 
-    public synchronized void appendBuffer(@NonNull String data) {
+    public void appendBuffer(@NonNull String data) {
         if (data.isEmpty()) return;
-        if (buffer.length() + data.length() > MAX_BUFFER_SIZE) {
-            int excess = (buffer.length() + data.length()) - MAX_BUFFER_SIZE;
-            if (excess >= buffer.length()) {
-                buffer.setLength(0);
-            } else {
-                buffer.delete(0, excess);
-            }
-        }
-        buffer.append(data);
-        flushLog(data);
+        appendBuffer(data.getBytes(UTF_8));
     }
 
-    private void flushLog(@NonNull String data) {
+    public void appendBuffer(@NonNull byte[] data) {
+        appendBuffer(data, 0, data.length);
+    }
+
+    public void appendBuffer(@NonNull byte[] data, int off, int len) {
+        buffer.adds(data, off, len);
         if (disableSave) return;
         try {
             if (logWriter == null) {
                 var path = getPersistentPath();
                 var file = new File(path);
                 logWriter = new FileOutputStream(file);
-                logWriter.write(buffer.toString().getBytes(UTF_8));
+                logWriter.write(buffer.peekAll());
                 logWriter.flush();
                 var uid = getDroidVMUid();
                 Os.chown(path, uid, uid);
@@ -100,7 +97,7 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
                     config.getName(), name, path
                 ));
             } else {
-                logWriter.write(data.getBytes(UTF_8));
+                logWriter.write(data, off, len);
                 logWriter.flush();
             }
         } catch (Exception e) {
@@ -111,8 +108,14 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
 
     @NonNull
     @SuppressWarnings("unused")
-    public synchronized String getBuffer() {
-        return buffer.toString();
+    public String getBuffer() {
+        return new String(buffer.peekAll(), UTF_8);
+    }
+
+    @NonNull
+    @SuppressWarnings("unused")
+    public byte[] getRawBuffer() {
+        return buffer.peekAll();
     }
 
     @SuppressWarnings("unused")
@@ -165,9 +168,10 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     @SuppressWarnings("unused")
     public synchronized void saveLog() {
         var path = getPersistentPath();
-        var data = buffer.toString();
-        if (!data.isEmpty()) try {
-            FileUtils.writeFile(path, data);
+        byte[] data = buffer.peekAll();
+        if (data.length > 0) try (var fo = new FileOutputStream(path)) {
+            fo.write(data);
+            fo.flush();
         } catch (Exception e) {
             Log.w(TAG, fmt("Failed to save console log to %s", path), e);
         }
@@ -178,12 +182,14 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
         var path = getPersistentPath();
         var file = new File(path);
         if (!file.exists()) return;
-        try {
-            buffer.setLength(0);
-            var data = FileUtils.readFile(file);
-            if (data.length() > MAX_BUFFER_SIZE)
-                data = data.substring(data.length() - MAX_BUFFER_SIZE);
-            buffer.append(data);
+        try (var fi = new FileInputStream(path)) {
+            var buff = new byte[4096];
+            buffer.clear();
+            while (true) {
+                int ret = fi.read(buff);
+                if (ret < 0) break;
+                buffer.adds(buff, 0, ret);
+            }
         } catch (Exception e) {
             Log.w(TAG, fmt("Failed to load console log from %s", path), e);
         }
@@ -213,7 +219,7 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
         obj.put("type", getClass().getSimpleName());
         obj.put("name", name);
         obj.put("path", getPersistentPath());
-        obj.put("length", buffer.length());
+        obj.put("length", buffer.size());
         obj.put("readable", isReadable());
         obj.put("writable", isWritable());
         return obj;
