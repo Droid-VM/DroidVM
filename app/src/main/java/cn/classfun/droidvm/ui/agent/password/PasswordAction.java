@@ -8,10 +8,14 @@ import cn.classfun.droidvm.ui.agent.base.BaseAction;
 public final class PasswordAction extends BaseAction {
     public PasswordAction(@NonNull AgentVM vm) {
         super(vm);
-        vm.setActionVar("MOUNT_ROOT", "true");
-        vm.setActionVar("ACTION", "passwd");
-        vm.setActionVar("PASSWORD", "");
-        vm.setActionVar("PASSWD_NORMAL_USERS", "false");
+        if (!vm.hasActionVar("MOUNT_ROOT"))
+            vm.setActionVar("MOUNT_ROOT", "true");
+        if (!vm.hasActionVar("ACTION"))
+            vm.setActionVar("ACTION", "passwd");
+        if (!vm.hasActionVar("PASSWORD"))
+            vm.setActionVar("PASSWORD", "");
+        if (!vm.hasActionVar("PASSWD_NORMAL_USERS"))
+            vm.setActionVar("PASSWD_NORMAL_USERS", "false");
     }
 
     public void setPassword(@NonNull String password) {

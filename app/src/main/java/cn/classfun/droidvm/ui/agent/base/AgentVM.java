@@ -138,6 +138,10 @@ public final class AgentVM implements JSONSerialize {
         vars.put(key, value);
     }
 
+    public boolean hasActionVar(@NonNull String key) {
+        return vars.containsKey(key);
+    }
+
     @Nullable
     public String getActionVar(@NonNull String key, @Nullable String def) {
         var val = vars.getOrDefault(key, def);
