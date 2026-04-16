@@ -17,6 +17,8 @@
 
     <string name="unimplement">Function not implement</string>
 
+    <string name="menu">Menu</string>
+
     <string name="status_icon_desc">Status icon</string>
     <string name="fab_action_desc">Action</string>
     <string name="ic_expand_desc">Expand or collapse</string>
@@ -702,7 +704,6 @@
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
     <string name="vnc_display_fullscreen">Fullscreen</string>
 
-    <string name="vnc_menu">Menu</string>
     <string name="vnc_menu_keyboard">Soft Keyboard</string>
     <string name="vnc_menu_extra_keys">Extra Keys</string>
     <string name="vnc_menu_fullscreen">Fullscreen</string>

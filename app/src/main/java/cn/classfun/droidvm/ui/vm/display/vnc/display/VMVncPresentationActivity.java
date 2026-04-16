@@ -1,12 +1,11 @@
 package cn.classfun.droidvm.ui.vm.display.vnc.display;
 
+import static cn.classfun.droidvm.lib.ui.MaterialMenu.setupToolbarMenu;
 import static cn.classfun.droidvm.ui.vm.display.base.DisplayPresentation.displayStateName;
 
 import android.graphics.Bitmap;
 import android.hardware.display.DisplayManager;
 import android.view.Display;
-import android.view.MenuItem;
-import android.view.View;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -14,7 +13,6 @@ import androidx.annotation.NonNull;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayPresentation;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayTouchPadPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
@@ -70,35 +68,13 @@ public final class VMVncPresentationActivity
         vncTouchPad = new VncTouchPadPanel(touchpadPanel);
         ivDisplay.setTextCommitListener(createTextCommitListener());
         touchpadPanel.getTouchpadArea().setOnClickListener(v -> toggleSoftKeyboard());
-        setupToolbarMenu();
+        setupToolbarMenu(toolbar, R.menu.menu_vnc_presentation_menu, this::onMenuItemClicked);
         displayManager = getSystemService(DisplayManager.class);
         displayManager.registerDisplayListener(this, mainHandler);
         DisplayPresentation.showDisplaySelectionDialog(this, disp -> {
             if (disp == null) finish();
             else selectDisplay(disp);
         });
-    }
-
-    private void setupToolbarMenu() {
-        var id = View.generateViewId();
-        var menu = toolbar.getMenu();
-        var item = menu.add(0, id, 0, R.string.vnc_menu);
-        item.setIcon(R.drawable.ic_more_vert);
-        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-        toolbar.setOnMenuItemClickListener(mi -> {
-            if (mi.getItemId() == id) {
-                showMenu(toolbar.findViewById(id));
-                return true;
-            }
-            return false;
-        });
-    }
-
-    private void showMenu(@NonNull View anchor) {
-        var popup = new MaterialMenu(this, anchor);
-        popup.inflate(R.menu.menu_vnc_presentation_menu);
-        popup.setOnMenuItemClickListener(this::onMenuItemClicked);
-        popup.show();
     }
 
     @Override

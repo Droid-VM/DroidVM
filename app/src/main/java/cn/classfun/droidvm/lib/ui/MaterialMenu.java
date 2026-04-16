@@ -22,6 +22,7 @@ import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.shape.MaterialShapeDrawable;
 import com.google.android.material.shape.ShapeAppearanceModel;
 
@@ -187,6 +188,30 @@ public final class MaterialMenu {
         listView.setClipToPadding(false);
         listView.setDivider(null);
         listView.setDividerHeight(0);
+    }
+
+    public static void setupToolbarMenu(
+        @NonNull MaterialToolbar toolbar,
+        @MenuRes int menuId,
+        @Nullable MenuItem.OnMenuItemClickListener listener
+    ) {
+        var id = View.generateViewId();
+        var menu = toolbar.getMenu();
+        var item = menu.add(0, id, 0, R.string.menu);
+        item.setIcon(R.drawable.ic_more_vert);
+        item.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+        toolbar.setOnMenuItemClickListener(mi -> {
+            if (mi.getItemId() == id) {
+                var ctx = toolbar.getContext();
+                var anchor = toolbar.findViewById(id);
+                var popup = new MaterialMenu(ctx, anchor);
+                popup.inflate(menuId);
+                popup.setOnMenuItemClickListener(listener);
+                popup.show();
+                return true;
+            }
+            return false;
+        });
     }
 
     private static final class MenuEntry {

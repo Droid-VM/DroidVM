@@ -16,6 +16,8 @@
 
     <string name="unimplement">功能未实现</string>
 
+    <string name="menu">菜单</string>
+
     <string name="status_icon_desc">状态图标</string>
     <string name="fab_action_desc">操作</string>
     <string name="ic_expand_desc">展开或折叠</string>
@@ -663,7 +665,6 @@
     <string name="vnc_display_connect_failed">无法连接到 VNC 服务器</string>
     <string name="vnc_display_fullscreen">全屏</string>
 
-    <string name="vnc_menu">菜单</string>
     <string name="vnc_menu_keyboard">软键盘</string>
     <string name="vnc_menu_extra_keys">额外按键</string>
     <string name="vnc_menu_fullscreen">全屏</string>

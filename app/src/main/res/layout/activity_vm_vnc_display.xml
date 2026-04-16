@@ -110,7 +110,7 @@
             android:layout_gravity="bottom|end"
             android:layout_margin="16dp"
             android:alpha="0.7"
-            android:contentDescription="@string/vnc_menu"
+            android:contentDescription="@string/menu"
             app:backgroundTint="@color/vnc_fab_background"
             app:elevation="4dp"
             app:fabCustomSize="32dp"
