@@ -146,10 +146,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--no-usb");
         if (!item.optBoolean("sandbox", false))
             args.add("--disable-sandbox");
-        if (item.optBoolean("hugepages", true)) {
+        if (item.optBoolean("hugepages", true))
             args.add("--hugepages");
+        if (item.optBoolean("prepare_lend_mthp", true))
             args.add("--prepare-lend-mthp");
-        }
         var initrd = item.optString("initrd", "");
         if (!initrd.isEmpty()) {
             args.add("--initrd");

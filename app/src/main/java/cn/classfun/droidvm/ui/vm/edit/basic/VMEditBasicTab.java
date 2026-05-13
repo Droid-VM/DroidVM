@@ -32,6 +32,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swUsb;
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
+    private SwitchRowWidget swPrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
 
@@ -51,6 +52,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swUsb = view.findViewById(R.id.sw_usb);
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
+        swPrepareLendMthp = view.findViewById(R.id.sw_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
     }
@@ -76,6 +78,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swUsb.setChecked(item.optBoolean("usb", false));
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
+        swPrepareLendMthp.setChecked(item.optBoolean("prepare_lend_mthp", true));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
     }
@@ -149,6 +152,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("usb", swUsb.isChecked());
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
+        item.set("prepare_lend_mthp", swPrepareLendMthp.isChecked());
         ProtectedVM pvm = chooseProtectedVm.getSelectedItem();
         item.set("protected_vm", pvm);
         VMBackend backend = chooseBackend.getSelectedItem();
