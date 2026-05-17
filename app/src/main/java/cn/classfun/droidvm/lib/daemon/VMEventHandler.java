@@ -145,6 +145,7 @@ public final class VMEventHandler implements
         var data = msg.optJSONObject("data");
         if (data == null) return;
         var event = data.optString("event", "");
+        if (event.equals("output")) return;
         var vmId = UUID.fromString(data.optString("vm_id", ""));
         var vmName = data.optString("vm_name", "");
         var stateStr = data.optString("state", "stopped");

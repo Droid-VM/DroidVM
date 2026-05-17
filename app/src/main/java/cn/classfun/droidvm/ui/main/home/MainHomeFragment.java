@@ -358,6 +358,8 @@ public final class MainHomeFragment extends MainBaseFragment
 
     @Override
     public void onDaemonEvent(JSONObject data) {
+        var inner = data.optJSONObject("data");
+        if (inner != null && "output".equals(inner.optString("event"))) return;
         refreshView();
     }
 
