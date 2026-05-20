@@ -109,21 +109,22 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
 
     public void clear() {
         buffer.clear();
+        disableSave = false;
         if (logWriter != null) {
             try {
                 logWriter.close();
             } catch (Exception e) {
                 Log.w(TAG, "Failed to close console log output stream", e);
             }
-            try {
-                var path = getPersistentPath();
-                var file = new File(path);
-                if (file.exists() && !file.delete())
-                    Log.w(TAG, fmt("Failed to delete console log file %s", path));
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to delete console log file", e);
-            }
             logWriter = null;
+        }
+        try {
+            var path = getPersistentPath();
+            var file = new File(path);
+            if (file.exists() && !file.delete())
+                Log.w(TAG, fmt("Failed to delete console log file %s", path));
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to delete console log file", e);
         }
     }
 

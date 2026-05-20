@@ -55,6 +55,14 @@
                     android:subtitle="@string/settings_vm_auto_console_summary"
                     android:text="@string/settings_vm_auto_console_title" />
 
+                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                    android:id="@+id/item_vm_clear_logs_before_start"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_logs"
+                    android:subtitle="@string/settings_vm_clear_logs_before_start_summary"
+                    android:text="@string/settings_vm_clear_logs_before_start_title" />
+
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
