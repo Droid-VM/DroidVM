@@ -19,6 +19,7 @@ import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleepOrKill;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Process;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -100,7 +101,11 @@ public final class DaemonHelper {
     public boolean startDaemon() {
         var zipPath = getDaemonZipPath();
         Log.i(TAG, fmt("Starting daemon via app_process64 with %s", zipPath));
-        run("mkdir -p %s", pathJoin(DATA_DIR, "run"));
+        var runDir = pathJoin(DATA_DIR, "run");
+        var uid = Process.myUid();
+        run("mkdir -p %s", runDir);
+        // Best-effort ownership fix; chown may be denied on some contexts (e.g. Android).
+        run("chown %d:%d %s || true", uid, uid, runDir);
         var cmd = fmt(
             "env CLASSPATH=%s %s %s / %s",
             escapedString(zipPath),
