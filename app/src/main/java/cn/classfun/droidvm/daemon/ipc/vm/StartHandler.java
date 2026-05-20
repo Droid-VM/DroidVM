@@ -9,6 +9,7 @@ import com.google.auto.service.AutoService;
 import cn.classfun.droidvm.daemon.server.ClientRequest;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.RequestHandler;
+import cn.classfun.droidvm.lib.store.vm.VMState;
 
 @AutoService(RequestHandler.class)
 public final class StartHandler extends RequestHandler {
@@ -28,6 +29,9 @@ public final class StartHandler extends RequestHandler {
         var inst = vms.findById(vmId);
         if (inst == null)
             throw new RequestException(fmt("VM not found: %s", vmId));
+        if (params.optBoolean("clear_logs_before_start", false) &&
+            inst.getState() == VMState.STOPPED)
+            inst.clearLogs();
         if (!inst.start())
             throw new RequestException("failed to start VM");
     }
