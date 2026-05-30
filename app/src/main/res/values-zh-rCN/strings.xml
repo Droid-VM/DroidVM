@@ -224,6 +224,26 @@
     <string name="edit_vm_net_delete">移除网络</string>
     <string name="edit_vm_net_mac_hint">MAC 地址（可选）</string>
     <string name="edit_vm_net_mac_random">随机</string>
+    <!-- 端口转发 -->
+    <string name="create_vm_tab_port_forward">端口</string>
+    <string name="create_vm_category_port_forward">端口转发</string>
+    <string name="edit_vm_pf_add">添加规则</string>
+    <string name="edit_vm_pf_empty">暂无端口转发规则。</string>
+    <string name="edit_vm_pf_delete">删除规则</string>
+    <string name="edit_vm_pf_protocol">协议</string>
+    <string name="edit_vm_pf_host_port">主机端口</string>
+    <string name="edit_vm_pf_guest_port">Guest 端口</string>
+    <string name="edit_vm_pf_arrow">→</string>
+    <string name="edit_vm_pf_enabled">启用</string>
+    <string name="edit_vm_pf_advanced">高级</string>
+    <string name="edit_vm_pf_host_ip">主机 IP（可选）</string>
+    <string name="edit_vm_pf_guest_ip">Guest IP（留空自动发现）</string>
+    <string name="edit_vm_pf_network">网卡</string>
+    <string name="edit_vm_pf_invalid_port">主机端口须为 1-65535</string>
+    <string name="vm_info_port_forwards">端口转发</string>
+    <string name="vm_info_pf_none">暂无生效转发</string>
+    <string name="vm_info_pf_edit">编辑转发</string>
+    <string name="edit_vm_pf_apply">应用</string>
     <string name="edit_vm_disk_path_hint">路径</string>
     <string name="edit_vm_disk_readonly">只读</string>
     <string name="edit_vm_disk_bus">总线</string>

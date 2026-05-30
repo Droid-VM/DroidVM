@@ -404,6 +404,17 @@ public final class VMInstance extends VMConfig {
         return pf != null ? pf.snapshotApplied() : new JSONArray();
     }
 
+    /**
+     * 运行时热更新端口转发规则：更新内存配置后即时同步到 iptables（增删 DNAT 规则）。
+     * 仅作用于 daemon 运行态；配置的持久化由前端负责（写入共享的 vms.json），
+     * 下次启动时前端会通过 vm_modify 重新下发完整配置。
+     */
+    public void applyPortForwards(@NonNull JSONArray rules) {
+        item.set("port_forwards", rules);
+        var pf = portForwarder;
+        if (pf != null) pf.sync();
+    }
+
     private void startReaderThread(@NonNull String vmId, @NonNull ConsoleStream stream) {
         var streamName = stream.getName();
         if (!stream.isReadable()) return;

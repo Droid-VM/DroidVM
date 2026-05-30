@@ -102,6 +102,90 @@ final class VMPortForwarder {
         return arr;
     }
 
+    /**
+     * 运行时热同步当前配置：
+     * <ul>
+     *   <li>已在转发（VM 启动时已有规则）→ {@link #reapply()} 做增量 diff；</li>
+     *   <li>此前因无规则未启动 → {@link #start()} 按新配置启动轮询应用。</li>
+     * </ul>
+     * 供 {@link VMInstance#applyPortForwards} 在运行时改规则后调用。
+     */
+    synchronized void sync() {
+        if (running) reapply();
+        else start();
+    }
+
+    /**
+     * 运行时热更新：基于 VM 当前 {@code port_forwards} 配置对已应用规则做增量 diff——
+     * 移除不再需要的、应用新增的。仅在 VM 运行（已 {@link #start()}）时有效。
+     * 新增规则要求 guest IP 当前可解析（运行中 VM 一般已联网，故可解析）。
+     */
+    private synchronized void reapply() {
+        if (!running || networkStore == null) return;
+        var rules = parseRules();
+        // 锁外解析目标，避免持 applied 锁期间做 DHCP/邻居表查询
+        var desired = new ArrayList<Applied>();
+        for (var rule : rules) {
+            var target = resolveTarget(rule);
+            if (target == null) {
+                Log.w(TAG, fmt("VM %s: reapply skipped unresolved %s :%d (guest IP not ready)",
+                    vm.getName(), rule.protocol, rule.hostPort));
+                continue;
+            }
+            desired.add(new Applied(target.bridge, target.ip, rule.protocol,
+                rule.hostIp, rule.hostPort, rule.guestPort));
+        }
+        synchronized (applied) {
+            applied.removeIf(a -> {
+                boolean keep = false;
+                for (var d : desired)
+                    if (sameForward(a, d)) {
+                        keep = true;
+                        break;
+                    }
+                if (!keep) {
+                    networkStore.firewall.removeForward(
+                        a.bridge, a.guestIp, a.protocol, a.hostIp, a.hostPort, a.guestPort);
+                    Log.i(TAG, fmt("VM %s: reapply removed %s :%d -> %s:%d",
+                        vm.getName(), a.protocol, a.hostPort, a.guestIp, a.guestPort));
+                }
+                return !keep;
+            });
+            for (var d : desired) {
+                boolean exists = false;
+                for (var a : applied)
+                    if (sameForward(a, d)) {
+                        exists = true;
+                        break;
+                    }
+                if (exists) continue;
+                boolean ok = networkStore.firewall.applyForward(
+                    d.bridge, d.guestIp, d.protocol, d.hostIp, d.hostPort, d.guestPort);
+                if (ok) {
+                    applied.add(d);
+                    Log.i(TAG, fmt("VM %s: reapply added %s :%d -> %s:%d",
+                        vm.getName(), d.protocol, d.hostPort, d.guestIp, d.guestPort));
+                } else {
+                    Log.w(TAG, fmt("VM %s: reapply failed to apply %s :%d",
+                        vm.getName(), d.protocol, d.hostPort));
+                }
+            }
+        }
+    }
+
+    private static boolean sameForward(@NonNull Applied a, @NonNull Applied b) {
+        return a.protocol.equals(b.protocol)
+            && a.hostPort == b.hostPort
+            && a.guestPort == b.guestPort
+            && eq(a.hostIp, b.hostIp)
+            && eq(a.guestIp, b.guestIp)
+            && eq(a.bridge, b.bridge);
+    }
+
+    private static boolean eq(@Nullable String a, @Nullable String b) {
+        return a == null ? b == null : a.equals(b);
+    }
+
     private void loop() {
         var rules = parseRules();
         if (rules.isEmpty()) return;

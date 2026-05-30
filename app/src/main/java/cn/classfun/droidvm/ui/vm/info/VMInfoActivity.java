@@ -15,10 +15,14 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
@@ -26,6 +30,8 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.text.DateFormat;
@@ -46,6 +52,10 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.vm.VMActions;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
+import cn.classfun.droidvm.ui.vm.edit.portforward.PortForwardEditAdapter;
+import cn.classfun.droidvm.ui.vm.edit.portforward.VMEditPortForwardTab;
+import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
+import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
 public final class VMInfoActivity extends AppCompatActivity implements ForegroundCallback {
@@ -74,6 +84,10 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private TextRowWidget rowDisks;
     private TextRowWidget rowOptions;
     private TextRowWidget rowCreated;
+    private CollapsibleContainer ccPortForwards;
+    private LinearLayout containerPortForwards;
+    private TextView tvPfEmpty;
+    private MaterialButton btnPfEdit;
     public VMState currentState = VMState.STOPPED;
     public UUID vmId;
     public VMConfig config;
@@ -101,6 +115,10 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         rowDisks = findViewById(R.id.row_disks);
         rowOptions = findViewById(R.id.row_options);
         rowCreated = findViewById(R.id.row_created);
+        ccPortForwards = findViewById(R.id.cc_port_forwards);
+        containerPortForwards = findViewById(R.id.container_port_forwards);
+        tvPfEmpty = findViewById(R.id.tv_pf_empty);
+        btnPfEdit = findViewById(R.id.btn_pf_edit);
         toolbar = findViewById(R.id.toolbar);
         initialize();
     }
@@ -125,6 +143,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             sendControlCommand("powerbtn", vmId, mainHandler, ui));
         btnSleepBtn.setOnClickListener(v ->
             sendControlCommand("sleepbtn", vmId, mainHandler, ui));
+        btnPfEdit.setOnClickListener(v -> showPortForwardEditor());
     }
 
     @Override
@@ -292,6 +311,121 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             tvStateDetail.setText(R.string.vm_info_state_suspended);
         } else {
             tvStateDetail.setText("");
+        }
+        refreshPortForwards();
+        if (isRunning)
+            mainHandler.postDelayed(this::refreshPortForwards, 2000);
+    }
+
+    private void refreshPortForwards() {
+        if (currentState != VMState.RUNNING) {
+            ccPortForwards.setVisibility(View.GONE);
+            return;
+        }
+        DaemonConnection.OnResponse res = resp -> {
+            var data = resp.optJSONObject("data");
+            var active = data != null ? data.optJSONArray("active") : null;
+            mainHandler.post(() -> renderPortForwards(active));
+        };
+        DaemonConnection.getInstance().buildRequest("vm_port_forward_list")
+            .put("vm_id", vmId.toString())
+            .onResponse(res)
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> Log.w(TAG, "Failed to query port forwards", e))
+            .invoke();
+    }
+
+    private void renderPortForwards(@Nullable JSONArray active) {
+        if (isFinishing()) return;
+        if (currentState != VMState.RUNNING) {
+            ccPortForwards.setVisibility(View.GONE);
+            return;
+        }
+        ccPortForwards.setVisibility(View.VISIBLE);
+        containerPortForwards.removeAllViews();
+        int count = active != null ? active.length() : 0;
+        if (count == 0) {
+            tvPfEmpty.setVisibility(View.VISIBLE);
+            return;
+        }
+        tvPfEmpty.setVisibility(View.GONE);
+        var inflater = LayoutInflater.from(this);
+        for (int i = 0; i < count; i++) {
+            var o = active.optJSONObject(i);
+            if (o == null) continue;
+            var protocol = o.optString("protocol", "tcp");
+            var proto = "udp".equals(protocol) ? "UDP" : "TCP";
+            var hostIp = o.optString("host_ip", "");
+            var hostPort = o.optInt("host_port", 0);
+            var guestIp = o.optString("guest_ip", "");
+            var guestPort = o.optInt("guest_port", 0);
+            var hostDisplay = (hostIp.isEmpty() ? "*" : hostIp) + ":" + hostPort;
+            var line = proto + "  " + hostDisplay + " -> " + guestIp + ":" + guestPort;
+            var row = inflater.inflate(
+                R.layout.item_port_forward_active, containerPortForwards, false);
+            ((TextView) row.findViewById(R.id.tv_pf_line)).setText(line);
+            containerPortForwards.addView(row);
+        }
+    }
+
+    private void showPortForwardEditor() {
+        if (config == null) return;
+        var view = LayoutInflater.from(this).inflate(R.layout.dialog_port_forward_edit, null);
+        CardItemListView list = view.findViewById(R.id.list_port_forwards);
+        list.setAdapter(PortForwardEditAdapter.class);
+        list.setItems(copyArray(config.item.opt("port_forwards", DataItem.newArray())));
+        var dialog = new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.vm_info_port_forwards)
+            .setView(view)
+            .setPositiveButton(R.string.edit_vm_pf_apply, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        // Override the button so failed validation keeps the dialog open.
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            .setOnClickListener(v -> {
+                if (applyPortForwardEdits(list)) dialog.dismiss();
+            }));
+        dialog.show();
+    }
+
+    private boolean applyPortForwardEdits(CardItemListView list) {
+        var items = list.getItems();
+        if (items == null) items = DataItem.newArray();
+        if (!VMEditPortForwardTab.rulesValid(items)) {
+            Toast.makeText(this, R.string.edit_vm_pf_invalid_port, Toast.LENGTH_SHORT).show();
+            return false;
+        }
+        config.item.set("port_forwards", items);
+        runOnPool(() -> store.save(this));
+        JSONArray rules;
+        try {
+            rules = items.toJsonArray();
+        } catch (JSONException e) {
+            rules = new JSONArray();
+        }
+        DaemonConnection.getInstance().buildRequest("vm_port_forward_set")
+            .put("vm_id", vmId.toString())
+            .put("rules", rules)
+            .onResponse(r -> {
+                // Apply may take effect sync (reconcile) or async (loop start); refresh now and after a delay.
+                mainHandler.post(this::refreshPortForwards);
+                mainHandler.postDelayed(this::refreshPortForwards, 1500);
+            })
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> Log.w(TAG, "Failed to set port forwards", e))
+            .invoke();
+        return true;
+    }
+
+    /** Deep copy so a cancelled dialog doesn't mutate config. */
+    private static DataItem copyArray(DataItem src) {
+        if (!src.is(DataItem.Type.ARRAY)) return DataItem.newArray();
+        try {
+            return DataItem.fromJson(src.toJsonArray());
+        } catch (JSONException e) {
+            return DataItem.newArray();
         }
     }
 
