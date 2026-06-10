@@ -45,6 +45,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private static final long DAEMON_REFRESH_INTERVAL_MS = 1000L;
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
+    public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -57,6 +58,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemDaemonStop;
     private TextRowWidget itemDaemonRestart;
     private SwitchRowWidget itemVMAutoConsole;
+    private SwitchRowWidget itemVMClearLogsBeforeStart;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
     private TextRowWidget itemCheckUpdate;
@@ -104,6 +106,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemDaemonStop = view.findViewById(R.id.item_daemon_stop);
         itemDaemonRestart = view.findViewById(R.id.item_daemon_restart);
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
+        itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
         itemCheckUpdate = view.findViewById(R.id.item_check_update);
@@ -123,6 +126,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonStop, daemon::asyncStopDaemon);
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
+        bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
@@ -157,6 +161,11 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static boolean isAutoConsoleEnabled(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         return prefs.getBoolean(KEY_VM_AUTO_CONSOLE, false);
+    }
+
+    public static boolean isClearLogsBeforeStartEnabled(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_VM_CLEAR_LOGS_BEFORE_START, false);
     }
 
     public static boolean isAutoCheckUpdateEnabled(@NonNull Context context) {

@@ -2,6 +2,7 @@ package cn.classfun.droidvm.ui.vm;
 
 import static android.widget.Toast.LENGTH_LONG;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
+import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isClearLogsBeforeStartEnabled;
 
 import android.os.Handler;
 import android.util.Log;
@@ -44,6 +45,7 @@ public final class VMActions {
         DaemonConnection.OnResponse onCreateModify = resp -> conn
             .buildRequest("vm_start")
             .copy(resp, "vm_id")
+            .put("clear_logs_before_start", isClearLogsBeforeStartEnabled(ui.getContext()))
             .onResponse(onStart)
             .onUnsuccessful(f)
             .onError(err)
