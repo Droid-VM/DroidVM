@@ -31,7 +31,6 @@ import java.util.Random;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.network.IPNetwork;
 import cn.classfun.droidvm.lib.network.IPv4Address;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
@@ -47,14 +46,15 @@ public final class NetworkEditActivity extends AppCompatActivity {
     public static final String EXTRA_NETWORK_ID = "network_id";
     private final List<IPv4Network> ipv4Addresses = new ArrayList<>();
     private final List<IPv6Network> ipv6Addresses = new ArrayList<>();
+    private final List<IPv4Address> dnsServers = new ArrayList<>();
     private boolean editMode = false;
     private UUID editNetworkId = null;
     private CollapsingToolbarLayout collapsingToolbar;
     private TextInputRowWidget inputName, inputBridgeName, inputMac;
     private SwitchRowWidget swAutoUp, swStp, swNat, swDhcp;
-    private TextInputRowWidget inputIPv4, inputIPv6;
-    private LinearLayout layoutIPv4, layoutIPv6, groupDhcp;
-    private TextView tvIPv4Empty, tvIPv6Empty;
+    private TextInputRowWidget inputIPv4, inputIPv6, inputDns;
+    private LinearLayout layoutIPv4, layoutIPv6, layoutDns, groupDhcp;
+    private TextView tvIPv4Empty, tvIPv6Empty, tvDnsEmpty;
     private TextInputRowWidget inputDhcpStart, inputDhcpEnd;
     private FloatingActionButton fab;
     private NetworkStore store;
@@ -87,10 +87,13 @@ public final class NetworkEditActivity extends AppCompatActivity {
         swDhcp = findViewById(R.id.sw_dhcp);
         inputIPv4 = findViewById(R.id.input_ipv4);
         inputIPv6 = findViewById(R.id.input_ipv6);
+        inputDns = findViewById(R.id.input_dns);
         layoutIPv4 = findViewById(R.id.layout_ipv4);
         layoutIPv6 = findViewById(R.id.layout_ipv6);
+        layoutDns = findViewById(R.id.layout_dns);
         tvIPv4Empty = findViewById(R.id.tv_ipv4_empty);
         tvIPv6Empty = findViewById(R.id.tv_ipv6_empty);
+        tvDnsEmpty = findViewById(R.id.tv_dns_empty);
         groupDhcp = findViewById(R.id.group_dhcp);
         inputDhcpStart = findViewById(R.id.input_dhcp_start);
         inputDhcpEnd = findViewById(R.id.input_dhcp_end);
@@ -104,6 +107,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         store.load(this);
         inputIPv4.setEndIconOnClickListener(v -> onAddIPv4());
         inputIPv6.setEndIconOnClickListener(v -> onAddIPv6());
+        inputDns.setEndIconOnClickListener(v -> onAddDns());
         inputIPv4.addTextChangedListener(new SimpleTextWatcher() {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
@@ -114,6 +118,12 @@ public final class NetworkEditActivity extends AppCompatActivity {
             @Override
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 inputIPv6.setError(null);
+            }
+        });
+        inputDns.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                inputDns.setError(null);
             }
         });
         swDhcp.setOnCheckedChangeListener((btn, checked) ->
@@ -130,8 +140,9 @@ public final class NetworkEditActivity extends AppCompatActivity {
             collapsingToolbar.setTitle(getString(R.string.network_create_title));
             generateDefaults();
         }
-        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, true);
-        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, false);
+        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, this::updateDhcpFromIPv4);
+        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, null);
+        buildAddressList(layoutDns, tvDnsEmpty, dnsServers, null);
     }
 
     private void installManualEditWatchers() {
@@ -177,8 +188,16 @@ public final class NetworkEditActivity extends AppCompatActivity {
         setTextProgrammatic(inputBridgeName, bridgeNameFromMac(mac));
         var ipv4Cidr = generateRandomIPv4();
         ipv4Addresses.add(ipv4Cidr);
+        addDefaultDnsServers();
         swDhcp.setChecked(true);
         updateDhcpFromIPv4();
+    }
+
+    private void addDefaultDnsServers() {
+        var a = IPv4Address.parse("8.8.8.8");
+        var b = IPv4Address.parse("1.1.1.1");
+        if (a != null) dnsServers.add(a);
+        if (b != null) dnsServers.add(b);
     }
 
     @NonNull
@@ -268,6 +287,9 @@ public final class NetworkEditActivity extends AppCompatActivity {
         parseIPv4Addresses(config, ipv4Addresses);
         ipv6Addresses.clear();
         parseIPv6Addresses(config, ipv6Addresses);
+        dnsServers.clear();
+        parseDnsServers(config, dnsServers);
+        if (dnsServers.isEmpty()) addDefaultDnsServers();
         macManuallyEdited = true;
         bridgeManuallyEdited = true;
         ipv4ManuallyEdited = true;
@@ -293,7 +315,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         ipv4Addresses.add(ip);
         ipv4ManuallyEdited = true;
         inputIPv4.setText("");
-        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, true);
+        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, this::updateDhcpFromIPv4);
         updateDhcpFromIPv4();
     }
 
@@ -314,14 +336,38 @@ public final class NetworkEditActivity extends AppCompatActivity {
         inputIPv6.setError(null);
         ipv6Addresses.add(ip);
         inputIPv6.setText("");
-        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, false);
+        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, null);
+    }
+
+    private void onAddDns() {
+        var addr = inputDns.getText().trim();
+        if (addr.isEmpty()) return;
+        if (!IPv4Address.isValid(addr)) {
+            inputDns.setError(getString(R.string.network_edit_error_dns_invalid));
+            return;
+        }
+        var ip = IPv4Address.parse(addr);
+        if (ip == null) {
+            inputDns.setError(getString(R.string.network_edit_error_dns_invalid));
+            return;
+        }
+        for (var existing : dnsServers) {
+            if (existing.value() == ip.value()) {
+                inputDns.setText("");
+                return;
+            }
+        }
+        inputDns.setError(null);
+        dnsServers.add(ip);
+        inputDns.setText("");
+        buildAddressList(layoutDns, tvDnsEmpty, dnsServers, null);
     }
 
     private void buildAddressList(
         @NonNull LinearLayout container,
         @NonNull TextView emptyView,
-        @NonNull List<? extends IPNetwork<?, ?, ?>> list,
-        boolean isIPv4
+        @NonNull List<?> list,
+        @Nullable Runnable onRemoved
     ) {
         container.removeAllViews();
         if (list.isEmpty()) {
@@ -347,8 +393,8 @@ public final class NetworkEditActivity extends AppCompatActivity {
                 btn.setContentDescription(getString(R.string.network_edit_remove_address));
                 btn.setOnClickListener(v -> {
                     list.remove(idx);
-                    buildAddressList(container, emptyView, list, isIPv4);
-                    if (isIPv4) updateDhcpFromIPv4();
+                    buildAddressList(container, emptyView, list, onRemoved);
+                    if (onRemoved != null) onRemoved.run();
                 });
                 row.addView(btn);
                 container.addView(row);
@@ -362,6 +408,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         inputMac.setError(null);
         inputIPv4.setError(null);
         inputIPv6.setError(null);
+        inputDns.setError(null);
         inputDhcpStart.setError(null);
         inputDhcpEnd.setError(null);
         if (!inputIPv4.getText().trim().isEmpty()) {
@@ -370,6 +417,14 @@ public final class NetworkEditActivity extends AppCompatActivity {
         }
         if (!inputIPv6.getText().trim().isEmpty()) {
             inputIPv6.setError(getString(R.string.network_edit_error_ipv6_not_added));
+            return;
+        }
+        if (!inputDns.getText().trim().isEmpty()) {
+            inputDns.setError(getString(R.string.network_edit_error_dns_not_added));
+            return;
+        }
+        if (dnsServers.isEmpty()) {
+            inputDns.setError(getString(R.string.network_edit_error_dns_empty));
             return;
         }
         var name = inputName.getText().trim();
@@ -445,6 +500,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         config.item.set("dhcp_enabled", swDhcp.isChecked());
         setIPv4Addresses(config, ipv4Addresses);
         setIPv6Addresses(config, ipv6Addresses);
+        setDnsServers(config, dnsServers);
         config.item.set("dhcp_range_start", inputDhcpStart.getText().trim());
         config.item.set("dhcp_range_end", inputDhcpEnd.getText().trim());
         if (editMode) {
@@ -544,6 +600,16 @@ public final class NetworkEditActivity extends AppCompatActivity {
         });
     }
 
+    private static void parseDnsServers(@NonNull NetworkConfig cfg, @NonNull List<IPv4Address> out) {
+        cfg.item.get("dns_servers").forEachArray(a -> {
+            try {
+                var ip = IPv4Address.parse(a.asString());
+                if (ip != null) out.add(ip);
+            } catch (Exception ignored) {
+            }
+        });
+    }
+
     private static void setIPv4Addresses(@NonNull NetworkConfig cfg, @NonNull List<IPv4Network> addresses) {
         var arr = DataItem.newArray();
         for (var addr : addresses)
@@ -556,5 +622,12 @@ public final class NetworkEditActivity extends AppCompatActivity {
         for (var addr : addresses)
             arr.append(DataItem.newString(addr.toString()));
         cfg.item.set("ipv6_addresses", arr);
+    }
+
+    private static void setDnsServers(@NonNull NetworkConfig cfg, @NonNull List<IPv4Address> dns) {
+        var arr = DataItem.newArray();
+        for (var ip : dns)
+            arr.append(DataItem.newString(ip.toString()));
+        cfg.item.set("dns_servers", arr);
     }
 }

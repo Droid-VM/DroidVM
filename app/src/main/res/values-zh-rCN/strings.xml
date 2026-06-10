@@ -603,6 +603,8 @@
     <string name="network_edit_nat">NAT（网络地址转换）</string>
     <string name="network_edit_category_ipv4">IPv4 地址</string>
     <string name="network_edit_ipv4_hint">IPv4 CIDR（例如 192.168.1.1/24）</string>
+    <string name="network_edit_category_dns">DNS 服务器</string>
+    <string name="network_edit_dns_hint">DNS 服务器（例如 8.8.8.8）</string>
     <string name="network_edit_category_ipv6">IPv6 地址</string>
     <string name="network_edit_ipv6_hint">IPv6 CIDR（例如 fd00::1/64）</string>
     <string name="network_edit_no_addresses">未配置地址。</string>
@@ -628,6 +630,9 @@
     <string name="network_edit_error_dhcp_end_invalid">无效的 DHCP 地址池结束地址</string>
     <string name="network_edit_error_ipv4_not_added">IPv4 地址输入框不为空，请先添加或清空</string>
     <string name="network_edit_error_ipv6_not_added">IPv6 地址输入框不为空，请先添加或清空</string>
+    <string name="network_edit_error_dns_not_added">DNS 服务器输入框不为空，请先添加或清空</string>
+    <string name="network_edit_error_dns_invalid">无效的 DNS 服务器地址</string>
+    <string name="network_edit_error_dns_empty">至少需要一个 DNS 服务器</string>
 
     <string name="network_info_start">启动</string>
     <string name="network_info_stop">停止</string>

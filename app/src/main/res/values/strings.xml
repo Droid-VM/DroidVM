@@ -641,6 +641,8 @@
     <string name="network_edit_nat">NAT (Network Address Translate)</string>
     <string name="network_edit_category_ipv4">IPv4 Addresses</string>
     <string name="network_edit_ipv4_hint">IPv4 CIDR (e.g. 192.168.1.1/24)</string>
+    <string name="network_edit_category_dns">DNS Servers</string>
+    <string name="network_edit_dns_hint">DNS server (e.g. 8.8.8.8)</string>
     <string name="network_edit_category_ipv6">IPv6 Addresses</string>
     <string name="network_edit_ipv6_hint">IPv6 CIDR (e.g. fd00::1/64)</string>
     <string name="network_edit_no_addresses">No addresses configured.</string>
@@ -666,6 +668,9 @@
     <string name="network_edit_error_dhcp_end_invalid">Invalid DHCP pool end address</string>
     <string name="network_edit_error_ipv4_not_added">IPv4 address input is not empty, please add it first or clear the field</string>
     <string name="network_edit_error_ipv6_not_added">IPv6 address input is not empty, please add it first or clear the field</string>
+    <string name="network_edit_error_dns_not_added">DNS server input is not empty, please add it first or clear the field</string>
+    <string name="network_edit_error_dns_invalid">Invalid DNS server address</string>
+    <string name="network_edit_error_dns_empty">At least one DNS server is required</string>
 
     <string name="network_info_start">Start</string>
     <string name="network_info_stop">Stop</string>
