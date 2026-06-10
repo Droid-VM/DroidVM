@@ -226,6 +226,26 @@
     <string name="edit_vm_net_delete">Remove network</string>
     <string name="edit_vm_net_mac_hint">MAC address (optional)</string>
     <string name="edit_vm_net_mac_random">Random</string>
+    <!-- Port forwarding -->
+    <string name="create_vm_tab_port_forward">Ports</string>
+    <string name="create_vm_category_port_forward">Port Forwarding</string>
+    <string name="edit_vm_pf_add">Add Rule</string>
+    <string name="edit_vm_pf_empty">No port forwarding rules.</string>
+    <string name="edit_vm_pf_delete">Remove rule</string>
+    <string name="edit_vm_pf_protocol">Protocol</string>
+    <string name="edit_vm_pf_host_port">Host Port</string>
+    <string name="edit_vm_pf_guest_port">Guest Port</string>
+    <string name="edit_vm_pf_arrow">→</string>
+    <string name="edit_vm_pf_enabled">Enabled</string>
+    <string name="edit_vm_pf_advanced">Advanced</string>
+    <string name="edit_vm_pf_host_ip">Host IP (optional)</string>
+    <string name="edit_vm_pf_guest_ip">Guest IP (auto if empty)</string>
+    <string name="edit_vm_pf_network">Network</string>
+    <string name="edit_vm_pf_invalid_port">Host port must be 1-65535</string>
+    <string name="vm_info_port_forwards">Port Forwarding</string>
+    <string name="vm_info_pf_none">No active forwards</string>
+    <string name="vm_info_pf_edit">Edit Forwards</string>
+    <string name="edit_vm_pf_apply">Apply</string>
     <string name="edit_vm_disk_path_hint">Path</string>
     <string name="edit_vm_disk_readonly">Read-only</string>
     <string name="edit_vm_disk_bus">Bus</string>

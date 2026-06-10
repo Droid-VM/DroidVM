@@ -57,6 +57,18 @@ final class ChainInfo {
         return backend.iptables(cmd.toArray(new String[0]));
     }
 
+    public boolean insert(@NonNull String... args) {
+        var cmd = new ArrayList<String>();
+        cmd.add("iptables");
+        cmd.add("-t");
+        cmd.add(table);
+        cmd.add("-I");
+        cmd.add(chain);
+        cmd.add("1");
+        cmd.addAll(Arrays.asList(args));
+        return backend.iptables(cmd.toArray(new String[0]));
+    }
+
     @SuppressWarnings("unused")
     public boolean delete(@NonNull String... args) {
         var cmd = new ArrayList<String>();

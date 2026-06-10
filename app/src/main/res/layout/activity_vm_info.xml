@@ -286,6 +286,45 @@
 
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:id="@+id/cc_port_forwards"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/vm_info_port_forwards"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:id="@+id/container_port_forwards"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tv_pf_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="12dp"
+                    android:text="@string/vm_info_pf_none"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="14sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_pf_edit"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/vm_info_pf_edit"
+                    app:icon="@drawable/ic_edit" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
             <Space
                 android:layout_width="match_parent"
                 android:layout_height="128dp" />

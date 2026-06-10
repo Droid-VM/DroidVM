@@ -42,6 +42,7 @@ public final class VMInstance extends VMConfig {
     private BackendBase backend;
     private VMBackendInstance backendInstance;
     private Thread workerThread;
+    private volatile VMPortForwarder portForwarder;
     private final VMInstanceStore store;
 
     public interface VMEventCallback {
@@ -321,6 +322,7 @@ public final class VMInstance extends VMConfig {
                 startReaderThread(vmId, stream);
         }
         setState(VMState.RUNNING);
+        startPortForwarding();
         int code = process.waitFor();
         for (var stream : inst.streams.values()) {
             var reader = stream.getReaderThread();
@@ -345,6 +347,7 @@ public final class VMInstance extends VMConfig {
         } else {
             Log.i(TAG, fmt("VM %s exited with code %d", getName(), code));
         }
+        stopPortForwarding();
         cleanupTap();
         inst.cleanup();
         setState(VMState.STOPPED);
@@ -362,6 +365,50 @@ public final class VMInstance extends VMConfig {
             bridge.removeInterface(tapVal);
             bridge.deleteTap(tapVal);
         }
+    }
+
+    private void startPortForwarding() {
+        try {
+            portForwarder = new VMPortForwarder(this, store.networkStore);
+            portForwarder.start();
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to start port forwarding for VM %s", getName()), e);
+        }
+    }
+
+    private void stopPortForwarding() {
+        if (portForwarder == null) return;
+        try {
+            portForwarder.stop();
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to stop port forwarding for VM %s", getName()), e);
+        }
+        portForwarder = null;
+    }
+
+    @NonNull
+    public JSONArray getConfiguredPortForwards() throws JSONException {
+        var arr = new JSONArray();
+        var pf = item.opt("port_forwards", null);
+        if (pf != null && pf.is(DataItem.Type.ARRAY))
+            for (var iter : pf) {
+                var r = iter.getValue();
+                if (r.is(DataItem.Type.OBJECT)) arr.put(r.toJson());
+            }
+        return arr;
+    }
+
+    @NonNull
+    public JSONArray getActivePortForwards() {
+        var pf = portForwarder;
+        return pf != null ? pf.snapshotApplied() : new JSONArray();
+    }
+
+    /** Runtime-only hot-update of DNAT rules; the frontend owns persistence (re-pushed via vm_modify on next start). */
+    public void applyPortForwards(@NonNull JSONArray rules) {
+        item.set("port_forwards", rules);
+        var pf = portForwarder;
+        if (pf != null) pf.sync();
     }
 
     private void startReaderThread(@NonNull String vmId, @NonNull ConsoleStream stream) {
