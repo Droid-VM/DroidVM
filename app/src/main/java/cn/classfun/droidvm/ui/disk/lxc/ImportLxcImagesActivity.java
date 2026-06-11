@@ -148,27 +148,55 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         inputFolder.setText(path);
         inputFolder.setIconButtonOnClickListener(() -> folderPickerLauncher.launch(null));
         fabImport.setOnClickListener(v -> doImport());
-        setMetaIdle();
+        // sources load asynchronously; keep the Load button disabled until
+        // they are ready or pressing it would NPE on the null source arrays
+        setMetaSourcesLoading();
         runOnPool(this::asyncLoad);
     }
 
     private void asyncLoad() {
-        if (Privacy.isPrivacyAgreed(this)) {
-            apiManager = ApiManager.create(this);
-            isClassFunApiAvailable = apiManager.isServiceEnabled("lxc_images_metadata");
+        try {
+            if (Privacy.isPrivacyAgreed(this)) {
+                apiManager = ApiManager.create(this);
+                isClassFunApiAvailable = apiManager.isServiceEnabled("lxc_images_metadata");
+            }
+            var repos = Repos.load(this);
+            if (repos == null)
+                throw new IllegalStateException("Repo data not found or failed to load");
+            lxcRepo = repos.getRepo().get("lxc-images");
+            if (lxcRepo == null)
+                throw new IllegalStateException("LXC repo info not found in the data");
+            runOnUiThread(this::afterApiDone);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load repo sources", e);
+            final var msg = e.getMessage();
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                setMetaError(msg != null ? msg : "Unknown error");
+                btnLoad.setEnabled(false);
+            });
         }
-        var repos = Repos.load(this);
-        if (repos == null)
-            throw new IllegalStateException("Repo data not found or failed to load");
-        lxcRepo = repos.getRepo().get("lxc-images");
-        if (lxcRepo == null)
-            throw new IllegalStateException("LXC repo info not found in the data");
-        runOnUiThread(this::afterApiDone);
     }
 
     private void afterApiDone() {
+        if (isFinishing()) return;
         setupSourceDropdown();
         setupImageDropdowns();
+        setMetaIdle();
+    }
+
+    private void setMetaSourcesLoading() {
+        progressMeta.setVisibility(VISIBLE);
+        tvMetaStatus.setText(R.string.lxc_meta_loading);
+        tvMetaStatus.setTextColor(resolveThemeColor(colorOnSurfaceVariant));
+        btnLoad.setEnabled(false);
+        setImageSectionEnabled(false);
+        setOutputEnabled(false);
+    }
+
+    private boolean sourcesReady() {
+        return metaSourceKeys != null && metaSourceLabels != null
+            && dlSourceKeys != null && dlSourceLabels != null;
     }
 
     @Override
@@ -291,6 +319,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
 
     @Nullable
     private String resolveSourceUrl(@NonNull String key) {
+        if (lxcRepo == null) return null;
         if (key.equals("official")) return lxcRepo.getUrl();
         if (key.equals("custom")) return null;
         var mirror = lxcRepo.getMirror(key);
@@ -328,7 +357,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     }
 
     private void loadImages() {
-        if (isLoading || isDownloading) return;
+        if (isLoading || isDownloading || !sourcesReady()) return;
         var baseUrl = getMetaBaseUrl();
         if (baseUrl.isEmpty()) {
             if (getSelectedMetaSourceKey().equals("custom"))
@@ -628,6 +657,8 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     }
 
     private String getSelectedMetaSourceKey() {
+        if (metaSourceLabels == null || metaSourceKeys == null)
+            return isClassFunApiAvailable ? "classfun" : "official";
         var label = dropdownMetaSource.getText();
         for (int i = 0; i < metaSourceLabels.length; i++)
             if (metaSourceLabels[i].equals(label))
@@ -636,6 +667,8 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     }
 
     private String getSelectedDlSourceKey() {
+        if (dlSourceLabels == null || dlSourceKeys == null)
+            return "official";
         var label = dropdownDlSource.getText();
         for (int i = 0; i < dlSourceLabels.length; i++)
             if (dlSourceLabels[i].equals(label))
