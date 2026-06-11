@@ -36,8 +36,7 @@ public final class InfoHandler extends RequestHandler {
             data.put("live_addresses", inst.listAddresses());
             data.put("live_interfaces", inst.listInterfaces());
             data.put("neighbors", inst.listNeighbors());
-            if (inst.item.optBoolean("dhcp_enabled", false))
-                data.put("dhcp_leases", inst.listDhcpLeases());
+            data.put("dhcp_leases", inst.listDhcpLeases());
         }
         res.put("data", data);
     }

@@ -82,13 +82,6 @@
                 android:visibility="gone" />
 
             <include
-                android:id="@+id/tab_content_port_forward"
-                layout="@layout/partial_vm_edit_port_forward"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:visibility="gone" />
-
-            <include
                 android:id="@+id/tab_content_graphics"
                 layout="@layout/partial_vm_edit_graphics"
                 android:layout_width="match_parent"
