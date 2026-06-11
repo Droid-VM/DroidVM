@@ -38,6 +38,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.tabs.TabLayout;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -49,10 +50,12 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.network.IPv4Address;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
+import cn.classfun.droidvm.lib.store.network.Ipv6Source;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
+import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.ui.SwipeableTabActivity;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.network.NetworkActions;
@@ -84,6 +87,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
     private JSONArray liveInterfaces = new JSONArray();
     private JSONArray neighbors = new JSONArray();
     private JSONArray dhcpLeases = new JSONArray();
+    private JSONObject infoData = new JSONObject();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -170,7 +174,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
     }
 
     private void setupTabs() {
-        hasDhcp = config.item.optBoolean("dhcp_enabled", false);
+        hasDhcp = hasAnyDhcp();
         int count = hasDhcp ? 5 : 4;
         tabContainer.removeAllViews();
         tabLayout.clearOnTabSelectedListeners();
@@ -218,7 +222,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         titles.add(getString(R.string.network_info_tab_basic));
         titles.add(getString(R.string.network_info_tab_addresses));
         titles.add(getString(R.string.network_info_tab_ports));
-        if (config != null && config.item.optBoolean("dhcp_enabled", false))
+        if (hasAnyDhcp())
             titles.add(getString(R.string.network_info_tab_dhcp));
         titles.add(getString(R.string.network_info_tab_neighbors));
         return titles;
@@ -260,6 +264,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
             mainHandler.post(() -> {
                 if (isFinishing()) return;
                 if (data != null) {
+                    infoData = data;
                     currentState = optEnum(data, "state", NetworkState.STOPPED);
                     liveAddresses = data.optJSONArray("live_addresses");
                     if (liveAddresses == null) liveAddresses = new JSONArray();
@@ -418,63 +423,135 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         updateStateUI();
         addInfoRow(container, R.drawable.ic_switch, getString(R.string.network_info_bridge),
             config.item.optString("bridge_name", ""));
-        var mac = config.item.optString("mac_address", "");
+        addInfoRow(container, R.drawable.ic_switch,
+            getString(R.string.network_edit_bridge_type),
+            getString(config.getBridgeType() == BridgeType.GVISOR
+                ? R.string.network_edit_bridge_type_gvisor
+                : R.string.network_edit_bridge_type_linux));
+        String modeLabel;
+        switch (config.getUplinkMode()) {
+            case L2:
+                modeLabel = getString(R.string.network_edit_uplink_l2);
+                break;
+            case L3:
+                modeLabel = getString(R.string.network_edit_uplink_l3);
+                break;
+            default:
+                modeLabel = getString(R.string.network_edit_uplink_none);
+                break;
+        }
+        addInfoRow(container, R.drawable.ic_web_plus,
+            getString(R.string.network_edit_uplink_mode), modeLabel);
+        var mac = config.getBridgeMacAddress();
         addInfoRow(container, R.drawable.ic_ethernet,
             getString(R.string.network_info_mac),
-            mac.isEmpty() ? "-" : mac);
+            mac == null ? "-" : mac);
         addInfoRow(container, R.drawable.ic_refresh_auto,
             getString(R.string.network_info_auto_up),
             strStatus(config.item.optBoolean("auto_up", false)));
         addInfoRow(container, R.drawable.ic_file_tree,
             getString(R.string.network_info_stp),
             strStatus(config.item.optBoolean("stp", false)));
-        addInfoRow(container, R.drawable.ic_web_plus,
-            getString(R.string.network_info_nat),
-            strStatus(config.item.optBoolean("nat", false)));
-        addInfoRow(container, R.drawable.ic_router,
-            getString(R.string.network_info_dhcp),
-            strStatus(config.item.optBoolean("dhcp_enabled", false)));
-        if (config.item.optBoolean("dhcp_enabled", false)) try {
-            var startStr = config.item.optString("dhcp_range_start", "");
-            var endStr = config.item.optString("dhcp_range_end", "");
-            if (!startStr.isEmpty() && !endStr.isEmpty()) {
-                var start = requireNonNull(IPv4Address.parse(startStr));
-                var end = requireNonNull(IPv4Address.parse(endStr));
-                long count = end.value() - start.value() + 1;
-                if (count < 0) count = 0;
-                var range = getResources().getQuantityString(
-                    R.plurals.network_info_dhcp_pool, (int) count,
-                    start.toString(), end.toString(), count
-                );
-                addInfoRow(container, R.drawable.ic_ip_network,
-                    getString(R.string.network_info_dhcp_range), range);
+        if (config.getUplinkMode() == UplinkMode.L2) {
+            var uplink = config.getL2Uplink();
+            var resolved = infoData.optString("resolved_uplink", "");
+            addInfoRow(container, R.drawable.ic_ethernet,
+                getString(R.string.network_edit_l2_uplink),
+                resolved.isEmpty() ? (uplink == null ? "-" : uplink)
+                    : fmt("%s (%s)", uplink, resolved));
+            if (infoData.has("pbridge_running"))
+                addInfoRow(container, R.drawable.ic_connection,
+                    getString(R.string.network_info_pbridge),
+                    strStatus(infoData.optBoolean("pbridge_running", false)));
+        }
+        for (var vlan : config.getVlans()) {
+            var summary = new StringBuilder();
+            var net4 = vlan.getIpv4Cidr();
+            if (net4 != null) {
+                summary.append(net4);
+                if (vlan.isIpv4Snat()) summary.append(" SNAT");
+                if (vlan.isDhcp4Enabled()) summary.append(fmt(
+                    " DHCP %d-%d",
+                    vlan.getDhcp4OffsetStart(), vlan.getDhcp4OffsetEnd()));
             }
-        } catch (Exception ignored) {
+            if (vlan.getIpv6Source() == Ipv6Source.DHCP_PD) {
+                if (summary.length() > 0) summary.append("\n");
+                summary.append("IPv6: DHCP-PD via ").append(vlan.getPdUplink());
+            } else if (vlan.getIpv6Cidr() != null) {
+                if (summary.length() > 0) summary.append("\n");
+                summary.append(vlan.getIpv6Cidr());
+                if (vlan.isIpv6Snat()) summary.append(" SNAT");
+                if (vlan.isSlaacEnabled()) summary.append(" SLAAC");
+            }
+            addInfoRow(container, R.drawable.ic_ip_network,
+                vlan.isUntagged()
+                    ? getString(R.string.network_edit_vlan_untagged)
+                    : fmt("VLAN %d", vlan.getVlanId()),
+                summary.length() == 0 ? "-" : summary.toString());
+        }
+        if (infoData.has("dnsmasq_running"))
+            addInfoRow(container, R.drawable.ic_router,
+                getString(R.string.network_info_dnsmasq),
+                strStatus(infoData.optBoolean("dnsmasq_running", false)));
+        if (infoData.has("gvswitch_running"))
+            addInfoRow(container, R.drawable.ic_switch,
+                getString(R.string.network_info_gvswitch),
+                strStatus(infoData.optBoolean("gvswitch_running", false)));
+        var pdStatus = infoData.optJSONArray("pd_status");
+        if (pdStatus != null) {
+            for (int i = 0; i < pdStatus.length(); i++) {
+                var pd = pdStatus.optJSONObject(i);
+                if (pd == null) continue;
+                var prefix = pd.optString("prefix", "");
+                addInfoRow(container, R.drawable.ic_ip_network,
+                    fmt("DHCP-PD (%s)", pd.optString("uplink", "")),
+                    prefix.isEmpty()
+                        ? pd.optString("state", "-")
+                        : fmt("%s (%s)", prefix, pd.optString("state", "")));
+            }
         }
         var df = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT);
         addInfoRow(container, R.drawable.ic_clock, getString(R.string.network_info_created),
             df.format(new Date(config.item.optLong("created_at", 0))));
     }
 
+    private boolean hasAnyDhcp() {
+        if (config == null) return false;
+        for (var vlan : config.getVlans())
+            if (vlan.isDhcp4Enabled() || vlan.isDhcp6Enabled()) return true;
+        return false;
+    }
+
     private void bindAddresses(@NonNull LinearLayout container) {
         boolean hasAny = false;
         if (config != null) {
-            config.item.get("ipv4_addresses").forEachArray(a -> {
-                try {
-                    addEntry(container, R.drawable.ic_ip_network,
-                        a.asString(), "IPv4 (configured)");
-                } catch (Exception ignored) {
+            for (var vlan : config.getVlans()) {
+                var label = vlan.isUntagged()
+                    ? getString(R.string.network_edit_vlan_untagged)
+                    : fmt("VLAN %d", vlan.getVlanId());
+                var net4 = vlan.getIpv4Cidr();
+                if (net4 != null) {
+                    addEntry(container, R.drawable.ic_ip_network, net4,
+                        fmt("IPv4 (%s)", label));
+                    hasAny = true;
                 }
-            });
-            config.item.get("ipv6_addresses").forEachArray(a -> {
-                try {
-                    addEntry(container, R.drawable.ic_ip_network,
-                        a.asString(), "IPv6 (configured)");
-                } catch (Exception ignored) {
+                for (var cidr : vlan.getIpv4Secondary()) {
+                    addEntry(container, R.drawable.ic_ip_network, cidr,
+                        fmt("IPv4 secondary (%s)", label));
+                    hasAny = true;
                 }
-            });
-            hasAny = !config.item.get("ipv4_addresses").isEmpty() ||
-                !config.item.get("ipv6_addresses").isEmpty();
+                var net6 = vlan.getIpv6Cidr();
+                if (net6 != null && vlan.getIpv6Source() == Ipv6Source.STATIC) {
+                    addEntry(container, R.drawable.ic_ip_network, net6,
+                        fmt("IPv6 (%s)", label));
+                    hasAny = true;
+                }
+                for (var cidr : vlan.getIpv6Secondary()) {
+                    addEntry(container, R.drawable.ic_ip_network, cidr,
+                        fmt("IPv6 secondary (%s)", label));
+                    hasAny = true;
+                }
+            }
         }
         for (int i = 0; i < liveAddresses.length(); i++) {
             var addr = liveAddresses.optString(i, "");
