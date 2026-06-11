@@ -7,6 +7,11 @@
         android:title="@string/logs_save" />
 
     <item
+        android:id="@+id/action_share_log"
+        android:icon="@drawable/ic_share"
+        android:title="@string/logs_share" />
+
+    <item
         android:id="@+id/action_clear_log"
         android:icon="@drawable/ic_delete"
         android:title="@string/logs_clear" />

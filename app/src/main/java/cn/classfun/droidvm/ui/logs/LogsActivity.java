@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
+import cn.classfun.droidvm.lib.utils.ShareUtils;
 
 public final class LogsActivity extends AppCompatActivity {
     private static final int MAX_LOG_LINES = 10000;
@@ -88,6 +89,10 @@ public final class LogsActivity extends AppCompatActivity {
             saveLogs();
             return true;
         }
+        if (id == R.id.menu_share) {
+            shareLogs();
+            return true;
+        }
         if (id == R.id.menu_scroll_bottom) {
             scrollToBottom();
             return true;
@@ -99,10 +104,31 @@ public final class LogsActivity extends AppCompatActivity {
         return false;
     }
 
-    private void saveLogs() {
+    private String logFilename() {
         var sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
-        var filename = fmt("droidvm_logs_%s.txt", sdf.format(new Date()));
-        saveLauncher.launch(filename);
+        return fmt("droidvm_logs_%s.txt", sdf.format(new Date()));
+    }
+
+    private void saveLogs() {
+        saveLauncher.launch(logFilename());
+    }
+
+    private void shareLogs() {
+        var sb = new StringBuilder();
+        for (var line : adapter.getLines()) {
+            sb.append(line).append('\n');
+        }
+        ShareUtils.shareTextAsFile(
+            this,
+            logFilename(),
+            sb.toString(),
+            getString(R.string.logs_share_title),
+            msg -> Toast.makeText(
+                this,
+                fmt(getString(R.string.logs_share_failed), msg),
+                Toast.LENGTH_LONG
+            ).show()
+        );
     }
 
     private void onSaveResult(Uri uri) {

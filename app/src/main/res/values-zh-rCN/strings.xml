@@ -737,6 +737,9 @@
     <string name="logs_save">保存</string>
     <string name="logs_save_success">日志保存成功</string>
     <string name="logs_save_failed">保存日志失败：%1$s</string>
+    <string name="logs_share">分享</string>
+    <string name="logs_share_title">分享日志</string>
+    <string name="logs_share_failed">分享日志失败：%1$s</string>
 
     <string name="privacy_step_title">隐私政策</string>
     <string name="privacy_step_desc">继续之前请阅读并同意隐私政策</string>

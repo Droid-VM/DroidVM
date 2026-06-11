@@ -50,6 +50,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
+import cn.classfun.droidvm.lib.utils.ShareUtils;
 
 public final class VMConsoleActivity extends AppCompatActivity {
     private static final String TAG = "VMConsoleActivity";
@@ -172,6 +173,9 @@ public final class VMConsoleActivity extends AppCompatActivity {
         if (id == R.id.action_save_log) {
             saveLogToFile();
             return true;
+        } else if (id == R.id.action_share_log) {
+            shareLog();
+            return true;
         } else if (id == R.id.action_clear_log) {
             clearLog();
             return true;
@@ -258,27 +262,18 @@ public final class VMConsoleActivity extends AppCompatActivity {
         ));
     }
 
-    private void onSaveLogResult(@Nullable Uri uri) {
-        if (uri == null) return;
-        Consumer<Integer> showToast = resId -> runOnUiThread(() ->
-            Toast.makeText(this, resId, LENGTH_SHORT).show());
+    /** Fetch the full console history via IPC; {@code onText} receives the decoded text. */
+    private void fetchConsoleText(Consumer<String> onText) {
         DaemonConnection.OnError err = e -> {
             Log.w(TAG, fmt("Failed to fetch log for %s stream %s", vmName, streamName), e);
-            showToast.accept(R.string.vm_info_logs_no_logs);
+            runOnUiThread(() ->
+                Toast.makeText(this, R.string.vm_info_logs_no_logs, LENGTH_SHORT).show());
         };
         DaemonConnection.OnUnsuccessful failed = resp ->
             err.onError(new Exception(resp.optString("message", "Unknown error")));
         DaemonConnection.OnResponse success = resp -> {
             var data = resp.optString(streamName, "");
-            var text = URLDecoder.decode(data, StandardCharsets.UTF_8);
-            try (var os = requireNonNull(getContentResolver().openOutputStream(uri))) {
-                os.write(text.getBytes(StandardCharsets.UTF_8));
-                os.flush();
-                showToast.accept(R.string.logs_save_success);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to save log file", e);
-                showToast.accept(R.string.vm_info_logs_save_failed);
-            }
+            onText.accept(URLDecoder.decode(data, StandardCharsets.UTF_8));
         };
         runOnPool(() -> DaemonConnection.getInstance().buildRequest("vm_console_history")
             .put("vm_id", vmId)
@@ -287,6 +282,41 @@ public final class VMConsoleActivity extends AppCompatActivity {
             .onUnsuccessful(failed)
             .onError(err)
             .invoke());
+    }
+
+    private void onSaveLogResult(@Nullable Uri uri) {
+        if (uri == null) return;
+        Consumer<Integer> showToast = resId -> runOnUiThread(() ->
+            Toast.makeText(this, resId, LENGTH_SHORT).show());
+        fetchConsoleText(text -> {
+            try (var os = requireNonNull(getContentResolver().openOutputStream(uri))) {
+                os.write(text.getBytes(StandardCharsets.UTF_8));
+                os.flush();
+                showToast.accept(R.string.logs_save_success);
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save log file", e);
+                showToast.accept(R.string.vm_info_logs_save_failed);
+            }
+        });
+    }
+
+    private void shareLog() {
+        var sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+        var filename = fmt(
+            "droidvm_console_%s_%s_%s.txt",
+            vmName, streamName, sdf.format(new Date())
+        );
+        fetchConsoleText(text -> ShareUtils.shareTextAsFile(
+            this,
+            filename,
+            text,
+            getString(R.string.logs_share_title),
+            msg -> runOnUiThread(() -> Toast.makeText(
+                this,
+                fmt(getString(R.string.logs_share_failed), msg),
+                Toast.LENGTH_LONG
+            ).show())
+        ));
     }
 
     private void clearLog() {
