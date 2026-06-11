@@ -10,3 +10,9 @@
 [submodule "app/src/main/assets/prebuilts"]
 	path = app/src/main/assets/prebuilts
 	url = https://github.com/Droid-VM/DroidVM-Prebuilts
+[submodule "thirdparty/gvisor-vswitch"]
+	path = thirdparty/gvisor-vswitch
+	url = https://github.com/HuJK/gvisor-vswitch
+[submodule "thirdparty/pseudo-bridge-rs"]
+	path = thirdparty/pseudo-bridge-rs
+	url = https://github.com/KusakabeShi/pseudo-bridge-rs

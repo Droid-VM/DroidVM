@@ -122,6 +122,29 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
     }
 }
 
+abstract class CopyThirdpartyBinAssetsTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val distDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val outDir = outputDir.get().asFile
+        outDir.deleteRecursively()
+        val dist = distDir.get().asFile
+        if (!dist.exists()) return
+        dist.listFiles()?.filter { it.isDirectory }?.forEach { abiDir ->
+            abiDir.listFiles()?.filter { it.isFile }?.forEach { src ->
+                val dest = File(outDir, "bin/${abiDir.name}/${src.name}")
+                dest.parentFile.mkdirs()
+                src.copyTo(dest, overwrite = true)
+            }
+        }
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         val variantName = variant.name.replaceFirstChar { it.uppercase() }
@@ -142,6 +165,19 @@ androidComponents {
         }
         variant.sources.assets?.addGeneratedSourceDirectory(
             copyNativeTask, CopyNativeBinAssetsTask::outputDir
+        )
+        val copyThirdpartyTask = tasks.register<CopyThirdpartyBinAssetsTask>(
+            "copyThirdpartyBinAssets${variantName}"
+        ) {
+            distDir.set(rootProject.layout.projectDirectory.dir("thirdparty/dist"))
+            outputDir.set(
+                layout.buildDirectory.dir(
+                    "generated/droidvm_thirdparty_assets/${variant.name}"
+                )
+            )
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            copyThirdpartyTask, CopyThirdpartyBinAssetsTask::outputDir
         )
     }
 }
