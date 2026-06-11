@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.network.backend;
 
+import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.readFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
@@ -14,6 +15,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +24,7 @@ import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
 import cn.classfun.droidvm.lib.network.IPNetwork;
 import cn.classfun.droidvm.lib.network.IPv4Network;
+import cn.classfun.droidvm.lib.network.IPv6Network;
 
 @SuppressWarnings({"BooleanMethodIsAlwaysInverted", "unused", "UnusedReturnValue"})
 public final class LinuxNetwork extends BackendBase {
@@ -39,6 +42,99 @@ public final class LinuxNetwork extends BackendBase {
     public boolean deleteBridge(@NonNull String name) {
         Log.i(TAG, fmt("Deleting bridge: %s", name));
         var result = runList("ip", "link", "delete", name, "type", "bridge");
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    /**
+     * Resolves the iproute2 "bridge" tool: prebuilt, then system, then PATH.
+     */
+    @NonNull
+    public static String resolveBridgeTool() {
+        var prebuilt = getPrebuiltBinaryPath("bridge");
+        if (new File(prebuilt).canExecute()) return prebuilt;
+        if (new File("/system/bin/bridge").canExecute()) return "/system/bin/bridge";
+        return "bridge";
+    }
+
+    public boolean setVlanFiltering(@NonNull String bridge, boolean enabled) {
+        var val = enabled ? "1" : "0";
+        Log.i(TAG, fmt("Setting vlan_filtering %s on %s", val, bridge));
+        var result = runList(
+            "ip", "link", "set", "dev", bridge,
+            "type", "bridge", "vlan_filtering", val
+        );
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    public boolean bridgeVlanAdd(
+        @NonNull String dev, int vid, boolean pvid, boolean untagged, boolean self
+    ) {
+        var cmd = new ArrayList<>(List.of(
+            resolveBridgeTool(), "vlan", "add", "dev", dev, "vid", String.valueOf(vid)
+        ));
+        if (pvid) cmd.add("pvid");
+        if (untagged) cmd.add("untagged");
+        if (self) cmd.add("self");
+        var result = runList(cmd);
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    public boolean bridgeVlanDel(@NonNull String dev, int vid, boolean self) {
+        var cmd = new ArrayList<>(List.of(
+            resolveBridgeTool(), "vlan", "del", "dev", dev, "vid", String.valueOf(vid)
+        ));
+        if (self) cmd.add("self");
+        var result = runList(cmd);
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    /** Creates the {bridge}.{vid} 802.1q subinterface carrying that VLAN's L3 config. */
+    public boolean addVlanSubInterface(@NonNull String bridge, int vid) {
+        var name = vlanSubInterface(bridge, vid);
+        Log.i(TAG, fmt("Creating VLAN subinterface %s", name));
+        var result = runList(
+            "ip", "link", "add", "link", bridge, "name", name,
+            "type", "vlan", "id", String.valueOf(vid)
+        );
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    @NonNull
+    public static String vlanSubInterface(@NonNull String bridge, int vid) {
+        return fmt("%s.%d", bridge, vid);
+    }
+
+    public boolean setPortIsolated(@NonNull String dev, boolean isolated) {
+        var result = runList(
+            "ip", "link", "set", "dev", dev,
+            "type", "bridge_slave", "isolated", isolated ? "on" : "off"
+        );
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    /**
+     * Locks a bridge port so only static fdb entries may send (MAC
+     * security). Requires kernel >= 5.16; callers degrade gracefully.
+     */
+    public boolean setPortLocked(@NonNull String dev, boolean locked) {
+        var result = runList(
+            "ip", "link", "set", "dev", dev,
+            "type", "bridge_slave", "locked", locked ? "on" : "off"
+        );
+        result.printLog(TAG);
+        return result.isSuccess();
+    }
+
+    public boolean fdbAddStatic(@NonNull String mac, @NonNull String dev) {
+        var result = runList(
+            resolveBridgeTool(), "fdb", "add", mac, "dev", dev, "master", "static"
+        );
         result.printLog(TAG);
         return result.isSuccess();
     }
@@ -319,9 +415,11 @@ public final class LinuxNetwork extends BackendBase {
     }
 
     @NonNull
-    private Set<String> listRouteTables() {
+    public Set<String> listRouteTables(boolean ipv6) {
         var set = new LinkedHashSet<String>();
-        var result = runListQuiet("ip", "rule", "show");
+        var result = ipv6
+            ? runListQuiet("ip", "-6", "rule", "show")
+            : runListQuiet("ip", "rule", "show");
         if (!result.isSuccess()) {
             Log.w(TAG, "Failed to list IP rules");
             result.printLog("ip-rule");
@@ -336,18 +434,40 @@ public final class LinuxNetwork extends BackendBase {
         return set;
     }
 
+    /** Adds one subnet to every policy routing table so host replies route back. */
+    public void populateRouteForNetwork(@NonNull String dev, @NonNull IPNetwork<?, ?, ?> net) {
+        boolean ipv6 = net instanceof IPv6Network;
+        var spec = net.toNetworkString();
+        for (var table : listRouteTables(ipv6)) {
+            if (ipv6)
+                runList("ip", "-6", "route", "add", spec, "dev", dev, "table", table);
+            else
+                runList("ip", "route", "add", spec, "dev", dev, "table", table);
+        }
+    }
+
     @Override
     public void populateRuleRoute(@NonNull NetworkInstance inst) {
-        var br = inst.item.optString("bridge_name", "");
-        var list = listRouteTables();
-        inst.item.get("ipv4_addresses").forEachArray(a -> {
-            try {
-                var addr = IPv4Network.parse(a.asString());
-                var net = addr.network();
-                for (var table : list)
-                    runList("ip", "route", "add", net.toString(), "dev", br, "table", table);
-            } catch (Exception ignored) {
+        var br = inst.getBridgeName();
+        if (br == null) return;
+        for (var vlan : inst.getVlans()) {
+            var dev = vlan.isUntagged() ? br : vlanSubInterface(br, vlan.getVlanId());
+            var net4 = vlan.getIpv4Network();
+            if (net4 != null) populateRouteForNetwork(dev, net4);
+            for (var cidr : vlan.getIpv4Secondary()) {
+                try {
+                    populateRouteForNetwork(dev, IPv4Network.parse(cidr));
+                } catch (Exception ignored) {
+                }
             }
-        });
+            var net6 = vlan.getIpv6Network();
+            if (net6 != null) populateRouteForNetwork(dev, net6);
+            for (var cidr : vlan.getIpv6Secondary()) {
+                try {
+                    populateRouteForNetwork(dev, IPv6Network.parse(cidr));
+                } catch (Exception ignored) {
+                }
+            }
+        }
     }
 }

@@ -60,8 +60,10 @@ public final class DefaultRouterWatcher {
     }
 
     private void setDefaultRouterForNetworks(@NonNull String net) {
-        context.getNetworks().forEach((uuid, inst) ->
-            addRule(net, inst.item.optString("bridge_name", "")));
+        context.getNetworks().forEach((uuid, inst) -> {
+            for (var dev : inst.getL3Devices())
+                addRule(net, dev);
+        });
     }
 
     private synchronized void runOnce() {
@@ -85,7 +87,8 @@ public final class DefaultRouterWatcher {
 
     public synchronized void setForNewNetwork(@NonNull NetworkInstance inst) {
         if (lastDefault == null) return;
-        addRule(lastDefault, inst.item.optString("bridge_name", ""));
+        for (var dev : inst.getL3Devices())
+            addRule(lastDefault, dev);
     }
 
     public void start() {
