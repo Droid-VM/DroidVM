@@ -9,6 +9,12 @@
         app:showAsAction="ifRoom" />
 
     <item
+        android:id="@+id/menu_share"
+        android:icon="@drawable/ic_share"
+        android:title="@string/logs_share"
+        app:showAsAction="ifRoom" />
+
+    <item
         android:id="@+id/menu_scroll_bottom"
         android:icon="@drawable/ic_expand_more"
         android:title="@string/logs_scroll_bottom"

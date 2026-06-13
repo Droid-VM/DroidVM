@@ -776,6 +776,9 @@
     <string name="logs_save">Save</string>
     <string name="logs_save_success">Logs saved successfully</string>
     <string name="logs_save_failed">Failed to save logs: %1$s</string>
+    <string name="logs_share">Share</string>
+    <string name="logs_share_title">Share logs</string>
+    <string name="logs_share_failed">Failed to share logs: %1$s</string>
 
     <string name="privacy_step_title">Privacy Policy</string>
     <string name="privacy_step_desc">Please read and agree to the privacy policy before continuing</string>
