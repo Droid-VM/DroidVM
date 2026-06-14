@@ -16,10 +16,19 @@ fun runGit(vararg args: String): String {
     return output
 }
 
+// Tolerant variant: returns null instead of throwing, for git calls that may
+// legitimately fail (e.g. describe on a checkout with no tags).
+fun runGitOrNull(vararg args: String): String? =
+    runCatching { runGit(*args) }.getOrNull()
+
 val gitCommitCount = runGit("rev-list", "--count", "HEAD").toInt()
 val gitShortSha = runGit("rev-parse", "--short", "HEAD")
 
-val gitDescribe = runGit("describe", "--long", "--tags")
+// describe fails on a checkout without tags (shallow clone, or tags not fetched);
+// fall back to a 0.0.0 base so the build still works and the version is clearly
+// marked as tag-less.
+val gitDescribe = (runGitOrNull("describe", "--long", "--tags")
+    ?: "0.0.0-$gitCommitCount-g$gitShortSha")
     .removePrefix("v").removePrefix("V")
 val generatedVersionName: String = if (gitDescribe.matches(Regex(".*-0-g[0-9a-f]+$"))) {
     gitDescribe.replace(Regex("-0-g[0-9a-f]+$"), "")
@@ -86,6 +95,14 @@ android {
         aidl = true
         buildConfig = true
     }
+    packaging {
+        jniLibs {
+            // Extract native libs to a real on-disk dir so lbx (shipped as
+            // liblbx.so) is an executable file the app can run from its own
+            // nativeLibraryDir — no root, no daemon needed for a URL fetch.
+            useLegacyPackaging = true
+        }
+    }
 }
 
 abstract class CopyNativeBinAssetsTask : DefaultTask() {
@@ -122,9 +139,47 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
     }
 }
 
+// Ship lbx as `liblbx.so` in jniLibs so the (non-root) UI process can exec it
+// from its nativeLibraryDir — the data-dir copy used by the daemon isn't
+// executable by the app's untrusted_app SELinux domain.
+abstract class CopyLbxJniLibsTask : DefaultTask() {
+    @get:InputDirectory
+    abstract val distDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val outDir = outputDir.get().asFile
+        outDir.deleteRecursively()
+        val dist = distDir.get().asFile
+        if (!dist.exists()) return
+        dist.listFiles()?.filter { it.isDirectory }?.forEach { abiDir ->
+            val src = File(abiDir, "lbx")
+            if (src.isFile) {
+                val dest = File(outDir, "${abiDir.name}/liblbx.so")
+                dest.parentFile.mkdirs()
+                src.copyTo(dest, overwrite = true)
+            }
+        }
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         val variantName = variant.name.replaceFirstChar { it.uppercase() }
+        val copyLbxJniTask = tasks.register<CopyLbxJniLibsTask>(
+            "copyLbxJniLibs${variantName}"
+        ) {
+            distDir.set(rootProject.layout.projectDirectory.dir("app/src/main/assets/bin"))
+            outputDir.set(
+                layout.buildDirectory.dir("generated/lbx_jnilibs/${variant.name}")
+            )
+        }
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(
+            copyLbxJniTask, CopyLbxJniLibsTask::outputDir
+        )
         val copyNativeTask = tasks.register<CopyNativeBinAssetsTask>(
             "copyNativeBinAssets${variantName}"
         ) {

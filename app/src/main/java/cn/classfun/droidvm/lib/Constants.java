@@ -22,6 +22,7 @@ public final class Constants {
     public static final String GITHUB_ISSUE_URL = "https://github.com/Droid-VM/DroidVM/issues";
     public static final String[] BINARIES_PREBUILT = {"7za"};
     public static final String[] BINARIES_BUILT = {"droidvm", "daemon"};
+    public static final String[] BINARIES_THIRDPARTY = {"gvswitch", "pbridge", "bridgedhcp", "lbx", "netbox"};
     public static final String[] LIBRARIES_BUILT = {"libsimpledump.so", "libunixhelper.so"};
     /**
      * IFA_RT_PRIORITY magic that pbridge tags its ND/ARP-offload proxy
