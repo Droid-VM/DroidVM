@@ -469,6 +469,7 @@
     <string name="lxc_custom_download_url_hint">下载镜像站基础 URL</string>
     <string name="lxc_meta_idle">请先加载元数据</string>
     <string name="lxc_meta_loading">加载中\u2026</string>
+    <string name="lxc_meta_refreshing">正在更新源列表\u2026</string>
     <plurals name="lxc_meta_count">
         <item quantity="other">元数据：%1$d 个镜像</item>
     </plurals>

@@ -48,11 +48,12 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 
-public final class VMConsoleActivity extends AppCompatActivity {
+public final class VMConsoleActivity extends AppCompatActivity implements ImeInsetsExempt {
     private static final String TAG = "VMConsoleActivity";
     public static final String EXTRA_VM_ID = "vm_id";
     public static final String EXTRA_VM_NAME = "vm_name";
