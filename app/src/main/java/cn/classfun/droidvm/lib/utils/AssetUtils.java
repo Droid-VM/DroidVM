@@ -197,6 +197,7 @@ public final class AssetUtils {
     public static void extractBinaries(@NonNull Context context) {
         extractAsset(context, "bin", BINARIES_BUILT, false);
         extractAsset(context, "bin", BINARIES_PREBUILT, true);
+        extractAsset(context, "bin", BINARIES_THIRDPARTY, false);
     }
 
     public static void extractLibraries(@NonNull Context context) {

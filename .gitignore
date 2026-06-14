@@ -9,3 +9,12 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# build.sh stages the compiled network/boot binaries next to the committed
+# 7za prebuilt; only 7za is tracked, the rest are build output.
+/app/src/thirdparty
+/app/src/main/assets/bin/*/bridgedhcp
+/app/src/main/assets/bin/*/gvswitch
+/app/src/main/assets/bin/*/lbx
+/app/src/main/assets/bin/*/netbox
+/app/src/main/assets/bin/*/pbridge
