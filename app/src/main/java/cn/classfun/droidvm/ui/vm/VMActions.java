@@ -1,9 +1,12 @@
 package cn.classfun.droidvm.ui.vm;
 
 import static android.widget.Toast.LENGTH_LONG;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isClearLogsBeforeStartEnabled;
 
+import android.content.Context;
 import android.os.Handler;
 import android.util.Log;
 import android.widget.Toast;
@@ -16,8 +19,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.ui.vm.boot.BootMenuDialog;
 
 public final class VMActions {
     private static final String TAG = "VMActions";
@@ -30,6 +36,84 @@ public final class VMActions {
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
         @NonNull AtomicBoolean wantOpenConsole
+    ) {
+        // manual GUI start of an image-booting VM goes through the
+        // GRUB-style entry menu first (auto-start in the daemon does not)
+        if (BootMenuDialog.wanted(config) && ui.isAlive()) {
+            BootMenuDialog.show(
+                ui.getContext(), config,
+                (bootEntry, remember, selected, builtinCmdline) -> {
+                    var startEntry = remember
+                        ? rememberChoice(ui.getContext(), config, bootEntry,
+                            selected, builtinCmdline)
+                        : bootEntry;
+                    doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
+                },
+                () -> { /* cancelled: do not start */ }
+            );
+            return;
+        }
+        doCreateAndStart(config, mainHandler, ui, wantOpenConsole, null);
+    }
+
+    /**
+     * Persists a "remember this choice" boot-menu selection to the on-disk
+     * VM store — the source of truth the list reloads on resume, which is
+     * why a one-shot start that only mutated the in-memory config never
+     * stuck. The same change is mirrored onto {@code config} so the daemon
+     * gets it via vm_modify. The built-in kernel is baked into a plain
+     * manual source (so it persists without a one-shot override and the
+     * menu stops appearing for that VM); image entries are pinned, with a
+     * null selection clearing the pin to follow the bootloader default.
+     *
+     * @return the boot_entry to start with (null once the built-in choice
+     *         has been baked into the config; the original key otherwise)
+     */
+    @Nullable
+    private static String rememberChoice(
+        @NonNull Context context,
+        @NonNull VMConfig config,
+        @Nullable String bootEntry,
+        @Nullable BootConfig.ImageEntry selected,
+        @Nullable String builtinCmdline
+    ) {
+        boolean builtin = BootConfig.BUILTIN_ENTRY_KEY.equals(bootEntry);
+        applyChoice(BootConfig.of(config), builtin, selected, builtinCmdline);
+        var store = new VMStore();
+        if (store.load(context)) {
+            var stored = store.findById(config.getId());
+            if (stored != null) {
+                applyChoice(BootConfig.of(stored), builtin, selected, builtinCmdline);
+                store.save(context);
+            }
+        }
+        // built-in now boots as a plain manual config — no one-shot override
+        return builtin ? null : bootEntry;
+    }
+
+    private static void applyChoice(
+        @NonNull BootConfig boot,
+        boolean builtin,
+        @Nullable BootConfig.ImageEntry selected,
+        @Nullable String builtinCmdline
+    ) {
+        if (!builtin) {
+            boot.setImageEntry(selected);
+            return;
+        }
+        boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
+        boot.setKernel(PATH_BUILTIN_KERNEL);
+        boot.setInitrd(PATH_BUILTIN_INITRD);
+        boot.setCmdline(builtinCmdline != null && !builtinCmdline.isEmpty()
+            ? builtinCmdline : BootConfig.DEFAULT_MANUAL_CMDLINE);
+    }
+
+    private static void doCreateAndStart(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull AtomicBoolean wantOpenConsole,
+        @Nullable String bootEntry
     ) {
         var conn = DaemonConnection.getInstance();
         var createReq = conn.buildRequest("vm_exists");
@@ -46,6 +130,7 @@ public final class VMActions {
             .buildRequest("vm_start")
             .copy(resp, "vm_id")
             .put("clear_logs_before_start", isClearLogsBeforeStartEnabled(ui.getContext()))
+            .put("boot_entry", bootEntry == null ? "" : bootEntry)
             .onResponse(onStart)
             .onUnsuccessful(f)
             .onError(err)

@@ -170,6 +170,15 @@
 
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
+            <cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget
+                android:id="@+id/kernel_analysis"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:visibility="gone" />
+
             <com.google.android.material.divider.MaterialDivider
                 android:id="@+id/divider_output"
                 android:layout_width="match_parent"

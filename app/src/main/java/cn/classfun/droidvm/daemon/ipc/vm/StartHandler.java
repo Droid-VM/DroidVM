@@ -32,6 +32,9 @@ public final class StartHandler extends RequestHandler {
         if (params.optBoolean("clear_logs_before_start", false) &&
             inst.getState() == VMState.STOPPED)
             inst.clearLogs();
+        // one-shot boot menu selection; empty = follow the stored config
+        var bootEntry = params.optString("boot_entry", "");
+        inst.setBootEntryOverride(bootEntry.isEmpty() ? null : bootEntry);
         if (!inst.start())
             throw new RequestException("failed to start VM");
     }

@@ -93,6 +93,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
         currentTab = VMEditTab.fromIndex(newIndex);
         tabLayout.selectTab(tabLayout.getTabAt(newIndex));
         scrollView.scrollTo(0, 0);
+        tabs.get(newIndex).onTabShown();
+    }
+
+    /** The live tab instance, e.g. to read another tab's unsaved state. */
+    @NonNull
+    public VMEditBaseTab getTab(@NonNull VMEditTab tab) {
+        return tabs.get(tab.ordinal());
     }
 
     private void setupTabs() {
@@ -108,6 +115,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
                 currentTab = VMEditTab.fromIndex(newPos);
                 swipeHelper.animateToTab(newPos, direction);
                 scrollView.scrollTo(0, 0);
+                tabs.get(newPos).onTabShown();
             }
 
             @Override

@@ -273,7 +273,56 @@
     <string name="edit_vm_kernel_external">选择外部文件</string>
     <string name="edit_vm_kernel_not_found">目标内核不存在: %1$s</string>
     <string name="edit_vm_boot_uefi">使用 UEFI 启动</string>
+    <string name="edit_vm_boot_protocol">引导方式</string>
+    <string name="edit_vm_boot_protocol_uefi">UEFI</string>
+    <string name="edit_vm_boot_protocol_linux">Linux 开机协议</string>
+    <string name="edit_vm_uefi_firmware">UEFI 固件(留空 = 内置 EDK2)</string>
+    <string name="edit_vm_uefi_firmware_builtin">内置 EDK2</string>
+    <string name="edit_vm_uefi_firmware_browse_title">选择 UEFI 固件</string>
+    <string name="edit_vm_uefi_firmware_hint">自定义固件仅对 QEMU 后端生效\ncrosvm 始终使用内置 EDK2\nUEFI 引导 Linux 适配中,尚不可用;如需引导 Linux,请选择 Linux 内核引导方式</string>
+    <string name="edit_vm_kernel_source">内核来源</string>
+    <string name="edit_vm_kernel_source_image">磁盘镜像</string>
+    <string name="edit_vm_kernel_source_manual">手动指定</string>
+    <string name="edit_vm_boot_image_disk">引导磁盘</string>
+    <string name="edit_vm_boot_image_disk_title">选择引导磁盘</string>
+    <string name="edit_vm_boot_entry">引导项</string>
+    <string name="edit_vm_boot_entry_auto">自动(跟随引导加载器)</string>
+    <string name="edit_vm_boot_entry_auto_hint">客户机更新内核后自动生效</string>
+    <string name="edit_vm_boot_entry_default_mark">%1$s(默认)</string>
+    <string name="edit_vm_boot_entry_builtin">DroidVM 内置 Linux 内核</string>
+    <string name="edit_vm_boot_entry_dma_warn">缺失 DMA_RESTRICTED_POOL</string>
+    <string name="edit_vm_boot_detect_title">检测到的引导文件</string>
+    <string name="edit_vm_boot_detect_entry">引导项</string>
+    <string name="edit_vm_boot_detect_kernel">内核</string>
+    <string name="edit_vm_boot_detect_initrd">initrd</string>
+    <string name="edit_vm_boot_detect_cmdline">内核命令行</string>
+    <string name="edit_vm_boot_detect_source">来源</string>
+    <string name="edit_vm_boot_detect_scanning">正在扫描…</string>
+    <string name="edit_vm_boot_detect_failed">扫描失败:%1$s</string>
+    <string name="edit_vm_boot_detect_no_disk">此虚拟机尚未配置磁盘镜像</string>
+    <string name="edit_vm_boot_detect_root_warn">root= 指向物理设备;请启用自动修正或覆盖 cmdline</string>
+    <string name="edit_vm_boot_rescan">重新扫描</string>
+    <string name="edit_vm_boot_vdafix">自动修正 root= 设备</string>
+    <string name="edit_vm_boot_vdafix_hint">将 root=/dev/sdX 重写为 PARTUUID 以适配 virtio</string>
+    <string name="edit_vm_boot_wait">开机菜单等待秒数</string>
+    <string name="edit_vm_boot_wait_hint">0 = 不显示菜单直接启动</string>
+    <string name="edit_vm_boot_wait_invalid">必须为秒数(数字)</string>
+    <string name="edit_vm_boot_cmdline_override">内核命令行覆盖(留空 = 使用镜像内的)</string>
+    <string name="edit_vm_boot_cmdline_override_hint">留空 = 使用镜像内的 cmdline</string>
+    <string name="edit_vm_boot_menu_title">选择引导项 — %1$s</string>
+    <string name="edit_vm_boot_menu_boot">启动</string>
+    <string name="edit_vm_boot_menu_boot_in">启动 (%1$d)</string>
+    <string name="edit_vm_boot_menu_remember">记住此选择</string>
+    <string name="edit_vm_boot_menu_fallback">未找到固定的引导项“%1$s”,已改用默认</string>
+    <string name="edit_vm_boot_protected_dma_warn">此内核未启用 CONFIG_DMA_RESTRICTED_POOL。\n在受保护 VM 下客户机无法与主机共享 DMA 内存,virtio 设备(磁盘/网络)将无法启动。\n请改用内置内核,或重新编译并启用该选项。</string>
     <string name="edit_vm_boot_uefi_hint">如果想要直接启动 Linux 内核则请禁用 UEFI</string>
+    <string name="kernel_analysis_title">内核分析</string>
+    <string name="kernel_analysis_analyze">分析</string>
+    <string name="kernel_analysis_hint">导入前通过网络分析镜像的内核/initrd</string>
+    <string name="kernel_analysis_need_url">请先输入有效的 http(s):// 镜像 URL</string>
+    <string name="kernel_analysis_found">找到 %1$d 个引导项</string>
+    <string name="kernel_analysis_progress">下载中：%1$d/%2$d 块</string>
+    <string name="kernel_analysis_progress_n">下载中：%1$d 块</string>
     <string name="edit_vm_initrd_browse_title">选择 initramfs</string>
     <string name="edit_vm_initrd_clear">清空</string>
     <string name="edit_vm_initrd_builtin">DroidVM 内置 Linux initrd</string>

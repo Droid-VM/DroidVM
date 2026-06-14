@@ -21,6 +21,7 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -45,6 +46,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
@@ -204,12 +206,27 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         });
     }
 
+    @NonNull
+    private String bootSummary() {
+        var boot = BootConfig.of(config);
+        if (boot.getProtocol() == BootConfig.Protocol.UEFI)
+            return getString(R.string.edit_vm_boot_protocol_uefi);
+        if (boot.getLinuxSource() == BootConfig.LinuxSource.IMAGE) {
+            var pinned = boot.getImageEntry();
+            var label = getString(R.string.edit_vm_kernel_source_image);
+            if (pinned != null && pinned.title != null)
+                return label + " · " + pinned.title;
+            return label;
+        }
+        return basename(boot.getKernel());
+    }
+
     private void populateInfo() {
         var item = config.item;
         collapsingToolbar.setTitle(config.getName());
         rowCpu.setValue(getString(R.string.vm_info_cpu_value, item.optLong("cpu_count", 0)));
         rowMemory.setValue(getString(R.string.vm_info_memory_value, item.optLong("memory_mb", 0)));
-        rowKernel.setValue(basename(item.optString("kernel", "")));
+        rowKernel.setValue(bootSummary());
         var protectedVm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
         rowProtected.setValue(protectedVm.getDisplayString(this));
         var disks = item.opt("disks", DataItem.newArray());

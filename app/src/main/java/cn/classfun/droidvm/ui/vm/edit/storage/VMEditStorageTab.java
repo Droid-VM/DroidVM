@@ -112,6 +112,12 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         pendingBrowsePosition = -1;
     }
 
+    /** Live disk entries as edited right now (not yet saved to config). */
+    @NonNull
+    public DataItem getCurrentDisks() {
+        return listDisks.getItems();
+    }
+
     @Override
     public void loadConfig(@NonNull VMConfig config) {
         listDisks.setItems(config.item.opt("disks", DataItem.newArray()));

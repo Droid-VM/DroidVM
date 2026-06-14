@@ -3,7 +3,6 @@ package cn.classfun.droidvm.daemon.vm.backend;
 import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
-import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_QEMU_FIRMWARE;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
@@ -30,6 +29,7 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.LocalSocketConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
+import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
@@ -158,30 +158,22 @@ public final class QemuBackendInstance extends VMBackendInstance {
                 args.add("arm-confidential-guest,id=prot0,swiotlb-size=64M");
                 break;
         }
-        if (item.optBoolean("use_uefi", true)) {
+        var boot = BootPlan.of(config);
+        if (boot.uefi) {
             args.add("-bios");
-            args.add(PATH_EDK2_QEMU_FIRMWARE);
-        } else {
-            var bios = item.optString("bios", "");
-            if (!bios.isEmpty()) {
-                args.add("-bios");
-                args.add(bios);
-            }
+            args.add(boot.firmware.isEmpty() ? PATH_EDK2_QEMU_FIRMWARE : boot.firmware);
         }
-        var kernel = item.optString("kernel", "");
-        if (!kernel.isEmpty() && !kernel.equals(PATH_EDK2_FIRMWARE)) {
+        if (!boot.kernel.isEmpty()) {
             args.add("-kernel");
-            args.add(kernel);
+            args.add(boot.kernel);
         }
-        var initrd = item.optString("initrd", "");
-        if (!initrd.isEmpty()) {
+        if (!boot.initrd.isEmpty()) {
             args.add("-initrd");
-            args.add(initrd);
+            args.add(boot.initrd);
         }
-        var cmdline = item.optString("cmdline", "");
-        if (!cmdline.isEmpty()) {
+        if (!boot.cmdline.isEmpty()) {
             args.add("-append");
-            args.add(cmdline);
+            args.add(boot.cmdline);
         }
         if (item.optBoolean("hugepages", true))
             args.add("-mem-prealloc");

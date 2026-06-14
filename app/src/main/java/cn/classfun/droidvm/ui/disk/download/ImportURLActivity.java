@@ -49,6 +49,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget.OnDownloadListener;
+import cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class ImportURLActivity extends AppCompatActivity implements OnDownloadListener {
@@ -61,6 +62,7 @@ public final class ImportURLActivity extends AppCompatActivity implements OnDown
     private MaterialCardView cardInfo;
     private TextView tvInfoSize, tvInfoType;
     private DownloadWidget downloadWidget;
+    private KernelAnalysisWidget kernelAnalysis;
     private NestedScrollView scrollView;
     private ExtendedFloatingActionButton fabImport;
     private CollapsingToolbarLayout collapsingToolbar;
@@ -88,6 +90,7 @@ public final class ImportURLActivity extends AppCompatActivity implements OnDown
         tvInfoSize = findViewById(R.id.tv_info_size);
         tvInfoType = findViewById(R.id.tv_info_type);
         downloadWidget = findViewById(R.id.download_widget);
+        kernelAnalysis = findViewById(R.id.kernel_analysis);
         scrollView = findViewById(R.id.scroll_view);
         fabImport = findViewById(R.id.fab_import);
         initialize();
@@ -111,6 +114,8 @@ public final class ImportURLActivity extends AppCompatActivity implements OnDown
         inputUrl.addTextChangedListener(new SimpleTextWatcher() {
             @Override
             public void onTextChanged(CharSequence s, int st, int b, int c) {
+                // The URL changed, so any loaded info / kernel analysis is stale.
+                kernelAnalysis.reset();
                 if (infoLoaded) {
                     infoLoaded = false;
                     cardInfo.setVisibility(GONE);
@@ -118,6 +123,7 @@ public final class ImportURLActivity extends AppCompatActivity implements OnDown
                 }
             }
         });
+        kernelAnalysis.setUrlProvider(() -> inputUrl.getText());
         btnLoad.setOnClickListener(v -> doLoad());
         fabImport.setOnClickListener(v -> doImport());
         setStatusIdle();

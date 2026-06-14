@@ -8,6 +8,7 @@ import android.text.TextUtils;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
@@ -157,5 +158,15 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("protected_vm", pvm);
         VMBackend backend = chooseBackend.getSelectedItem();
         item.set("backend", backend);
+    }
+
+    /**
+     * The protection mode as currently selected (before save), so other
+     * tabs can warn about protected-VM constraints without re-reading the
+     * stored config.
+     */
+    @Nullable
+    public ProtectedVM getCurrentProtectedVm() {
+        return chooseProtectedVm.getSelectedItem();
     }
 }

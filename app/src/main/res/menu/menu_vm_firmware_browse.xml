@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_firmware_builtin"
+        android:icon="@drawable/ic_uefi_nocolor"
+        android:title="@string/edit_vm_uefi_firmware_builtin" />
+
+    <item
+        android:id="@+id/menu_firmware_external"
+        android:icon="@drawable/ic_open_in"
+        android:title="@string/edit_vm_kernel_external" />
+
+</menu>

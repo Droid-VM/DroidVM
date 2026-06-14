@@ -62,6 +62,7 @@ import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget.OnDownloadListener;
+import cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget;
 
 public final class ImportLxcImagesActivity extends AppCompatActivity implements OnDownloadListener {
     private static final String TAG = "ImportLxcImages";
@@ -87,6 +88,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     private TextView tvInfoSize, tvInfoPath;
     private ExtendedFloatingActionButton fabImport;
     private DownloadWidget downloadWidget;
+    private KernelAnalysisWidget kernelAnalysis;
     private NestedScrollView scrollView;
     private CollapsingToolbarLayout collapsingToolbar;
     private MaterialToolbar toolbar;
@@ -128,6 +130,9 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         tvInfoPath = findViewById(R.id.tv_info_path);
         fabImport = findViewById(R.id.fab_import);
         downloadWidget = findViewById(R.id.download_widget);
+        kernelAnalysis = findViewById(R.id.kernel_analysis);
+        kernelAnalysis.setUrlProvider(() -> selectedImage == null
+            ? null : pathJoin(getDownloadBaseUrl(), selectedImage.getDownloadPath()));
         scrollView = findViewById(R.id.scroll_view);
         initialize();
     }
@@ -469,6 +474,9 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         var downloadUrl = pathJoin(getDownloadBaseUrl(), img.getDownloadPath());
         tvInfoPath.setText(getString(R.string.lxc_info_path, downloadUrl));
         cardInfo.setVisibility(VISIBLE);
+        // A new image is selected: offer a fresh kernel analysis for it.
+        kernelAnalysis.setVisibility(VISIBLE);
+        kernelAnalysis.reset();
     }
 
     private void hideOutput() {
@@ -623,6 +631,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
             tvInfoSize.setText("");
             tvInfoPath.setText("");
             cardInfo.setVisibility(GONE);
+            kernelAnalysis.setVisibility(GONE);
             selectedImage = null;
         }
     }

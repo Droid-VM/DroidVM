@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
@@ -12,24 +13,41 @@
         android:icon="@drawable/ic_power"
         android:text="@string/network_edit_auto_up" />
 
-    <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-        android:id="@+id/sw_uefi"
+    <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+        android:id="@+id/dd_boot_protocol"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:checked="true"
-        android:icon="@drawable/ic_uefi_nocolor"
-        android:text="@string/edit_vm_boot_uefi" />
+        android:hint="@string/edit_vm_boot_protocol"
+        android:icon="@drawable/ic_uefi_nocolor" />
 
-    <TextView
-        android:id="@+id/tv_uefi_hint"
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:id="@+id/container_uefi"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingStart="72dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="8dp"
-        android:text="@string/edit_vm_boot_uefi_hint"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="13sp"/>
+        android:title="@string/edit_vm_boot_protocol_uefi">
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_uefi_firmware"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_uefi_firmware"
+            android:icon="@drawable/ic_uefi_nocolor"
+            android:inputType="text"
+            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+        <TextView
+            android:id="@+id/tv_uefi_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="72dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:text="@string/edit_vm_uefi_firmware_hint"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="13sp" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
         android:id="@+id/container_kernel"
@@ -38,33 +56,255 @@
         android:title="@string/create_vm_category_kernel"
         android:visibility="gone">
 
-        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-            android:id="@+id/input_kernel"
+        <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+            android:id="@+id/dd_kernel_source"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/create_vm_kernel_hint"
-            android:icon="@drawable/ic_linux"
-            android:inputType="text"
-            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
-            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+            android:hint="@string/edit_vm_kernel_source"
+            android:icon="@drawable/ic_linux" />
 
-        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-            android:id="@+id/input_initrd"
+        <LinearLayout
+            android:id="@+id/layout_kernel_image"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/create_vm_initrd_hint"
-            android:icon="@drawable/ic_floppy"
-            android:inputType="text"
-            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
-            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-            android:id="@+id/input_cmdline"
+            <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                android:id="@+id/dd_boot_disk"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/edit_vm_boot_image_disk"
+                android:icon="@drawable/ic_nav_disk" />
+
+            <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                android:id="@+id/dd_boot_entry"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/edit_vm_boot_entry"
+                android:icon="@drawable/ic_linux" />
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/edit_vm_boot_detect_title"
+                            android:textColor="?attr/colorOnSurfaceVariant"
+                            android:textSize="13sp"
+                            android:textStyle="bold" />
+
+                        <ImageButton
+                            android:id="@+id/btn_boot_rescan"
+                            android:layout_width="36dp"
+                            android:layout_height="36dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="@string/edit_vm_boot_rescan"
+                            android:src="@drawable/ic_refresh"
+                            app:tint="?attr/colorOnSurfaceVariant"
+                            tools:ignore="TouchTargetSizeCheck" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/edit_vm_boot_detect_kernel">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_detect_kernel"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="false"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textSize="14sp"
+                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <TextView
+                        android:id="@+id/tv_boot_kernel_dma_warn"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="4dp"
+                        android:paddingTop="4dp"
+                        android:textColor="?attr/colorError"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/edit_vm_boot_detect_initrd">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_detect_initrd"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="false"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textSize="14sp"
+                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/edit_vm_boot_detect_cmdline">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_detect_cmdline"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="false"
+                            android:inputType="textMultiLine"
+                            android:textSize="14sp"
+                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="4dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/edit_vm_boot_vdafix"
+                            android:textSize="14sp" />
+
+                        <com.google.android.material.materialswitch.MaterialSwitch
+                            android:id="@+id/sw_vdafix"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            tools:ignore="DuplicateSpeakableTextCheck" />
+                    </LinearLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:hint="@string/edit_vm_boot_cmdline_override">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_cmdline_override"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="text"
+                            android:textSize="14sp"
+                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="@string/edit_vm_boot_detect_source">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_detect_source"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:enabled="false"
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textSize="14sp"
+                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <TextView
+                        android:id="@+id/tv_boot_detect_warn"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:paddingTop="6dp"
+                        android:textColor="?attr/colorError"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+            </com.google.android.material.card.MaterialCardView>
+
+            <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                android:id="@+id/input_boot_wait"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/edit_vm_boot_wait"
+                android:icon="@drawable/ic_clock"
+                android:inputType="number" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_kernel_manual"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="@string/create_vm_cmdline_hint"
-            android:icon="@drawable/ic_edit"
-            android:inputType="text" />
+            android:orientation="vertical">
+
+            <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                android:id="@+id/input_kernel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/create_vm_kernel_hint"
+                android:icon="@drawable/ic_linux"
+                android:inputType="text"
+                app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+                app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                android:id="@+id/input_initrd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/create_vm_initrd_hint"
+                android:icon="@drawable/ic_floppy"
+                android:inputType="text"
+                app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+                app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                android:id="@+id/input_cmdline"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/create_vm_cmdline_hint"
+                android:icon="@drawable/ic_edit"
+                android:inputType="text" />
+
+        </LinearLayout>
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 

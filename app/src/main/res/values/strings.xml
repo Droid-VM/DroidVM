@@ -275,7 +275,56 @@
     <string name="edit_vm_kernel_external">Select an external file</string>
     <string name="edit_vm_kernel_not_found">Target kernel is not exists: %1$s</string>
     <string name="edit_vm_boot_uefi">Boot with UEFI</string>
+    <string name="edit_vm_boot_protocol">Boot protocol</string>
+    <string name="edit_vm_boot_protocol_uefi">UEFI</string>
+    <string name="edit_vm_boot_protocol_linux">Linux boot protocol</string>
+    <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
+    <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
+    <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
+    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2\nBooting Linux via UEFI is still being adapted and is not usable yet — to boot Linux, choose the Linux kernel boot protocol</string>
+    <string name="edit_vm_kernel_source">Kernel source</string>
+    <string name="edit_vm_kernel_source_image">Disk image</string>
+    <string name="edit_vm_kernel_source_manual">Manual</string>
+    <string name="edit_vm_boot_image_disk">Boot disk</string>
+    <string name="edit_vm_boot_image_disk_title">Select boot disk</string>
+    <string name="edit_vm_boot_entry">Boot entry</string>
+    <string name="edit_vm_boot_entry_auto">Auto (bootloader default)</string>
+    <string name="edit_vm_boot_entry_auto_hint">Follows guest kernel updates automatically</string>
+    <string name="edit_vm_boot_entry_default_mark">%1$s (default)</string>
+    <string name="edit_vm_boot_entry_builtin">DroidVM built-in Linux kernel</string>
+    <string name="edit_vm_boot_entry_dma_warn">Missing DMA_RESTRICTED_POOL</string>
+    <string name="edit_vm_boot_detect_title">Detected boot files</string>
+    <string name="edit_vm_boot_detect_entry">entry</string>
+    <string name="edit_vm_boot_detect_kernel">Kernel</string>
+    <string name="edit_vm_boot_detect_initrd">initrd</string>
+    <string name="edit_vm_boot_detect_cmdline">Kernel cmdline</string>
+    <string name="edit_vm_boot_detect_source">Source</string>
+    <string name="edit_vm_boot_detect_scanning">Scanning…</string>
+    <string name="edit_vm_boot_detect_failed">Scan failed: %1$s</string>
+    <string name="edit_vm_boot_detect_no_disk">No disk image configured for this VM</string>
+    <string name="edit_vm_boot_detect_root_warn">root= names a physical device; enable auto-fix or override the cmdline</string>
+    <string name="edit_vm_boot_rescan">Rescan</string>
+    <string name="edit_vm_boot_vdafix">Auto-fix root= device</string>
+    <string name="edit_vm_boot_vdafix_hint">Rewrites root=/dev/sdX to PARTUUID for virtio</string>
+    <string name="edit_vm_boot_wait">Boot menu countdown (seconds)</string>
+    <string name="edit_vm_boot_wait_hint">0 = boot immediately without menu</string>
+    <string name="edit_vm_boot_wait_invalid">Must be a number of seconds</string>
+    <string name="edit_vm_boot_cmdline_override">Kernel cmdline override (empty = from image)</string>
+    <string name="edit_vm_boot_cmdline_override_hint">Empty = use cmdline from the image</string>
+    <string name="edit_vm_boot_menu_title">Select boot entry — %1$s</string>
+    <string name="edit_vm_boot_menu_boot">Boot</string>
+    <string name="edit_vm_boot_menu_boot_in">Boot (%1$d)</string>
+    <string name="edit_vm_boot_menu_remember">Remember this choice</string>
+    <string name="edit_vm_boot_menu_fallback">Pinned entry "%1$s" not found; using default</string>
+    <string name="edit_vm_boot_protected_dma_warn">This kernel lacks CONFIG_DMA_RESTRICTED_POOL.\nUnder a protected VM the guest cannot share DMA memory with the host, so virtio devices (disk/network) will fail to start.\nUse the built-in kernel, or rebuild with CONFIG_DMA_RESTRICTED_POOL.</string>
     <string name="edit_vm_boot_uefi_hint">To boot a Linux kernel directly, please disable UEFI</string>
+    <string name="kernel_analysis_title">Kernel analysis</string>
+    <string name="kernel_analysis_analyze">Analyze</string>
+    <string name="kernel_analysis_hint">Analyze the image\'s kernel/initrd over the network before importing</string>
+    <string name="kernel_analysis_need_url">Enter a valid http(s):// image URL first</string>
+    <string name="kernel_analysis_found">%1$d boot entries found</string>
+    <string name="kernel_analysis_progress">Downloading: %1$d/%2$d chunks</string>
+    <string name="kernel_analysis_progress_n">Downloading: %1$d chunks</string>
     <string name="edit_vm_initrd_browse_title">Select initramfs</string>
     <string name="edit_vm_initrd_clear">Clear</string>
     <string name="edit_vm_initrd_builtin">DroidVM built-in Linux initrd</string>

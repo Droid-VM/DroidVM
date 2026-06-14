@@ -24,6 +24,35 @@ public class VMConfig extends DataConfig {
             item.set("use_uefi", true);
             item.remove("kernel");
         }
+        migrateBoot();
+    }
+
+    /**
+     * Folds the legacy flat boot keys (use_uefi/kernel/initrd/cmdline/bios)
+     * into the "boot" object on load. The legacy keys are left in place so
+     * the config file still boots under an older daemon/APK; everything in
+     * this codebase reads only the "boot" object from here on.
+     */
+    private void migrateBoot() {
+        if (item.opt("boot", null) != null) return;
+        var legacy = item.opt("use_uefi", null) != null
+            || !item.optString("kernel", "").isEmpty()
+            || !item.optString("initrd", "").isEmpty()
+            || !item.optString("cmdline", "").isEmpty()
+            || !item.optString("bios", "").isEmpty();
+        if (!legacy) return;
+        var boot = BootConfig.of(this);
+        var uefi = item.optBoolean("use_uefi", true);
+        // legacy QEMU oddity: use_uefi=false + "bios" + no kernel meant
+        // "boot a custom firmware" — that is UEFI protocol in the new model
+        if (!uefi && item.optString("kernel", "").isEmpty()
+            && !item.optString("bios", "").isEmpty())
+            uefi = true;
+        boot.setProtocol(uefi ? BootConfig.Protocol.UEFI : BootConfig.Protocol.LINUX);
+        boot.setUefiFirmware(item.optString("bios", ""));
+        boot.setKernel(item.optString("kernel", ""));
+        boot.setInitrd(item.optString("initrd", ""));
+        boot.setCmdline(item.optString("cmdline", ""));
     }
 
     /** Iterates this VM's NIC entries (the "networks" array). */

@@ -43,6 +43,8 @@ public final class VMInstance extends VMConfig {
     private VMBackendInstance backendInstance;
     private Thread workerThread;
     private final VMInstanceStore store;
+    private BootPlan bootPlan;
+    private String bootEntryOverride;
 
     public interface VMEventCallback {
         @SuppressWarnings("unused")
@@ -119,6 +121,21 @@ public final class VMInstance extends VMConfig {
 
     public boolean runControlCommand(@NonNull String command) {
         return getBackendInstance().runControlCommand(command) == 0;
+    }
+
+    /** Boot plan prepared for the current start; null when not started. */
+    @Nullable
+    public BootPlan getBootPlan() {
+        return bootPlan;
+    }
+
+    /**
+     * One-shot boot entry selection (id or title) from the GUI boot menu;
+     * applies to the next {@link #start()} only and does not touch the
+     * pinned entry in the config.
+     */
+    public void setBootEntryOverride(@Nullable String entryId) {
+        bootEntryOverride = entryId;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -317,6 +334,24 @@ public final class VMInstance extends VMConfig {
     private void runVM() {
         var inst = getBackendInstance();
         var vmId = getId().toString();
+        try {
+            // image-source boot runs lbx here (scan + cached extract), so
+            // backends only ever see resolved kernel/initrd/cmdline paths
+            bootPlan = BootPlan.resolve(this, bootEntryOverride);
+        } catch (Exception e) {
+            Log.e(TAG, fmt("VM %s: boot resolution failed", getName()), e);
+            var sio = getStream("stdio");
+            if (sio != null)
+                sio.appendBuffer(fmt("boot resolution failed: %s\n", e.getMessage()));
+            exitCode = -1;
+            setState(VMState.STOPPED);
+            fireEvent("exited", null);
+            return;
+        } finally {
+            bootEntryOverride = null;
+        }
+        if (bootPlan.entryFallback)
+            fireEvent("boot_entry_fallback", null);
         var result = inst.start();
         if (!result.isSuccess()) {
             exitCode = -1;
