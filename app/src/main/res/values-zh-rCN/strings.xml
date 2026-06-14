@@ -615,6 +615,25 @@
     <string name="download_file_icon_desc">文件图标</string>
     <string name="download_exit_title">正在下载</string>
     <string name="download_exit_message">下载仍在进行中。现在离开将取消下载并删除已下载的部分文件。确定要退出吗？</string>
+    <string name="download_paused">已暂停…</string>
+    <string name="download_paused_network">已暂停，等待网络…</string>
+    <string name="download_paused_retry">连接中断，正在重试…</string>
+    <string name="download_paused_wifi">已暂停，等待 Wi-Fi…</string>
+    <string name="download_retrying">连接中断，重试中 (%1$d/%2$d)…</string>
+    <string name="download_one_at_a_time">已有下载正在进行，请等待完成。</string>
+    <string name="download_background_toast">下载将在后台继续，可在通知栏查看。</string>    <string name="download_error_start">无法开始下载，请确认系统下载管理器已启用。</string>
+
+    <string name="notif_channel_downloads">下载</string>
+    <string name="notif_channel_downloads_desc">磁盘镜像下载通知</string>
+    <string name="notif_download_complete_title">导入完成</string>
+    <string name="notif_download_complete_text">"%1$s"已添加到磁盘列表。</string>
+    <string name="notif_download_failed_title">下载失败</string>
+    <string name="notif_download_failed_text">无法下载"%1$s"。</string>
+    <string name="notif_channel_downloads_progress">下载中</string>
+    <string name="notif_channel_downloads_progress_desc">下载进行中的通知</string>
+    <string name="notif_download_connecting">连接中…</string>
+    <string name="notif_download_cancel">取消</string>
+
     <string name="vm_state_suspended">已挂起</string>
     <string name="vm_info_state_suspended">虚拟机已挂起</string>
 

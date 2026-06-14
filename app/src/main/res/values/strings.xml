@@ -652,6 +652,25 @@
     <string name="download_file_icon_desc">File icon</string>
     <string name="download_exit_title">Download in progress</string>
     <string name="download_exit_message">A download is still in progress. Leaving now will cancel it and delete the partial file. Are you sure?</string>
+    <string name="download_paused">Paused…</string>
+    <string name="download_paused_network">Paused, waiting for network…</string>
+    <string name="download_paused_retry">Connection interrupted, retrying…</string>
+    <string name="download_paused_wifi">Paused, waiting for Wi-Fi…</string>
+    <string name="download_retrying">Connection lost, retrying (%1$d/%2$d)…</string>
+    <string name="download_one_at_a_time">A download is already in progress. Please wait for it to finish.</string>
+    <string name="download_background_toast">Download continues in the background. Check the notification shade.</string>    <string name="download_error_start">Could not start the download. Make sure the system Download Manager is enabled.</string>
+
+    <string name="notif_channel_downloads">Downloads</string>
+    <string name="notif_channel_downloads_desc">Disk image download notifications</string>
+    <string name="notif_download_complete_title">Import complete</string>
+    <string name="notif_download_complete_text">\"%1$s\" was added to the disk list.</string>
+    <string name="notif_download_failed_title">Download failed</string>
+    <string name="notif_download_failed_text">Failed to download \"%1$s\".</string>
+    <string name="notif_channel_downloads_progress">Downloading</string>
+    <string name="notif_channel_downloads_progress_desc">Ongoing download progress</string>
+    <string name="notif_download_connecting">Connecting…</string>
+    <string name="notif_download_cancel">Cancel</string>
+
     <string name="vm_state_suspended">Suspended</string>
     <string name="vm_info_state_suspended">VM is suspended</string>
 
