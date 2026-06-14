@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.widgets.row;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -83,6 +84,18 @@ public final class SwitchRowWidget extends FrameLayout {
 
     public boolean isChecked() {
         return switchView.isChecked();
+    }
+
+    /**
+     * Locks interaction without greying the switch: it keeps its normal
+     * on/off colour (so a forced-on state reads as on, not disabled) but
+     * can't be tapped or dragged. Pass true to restore normal interaction.
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    public void setSwitchEnabled(boolean enabled) {
+        switchView.setOnTouchListener(enabled ? null : (v, e) -> true);
+        setOnClickListener(enabled ? v -> switchView.toggle() : null);
+        setClickable(enabled);
     }
 
     public void setChecked(boolean checked) {

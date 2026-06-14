@@ -28,7 +28,10 @@ public final class ServerContext {
         networks.load(new File(filesDir, networks.getFileName()));
         Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         vms.setNetworkStore(networks);
+        // strays survive a daemon crash (children are orphaned, not killed)
         run("pkill dnsmasq");
+        run("pkill gvswitch");
+        run("pkill pbridge");
         try {
             networks.firewall.initialize();
         } catch (Exception e) {

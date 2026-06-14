@@ -81,6 +81,24 @@ public final class IPv6Network extends IPNetwork<BigInteger, IPv6Address, IPv6Ne
         return new IPv6Address(networkAddress().value().or(hostMask));
     }
 
+    /**
+     * Address at network base + offset. Offset must address a host within
+     * this prefix (not the anycast/base address).
+     */
+    @NonNull
+    public IPv6Address addressAtOffset(@NonNull BigInteger offset) {
+        if (offset.signum() <= 0 || offset.compareTo(totalAddresses()) >= 0)
+            throw new IllegalArgumentException(fmt(
+                "Offset %s out of range for /%d network", offset, prefix
+            ));
+        return new IPv6Address(networkAddress().value().add(offset));
+    }
+
+    @NonNull
+    public IPv6Address addressAtOffset(long offset) {
+        return addressAtOffset(BigInteger.valueOf(offset));
+    }
+
     @Override
     public boolean contains(@NonNull IPv6Address ip) {
         var v = ip.value();

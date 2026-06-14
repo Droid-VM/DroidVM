@@ -42,6 +42,16 @@
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
+            <TextView
+                android:id="@+id/tv_running_banner"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?attr/colorErrorContainer"
+                android:padding="16dp"
+                android:text="@string/network_edit_running_banner"
+                android:textColor="?attr/colorOnErrorContainer"
+                android:visibility="gone" />
+
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -55,22 +65,6 @@
                     android:hint="@string/network_edit_name_hint"
                     android:icon="@drawable/ic_edit"
                     android:inputType="text" />
-
-                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                    android:id="@+id/input_bridge_name"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/network_edit_bridge_hint"
-                    android:icon="@drawable/ic_nav_network"
-                    android:inputType="textNoSuggestions" />
-
-                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                    android:id="@+id/input_mac"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/network_edit_mac_hint"
-                    android:icon="@drawable/ic_memory"
-                    android:inputType="textNoSuggestions" />
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                     android:id="@+id/sw_auto_up"
@@ -87,158 +81,102 @@
                     android:icon="@drawable/ic_source_branch"
                     android:text="@string/network_edit_stp" />
 
-                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-                    android:id="@+id/sw_nat"
+                <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                    android:id="@+id/dd_bridge_type"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:icon="@drawable/ic_web_plus"
-                    android:text="@string/network_edit_nat" />
+                    android:hint="@string/network_edit_bridge_type"
+                    android:icon="@drawable/ic_switch" />
+
+                <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                    android:id="@+id/dd_uplink_mode"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/network_edit_uplink_mode"
+                    android:icon="@drawable/ic_web_plus" />
 
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:id="@+id/group_l2"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/network_edit_category_ipv4"
+                android:title="@string/network_edit_category_l2"
+                android:visibility="gone"
                 app:cc_collapsible="false">
 
-                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                    android:id="@+id/input_ipv4"
+                <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                    android:id="@+id/dd_l2_uplink"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="@string/network_edit_ipv4_hint"
-                    android:icon="@drawable/ic_ip_network"
-                    android:inputType="textNoSuggestions"
-                    app:ti_endIcon="@android:drawable/ic_input_add"
-                    app:ti_endIconMode="custom" />
-
-                <LinearLayout
-                    android:id="@+id/layout_ipv4"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_ipv4_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.6"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp"
-                    android:text="@string/network_edit_no_addresses"
-                    android:textSize="14sp" />
-
-            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
-
-            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:title="@string/network_edit_category_ipv6"
-                app:cc_collapsible="false">
-
-                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                    android:id="@+id/input_ipv6"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/network_edit_ipv6_hint"
-                    android:icon="@drawable/ic_ip_network"
-                    android:inputType="textNoSuggestions"
-                    app:ti_endIcon="@android:drawable/ic_input_add"
-                    app:ti_endIconMode="custom" />
-
-                <LinearLayout
-                    android:id="@+id/layout_ipv6"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_ipv6_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.6"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp"
-                    android:text="@string/network_edit_no_addresses"
-                    android:textSize="14sp" />
-
-            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
-
-            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:title="@string/network_edit_category_dns"
-                app:cc_collapsible="false">
-
-                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                    android:id="@+id/input_dns"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:hint="@string/network_edit_dns_hint"
-                    android:icon="@drawable/ic_dns"
-                    android:inputType="textNoSuggestions"
-                    app:ti_endIcon="@android:drawable/ic_input_add"
-                    app:ti_endIconMode="custom" />
-
-                <LinearLayout
-                    android:id="@+id/layout_dns"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp" />
-
-                <TextView
-                    android:id="@+id/tv_dns_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:alpha="0.6"
-                    android:paddingStart="72dp"
-                    android:paddingEnd="16dp"
-                    android:text="@string/network_edit_no_addresses"
-                    android:textSize="14sp" />
-
-            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
-
-            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:title="@string/network_edit_category_dhcp"
-                app:cc_collapsible="false">
+                    android:hint="@string/network_edit_l2_uplink"
+                    android:icon="@drawable/ic_ethernet" />
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-                    android:id="@+id/sw_dhcp"
+                    android:id="@+id/sw_pseudo_bridge"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:icon="@drawable/ic_router"
-                    android:text="@string/network_edit_dhcp_enabled" />
+                    android:text="@string/network_edit_pseudo_bridge"
+                    android:icon="@drawable/ic_connection" />
+
+                <TextView
+                    android:id="@+id/tv_pseudo_hint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="72dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="8dp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="13sp" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:id="@+id/group_l3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/network_edit_category_l3"
+                android:visibility="gone"
+                app:cc_collapsible="false">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_mac"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/network_edit_mac_hint"
+                    android:icon="@drawable/ic_ethernet"
+                    android:inputType="textNoSuggestions"
+                    app:ti_endIcon="@drawable/ic_refresh"
+                    app:ti_endIconMode="custom" />
 
                 <LinearLayout
-                    android:id="@+id/group_dhcp"
+                    android:id="@+id/container_vlans"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:visibility="gone">
+                    android:orientation="vertical" />
 
-                    <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                        android:id="@+id/input_dhcp_start"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/network_edit_dhcp_start_hint"
-                        android:inputType="textNoSuggestions" />
+                <TextView
+                    android:id="@+id/tv_vlan_empty"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingBottom="8dp"
+                    android:text="@string/network_edit_vlan_empty_hint"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
 
-                    <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                        android:id="@+id/input_dhcp_end"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/network_edit_dhcp_end_hint"
-                        android:inputType="textNoSuggestions" />
-
-                </LinearLayout>
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_add_vlan"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:text="@string/network_edit_add_vlan"
+                    app:icon="@drawable/ic_add" />
 
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
@@ -256,10 +194,7 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
-        android:layout_marginBottom="32dp"
-        android:contentDescription="@string/network_edit_btn_save"
-        android:src="@drawable/ic_check"
-        app:fabSize="normal"
-        tools:ignore="ClassNameCheck" />
+        android:contentDescription="@string/network_edit_save"
+        android:src="@drawable/ic_check" />
 
 </androidx.coordinatorlayout.widget.CoordinatorLayout>

@@ -8,8 +8,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import cn.classfun.droidvm.lib.store.base.DataConfig;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public class VMConfig extends DataConfig {
     public VMConfig() {
@@ -22,5 +24,14 @@ public class VMConfig extends DataConfig {
             item.set("use_uefi", true);
             item.remove("kernel");
         }
+    }
+
+    /** Iterates this VM's NIC entries (the "networks" array). */
+    public final void forEachNic(@NonNull Consumer<VMNicConfig> consumer) {
+        var nets = item.opt("networks", null);
+        if (nets == null || !nets.is(DataItem.Type.ARRAY)) return;
+        for (var entry : nets.asArray())
+            if (entry.is(DataItem.Type.OBJECT))
+                consumer.accept(new VMNicConfig(entry));
     }
 }

@@ -23,6 +23,13 @@ public final class Constants {
     public static final String[] BINARIES_PREBUILT = {"7za"};
     public static final String[] BINARIES_BUILT = {"droidvm", "daemon"};
     public static final String[] LIBRARIES_BUILT = {"libsimpledump.so", "libunixhelper.so"};
+    /**
+     * IFA_RT_PRIORITY magic that pbridge tags its ND/ARP-offload proxy
+     * addresses with (its --offload-workaround-magic). Host-IP discovery
+     * excludes addresses carrying this metric: they are guest addresses
+     * pbridge parks on the uplink, not the phone's own addresses.
+     */
+    public static final long PBRIDGE_OFFLOAD_MAGIC = 4243672773L;
 
     private Constants() {
     }

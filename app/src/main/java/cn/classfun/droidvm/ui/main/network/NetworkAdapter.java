@@ -25,13 +25,25 @@ public final class NetworkAdapter extends StatefulAdapter<NetworkConfig, Network
     public void onBindViewHolder(@NonNull BaseViewHolder holder, int position) {
         var ctx = holder.itemView.getContext();
         var config = items.get(position);
-        var addrCount = config.item.get("ipv4_addresses").size()
-            + config.item.get("ipv6_addresses").size();
+        String typeLabel = ctx.getString(
+            config.getBridgeType() == cn.classfun.droidvm.lib.store.network.BridgeType.GVISOR
+                ? R.string.network_edit_bridge_type_gvisor
+                : R.string.network_edit_bridge_type_linux);
+        String modeLabel;
+        switch (config.getUplinkMode()) {
+            case L2:
+                modeLabel = ctx.getString(R.string.network_edit_uplink_l2);
+                break;
+            case L3:
+                modeLabel = ctx.getString(R.string.network_edit_uplink_l3);
+                break;
+            default:
+                modeLabel = ctx.getString(R.string.network_edit_uplink_none);
+                break;
+        }
         holder.itemInfo.setVisibility(VISIBLE);
-        holder.itemInfo.setText(ctx.getResources().getQuantityString(
-            R.plurals.network_item_info, addrCount,
-            config.item.optString("bridge_name", ""), addrCount
-        ));
+        holder.itemInfo.setText(ctx.getString(
+            R.string.network_item_subtitle, typeLabel, modeLabel));
         super.onBindViewHolder(holder, position);
     }
 }

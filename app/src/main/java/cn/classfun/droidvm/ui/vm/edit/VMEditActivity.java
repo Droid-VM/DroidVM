@@ -161,6 +161,11 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     private void doSave() {
+        // Commit any field still being edited: NIC MAC/offset/forward inputs
+        // write back to the model on focus loss, so flush the focused view
+        // before reading the tabs' config.
+        var focused = getCurrentFocus();
+        if (focused != null) focused.clearFocus();
         var store = new VMStore();
         store.load(this);
         boolean valid = true;

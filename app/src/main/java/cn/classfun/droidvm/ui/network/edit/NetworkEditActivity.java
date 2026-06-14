@@ -4,15 +4,13 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
-import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomMac;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.os.Bundle;
-import android.text.Editable;
-import android.view.Gravity;
-import android.view.ViewGroup;
-import android.widget.ImageButton;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,81 +20,89 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Random;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.network.IPv4Address;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.daemon.network.backend.UplinkResolver;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
+import cn.classfun.droidvm.lib.store.network.Ipv6Source;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
+import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
+import cn.classfun.droidvm.lib.store.network.UplinkMode;
+import cn.classfun.droidvm.lib.store.network.VlanConfig;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
-import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
+import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class NetworkEditActivity extends AppCompatActivity {
     public static final String EXTRA_NETWORK_ID = "network_id";
-    private final List<IPv4Network> ipv4Addresses = new ArrayList<>();
-    private final List<IPv6Network> ipv6Addresses = new ArrayList<>();
-    private final List<IPv4Address> dnsServers = new ArrayList<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Random random = new Random();
+    private final List<VlanConfig> vlans = new ArrayList<>();
+    private final List<VlanCardBinder> binders = new ArrayList<>();
+    // parallel uplink picker entries: display label, stored value (logical id
+    // or literal name) and whether that uplink can be enslaved into a bridge
+    private final List<String> uplinkLabels = new ArrayList<>();
+    private final List<String> uplinkValues = new ArrayList<>();
+    private final List<Boolean> uplinkBridgeable = new ArrayList<>();
+    private String selectedUplink = UplinkResolver.ID_WIFI;
     private boolean editMode = false;
     private UUID editNetworkId = null;
+    private String existingBridgeName = null;
     private CollapsingToolbarLayout collapsingToolbar;
-    private TextInputRowWidget inputName, inputBridgeName, inputMac;
-    private SwitchRowWidget swAutoUp, swStp, swNat, swDhcp;
-    private TextInputRowWidget inputIPv4, inputIPv6, inputDns;
-    private LinearLayout layoutIPv4, layoutIPv6, layoutDns, groupDhcp;
-    private TextView tvIPv4Empty, tvIPv6Empty, tvDnsEmpty;
-    private TextInputRowWidget inputDhcpStart, inputDhcpEnd;
+    private TextView tvRunningBanner;
+    private TextInputRowWidget inputName;
+    private SwitchRowWidget swAutoUp, swStp;
+    private DropdownRowWidget ddBridgeType, ddUplinkMode;
+    private DropdownRowWidget ddL2Uplink;
+    private SwitchRowWidget swPseudoBridge;
+    private TextView tvPseudoHint;
+    private LinearLayout groupL2, groupL3;
+    private TextInputRowWidget inputMac;
+    private LinearLayout containerVlans;
+    private TextView tvVlanEmpty;
+    private MaterialButton btnAddVlan;
     private FloatingActionButton fab;
     private NetworkStore store;
-    @SuppressWarnings("unused")
-    private boolean macManuallyEdited = false;
-    @SuppressWarnings("unused")
-    private boolean bridgeManuallyEdited = false;
-    @SuppressWarnings("unused")
-    private boolean ipv4ManuallyEdited = false;
-    @SuppressWarnings("unused")
-    private boolean dhcpStartManuallyEdited = false;
-    @SuppressWarnings("unused")
-    private boolean dhcpEndManuallyEdited = false;
-    @SuppressWarnings("unused")
-    private boolean programmaticChange = false;
-
-    private final Random random = new Random();
+    private String[] bridgeTypeLabels;
+    private String[] uplinkModeLabels;
+    private BridgeType bridgeType = BridgeType.LINUX;
+    private UplinkMode uplinkMode = UplinkMode.L3;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_network_edit);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
+        tvRunningBanner = findViewById(R.id.tv_running_banner);
         inputName = findViewById(R.id.input_name);
-        inputBridgeName = findViewById(R.id.input_bridge_name);
-        inputMac = findViewById(R.id.input_mac);
         swAutoUp = findViewById(R.id.sw_auto_up);
         swStp = findViewById(R.id.sw_stp);
-        swNat = findViewById(R.id.sw_nat);
-        swDhcp = findViewById(R.id.sw_dhcp);
-        inputIPv4 = findViewById(R.id.input_ipv4);
-        inputIPv6 = findViewById(R.id.input_ipv6);
-        inputDns = findViewById(R.id.input_dns);
-        layoutIPv4 = findViewById(R.id.layout_ipv4);
-        layoutIPv6 = findViewById(R.id.layout_ipv6);
-        layoutDns = findViewById(R.id.layout_dns);
-        tvIPv4Empty = findViewById(R.id.tv_ipv4_empty);
-        tvIPv6Empty = findViewById(R.id.tv_ipv6_empty);
-        tvDnsEmpty = findViewById(R.id.tv_dns_empty);
-        groupDhcp = findViewById(R.id.group_dhcp);
-        inputDhcpStart = findViewById(R.id.input_dhcp_start);
-        inputDhcpEnd = findViewById(R.id.input_dhcp_end);
+        ddBridgeType = findViewById(R.id.dd_bridge_type);
+        ddUplinkMode = findViewById(R.id.dd_uplink_mode);
+        groupL2 = findViewById(R.id.group_l2);
+        ddL2Uplink = findViewById(R.id.dd_l2_uplink);
+        swPseudoBridge = findViewById(R.id.sw_pseudo_bridge);
+        tvPseudoHint = findViewById(R.id.tv_pseudo_hint);
+        groupL3 = findViewById(R.id.group_l3);
+        inputMac = findViewById(R.id.input_mac);
+        containerVlans = findViewById(R.id.container_vlans);
+        tvVlanEmpty = findViewById(R.id.tv_vlan_empty);
+        btnAddVlan = findViewById(R.id.btn_add_vlan);
         fab = findViewById(R.id.fab_save);
         initialize();
     }
@@ -105,160 +111,303 @@ public final class NetworkEditActivity extends AppCompatActivity {
         new BackAskHelper(this);
         store = new NetworkStore();
         store.load(this);
-        inputIPv4.setEndIconOnClickListener(v -> onAddIPv4());
-        inputIPv6.setEndIconOnClickListener(v -> onAddIPv6());
-        inputDns.setEndIconOnClickListener(v -> onAddDns());
-        inputIPv4.addTextChangedListener(new SimpleTextWatcher() {
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                inputIPv4.setError(null);
-            }
+        bridgeTypeLabels = new String[]{
+            getString(R.string.network_edit_bridge_type_linux),
+            getString(R.string.network_edit_bridge_type_gvisor),
+        };
+        uplinkModeLabels = new String[]{
+            getString(R.string.network_edit_uplink_l2),
+            getString(R.string.network_edit_uplink_l3),
+        };
+        ddBridgeType.setAdapter(IconItemAdapter.create(
+            this, bridgeTypeLabels, R.drawable.ic_switch));
+        ddBridgeType.setOnItemClickListener((p, v, pos, id) -> {
+            bridgeType = pos == 1 ? BridgeType.GVISOR : BridgeType.LINUX;
+            onBridgeTypeChanged();
         });
-        inputIPv6.addTextChangedListener(new SimpleTextWatcher() {
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                inputIPv6.setError(null);
-            }
-        });
-        inputDns.addTextChangedListener(new SimpleTextWatcher() {
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                inputDns.setError(null);
-            }
-        });
-        swDhcp.setOnCheckedChangeListener((btn, checked) ->
-            groupDhcp.setVisibility(checked ? VISIBLE : GONE));
+        ddL2Uplink.setOnItemClickListener((p, v, pos, id) -> onUplinkSelected(pos));
+        btnAddVlan.setOnClickListener(v -> onAddVlan());
+        inputMac.setEndIconOnClickListener(v -> inputMac.setText(generateRandomMac()));
         fab.setOnClickListener(v -> onSaveClicked());
-        installManualEditWatchers();
+        updateUplinkModeDropdown();
+        loadUplinks();
         var intent = getIntent();
         if (intent != null && intent.hasExtra(EXTRA_NETWORK_ID)) {
             editMode = true;
             editNetworkId = UUID.fromString(intent.getStringExtra(EXTRA_NETWORK_ID));
             collapsingToolbar.setTitle(getString(R.string.network_edit_title));
             loadExistingConfig();
+            checkRunningState();
         } else {
             collapsingToolbar.setTitle(getString(R.string.network_create_title));
             generateDefaults();
         }
-        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, this::updateDhcpFromIPv4);
-        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, null);
-        buildAddressList(layoutDns, tvDnsEmpty, dnsServers, null);
+        ddBridgeType.setText(
+            bridgeType == BridgeType.GVISOR ? bridgeTypeLabels[1] : bridgeTypeLabels[0]);
+        applyUplinkMode();
+        rebuildVlanCards();
     }
 
-    private void installManualEditWatchers() {
-        inputMac.addTextChangedListener(new ManualEditWatcher() {
-            @Override
-            protected void onManualEdit() {
-                macManuallyEdited = true;
-                propagateMacToBridge();
-            }
+    private void updateUplinkModeDropdown() {
+        // L2 bridging is Linux-only; "none" is just L3 with zero VLANs
+        var labels = bridgeType == BridgeType.GVISOR
+            ? new String[]{uplinkModeLabels[1]}
+            : uplinkModeLabels;
+        ddUplinkMode.setAdapter(IconItemAdapter.create(
+            this, labels, R.drawable.ic_web_plus));
+        ddUplinkMode.setOnItemClickListener((p, v, pos, id) -> {
+            uplinkMode = labels[pos].equals(uplinkModeLabels[0])
+                ? UplinkMode.L2 : UplinkMode.L3;
+            applyUplinkMode();
         });
-        inputBridgeName.addTextChangedListener(new ManualEditWatcher() {
-            @Override
-            protected void onManualEdit() {
-                bridgeManuallyEdited = true;
-            }
-        });
-        inputDhcpStart.addTextChangedListener(new ManualEditWatcher() {
-            @Override
-            protected void onManualEdit() {
-                dhcpStartManuallyEdited = true;
-            }
-        });
-        inputDhcpEnd.addTextChangedListener(new ManualEditWatcher() {
-            @Override
-            protected void onManualEdit() {
-                dhcpEndManuallyEdited = true;
-            }
-        });
+        ddUplinkMode.setText(labelOfMode(uplinkMode));
     }
 
-    private abstract class ManualEditWatcher extends SimpleTextWatcher {
-        @Override
-        public void afterTextChanged(Editable s) {
-            if (!programmaticChange) onManualEdit();
+    @NonNull
+    private String labelOfMode(@NonNull UplinkMode mode) {
+        return mode == UplinkMode.L2 ? uplinkModeLabels[0] : uplinkModeLabels[1];
+    }
+
+    private void onBridgeTypeChanged() {
+        if (bridgeType == BridgeType.GVISOR && uplinkMode == UplinkMode.L2)
+            uplinkMode = UplinkMode.L3;
+        updateUplinkModeDropdown();
+        applyUplinkMode();
+        for (var binder : binders)
+            binder.applyBridgeType(bridgeType);
+    }
+
+    private void applyUplinkMode() {
+        groupL2.setVisibility(uplinkMode == UplinkMode.L2 ? VISIBLE : GONE);
+        groupL3.setVisibility(uplinkMode == UplinkMode.L3 ? VISIBLE : GONE);
+        updatePseudoHint();
+    }
+
+    private void loadUplinks() {
+        rebuildUplinks(null);
+        DaemonConnection.getInstance().buildRequest("network_list_uplinks")
+            .onResponse(resp -> {
+                var data = resp.optJSONObject("data");
+                mainHandler.post(() -> {
+                    rebuildUplinks(data);
+                    for (var binder : binders)
+                        binder.applyBridgeType(bridgeType);
+                });
+            })
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> {
+            })
+            .invoke();
+    }
+
+    /**
+     * Rebuilds the picker entries: the three logical identifiers (always shown,
+     * with their live-resolved name or "unavailable") followed by the concrete
+     * physical L2 devices. The current selection is preserved.
+     */
+    private void rebuildUplinks(@Nullable org.json.JSONObject data) {
+        uplinkLabels.clear();
+        uplinkValues.clear();
+        uplinkBridgeable.clear();
+        addIdentifier(UplinkResolver.ID_WIFI,
+            getString(R.string.network_edit_uplink_wifi), false, data);
+        addIdentifier(UplinkResolver.ID_ETHERNET,
+            getString(R.string.network_edit_uplink_ethernet), true, data);
+        addIdentifier(UplinkResolver.ID_TETHERING,
+            getString(R.string.network_edit_uplink_tethering), true, data);
+        if (data != null) {
+            var devices = data.optJSONArray("devices");
+            if (devices != null)
+                for (int i = 0; i < devices.length(); i++) {
+                    var obj = devices.optJSONObject(i);
+                    if (obj == null) continue;
+                    var name = obj.optString("name", "");
+                    if (name.isEmpty() || uplinkValues.contains(name)) continue;
+                    uplinkLabels.add(name);
+                    uplinkValues.add(name);
+                    uplinkBridgeable.add(obj.optBoolean("bridgeable", true));
+                }
         }
+        // keep a saved literal device that isn't currently present selectable
+        if (selectedUplink != null && !selectedUplink.isEmpty()
+            && !uplinkValues.contains(selectedUplink)) {
+            uplinkLabels.add(getString(R.string.network_edit_uplink_identifier,
+                selectedUplink, getString(R.string.network_edit_uplink_unavailable)));
+            uplinkValues.add(selectedUplink);
+            uplinkBridgeable.add(true);
+        }
+        updateUplinkDropdown();
+    }
 
-        protected abstract void onManualEdit();
+    private void addIdentifier(
+        @NonNull String id, @NonNull String display, boolean bridgeable,
+        @Nullable org.json.JSONObject data
+    ) {
+        String resolved = "";
+        boolean br = bridgeable;
+        if (data != null) {
+            var ids = data.optJSONArray("identifiers");
+            if (ids != null)
+                for (int i = 0; i < ids.length(); i++) {
+                    var obj = ids.optJSONObject(i);
+                    if (obj != null && id.equals(obj.optString("id"))) {
+                        resolved = obj.optString("name", "");
+                        br = obj.optBoolean("bridgeable", bridgeable);
+                        break;
+                    }
+                }
+        }
+        var shown = resolved.isEmpty()
+            ? getString(R.string.network_edit_uplink_unavailable) : resolved;
+        uplinkLabels.add(getString(R.string.network_edit_uplink_identifier, display, shown));
+        uplinkValues.add(id);
+        uplinkBridgeable.add(br);
+    }
+
+    private void updateUplinkDropdown() {
+        ddL2Uplink.setAdapter(IconItemAdapter.create(
+            this, uplinkLabels.toArray(new String[0]), R.drawable.ic_ethernet));
+        if (uplinkLabels.isEmpty()) return;
+        int idx = uplinkValues.indexOf(selectedUplink);
+        if (idx < 0) idx = 0;
+        selectedUplink = uplinkValues.get(idx);
+        ddL2Uplink.setText(uplinkLabels.get(idx));
+        applyPseudoLock(uplinkBridgeable.get(idx));
+    }
+
+    private void onUplinkSelected(int pos) {
+        if (pos < 0 || pos >= uplinkValues.size()) return;
+        selectedUplink = uplinkValues.get(pos);
+        boolean bridgeable = uplinkBridgeable.get(pos);
+        // re-evaluate the toggle once on selection: bridgeable defaults on
+        if (bridgeable) swPseudoBridge.setChecked(true);
+        applyPseudoLock(bridgeable);
+    }
+
+    /**
+     * Sets the pseudo-bridge toggle's locked state for an uplink: a
+     * non-bridgeable uplink (Wi-Fi STA / non-ethernet) forces it on and locks
+     * it; a bridgeable one leaves it user-controllable.
+     */
+    private void applyPseudoLock(boolean bridgeable) {
+        if (!bridgeable) swPseudoBridge.setChecked(true);
+        swPseudoBridge.setSwitchEnabled(bridgeable);
+        updatePseudoHint();
+    }
+
+    private void updatePseudoHint() {
+        if (uplinkMode != UplinkMode.L2) return;
+        int idx = uplinkValues.indexOf(selectedUplink);
+        boolean bridgeable = idx >= 0 && idx < uplinkBridgeable.size()
+            ? uplinkBridgeable.get(idx) : true;
+        tvPseudoHint.setText(getString(bridgeable
+            ? R.string.network_edit_pseudo_hint_wired
+            : R.string.network_edit_pseudo_hint_wifi));
     }
 
     private void generateDefaults() {
-        var mac = generateRandomMac();
-        setTextProgrammatic(inputMac, mac);
-        setTextProgrammatic(inputBridgeName, bridgeNameFromMac(mac));
-        var ipv4Cidr = generateRandomIPv4();
-        ipv4Addresses.add(ipv4Cidr);
-        addDefaultDnsServers();
-        swDhcp.setChecked(true);
-        updateDhcpFromIPv4();
+        bridgeType = BridgeType.LINUX;
+        uplinkMode = UplinkMode.L3;
+        ddUplinkMode.setText(labelOfMode(uplinkMode));
+        inputMac.setText(generateRandomMac());
+        vlans.add(newVlan(0));
     }
 
-    private void addDefaultDnsServers() {
-        var a = IPv4Address.parse("8.8.8.8");
-        var b = IPv4Address.parse("1.1.1.1");
-        if (a != null) dnsServers.add(a);
-        if (b != null) dnsServers.add(b);
-    }
-
+    /** A new VLAN entry with paired random networks (empty when exhausted). */
     @NonNull
-    private String bridgeNameFromMac(@NonNull String mac) {
-        return fmt("br%s", mac.replace(":", "").toLowerCase());
+    private VlanConfig newVlan(int vlanId) {
+        var vlan = VlanConfig.createDefault(vlanId);
+        var pair = generatePairedCidrs();
+        if (pair != null) {
+            vlan.ipv4().set("cidr", pair[0]);
+            vlan.ipv6().set("cidr", pair[1]);
+        }
+        var ipv6 = vlan.ipv6();
+        if (bridgeType == BridgeType.GVISOR) {
+            // gVisor has IPv6 SNAT, so the ULA prefix is routable: default on
+            ipv6.set("snat", true);
+        } else {
+            // a Linux bridge has no IPv6 NAT and Android rarely holds a
+            // routed prefix, so serving the ULA via DHCPv6/SLAAC hands VMs
+            // addresses with no connectivity: default to a static ULA CIDR
+            // with serving off, and pre-fill the Wi-Fi PD uplink for when the
+            // user switches the source to DHCP-PD
+            ipv6.set("snat", false);
+            ipv6.set("source", Ipv6Source.STATIC.key());
+            var pd = DataItem.newObject();
+            pd.set("uplink", UplinkResolver.ID_WIFI);
+            ipv6.set("pd", pd);
+            ipv6.get("dhcp").set("enabled", false);
+            ipv6.get("slaac").set("enabled", false);
+        }
+        return vlan;
     }
 
-    @NonNull
-    private IPv4Network generateRandomIPv4() {
-        var existing = new ArrayList<IPv4Network>();
-        store.forEach((id, cfg) -> {
-            if (id.equals(editNetworkId)) return;
-            cfg.item.get("ipv4_addresses").forEachArray(a -> {
-                try {
-                    existing.add(IPv4Network.parse(a.asString()));
-                } catch (Exception ignored) {
-                }
-            });
-        });
-        for (int attempt = 0; attempt < 200; attempt++) {
-            int b = 180 + random.nextInt(10);  // 180-189
-            int c = random.nextInt(256);       // 0-255
-            var addr = new IPv4Address(10, b, c, 1);
-            var candidate = new IPv4Network(addr, 24);
+    /**
+     * Picks N in 50-250 so that 192.168.N.1/24 and fd00:N::1/64 are both
+     * free of overlaps with every other network and this network's other
+     * VLANs. Returns null when no N fits.
+     */
+    @Nullable
+    private String[] generatePairedCidrs() {
+        var used4 = new ArrayList<IPv4Network>();
+        var used6 = new ArrayList<IPv6Network>();
+        collectUsedNetworks(used4, used6);
+        for (int attempt = 0; attempt < 400; attempt++) {
+            int n = 50 + random.nextInt(201); // 50-250
+            IPv4Network cand4;
+            IPv6Network cand6;
+            try {
+                cand4 = IPv4Network.parse(fmt("192.168.%d.1/24", n));
+                cand6 = IPv6Network.parse(fmt("fd00:%d::1/64", n));
+            } catch (Exception e) {
+                continue;
+            }
             boolean conflicts = false;
-            for (var ex : existing) {
-                if (candidate.overlaps(ex)) {
+            for (var ex : used4)
+                if (cand4.overlaps(ex)) {
                     conflicts = true;
                     break;
                 }
+            if (!conflicts) for (var ex : used6)
+                if (cand6.overlaps(ex)) {
+                    conflicts = true;
+                    break;
+                }
+            if (!conflicts) return new String[]{cand4.toString(), cand6.toString()};
+        }
+        return null;
+    }
+
+    /** Subnets in use by other networks and by this network's VLAN cards. */
+    private void collectUsedNetworks(
+        @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
+    ) {
+        storeAllBinders();
+        var sources = new ArrayList<VlanConfig>(vlans);
+        store.forEach((id, cfg) -> {
+            if (id.equals(editNetworkId)) return;
+            sources.addAll(cfg.getVlans());
+        });
+        for (var vlan : sources) {
+            var net4 = vlan.getIpv4Network();
+            if (net4 != null) out4.add(net4);
+            for (var cidr : vlan.getIpv4Secondary()) {
+                try {
+                    out4.add(IPv4Network.parse(cidr));
+                } catch (Exception ignored) {
+                }
             }
-            if (!conflicts) return candidate;
+            var net6 = vlan.getIpv6Network();
+            if (net6 != null) out6.add(net6);
+            for (var cidr : vlan.getIpv6Secondary()) {
+                try {
+                    out6.add(IPv6Network.parse(cidr));
+                } catch (Exception ignored) {
+                }
+            }
         }
-        return new IPv4Network(new IPv4Address(10, 180, 0, 1), 24);
-    }
-
-    private void updateDhcpFromIPv4() {
-        if (ipv4Addresses.isEmpty()) return;
-        var cidr = ipv4Addresses.get(0);
-        if (cidr == null) return;
-        if (!dhcpStartManuallyEdited) {
-            var start = cidr.dhcpPoolStart();
-            if (start != null) setTextProgrammatic(inputDhcpStart, start.toString());
-        }
-        if (!dhcpEndManuallyEdited) {
-            var end = cidr.dhcpPoolEnd();
-            if (end != null) setTextProgrammatic(inputDhcpEnd, end.toString());
-        }
-    }
-
-    private void propagateMacToBridge() {
-        if (bridgeManuallyEdited) return;
-        var mac = inputMac.getText().trim();
-        if (mac.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}"))
-            setTextProgrammatic(inputBridgeName, bridgeNameFromMac(mac));
-    }
-
-    private void setTextProgrammatic(@NonNull TextInputRowWidget w, @NonNull String text) {
-        programmaticChange = true;
-        w.setText(text);
-        programmaticChange = false;
     }
 
     private void loadExistingConfig() {
@@ -268,247 +417,135 @@ public final class NetworkEditActivity extends AppCompatActivity {
             finish();
             return;
         }
-        programmaticChange = true;
         inputName.setText(config.getName());
-        inputBridgeName.setText(config.item.optString("bridge_name", ""));
-        inputMac.setText(config.item.optString("mac_address", ""));
-        programmaticChange = false;
-        swAutoUp.setChecked(config.item.optBoolean("auto_up", false));
-        swStp.setChecked(config.item.optBoolean("stp", false));
-        swNat.setChecked(config.item.optBoolean("nat", false));
-        swDhcp.setChecked(config.item.optBoolean("dhcp_enabled", false));
-        programmaticChange = true;
-        var start = config.item.optString("dhcp_range_start", "");
-        var end = config.item.optString("dhcp_range_end", "");
-        inputDhcpStart.setText(start);
-        inputDhcpEnd.setText(end);
-        programmaticChange = false;
-        ipv4Addresses.clear();
-        parseIPv4Addresses(config, ipv4Addresses);
-        ipv6Addresses.clear();
-        parseIPv6Addresses(config, ipv6Addresses);
-        dnsServers.clear();
-        parseDnsServers(config, dnsServers);
-        if (dnsServers.isEmpty()) addDefaultDnsServers();
-        macManuallyEdited = true;
-        bridgeManuallyEdited = true;
-        ipv4ManuallyEdited = true;
-        dhcpStartManuallyEdited = true;
-        dhcpEndManuallyEdited = true;
+        swAutoUp.setChecked(config.isAutoUp());
+        swStp.setChecked(config.isStp());
+        bridgeType = config.getBridgeType();
+        uplinkMode = config.getUplinkMode();
+        existingBridgeName = config.getBridgeName();
+        ddUplinkMode.setText(labelOfMode(uplinkMode));
+        var l2Uplink = config.getL2Uplink();
+        if (l2Uplink != null && !l2Uplink.isEmpty()) selectedUplink = l2Uplink;
+        swPseudoBridge.setChecked(config.isL2PseudoBridge());
+        rebuildUplinks(null);   // reflect the loaded selection; refreshed by IPC
+        var l3Mac = config.l3().optString("mac_address", "");
+        inputMac.setText(l3Mac == null || l3Mac.isEmpty() ? generateRandomMac() : l3Mac);
+        vlans.clear();
+        for (var vlan : config.getVlans()) {
+            // deep copy so cancel doesn't mutate the store
+            var copy = DataItem.newObject();
+            copy.puts(vlan.item);
+            vlans.add(new VlanConfig(copy));
+        }
     }
 
-    private void onAddIPv4() {
-        var addr = inputIPv4.getText().trim();
-        if (addr.isEmpty()) return;
-        if (!IPv4Network.isValid(addr)) {
-            inputIPv4.setError(getString(R.string.network_edit_error_address_invalid));
-            return;
-        }
-        IPv4Network ip;
-        try {
-            ip = IPv4Network.parse(addr);
-        } catch (Exception ignored) {
-            inputIPv4.setError(getString(R.string.network_edit_error_address_invalid));
-            return;
-        }
-        inputIPv4.setError(null);
-        ipv4Addresses.add(ip);
-        ipv4ManuallyEdited = true;
-        inputIPv4.setText("");
-        buildAddressList(layoutIPv4, tvIPv4Empty, ipv4Addresses, this::updateDhcpFromIPv4);
-        updateDhcpFromIPv4();
+    /** Editing a RUNNING network is not allowed; show a banner and block save. */
+    private void checkRunningState() {
+        DaemonConnection.getInstance().buildRequest("network_status")
+            .put("network_id", editNetworkId.toString())
+            .onResponse(resp -> {
+                var state = resp.optString("state", "");
+                if (state.equalsIgnoreCase("running")
+                    || state.equalsIgnoreCase("starting")) {
+                    mainHandler.post(() -> {
+                        tvRunningBanner.setVisibility(VISIBLE);
+                        fab.setEnabled(false);
+                    });
+                }
+            })
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> {
+            })
+            .invoke();
     }
 
-    private void onAddIPv6() {
-        var addr = inputIPv6.getText().trim();
-        if (addr.isEmpty()) return;
-        if (!IPv6Network.isValid(addr)) {
-            inputIPv6.setError(getString(R.string.network_edit_error_address_invalid));
-            return;
-        }
-        IPv6Network ip;
-        try {
-            ip = IPv6Network.parse(addr);
-        } catch (Exception ignored) {
-            inputIPv6.setError(getString(R.string.network_edit_error_address_invalid));
-            return;
-        }
-        inputIPv6.setError(null);
-        ipv6Addresses.add(ip);
-        inputIPv6.setText("");
-        buildAddressList(layoutIPv6, tvIPv6Empty, ipv6Addresses, null);
+    private void onAddVlan() {
+        storeAllBinders();
+        // smallest free id in 0, 10, 20, ...
+        var used = new java.util.HashSet<Integer>();
+        for (var vlan : vlans) used.add(vlan.getVlanId());
+        int id = 0;
+        while (used.contains(id) && id < 4090) id += 10;
+        vlans.add(newVlan(id));
+        rebuildVlanCards();
     }
 
-    private void onAddDns() {
-        var addr = inputDns.getText().trim();
-        if (addr.isEmpty()) return;
-        if (!IPv4Address.isValid(addr)) {
-            inputDns.setError(getString(R.string.network_edit_error_dns_invalid));
-            return;
+    private void rebuildVlanCards() {
+        storeAllBinders();
+        containerVlans.removeAllViews();
+        binders.clear();
+        tvVlanEmpty.setVisibility(vlans.isEmpty() ? VISIBLE : GONE);
+        var inflater = LayoutInflater.from(this);
+        for (int i = 0; i < vlans.size(); i++) {
+            final int idx = i;
+            var view = inflater.inflate(R.layout.item_network_vlan, containerVlans, false);
+            var binder = new VlanCardBinder(view, uplinkValues);
+            binder.bind(vlans.get(i), bridgeType);
+            binder.delete.setOnClickListener(v -> {
+                vlans.remove(idx);
+                rebuildVlanCards();
+            });
+            binders.add(binder);
+            containerVlans.addView(view);
         }
-        var ip = IPv4Address.parse(addr);
-        if (ip == null) {
-            inputDns.setError(getString(R.string.network_edit_error_dns_invalid));
-            return;
-        }
-        for (var existing : dnsServers) {
-            if (existing.value() == ip.value()) {
-                inputDns.setText("");
-                return;
-            }
-        }
-        inputDns.setError(null);
-        dnsServers.add(ip);
-        inputDns.setText("");
-        buildAddressList(layoutDns, tvDnsEmpty, dnsServers, null);
     }
 
-    private void buildAddressList(
-        @NonNull LinearLayout container,
-        @NonNull TextView emptyView,
-        @NonNull List<?> list,
-        @Nullable Runnable onRemoved
-    ) {
-        container.removeAllViews();
-        if (list.isEmpty()) {
-            emptyView.setVisibility(VISIBLE);
-        } else {
-            emptyView.setVisibility(GONE);
-            for (int i = 0; i < list.size(); i++) {
-                final int idx = i;
-                var row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setGravity(Gravity.CENTER_VERTICAL);
-                int pad = (int) (4 * getResources().getDisplayMetrics().density);
-                row.setPadding(0, pad, 0, pad);
-                var tv = new TextView(this);
-                tv.setText(list.get(i).toString());
-                tv.setTextSize(15);
-                var lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-                tv.setLayoutParams(lp);
-                row.addView(tv);
-                var btn = new ImageButton(this);
-                btn.setImageResource(R.drawable.ic_delete);
-                btn.setBackground(null);
-                btn.setContentDescription(getString(R.string.network_edit_remove_address));
-                btn.setOnClickListener(v -> {
-                    list.remove(idx);
-                    buildAddressList(container, emptyView, list, onRemoved);
-                    if (onRemoved != null) onRemoved.run();
-                });
-                row.addView(btn);
-                container.addView(row);
-            }
-        }
+    private void storeAllBinders() {
+        for (int i = 0; i < binders.size() && i < vlans.size(); i++)
+            binders.get(i).store(vlans.get(i));
     }
 
     private void onSaveClicked() {
-        inputName.setError(null);
-        inputBridgeName.setError(null);
-        inputMac.setError(null);
-        inputIPv4.setError(null);
-        inputIPv6.setError(null);
-        inputDns.setError(null);
-        inputDhcpStart.setError(null);
-        inputDhcpEnd.setError(null);
-        if (!inputIPv4.getText().trim().isEmpty()) {
-            inputIPv4.setError(getString(R.string.network_edit_error_ipv4_not_added));
-            return;
-        }
-        if (!inputIPv6.getText().trim().isEmpty()) {
-            inputIPv6.setError(getString(R.string.network_edit_error_ipv6_not_added));
-            return;
-        }
-        if (!inputDns.getText().trim().isEmpty()) {
-            inputDns.setError(getString(R.string.network_edit_error_dns_not_added));
-            return;
-        }
-        if (dnsServers.isEmpty()) {
-            inputDns.setError(getString(R.string.network_edit_error_dns_empty));
-            return;
-        }
+        storeAllBinders();
         var name = inputName.getText().trim();
-        var bridgeName = inputBridgeName.getText().trim();
-        var mac = inputMac.getText().trim();
         if (name.isEmpty()) {
             inputName.setError(getString(R.string.network_edit_error_name_empty));
             return;
         }
-        if (bridgeName.isEmpty()) {
-            inputBridgeName.setError(getString(R.string.network_edit_error_bridge_empty));
-            return;
-        }
-        if (!bridgeName.matches("[a-zA-Z][a-zA-Z0-9_-]*")) {
-            inputBridgeName.setError(getString(R.string.network_edit_error_bridge_invalid));
-            return;
-        }
-        if (!mac.isEmpty() && !mac.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")) {
-            inputMac.setError(getString(R.string.network_edit_error_mac_invalid));
-            return;
-        }
+        inputName.setError(null);
         if (!store.isNameUnique(name, editNetworkId)) {
             inputName.setError(getString(R.string.network_edit_error_name_duplicate));
             return;
-        }
-        if (!isBridgeUnique(bridgeName)) {
-            inputBridgeName.setError(getString(R.string.network_edit_error_bridge_duplicate));
-            return;
-        }
-        if (!mac.isEmpty() && !isMacUnique(mac)) {
-            inputMac.setError(getString(R.string.network_edit_error_mac_duplicate));
-            return;
-        }
-        var ipv4Conflict = checkIPv4Overlap();
-        if (ipv4Conflict != null) {
-            Toast.makeText(this, ipv4Conflict, LENGTH_LONG).show();
-            return;
-        }
-        var ipv6Conflict = checkIPv6Overlap();
-        if (ipv6Conflict != null) {
-            Toast.makeText(this, ipv6Conflict, LENGTH_LONG).show();
-            return;
-        }
-        if (swDhcp.isChecked()) {
-            var dhcpStart = inputDhcpStart.getText().trim();
-            var dhcpEnd = inputDhcpEnd.getText().trim();
-            if (!dhcpStart.isEmpty() && !IPv4Address.isValid(dhcpStart)) {
-                inputDhcpStart.setError(getString(R.string.network_edit_error_dhcp_start_invalid));
-                return;
-            }
-            if (!dhcpEnd.isEmpty() && !IPv4Address.isValid(dhcpEnd)) {
-                inputDhcpEnd.setError(getString(R.string.network_edit_error_dhcp_end_invalid));
-                return;
-            }
-            if (!dhcpStart.isEmpty() && !dhcpEnd.isEmpty()) {
-                long start = requireNonNull(IPv4Address.parse(dhcpStart)).value();
-                long end = requireNonNull(IPv4Address.parse(dhcpEnd)).value();
-                if (start >= end) {
-                    inputDhcpStart.setError(getString(R.string.network_edit_error_dhcp_invalid));
-                    return;
-                }
-            }
         }
         var config = new NetworkConfig();
         if (editMode && editNetworkId != null)
             config.setId(editNetworkId);
         config.setName(name);
-        config.item.set("bridge_name", bridgeName);
-        config.item.set("mac_address", mac);
+        config.setBridgeName(existingBridgeName != null
+            ? existingBridgeName
+            : fmt("br%s", config.getId().toString().substring(0, 8).replace("-", "")));
         config.item.set("auto_up", swAutoUp.isChecked());
         config.item.set("stp", swStp.isChecked());
-        config.item.set("nat", swNat.isChecked());
-        config.item.set("dhcp_enabled", swDhcp.isChecked());
-        setIPv4Addresses(config, ipv4Addresses);
-        setIPv6Addresses(config, ipv6Addresses);
-        setDnsServers(config, dnsServers);
-        config.item.set("dhcp_range_start", inputDhcpStart.getText().trim());
-        config.item.set("dhcp_range_end", inputDhcpEnd.getText().trim());
+        config.setBridgeType(bridgeType);
+        config.setUplinkMode(uplinkMode);
+        if (uplinkMode == UplinkMode.L2) {
+            config.l2().set("uplink", selectedUplink);
+            config.l2().set("pseudo_bridge", swPseudoBridge.isChecked());
+        } else {
+            config.l3().set("mac_address", inputMac.getText().trim());
+            var arr = DataItem.newArray();
+            for (var vlan : vlans) arr.append(vlan.item);
+            config.l3().set("vlans", arr);
+        }
+        try {
+            NetworkConfigValidator.validate(config);
+        } catch (IllegalArgumentException e) {
+            Toast.makeText(this, e.getMessage(), LENGTH_LONG).show();
+            return;
+        }
+        var overlap = checkOverlaps(config);
+        if (overlap != null) {
+            Toast.makeText(this, overlap, LENGTH_LONG).show();
+            return;
+        }
         if (editMode) {
             store.update(config);
         } else {
             store.add(config);
         }
         store.save(this);
+        syncToDaemon(config);
         Toast.makeText(this,
             editMode ? getString(R.string.network_edit_saved, name) :
                 getString(R.string.network_create_success, name),
@@ -516,118 +553,86 @@ public final class NetworkEditActivity extends AppCompatActivity {
         finish();
     }
 
-    private boolean isBridgeUnique(@NonNull String bridge) {
-        final boolean[] unique = {true};
-        store.forEach((id, cfg) -> {
-            if (id.equals(editNetworkId)) return;
-            if (bridge.equals(cfg.item.optString("bridge_name", ""))) unique[0] = false;
-        });
-        return unique[0];
-    }
-
-    private boolean isMacUnique(@NonNull String mac) {
-        final boolean[] unique = {true};
-        var macLower = mac.toLowerCase(Locale.ROOT);
-        store.forEach((id, cfg) -> {
-            if (id.equals(editNetworkId)) return;
-            if (macLower.equals(cfg.item.optString("mac_address", "").toLowerCase(Locale.ROOT)))
-                unique[0] = false;
-        });
-        return unique[0];
-    }
-
-    @Nullable
-    private String checkIPv4Overlap() {
-        for (var myCidr : ipv4Addresses) {
-            var result = new String[1];
-            store.forEach((id, cfg) -> {
-                if (result[0] != null) return;
-                if (id.equals(editNetworkId)) return;
-                var others = new ArrayList<IPv4Network>();
-                parseIPv4Addresses(cfg, others);
-                for (var other : others) {
-                    if (!myCidr.overlaps(other)) continue;
-                    result[0] = getString(
-                        R.string.network_edit_error_ipv4_overlap,
-                        myCidr.toString(), cfg.getName(), other
-                    );
-                    return;
-                }
-            });
-            if (result[0] != null) return result[0];
-        }
-        return null;
+    /** Push the modified config to the daemon if it already knows the network. */
+    private void syncToDaemon(@NonNull NetworkConfig config) {
+        var conn = DaemonConnection.getInstance();
+        conn.buildRequest("network_exists")
+            .put("network_id", config.getId())
+            .onResponse(resp -> {
+                if (!resp.optBoolean("exists", false)) return;
+                conn.buildRequest("network_modify")
+                    .put("config", config)
+                    .onUnsuccessful(r -> {
+                    })
+                    .onError(e -> {
+                    })
+                    .invoke();
+            })
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> {
+            })
+            .invoke();
     }
 
     @Nullable
-    private String checkIPv6Overlap() {
-        for (var myCidr : ipv6Addresses) {
-            var result = new String[1];
-            store.forEach((id, cfg) -> {
-                if (result[0] != null) return;
-                if (id.equals(editNetworkId)) return;
-                var others = new ArrayList<IPv6Network>();
-                parseIPv6Addresses(cfg, others);
-                for (var other : others) {
-                    if (!myCidr.overlaps(other)) continue;
-                    result[0] = getString(
-                        R.string.network_edit_error_ipv6_overlap,
-                        myCidr.toString(), cfg.getName(), other
-                    );
-                    return;
+    private String checkOverlaps(@NonNull NetworkConfig config) {
+        var myV4 = new ArrayList<IPv4Network>();
+        var myV6 = new ArrayList<IPv6Network>();
+        for (var vlan : config.getVlans()) {
+            var net4 = vlan.getIpv4Network();
+            if (net4 != null) myV4.add(net4);
+            for (var cidr : vlan.getIpv4Secondary()) {
+                try {
+                    myV4.add(IPv4Network.parse(cidr));
+                } catch (Exception ignored) {
                 }
-            });
-            if (result[0] != null) return result[0];
+            }
+            var net6 = vlan.getIpv6Network();
+            if (net6 != null) myV6.add(net6);
+            for (var cidr : vlan.getIpv6Secondary()) {
+                try {
+                    myV6.add(IPv6Network.parse(cidr));
+                } catch (Exception ignored) {
+                }
+            }
         }
-        return null;
-    }
-
-    private static void parseIPv4Addresses(@NonNull NetworkConfig cfg, @NonNull List<IPv4Network> out) {
-        cfg.item.get("ipv4_addresses").forEachArray(a -> {
-            try {
-                out.add(IPv4Network.parse(a.asString()));
-            } catch (Exception ignored) {
+        // overlaps within this network
+        for (int i = 0; i < myV4.size(); i++)
+            for (int j = i + 1; j < myV4.size(); j++)
+                if (myV4.get(i).overlaps(myV4.get(j)))
+                    return getString(R.string.network_edit_error_self_overlap,
+                        myV4.get(i).toString(), myV4.get(j).toString());
+        for (int i = 0; i < myV6.size(); i++)
+            for (int j = i + 1; j < myV6.size(); j++)
+                if (myV6.get(i).overlaps(myV6.get(j)))
+                    return getString(R.string.network_edit_error_self_overlap,
+                        myV6.get(i).toString(), myV6.get(j).toString());
+        // overlaps against other networks
+        var result = new String[1];
+        store.forEach((id, other) -> {
+            if (result[0] != null || id.equals(editNetworkId)) return;
+            for (var vlan : other.getVlans()) {
+                var otherNet = vlan.getIpv4Network();
+                if (otherNet != null) {
+                    for (var mine : myV4) {
+                        if (!mine.overlaps(otherNet)) continue;
+                        result[0] = getString(R.string.network_edit_error_ipv4_overlap,
+                            mine.toString(), other.getName(), otherNet);
+                        return;
+                    }
+                }
+                var otherNet6 = vlan.getIpv6Network();
+                if (otherNet6 != null) {
+                    for (var mine : myV6) {
+                        if (!mine.overlaps(otherNet6)) continue;
+                        result[0] = getString(R.string.network_edit_error_ipv6_overlap,
+                            mine.toString(), other.getName(), otherNet6);
+                        return;
+                    }
+                }
             }
         });
-    }
-
-    private static void parseIPv6Addresses(@NonNull NetworkConfig cfg, @NonNull List<IPv6Network> out) {
-        cfg.item.get("ipv6_addresses").forEachArray(a -> {
-            try {
-                out.add(IPv6Network.parse(a.asString()));
-            } catch (Exception ignored) {
-            }
-        });
-    }
-
-    private static void parseDnsServers(@NonNull NetworkConfig cfg, @NonNull List<IPv4Address> out) {
-        cfg.item.get("dns_servers").forEachArray(a -> {
-            try {
-                var ip = IPv4Address.parse(a.asString());
-                if (ip != null) out.add(ip);
-            } catch (Exception ignored) {
-            }
-        });
-    }
-
-    private static void setIPv4Addresses(@NonNull NetworkConfig cfg, @NonNull List<IPv4Network> addresses) {
-        var arr = DataItem.newArray();
-        for (var addr : addresses)
-            arr.append(DataItem.newString(addr.toString()));
-        cfg.item.set("ipv4_addresses", arr);
-    }
-
-    private static void setIPv6Addresses(@NonNull NetworkConfig cfg, @NonNull List<IPv6Network> addresses) {
-        var arr = DataItem.newArray();
-        for (var addr : addresses)
-            arr.append(DataItem.newString(addr.toString()));
-        cfg.item.set("ipv6_addresses", arr);
-    }
-
-    private static void setDnsServers(@NonNull NetworkConfig cfg, @NonNull List<IPv4Address> dns) {
-        var arr = DataItem.newArray();
-        for (var ip : dns)
-            arr.append(DataItem.newString(ip.toString()));
-        cfg.item.set("dns_servers", arr);
+        return result[0];
     }
 }

@@ -1,0 +1,27 @@
+[package]
+name = "netbox"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+description = "netbox: a minimal netlink CLI toolbox for DroidVM — replaces the iproute2/bridge subset the daemon shells out to, so the APK doesn't depend on each OEM's system ip/bridge (versions vary; some don't even emit IFA_RT_PRIORITY in -j JSON)"
+
+[[bin]]
+name = "netbox"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+libc = "0.2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros", "time"] }
+futures = "0.3"
+rtnetlink = "0.21"
+netlink-packet-route = "0.30"
+netlink-sys = "0.8"
+
+[profile.release]
+opt-level = 2
+lto = "thin"
+strip = true
