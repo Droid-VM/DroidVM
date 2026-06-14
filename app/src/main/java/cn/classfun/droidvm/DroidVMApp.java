@@ -11,6 +11,7 @@ import cn.classfun.droidvm.lib.store.base.DataStore;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.ui.ImeInsetsApplier;
 import cn.classfun.droidvm.lib.utils.ThreadUtils;
 
 public final class DroidVMApp extends Application {
@@ -21,6 +22,7 @@ public final class DroidVMApp extends Application {
     public void onCreate() {
         super.onCreate();
         DynamicColors.applyToActivitiesIfAvailable(this);
+        registerActivityLifecycleCallbacks(new ImeInsetsApplier());
         vmEventHandler = new VMEventHandler(this);
         registerActivityLifecycleCallbacks(vmEventHandler);
         DaemonConnection.getInstance().addListener(vmEventHandler);

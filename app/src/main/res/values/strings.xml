@@ -505,6 +505,7 @@
     <string name="lxc_custom_download_url_hint">Download mirror base URL</string>
     <string name="lxc_meta_idle">Please load metadata first</string>
     <string name="lxc_meta_loading">Loading\u2026</string>
+    <string name="lxc_meta_refreshing">Updating source list\u2026</string>
     <plurals name="lxc_meta_count">
         <item quantity="one">Metadata: %1$d image</item>
         <item quantity="other">Metadata: %1$d images</item>

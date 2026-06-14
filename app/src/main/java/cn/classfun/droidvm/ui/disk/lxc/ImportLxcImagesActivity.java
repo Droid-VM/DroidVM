@@ -98,6 +98,9 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     private boolean isLoading = false;
     private boolean isDownloading = false;
     private boolean isClassFunApiAvailable = false;
+    /** True once the user explicitly picks a source, so a background refresh
+     * won't override their choice (but may still upgrade an untouched default). */
+    private boolean userTouchedSource = false;
     private String downloadName = null;
     private String downloadFolder = null;
     private ApiManager apiManager = null;
@@ -156,8 +159,12 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         inputFolder.setText(path);
         inputFolder.setIconButtonOnClickListener(() -> folderPickerLauncher.launch(null));
         fabImport.setOnClickListener(v -> doImport());
-        setMetaIdle();
-        runOnPool(this::asyncLoad);
+        // show the built-in source list immediately (screen usable at once),
+        // then refresh from the API in the background and swap it in when ready
+        loadBuiltinSources();
+        runOnPool(this::asyncRefreshSources);
+        // If this screen was re-created while its download is still running,
+        // restore the whole form; otherwise just re-attach the progress bar.
         if (!restoreSession()) reattachActiveDownload();
     }
 
@@ -237,23 +244,102 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         pollHandler.post(pollRunnable);
     }
 
-    private void asyncLoad() {
-        if (Privacy.isPrivacyAgreed(this)) {
-            apiManager = ApiManager.create(this);
-            isClassFunApiAvailable = apiManager.isServiceEnabled("lxc_images_metadata");
+    /**
+     * Populates the source dropdowns synchronously from the bundled repo list
+     * so the screen is usable immediately, before the API refresh returns.
+     */
+    private void loadBuiltinSources() {
+        var repos = Repos.loadYAML(this);
+        if (repos != null) lxcRepo = repos.getRepo().get("lxc-images");
+        if (lxcRepo == null) {
+            // bundled data missing/corrupt: fall back to a blocking load
+            setMetaSourcesLoading();
+            return;
         }
-        var repos = Repos.load(this);
-        if (repos == null)
-            throw new IllegalStateException("Repo data not found or failed to load");
-        lxcRepo = repos.getRepo().get("lxc-images");
-        if (lxcRepo == null)
-            throw new IllegalStateException("LXC repo info not found in the data");
-        runOnUiThread(this::afterApiDone);
-    }
-
-    private void afterApiDone() {
         setupSourceDropdown();
         setupImageDropdowns();
+        setMetaRefreshing();
+    }
+
+    /**
+     * Background refresh: fetches the freshest repo/mirror list (and ClassFun
+     * availability) from the API, then swaps it into the dropdowns without
+     * disturbing a user who has already moved on to loading images.
+     */
+    private void asyncRefreshSources() {
+        boolean classfun = false;
+        Repos.Repo freshRepo = null;
+        try {
+            if (Privacy.isPrivacyAgreed(this)) {
+                apiManager = ApiManager.create(this);
+                classfun = apiManager.isServiceEnabled("lxc_images_metadata");
+            }
+            var repos = Repos.load(this);
+            if (repos != null) freshRepo = repos.getRepo().get("lxc-images");
+        } catch (Exception e) {
+            Log.w(TAG, "Background source refresh failed; keeping built-in list", e);
+        }
+        final boolean classfunAvailable = classfun;
+        final Repos.Repo repo = freshRepo;
+        runOnUiThread(() -> applyRefreshedSources(repo, classfunAvailable));
+    }
+
+    private void applyRefreshedSources(@Nullable Repos.Repo freshRepo, boolean classfunAvailable) {
+        if (isFinishing()) return;
+        isClassFunApiAvailable = classfunAvailable;
+        if (freshRepo != null) {
+            // capture any explicit choice before the list swap
+            var metaSel = getSelectedMetaSourceKey();
+            var dlSel = getSelectedDlSourceKey();
+            lxcRepo = freshRepo;
+            setupSourceDropdown();
+            // keep an explicit pick; otherwise take the fresh default
+            // (which now prefers ClassFun when it just became available)
+            if (userTouchedSource) restoreSourceSelection(metaSel, dlSel);
+        } else if (lxcRepo == null) {
+            // both the bundled list and the refresh failed
+            setMetaError("source list unavailable");
+            btnLoad.setEnabled(false);
+            return;
+        }
+        // clear the "refreshing" spinner only if the user hasn't moved on
+        if (!isLoading && !isDownloading && allImages.isEmpty())
+            setMetaIdle();
+    }
+
+    /** Re-applies a previously selected source key after the list is rebuilt. */
+    private void restoreSourceSelection(@NonNull String metaKey, @NonNull String dlKey) {
+        int mi = findSourceIndex(metaSourceKeys, metaKey);
+        dropdownMetaSource.setText(metaSourceLabels[mi]);
+        inputCustomMetaUrl.setVisibility(
+            metaSourceKeys[mi].equals("custom") ? VISIBLE : GONE);
+        int di = findSourceIndex(dlSourceKeys, dlKey);
+        dropdownDlSource.setText(dlSourceLabels[di]);
+        inputCustomDlUrl.setVisibility(
+            dlSourceKeys[di].equals("custom") ? VISIBLE : GONE);
+    }
+
+    private void setMetaRefreshing() {
+        progressMeta.setVisibility(VISIBLE);
+        tvMetaStatus.setText(R.string.lxc_meta_refreshing);
+        tvMetaStatus.setTextColor(resolveThemeColor(colorOnSurfaceVariant));
+        btnLoad.setEnabled(true);
+        setImageSectionEnabled(false);
+        setOutputEnabled(false);
+    }
+
+    private void setMetaSourcesLoading() {
+        progressMeta.setVisibility(VISIBLE);
+        tvMetaStatus.setText(R.string.lxc_meta_loading);
+        tvMetaStatus.setTextColor(resolveThemeColor(colorOnSurfaceVariant));
+        btnLoad.setEnabled(false);
+        setImageSectionEnabled(false);
+        setOutputEnabled(false);
+    }
+
+    private boolean sourcesReady() {
+        return metaSourceKeys != null && metaSourceLabels != null
+            && dlSourceKeys != null && dlSourceLabels != null;
     }
 
     @Override
@@ -346,6 +432,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         dropdownMetaSource.setAdapter(aMeta);
         dropdownMetaSource.setText(metaSourceLabels[metaDefaultIndex]);
         dropdownMetaSource.setOnItemClickListener((p, v, pos, id) -> {
+            userTouchedSource = true;
             boolean isCustom = metaSourceKeys[pos].equals("custom");
             inputCustomMetaUrl.setVisibility(isCustom ? VISIBLE : GONE);
             setMetaIdle();
@@ -358,6 +445,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         dropdownDlSource.setAdapter(aDown);
         dropdownDlSource.setText(dlSourceLabels[downDefaultIndex]);
         dropdownDlSource.setOnItemClickListener((p, v, pos, id) -> {
+            userTouchedSource = true;
             boolean isCustom = dlSourceKeys[pos].equals("custom");
             inputCustomDlUrl.setVisibility(isCustom ? VISIBLE : GONE);
         });
@@ -373,6 +461,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
 
     @Nullable
     private String resolveSourceUrl(@NonNull String key) {
+        if (lxcRepo == null) return null;
         if (key.equals("official")) return lxcRepo.getUrl();
         if (key.equals("custom")) return null;
         var mirror = lxcRepo.getMirror(key);
@@ -410,7 +499,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     }
 
     private void loadImages() {
-        if (isLoading || isDownloading) return;
+        if (isLoading || isDownloading || !sourcesReady()) return;
         var baseUrl = getMetaBaseUrl();
         if (baseUrl.isEmpty()) {
             if (getSelectedMetaSourceKey().equals("custom"))
@@ -778,6 +867,8 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     }
 
     private String getSelectedMetaSourceKey() {
+        if (metaSourceLabels == null || metaSourceKeys == null)
+            return isClassFunApiAvailable ? "classfun" : "official";
         var label = dropdownMetaSource.getText();
         for (int i = 0; i < metaSourceLabels.length; i++)
             if (metaSourceLabels[i].equals(label))
@@ -786,6 +877,8 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     }
 
     private String getSelectedDlSourceKey() {
+        if (dlSourceLabels == null || dlSourceKeys == null)
+            return "official";
         var label = dropdownDlSource.getText();
         for (int i = 0; i < dlSourceLabels.length; i++)
             if (dlSourceLabels[i].equals(label))
