@@ -399,6 +399,13 @@
     <string name="key_f12" translatable="false">F12</string>
 
     <string name="vm_daemon_error">Failed to communicate with daemon.</string>
+    <string name="vm_compressed_disk_title">Compressed disk image</string>
+    <string name="vm_compressed_disk_message">crosvm can\'t read compressed qcow2 images — the VM would boot to disk I/O errors with no partition table. Convert it to uncompressed and start?\n%1$s</string>
+    <string name="vm_compressed_disk_convert">Convert &amp; start</string>
+    <string name="vm_compressed_disk_start_anyway">Start anyway</string>
+    <string name="vm_compressed_disk_start_countdown">Start anyway (%1$d)</string>
+    <string name="field_copy">Copy</string>
+    <string name="field_copied">Copied to clipboard</string>
 
     <string name="disk_icon_desc">Disk icon</string>
     <string name="disk_meta">%1$s space \u00B7 %2$s on disk \u00B7 %3$s</string>

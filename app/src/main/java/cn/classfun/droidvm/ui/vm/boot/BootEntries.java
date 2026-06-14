@@ -196,8 +196,13 @@ public final class BootEntries {
     ) {
         Process process = null;
         try {
+            // --quick: this URL preview only needs the entry list + cmdline +
+            // dma warning, so skip the per-entry kernel size/compression reads
+            // (extra range fetches a listing never uses). The local scan
+            // (vm_bootscan) stays on the full command for BootPlan.
             process = new ProcessBuilder(
-                lbx, "--timeout", String.valueOf(timeoutSecs), "entries", url, "--json"
+                lbx, "--timeout", String.valueOf(timeoutSecs),
+                "entries", url, "--json", "--quick"
             ).start();
             var proc = process;
             // Drain stdout (the JSON) on its own thread so the pipe never

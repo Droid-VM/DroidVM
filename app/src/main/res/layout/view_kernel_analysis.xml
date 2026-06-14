@@ -92,7 +92,6 @@
                     android:id="@+id/et_analysis_kernel"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:enabled="false"
                     android:inputType="text"
                     android:maxLines="1"
                     android:textSize="14sp"
@@ -121,7 +120,6 @@
                     android:id="@+id/et_analysis_initrd"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:enabled="false"
                     android:inputType="text"
                     android:maxLines="1"
                     android:textSize="14sp"
@@ -139,7 +137,6 @@
                     android:id="@+id/et_analysis_cmdline"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:enabled="false"
                     android:inputType="textMultiLine"
                     android:textSize="14sp"
                     tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />

@@ -23,6 +23,7 @@ import com.google.android.material.textfield.TextInputEditText;
 import java.util.ArrayList;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.ui.CopyableField;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.ui.vm.boot.BootEntries;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
@@ -89,6 +90,12 @@ public final class KernelAnalysisWidget extends FrameLayout {
         etKernel = findViewById(R.id.et_analysis_kernel);
         etInitrd = findViewById(R.id.et_analysis_initrd);
         etCmdline = findViewById(R.id.et_analysis_cmdline);
+        // Cloud-analysis fields are read-only: selectable (long-press Copy) with
+        // a copy end-icon, never editable.
+        var ctx = getContext();
+        CopyableField.setupReadOnly(etKernel, ctx.getString(R.string.edit_vm_boot_detect_kernel));
+        CopyableField.setupReadOnly(etInitrd, ctx.getString(R.string.edit_vm_boot_detect_initrd));
+        CopyableField.setupReadOnly(etCmdline, ctx.getString(R.string.edit_vm_boot_detect_cmdline));
         btnAnalyze.setOnClickListener(v -> analyze());
     }
 

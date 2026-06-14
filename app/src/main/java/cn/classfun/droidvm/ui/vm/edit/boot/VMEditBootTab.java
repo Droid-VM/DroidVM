@@ -13,11 +13,13 @@ import static cn.classfun.droidvm.lib.utils.FileUtils.checkFilePath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellAsyncCheckExists;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 
+import android.content.Context;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
@@ -38,6 +40,7 @@ import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.ui.CopyableField;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.ui.vm.boot.BootEntries;
@@ -121,6 +124,15 @@ public final class VMEditBootTab extends VMEditBaseTab {
         inputKernel = view.findViewById(R.id.input_kernel);
         inputInitrd = view.findViewById(R.id.input_initrd);
         inputCmdline = view.findViewById(R.id.input_cmdline);
+        // Detection fields are read-only: selectable (long-press Copy) + a copy
+        // end-icon, never editable. Tapping the cmdline (intent to edit it)
+        // seeds the override field below and jumps the caret there.
+        CopyableField.setupReadOnly(etDetectKernel, parent.getString(R.string.edit_vm_boot_detect_kernel));
+        CopyableField.setupReadOnly(etDetectInitrd, parent.getString(R.string.edit_vm_boot_detect_initrd));
+        CopyableField.setupReadOnly(etDetectSource, parent.getString(R.string.edit_vm_boot_detect_source));
+        CopyableField.setupReadOnly(etDetectCmdline, parent.getString(R.string.edit_vm_boot_detect_cmdline));
+        etDetectCmdline.setOnClickListener(
+            v -> redirectCmdlineEditToOverride(etDetectCmdline.getSelectionStart()));
     }
 
     @Override
@@ -422,6 +434,27 @@ public final class VMEditBootTab extends VMEditBaseTab {
         etDetectInitrd.setText(initrd);
         etDetectCmdline.setText(cmdline);
         etDetectSource.setText(source);
+    }
+
+    /**
+     * The detected cmdline is read-only; tapping it (intent to edit) seeds the
+     * override field with the same text and moves the caret to the tapped
+     * offset, so customizing continues seamlessly in the editable override.
+     * Long-press still selects/copies (it doesn't fire the click).
+     */
+    private void redirectCmdlineEditToOverride(int caret) {
+        var t = etDetectCmdline.getText();
+        var detected = t == null ? "" : t.toString();
+        // Seed the override from the preview only when it has no edits yet, so
+        // re-tapping the preview never clobbers an existing customization.
+        var ov = etCmdlineOverride.getText();
+        if (ov == null || ov.length() == 0)
+            etCmdlineOverride.setText(detected);
+        etCmdlineOverride.requestFocus();
+        etCmdlineOverride.setSelection(Math.max(0, Math.min(caret, etCmdlineOverride.length())));
+        var imm = (InputMethodManager) parent.getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null)
+            imm.showSoftInput(etCmdlineOverride, InputMethodManager.SHOW_IMPLICIT);
     }
 
     private void updateDetectionCard() {

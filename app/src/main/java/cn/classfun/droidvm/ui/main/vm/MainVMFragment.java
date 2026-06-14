@@ -8,8 +8,11 @@ import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -34,6 +37,20 @@ public final class MainVMFragment
     extends MainStatefulFragment<VMConfig, VMStore, VMAdapter, VMState>
     implements ForegroundCallback {
     private final AtomicBoolean wantOpenConsole = new AtomicBoolean(false);
+    // Pre-start convert (decompress a crosvm-unreadable qcow2): run this once
+    // the convert Activity returns RESULT_OK.
+    @Nullable
+    private Runnable pendingAfterConvert;
+    private final ActivityResultLauncher<Intent> convertResultLauncher =
+        registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            var cb = pendingAfterConvert;
+            pendingAfterConvert = null;
+            if (result.getResultCode() == Activity.RESULT_OK && cb != null) cb.run();
+        });
+    private final VMActions.ConvertLauncher convertLauncher = (intent, onConverted) -> {
+        pendingAfterConvert = onConverted;
+        convertResultLauncher.launch(intent);
+    };
 
     public MainVMFragment() {
         super(VMAdapter.class);
@@ -128,7 +145,7 @@ public final class MainVMFragment
     @Override
     protected void onActionClicked(VMConfig config, VMState currentState) {
         if (currentState == VMState.STOPPED) {
-            VMActions.createAndStart(config, mainHandler, uiContext, wantOpenConsole);
+            VMActions.createAndStart(config, mainHandler, uiContext, wantOpenConsole, convertLauncher);
         } else if (currentState == VMState.RUNNING) {
             VMActions.sendCommand("vm_stop", config.getId(), mainHandler, uiContext);
         }

@@ -21,6 +21,8 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
@@ -63,6 +65,20 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private final UIContext ui = UIContext.fromActivity(this);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean wantOpenConsole = new AtomicBoolean(false);
+    // Pre-start convert (decompress a crosvm-unreadable qcow2): run this once
+    // the convert Activity returns RESULT_OK.
+    @Nullable
+    private Runnable pendingAfterConvert;
+    private final ActivityResultLauncher<Intent> convertResultLauncher =
+        registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            var cb = pendingAfterConvert;
+            pendingAfterConvert = null;
+            if (result.getResultCode() == RESULT_OK && cb != null) cb.run();
+        });
+    private final VMActions.ConvertLauncher convertLauncher = (intent, onConverted) -> {
+        pendingAfterConvert = onConverted;
+        convertResultLauncher.launch(intent);
+    };
     private final ConsoleButton toolConsole = new ConsoleButton(this);
     private VMState oldState = VMState.STOPPED;
     private CollapsingToolbarLayout collapsingToolbar;
@@ -410,7 +426,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
 
     private void doStart() {
         if (config == null) return;
-        VMActions.createAndStart(config, mainHandler, ui, wantOpenConsole);
+        VMActions.createAndStart(config, mainHandler, ui, wantOpenConsole, convertLauncher);
     }
 
     private void doStop() {

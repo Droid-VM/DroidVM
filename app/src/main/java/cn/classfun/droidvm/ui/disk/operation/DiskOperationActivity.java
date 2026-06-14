@@ -46,6 +46,11 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private static final String TAG = "DiskOperationActivity";
     public static final String EXTRA_DISK_ID = "disk_id";
     public static final String EXTRA_TASK_JSON = "task_json";
+    /** Path-mode (no registered DiskConfig): operate on this file directly. */
+    public static final String EXTRA_DISK_PATH = "disk_path";
+    public static final String EXTRA_DISK_NAME = "disk_name";
+    /** On success, {@code setResult(RESULT_OK)} and finish so a launcher can chain. */
+    public static final String EXTRA_AUTOFINISH = "autofinish";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TerminalView terminalView;
     private ProgressBar progressSpinner;
@@ -56,6 +61,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private MaterialToolbar toolbar;
     private TerminalSession session;
     private boolean finished = false;
+    private boolean autoFinish = false;
     private String outputPath = null;
     private String taskAction = null;
     private DiskStore diskStore = null;
@@ -88,6 +94,34 @@ public final class DiskOperationActivity extends AppCompatActivity {
         var intent = new Intent(context, DiskOperationActivity.class);
         intent.putExtra(EXTRA_DISK_ID, diskId.toString());
         intent.putExtra(EXTRA_TASK_JSON, obj.toString());
+        return intent;
+    }
+
+    /**
+     * Intent that optimizes (and thereby decompresses) the qcow2 at
+     * {@code path} in place and returns {@code RESULT_OK} on success — for
+     * launching via an {@code ActivityResultLauncher} so the caller can chain
+     * (e.g. start the VM once a crosvm-unreadable compressed image is fixed).
+     * Works without a registered {@link DiskConfig}, since a VM disk may point
+     * at an unregistered file.
+     */
+    @NonNull
+    public static Intent optimizeForResultIntent(
+        @NonNull Context context,
+        @NonNull String path,
+        @NonNull String name
+    ) {
+        var intent = new Intent(context, DiskOperationActivity.class);
+        try {
+            var obj = new JSONObject();
+            obj.put("action", "convert"); // no compress -> rewrites uncompressed
+            intent.putExtra(EXTRA_TASK_JSON, obj.toString());
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to build optimize task", e);
+        }
+        intent.putExtra(EXTRA_DISK_PATH, path);
+        intent.putExtra(EXTRA_DISK_NAME, name);
+        intent.putExtra(EXTRA_AUTOFINISH, true);
         return intent;
     }
 
@@ -150,22 +184,37 @@ public final class DiskOperationActivity extends AppCompatActivity {
         var intent = getIntent();
         var diskIdStr = intent.getStringExtra(EXTRA_DISK_ID);
         var taskJsonStr = intent.getStringExtra(EXTRA_TASK_JSON);
-        if (diskIdStr == null || taskJsonStr == null) {
-            Log.e(TAG, "Missing intent extras");
+        autoFinish = intent.getBooleanExtra(EXTRA_AUTOFINISH, false);
+        if (taskJsonStr == null) {
+            Log.e(TAG, "Missing task JSON");
             finish();
             return;
         }
-        var diskId = UUID.fromString(diskIdStr);
         diskStore = new DiskStore();
         diskStore.load(this);
-        diskConfig = diskStore.findById(diskId);
-        if (diskConfig == null) {
-            Log.e(TAG, fmt("Disk not found: %s", diskId));
-            finish();
-            return;
+        final String diskPath;
+        final String diskName;
+        if (diskIdStr != null) {
+            diskConfig = diskStore.findById(UUID.fromString(diskIdStr));
+            if (diskConfig == null) {
+                Log.e(TAG, fmt("Disk not found: %s", diskIdStr));
+                finish();
+                return;
+            }
+            diskPath = diskConfig.getFullPath();
+            diskName = diskConfig.getName();
+        } else {
+            // Path mode: operate on the file directly (no DiskStore entry).
+            diskPath = intent.getStringExtra(EXTRA_DISK_PATH);
+            if (diskPath == null) {
+                Log.e(TAG, "Missing disk id and path");
+                finish();
+                return;
+            }
+            var name = intent.getStringExtra(EXTRA_DISK_NAME);
+            diskName = name != null ? name : basename(diskPath);
         }
-        var diskPath = diskConfig.getFullPath();
-        tvFilename.setText(diskConfig.getName());
+        tvFilename.setText(diskName);
         tvStatus.setText(R.string.disk_operation_running);
         runOnPool(() -> {
             final String cmd;
@@ -204,7 +253,9 @@ public final class DiskOperationActivity extends AppCompatActivity {
         if (finished) return;
         finished = true;
         int exitCode = session == null ? -1 : session.getExitStatus();
-        if (exitCode == 0 && outputPath != null) {
+        // Path mode (no registered DiskConfig) is an in-place op, so there is
+        // nothing to persist — skip the store update.
+        if (exitCode == 0 && outputPath != null && diskConfig != null) {
             if (taskAction.equals("clone")) {
                 var cloned = new DiskConfig();
                 if (outputPath.contains("/")) {
@@ -224,6 +275,14 @@ public final class DiskOperationActivity extends AppCompatActivity {
                 diskStore.update(diskConfig);
             }
             diskStore.save(this);
+        }
+        // Chained convert (e.g. pre-start decompress): hand control back to the
+        // launcher, which starts the VM. No success screen — the start is the
+        // feedback.
+        if (exitCode == 0 && autoFinish) {
+            setResult(RESULT_OK);
+            finish();
+            return;
         }
         progressSpinner.setVisibility(GONE);
         ivStatus.setVisibility(VISIBLE);

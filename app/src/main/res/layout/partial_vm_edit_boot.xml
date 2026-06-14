@@ -139,7 +139,6 @@
                             android:id="@+id/et_detect_kernel"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:enabled="false"
                             android:inputType="text"
                             android:maxLines="1"
                             android:textSize="14sp"
@@ -168,7 +167,6 @@
                             android:id="@+id/et_detect_initrd"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:enabled="false"
                             android:inputType="text"
                             android:maxLines="1"
                             android:textSize="14sp"
@@ -186,7 +184,6 @@
                             android:id="@+id/et_detect_cmdline"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:enabled="false"
                             android:inputType="textMultiLine"
                             android:textSize="14sp"
                             tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
@@ -225,7 +222,7 @@
                             android:id="@+id/et_cmdline_override"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="text"
+                            android:inputType="textMultiLine"
                             android:textSize="14sp"
                             tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
                     </com.google.android.material.textfield.TextInputLayout>
@@ -241,7 +238,6 @@
                             android:id="@+id/et_detect_source"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:enabled="false"
                             android:inputType="text"
                             android:maxLines="1"
                             android:textSize="14sp"

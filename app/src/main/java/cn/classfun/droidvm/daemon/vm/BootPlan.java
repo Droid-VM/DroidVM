@@ -251,6 +251,24 @@ public final class BootPlan {
         }
     }
 
+    /**
+     * Whether {@code image} stores zlib-compressed qcow2 clusters, which the
+     * crosvm backend cannot read: the guest gets I/O errors and an
+     * unreadable partition table, so every {@code root=} form hangs waiting
+     * for a root device that never appears. Runs {@code lbx compat --json};
+     * any lbx failure returns {@code false} so a scan hiccup never blocks a
+     * start (a real boot would surface the problem anyway).
+     */
+    public static boolean hasCompressedClusters(@NonNull String image) {
+        try {
+            var out = runLbx("compat", image, "--json").trim();
+            return new JSONObject(out).optBoolean("compressed_clusters", false);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("compat check failed for %s: %s", image, e.getMessage()));
+            return false;
+        }
+    }
+
     @Nullable
     private static JSONObject matchEntry(
         @NonNull JSONArray entries,

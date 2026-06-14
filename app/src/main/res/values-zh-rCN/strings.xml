@@ -224,7 +224,7 @@
     <string name="edit_vm_net_delete">移除网络</string>
     <string name="edit_vm_net_mac_hint">MAC 地址（可选）</string>
     <string name="edit_vm_net_mac_random">随机</string>
-    <string name="edit_vm_net_mac_security">源 MAC 過濾</string>
+    <string name="edit_vm_net_mac_security">源 MAC 过滤</string>
     <string name="edit_vm_net_isolated">端口隔离</string>
     <string name="edit_vm_net_vlan">VLAN ID</string>
     <string name="edit_vm_net_vlan_id">VLAN</string>
@@ -363,6 +363,13 @@
     <string name="license_detail_urls">链接</string>
 
     <string name="vm_daemon_error">与守护进程通信失败。</string>
+    <string name="vm_compressed_disk_title">压缩的磁盘镜像</string>
+    <string name="vm_compressed_disk_message">crosvm 无法读取压缩的 qcow2 镜像——启动时会出现磁盘 I/O 错误且找不到分区表。要先转换成非压缩再启动吗？\n%1$s</string>
+    <string name="vm_compressed_disk_convert">转换并启动</string>
+    <string name="vm_compressed_disk_start_anyway">仍要启动</string>
+    <string name="vm_compressed_disk_start_countdown">仍要启动 (%1$d)</string>
+    <string name="field_copy">复制</string>
+    <string name="field_copied">已复制到剪贴板</string>
 
     <string name="disk_icon_desc">磁盘图标</string>
     <string name="disk_meta">空间 %1$s \u00B7 实际 %2$s \u00B7 %3$s</string>
@@ -622,8 +629,8 @@
     <string name="download_paused_wifi">已暂停，等待 Wi-Fi…</string>
     <string name="download_retrying">连接中断，重试中 (%1$d/%2$d)…</string>
     <string name="download_one_at_a_time">已有下载正在进行，请等待完成。</string>
-    <string name="download_background_toast">下载将在后台继续，可在通知栏查看。</string>    <string name="download_error_start">无法开始下载，请确认系统下载管理器已启用。</string>
-
+    <string name="download_background_toast">下载将在后台继续，可在通知栏查看。</string>
+    <string name="download_error_start">无法开始下载，请确认系统下载管理器已启用。</string>
     <string name="notif_channel_downloads">下载</string>
     <string name="notif_channel_downloads_desc">磁盘镜像下载通知</string>
     <string name="notif_download_complete_title">导入完成</string>
