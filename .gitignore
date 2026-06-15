@@ -18,3 +18,7 @@ local.properties
 /app/src/main/assets/bin/*/lbx
 /app/src/main/assets/bin/*/netbox
 /app/src/main/assets/bin/*/pbridge
+
+# Terminal font: build.sh fetches the ~2.3MB Maple Mono NL NF TTF on first
+# build; only the OFL license text under app/src/main/assets/fonts is committed.
+/app/src/main/assets/fonts/*.ttf

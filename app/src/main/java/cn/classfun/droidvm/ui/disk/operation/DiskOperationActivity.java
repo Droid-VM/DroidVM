@@ -40,6 +40,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
 
 public final class DiskOperationActivity extends AppCompatActivity {
@@ -67,7 +68,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private DiskStore diskStore = null;
     private DiskConfig diskConfig = null;
 
-    private final TerminalSessionClient sessionClient = new SimpleTerminalSessionClient() {
+    private final TerminalSessionClient sessionClient = new SimpleTerminalSessionClient(this) {
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
@@ -246,6 +247,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
         session = new TerminalSession(shell, cwd, args, env, null, sessionClient);
         float density = getResources().getDisplayMetrics().density;
         terminalView.setTextSize((int) (10 * density));
+        TerminalFonts.apply(terminalView);
         terminalView.attachSession(session);
     }
 

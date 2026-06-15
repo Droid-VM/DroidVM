@@ -50,6 +50,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 
@@ -60,6 +61,11 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
     public static final String EXTRA_STREAM = "stream";
     public static final String EXTRA_LOGS = "logs";
     private static final String DEFAULT_STREAM = "uart";
+    private static final String PREFS_NAME = "droidvm_prefs";
+    private static final String KEY_FONT_SIZE = "console_font_size";
+    private static final float MIN_FONT_SIZE = 2;
+    private static final float MAX_FONT_SIZE = 48;
+    private static final float DEFAULT_FONT_SIZE = 5;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ActivityResultLauncher<String> saveLogLauncher;
     private TerminalView terminalView;
@@ -70,7 +76,7 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
     public String vmName;
     public String streamName;
 
-    private final TerminalSessionClient sessionClient = new SimpleTerminalSessionClient() {
+    private final TerminalSessionClient sessionClient = new SimpleTerminalSessionClient(this) {
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
@@ -80,12 +86,12 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         }
     };
 
-    private float currentFontSize = 5;
+    private float currentFontSize = DEFAULT_FONT_SIZE;
     private final TerminalViewClient viewClient = new SimpleTerminalViewClient() {
         @Override
         public float onScale(float scale) {
             var dampened = 1.0f + (scale - 1.0f) * 0.1f;
-            currentFontSize = Math.max(2, Math.min(48, currentFontSize * dampened));
+            currentFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, currentFontSize * dampened));
             if (terminalView != null) {
                 var density = getResources().getDisplayMetrics().density;
                 terminalView.setTextSize((int) (currentFontSize * density));
@@ -158,11 +164,13 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
             "PATH=/system/bin",
             fmt("HOME=%s", cwd),
         };
+        currentFontSize = loadFontSize();
         var density = getResources().getDisplayMetrics().density;
         var session = new TerminalSession(shell, cwd, args, env, null, sessionClient);
         terminalSession = session;
         terminalView.attachSession(session);
         terminalView.setTextSize((int) (currentFontSize * density));
+        TerminalFonts.apply(terminalView);
         terminalView.setFocusable(true);
         terminalView.setFocusableInTouchMode(true);
         terminalView.requestFocus();
@@ -182,6 +190,25 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
             return true;
         }
         return false;
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        saveFontSize();
+    }
+
+    private float loadFontSize() {
+        var saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .getFloat(KEY_FONT_SIZE, DEFAULT_FONT_SIZE);
+        return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, saved));
+    }
+
+    private void saveFontSize() {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_FONT_SIZE, currentFontSize)
+            .apply();
     }
 
     @Override

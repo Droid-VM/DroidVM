@@ -142,6 +142,39 @@ build_netbox() {
     install -m755 app/src/main/rust/netbox/dist/netbox-linux-x64     app/src/main/assets/bin/x86_64/netbox
 }
 
+# ------------------------------------------------------------- terminal font
+# Maple Mono NL NF (no-ligature Nerd Font) is the default terminal typeface,
+# applied at runtime via TerminalView.setTypeface (see TerminalFonts.java). The
+# ~2.3MB TTF is git-ignored and fetched here on first build; only the OFL
+# license text is committed. Users can still override it with
+# $HOME/.termux/font.ttf, and the app falls back to the system monospace when
+# the font is absent -- so a download failure is a warning, not fatal.
+FONT_VER="v7.9"
+FONT_DIR="app/src/main/assets/fonts"
+FONT_TTF="$FONT_DIR/MapleMonoNL-NF-Regular.ttf"
+FONT_SHA="aa3b096bc92df8503d77482b285a0567bafa6e83230d969700f455e610b1f655"
+FONT_URL="https://github.com/subframe7536/maple-font/releases/download/$FONT_VER/MapleMonoNL-NF.zip"
+
+font_ok() { [ -f "$FONT_TTF" ] && echo "$FONT_SHA  $FONT_TTF" | sha256sum -c - >/dev/null 2>&1; }
+
+fetch_font() {
+    if font_ok; then return 0; fi
+    if ! have curl || ! have unzip; then
+        warn "curl/unzip missing; cannot fetch terminal font (app uses system monospace)"
+        return 0
+    fi
+    log "Fetching terminal font Maple Mono NL NF ($FONT_VER)"
+    mkdir -p "$FONT_DIR"
+    local tmp; tmp="$(mktemp -d)"
+    if curl -fsSL --max-time 180 -o "$tmp/nf.zip" "$FONT_URL" \
+        && unzip -o -j "$tmp/nf.zip" '*NL-NF-Regular.ttf' -d "$FONT_DIR" >/dev/null; then
+        font_ok || warn "terminal font sha256 mismatch (upstream re-released?); keeping it anyway"
+    else
+        warn "failed to fetch terminal font (app uses system monospace)"
+    fi
+    rm -rf "$tmp"
+}
+
 if [ "${SKIP_THIRDPARTY:-0}" = "1" ]; then
     log "Skipping third-party builds (SKIP_THIRDPARTY=1)"
     for bin in gvswitch pbridge bridgedhcp lbx netbox; do
@@ -154,6 +187,8 @@ else
     build_lbx
     build_netbox
 fi
+
+fetch_font
 
 # --------------------------------------------------------------------- APK
 log "Building APK ($GRADLE_TASK)"
