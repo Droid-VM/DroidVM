@@ -452,7 +452,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         ((ImageView) view.findViewById(R.id.iv_icon)).setImageResource(iconRes);
         ((TextView) view.findViewById(R.id.tv_line1)).setText(label);
         var line2 = (TextView) view.findViewById(R.id.tv_line2);
-        line2.setText(fmt("%s · %s",
+        line2.setText(fmt("%s | %s",
             getString(running ? R.string.network_info_tool_running
                               : R.string.network_info_tool_stopped),
             getString(R.string.network_info_tool_view_log)));
@@ -669,7 +669,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         var vlan = pd.optInt("vlan", 0);
         var state = pd.optString("state", "");
         // The composed host address P::1/L actually bound on the bridge (empty
-        // while searching) — so this row matches the live nic address and the
+        // while searching) -- so this row matches the live nic address and the
         // "bound" chip reflects the real binding, not the raw delegation.
         var address = pd.optString("address", "");
         var noUplink = "no_uplink".equals(state);

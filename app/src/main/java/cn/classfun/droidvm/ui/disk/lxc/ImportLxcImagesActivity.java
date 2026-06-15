@@ -197,7 +197,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
 
     /**
      * Rebuilds the form from the last saved session (replays the
-     * distro→version→variant→build cascade) and re-attaches the progress bar if a
+     * distro->version->variant->build cascade) and re-attaches the progress bar if a
      * download is still running. The session is kept after the download ends too,
      * so reopening restores the last selections (hit Load to refresh). Returns
      * false if there's nothing to restore.

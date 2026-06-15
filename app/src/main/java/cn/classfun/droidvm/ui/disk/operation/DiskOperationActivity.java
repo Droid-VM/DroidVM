@@ -99,7 +99,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
 
     /**
      * Intent that optimizes (and thereby decompresses) the qcow2 at
-     * {@code path} in place and returns {@code RESULT_OK} on success — for
+     * {@code path} in place and returns {@code RESULT_OK} on success -- for
      * launching via an {@code ActivityResultLauncher} so the caller can chain
      * (e.g. start the VM once a crosvm-unreadable compressed image is fixed).
      * Works without a registered {@link DiskConfig}, since a VM disk may point
@@ -254,7 +254,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
         finished = true;
         int exitCode = session == null ? -1 : session.getExitStatus();
         // Path mode (no registered DiskConfig) is an in-place op, so there is
-        // nothing to persist — skip the store update.
+        // nothing to persist -- skip the store update.
         if (exitCode == 0 && outputPath != null && diskConfig != null) {
             if (taskAction.equals("clone")) {
                 var cloned = new DiskConfig();
@@ -277,7 +277,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             diskStore.save(this);
         }
         // Chained convert (e.g. pre-start decompress): hand control back to the
-        // launcher, which starts the VM. No success screen — the start is the
+        // launcher, which starts the VM. No success screen -- the start is the
         // feedback.
         if (exitCode == 0 && autoFinish) {
             setResult(RESULT_OK);

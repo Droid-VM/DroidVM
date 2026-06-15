@@ -120,7 +120,7 @@ public final class VMNicConfig {
 
     /**
      * The VLAN of this NIC the DHCP services apply to: the pinned access
-     * VLAN, or the untagged domain (VLAN 0) when trunked — either the
+     * VLAN, or the untagged domain (VLAN 0) when trunked -- either the
      * implicit trunk (no vlan_id) or the explicit 4095 trunk marker.
      */
     @Nullable
@@ -148,7 +148,7 @@ public final class VMNicConfig {
             if (vlanId < 0 || vlanId > 4095)
                 throw new IllegalArgumentException(fmt("Invalid NIC VLAN id: %d", vlanId));
             // An untagged-only port needs per-port VLAN filtering, which a
-            // Linux bridge on stock GKI cannot do — attaching to the main
+            // Linux bridge on stock GKI cannot do -- attaching to the main
             // bridge would actually be a trunk (flooded tagged frames
             // included). Refuse instead of silently degrading; gvisor's
             // switchcore can enforce untagged-only, so 0 stays valid there.
@@ -200,7 +200,7 @@ public final class VMNicConfig {
      * An in-memory copy of this NIC with every option the target network can't
      * honour stripped out; the saved config is left untouched. A NIC keeps its
      * L3-only settings (DHCP static lease, port forwards) in the stored config
-     * so they survive being moved back to an L3 network — the GUI just hides
+     * so they survive being moved back to an L3 network -- the GUI just hides
      * them elsewhere. On an L2 / non-DHCP network those settings are inert, so
      * for this run we drop them rather than refuse to start. Genuine
      * misconfigurations are left in place for {@link #validate} to reject.

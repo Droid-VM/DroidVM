@@ -51,7 +51,7 @@ public class ManagedProcess {
 
     /**
      * Receives every output line from the monitor thread (in addition to
-     * logging) — used for child event streams (e.g. bridgedhcp JSON lines).
+     * logging) -- used for child event streams (e.g. bridgedhcp JSON lines).
      */
     public void setLineListener(@Nullable LineListener listener) {
         lineListener = listener;

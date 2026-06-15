@@ -240,7 +240,7 @@ public final class BridgeDhcp {
                     // the raw delegation P/L (context) ...
                     .put("prefix", iface.optString("pd_prefix", ""))
                     // ... and the composed host address P::1/L actually bound
-                    // on the bridge — what the UI shows and what the address
+                    // on the bridge -- what the UI shows and what the address
                     // union deduplicates against.
                     .put("address", iface.optString("pd_address", "")));
             } catch (Exception e) {
@@ -304,7 +304,7 @@ public final class BridgeDhcp {
         var obj = new JSONObject();
         obj.put("name", LinuxNetwork.vlanDevice(br, vlan.getVlanId()));
         obj.put("tag", String.valueOf(vlan.getVlanId()));
-        // Served prefixes are authoritative config — bridgedhcp no longer
+        // Served prefixes are authoritative config -- bridgedhcp no longer
         // derives the pools/SLAAC prefix from the bridge's live addresses.
         // v6 is sent only for a static source; DHCP-PD drives it dynamically.
         var cidr4 = vlan.getIpv4Cidr();
@@ -352,7 +352,7 @@ public final class BridgeDhcp {
                 // CRC32 is an unsigned 32-bit value; write it as-is. Casting
                 // to int makes it negative when bit 31 is set, and bridgedhcp
                 // parses "iaid" into a Go uint32, which rejects a negative
-                // number — the whole helper then fails to start.
+                // number -- the whole helper then fails to start.
                 // No prefix_len: bridgedhcp binds the host at the delegation's
                 // own length L (suffix ::1), and gates SLAAC/DHCPv6 on L.
                 obj.put("pd", new JSONObject()
@@ -424,7 +424,7 @@ public final class BridgeDhcp {
      * present, else the lowest id from PD_ROUTE_TABLE_BASE upward that no
      * VLAN of any network (running or stopped) holds, persisted
      * immediately. Stability matters: the id is bridgedhcp's crash-cleanup
-     * key — a bridge that comes back under a different id would leave the
+     * key -- a bridge that comes back under a different id would leave the
      * previous run's rules behind, and reusing a *live* network's id would
      * wipe its rules at startup.
      */

@@ -41,7 +41,7 @@ public abstract class FirewallHelper {
 
     /**
      * Installs one DNAT rule scoped to a specific host IP ({@code -d hostIp}),
-     * so only traffic actually destined to the phone is redirected — transit
+     * so only traffic actually destined to the phone is redirected -- transit
      * traffic (other networks, tethered clients) is left alone. Called once
      * per current host IP; rules are added/removed incrementally as the host
      * IP set changes.

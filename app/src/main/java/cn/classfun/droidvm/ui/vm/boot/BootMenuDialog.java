@@ -250,7 +250,7 @@ public final class BootMenuDialog {
             summary.setVisibility(GONE);
             return;
         }
-        var line = entry.kernel + " · " + entry.source;
+        var line = entry.kernel + " | " + entry.source;
         var cmdline = entry.effectiveCmdline(boot.isVdafix());
         if (!cmdline.isEmpty()) line += "\n" + cmdline;
         summary.setVisibility(VISIBLE);
@@ -320,7 +320,7 @@ public final class BootMenuDialog {
 
     /**
      * Whether this VM boots as a gunyah protected VM (protected, or
-     * protected-without-firmware) — read from the stored config, where a
+     * protected-without-firmware) -- read from the stored config, where a
      * guest kernel without CONFIG_DMA_RESTRICTED_POOL cannot drive virtio.
      * Mirrors {@code VMEditBootTab.isProtectedVm}.
      */
@@ -335,7 +335,7 @@ public final class BootMenuDialog {
      * Optional warning for a boot entry, or null when it has none. Today the
      * only case is a kernel lbx flagged as lacking CONFIG_DMA_RESTRICTED_POOL
      * on a protected VM (same condition as the edit tab's detection card),
-     * shown here as a terse one-liner since the menu is cramped — the edit
+     * shown here as a terse one-liner since the menu is cramped -- the edit
      * tab keeps the full explanation.
      */
     @Nullable

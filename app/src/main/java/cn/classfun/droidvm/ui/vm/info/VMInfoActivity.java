@@ -231,7 +231,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             var pinned = boot.getImageEntry();
             var label = getString(R.string.edit_vm_kernel_source_image);
             if (pinned != null && pinned.title != null)
-                return label + " · " + pinned.title;
+                return label + " | " + pinned.title;
             return label;
         }
         return basename(boot.getKernel());

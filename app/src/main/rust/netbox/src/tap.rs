@@ -1,12 +1,12 @@
-//! TAP creation. `ip tuntap add` is not a netlink op — it is a TUNSETIFF ioctl
-//! on /dev/net/tun — so it lives apart from the rtnetlink helpers.
+//! TAP creation. `ip tuntap add` is not a netlink op -- it is a TUNSETIFF ioctl
+//! on /dev/net/tun -- so it lives apart from the rtnetlink helpers.
 
 use anyhow::{bail, Context, Result};
 use std::ffi::CString;
 use std::os::fd::AsRawFd;
 
 const IFNAMSIZ: usize = 16;
-// <linux/if_tun.h> — _IOW('T', 202/203, int). The ioctl request arg is
+// <linux/if_tun.h> -- _IOW('T', 202/203, int). The ioctl request arg is
 // c_ulong on glibc but c_int on musl/bionic, so cast with `as _` at the call.
 const TUNSETIFF: u32 = 0x4004_54ca;
 const TUNSETPERSIST: u32 = 0x4004_54cb;

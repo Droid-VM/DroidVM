@@ -18,7 +18,7 @@ import java.util.List;
 /**
  * Enumerates host L2 uplink candidates and resolves the logical
  * "WiFi"/"Ethernet"/"Tethering" identifiers to a concrete interface at
- * network start: device names drift across reboots (wlan0 ⇄ wlan1), so the
+ * network start: device names drift across reboots (wlan0 <-> wlan1), so the
  * identifier is stored and re-resolved live; a literal interface name is
  * pinned and used as-is.
  */
@@ -82,7 +82,7 @@ public final class UplinkResolver {
                 || new File(entry, "wireless").exists();
             boolean physical = new File(entry, "device").exists();
             boolean ether = readInt(new File(entry, "type")) == ARPHRD_ETHER;
-            // leaf = not stacked on another netdev (drops veth/vlan/rmnet_data@…)
+            // leaf = not stacked on another netdev (drops veth/vlan/rmnet_data@...)
             boolean leaf = readInt(new File(entry, "ifindex"))
                 == readInt(new File(entry, "iflink"));
             out.add(new Iface(name, wireless, isUp(entry), ether,

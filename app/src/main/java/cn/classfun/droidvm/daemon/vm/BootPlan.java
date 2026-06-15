@@ -37,7 +37,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
  * reads) and then a content MD5 of each source file, so an in-place
  * kernel rebuild that kept the same path and size is still caught. The
  * MD5 reads the source kernel/initrd out of the image, so a cache hit is
- * no longer read-free — but it only happens once the metadata check has
+ * no longer read-free -- but it only happens once the metadata check has
  * matched, and a hit still writes nothing.
  *
  * <p>A distro {@code vmlinuz} is often a compressed kernel a direct-boot
@@ -45,7 +45,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
  * {@code lbx entries} reports this per entry as {@code kernel_compression}
  * (null = already a raw {@code Image}/x86 bzImage); when set we extract and
  * MD5 the <em>decompressed</em> kernel ({@code lbx cp/md5 --decompress}) so
- * the cached file boots directly. lbx stays faithful by default — the flag
+ * the cached file boots directly. lbx stays faithful by default -- the flag
  * is only passed for a kernel lbx flagged as compressed, never the initrd.
  */
 public final class BootPlan {
@@ -357,8 +357,8 @@ public final class BootPlan {
 
     /**
      * Whether the cache described by {@code manifest} still reflects the
-     * guest. Cheap identity first — image, URIs and sizes, all from inode
-     * metadata with no data reads — then a content MD5 of each source file
+     * guest. Cheap identity first -- image, URIs and sizes, all from inode
+     * metadata with no data reads -- then a content MD5 of each source file
      * via {@code lbx md5}. The MD5 is what catches an in-place kernel
      * rebuild that kept the same path and byte size; it reads the source
      * kernel/initrd out of the image, so it only runs once the metadata

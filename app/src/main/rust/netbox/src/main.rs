@@ -1,7 +1,7 @@
-//! netbox — minimal netlink CLI for the DroidVM daemon.
+//! netbox -- minimal netlink CLI for the DroidVM daemon.
 //!
 //! The daemon used to shell out to the system `ip`/`bridge` (iproute2). Those
-//! vary per OEM and some are too old to emit `IFA_RT_PRIORITY` in `-j` JSON —
+//! vary per OEM and some are too old to emit `IFA_RT_PRIORITY` in `-j` JSON --
 //! exactly the field pbridge tags its offload-proxy addresses with. netbox does
 //! the same operations straight over rtnetlink, with our own JSON schema, so
 //! behaviour is identical on every device. Most invocations do one op and
@@ -128,7 +128,7 @@ enum Cmd {
     },
     /// Print the phone's own reachable IPv4 addresses once as `{"v4":[...]}`.
     HostIps {
-        /// Interface-name prefix to include (repeatable): wlan, rmnet_data, …
+        /// Interface-name prefix to include (repeatable): wlan, rmnet_data, ...
         #[arg(long)]
         iface: Vec<String>,
         /// Drop addresses tagged with this IFA_RT_PRIORITY (pbridge offload).
@@ -174,7 +174,7 @@ fn main() {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    // tuntap is a plain ioctl — no netlink runtime needed.
+    // tuntap is a plain ioctl -- no netlink runtime needed.
     if let Cmd::LinkAddTap { name } = &cli.cmd {
         return tap::add_tap(name);
     }
@@ -250,7 +250,7 @@ fn print_json<T: serde::Serialize>(rows: &T) -> Result<()> {
     Ok(())
 }
 
-/// One JSON line `{"v4":[...]}` flushed immediately — the daemon reads these
+/// One JSON line `{"v4":[...]}` flushed immediately -- the daemon reads these
 /// from the monitor's stdout, so the flush is what makes a change visible
 /// without waiting on stdio block-buffering.
 fn print_host_ips(v4: &[String]) -> Result<()> {

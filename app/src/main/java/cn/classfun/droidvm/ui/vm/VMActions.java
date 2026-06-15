@@ -100,7 +100,7 @@ public final class VMActions {
      * (lbx) which are zlib-compressed and therefore unreadable by crosvm. If
      * any are, prompt to convert (decompress) them, then {@code proceed};
      * otherwise {@code proceed} straight away. A check failure never blocks a
-     * start — a real boot would surface the problem. Callbacks arrive on the
+     * start -- a real boot would surface the problem. Callbacks arrive on the
      * daemon thread, so UI work is posted to {@code mainHandler}.
      */
     private static void guardCompressedDisks(
@@ -152,7 +152,7 @@ public final class VMActions {
         var files = new StringBuilder();
         for (int i = 0; i < compressed.length(); i++) {
             var p = compressed.optString(i, "");
-            if (!p.isEmpty()) files.append("\n• ").append(basename(p));
+            if (!p.isEmpty()) files.append("\n- ").append(basename(p));
         }
         var dialog = new MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.vm_compressed_disk_title)
@@ -227,7 +227,7 @@ public final class VMActions {
 
     /**
      * Persists a "remember this choice" boot-menu selection to the on-disk
-     * VM store — the source of truth the list reloads on resume, which is
+     * VM store -- the source of truth the list reloads on resume, which is
      * why a one-shot start that only mutated the in-memory config never
      * stuck. The same change is mirrored onto {@code config} so the daemon
      * gets it via vm_modify. The built-in kernel is baked into a plain
@@ -256,7 +256,7 @@ public final class VMActions {
                 store.save(context);
             }
         }
-        // built-in now boots as a plain manual config — no one-shot override
+        // built-in now boots as a plain manual config -- no one-shot override
         return builtin ? null : bootEntry;
     }
 

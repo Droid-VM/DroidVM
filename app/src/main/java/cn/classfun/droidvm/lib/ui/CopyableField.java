@@ -18,7 +18,7 @@ import cn.classfun.droidvm.R;
 /**
  * Helpers for the read-only boot-info fields (kernel / initrd / cmdline /
  * source). They show values the user may want to copy but not type into, so
- * each becomes selectable (long-press → Copy) and its enclosing
+ * each becomes selectable (long-press -> Copy) and its enclosing
  * {@link TextInputLayout} gets a copy end-icon.
  */
 public final class CopyableField {
@@ -28,7 +28,7 @@ public final class CopyableField {
     /**
      * Read-only but selectable (long-press Copy works), plus a copy end-icon.
      * {@code setTextIsSelectable} alone does <em>not</em> stop an EditText from
-     * being typed into — only dropping the key listener does — so we do both
+     * being typed into -- only dropping the key listener does -- so we do both
      * and suppress the soft keyboard / caret.
      */
     public static void setupReadOnly(@NonNull EditText et, @NonNull CharSequence label) {
@@ -45,7 +45,7 @@ public final class CopyableField {
     }
 
     /**
-     * Just the copy end-icon — for a field that must stay editable to capture
+     * Just the copy end-icon -- for a field that must stay editable to capture
      * input (e.g. one that redirects edits elsewhere) yet still offers copy.
      */
     public static void addCopyIcon(@NonNull EditText et, @NonNull CharSequence label) {

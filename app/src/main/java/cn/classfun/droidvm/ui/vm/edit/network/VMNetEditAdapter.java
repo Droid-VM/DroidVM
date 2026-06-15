@@ -260,7 +260,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
         fwd.setText(formatForwards(
             v6 ? nic.getDhcp6Forwards() : nic.getDhcp4Forwards()));
         // IPv6 forwards need IPv6 SNAT, which the Linux bridge can't do
-        // (Android kernel has no IPv6 NAT) — hide them there entirely
+        // (Android kernel has no IPv6 NAT) -- hide them there entirely
         boolean fwdSupported = !v6
             || network.getBridgeType() == cn.classfun.droidvm.lib.store.network.BridgeType.GVISOR;
         fwdTil.setVisibility(fwdSupported ? VISIBLE : GONE);

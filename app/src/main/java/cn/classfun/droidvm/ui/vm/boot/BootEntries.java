@@ -170,7 +170,7 @@ public final class BootEntries {
     private static final long ANALYZE_HARD_TIMEOUT_MS = 5 * 60_000;
 
     /**
-     * Analyze a remote (URL) image by running lbx directly from the UI — a URL
+     * Analyze a remote (URL) image by running lbx directly from the UI -- a URL
      * fetch needs no root, and lbx ships as {@code liblbx.so} in the app's
      * nativeLibraryDir, which the app may execute (unlike the daemon's
      * data-dir copy). So we skip the daemon and stream lbx's
@@ -273,7 +273,7 @@ public final class BootEntries {
 
     /**
      * The entry a boot would use right now: pinned entry by exact id,
-     * then exact title, falling back to the bootloader default — the
+     * then exact title, falling back to the bootloader default -- the
      * same cascade as the daemon's BootPlan.
      */
     @Nullable
