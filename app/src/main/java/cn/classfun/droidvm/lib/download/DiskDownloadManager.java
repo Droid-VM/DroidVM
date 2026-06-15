@@ -31,7 +31,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
  * {@link HttpURLConnection} (following redirects, resuming via HTTP Range, and
  * retrying on read timeouts / dropped connections) instead of the system
  * DownloadManager, whose OEM variants either reject app-private destinations or
- * time out aggressively without resuming on this CDN — while plain `curl` works.
+ * time out aggressively without resuming on this CDN -- while plain `curl` works.
  *
  * <p>Because the app holds MANAGE_EXTERNAL_STORAGE we write straight to the
  * user's folder (a {@code .part} file, renamed on completion). State lives in an
@@ -45,7 +45,7 @@ public final class DiskDownloadManager {
     private static final int CONNECT_TIMEOUT_MS = 30000;
     private static final int READ_TIMEOUT_MS = 30000;
     private static final int BUFFER = 65536;
-    /** Abort + retry if throughput drops below ~0.7 KB/s over this window — i.e.
+    /** Abort + retry if throughput drops below ~0.7 KB/s over this window -- i.e.
      * all but stopped (catches a mirror that holds the connection open but sends
      * almost nothing); genuinely slow-but-moving connections are left alone. */
     private static final long STALL_WINDOW_MS = 1500;
@@ -237,7 +237,7 @@ public final class DiskDownloadManager {
             var parent = dest.getParentFile();
             if (parent != null && !parent.exists() && !parent.mkdirs())
                 throw new IOException(fmt("Cannot create folder: %s", parent.getAbsolutePath()));
-            // Start fresh — stale .part from a prior failed attempt may be corrupt.
+            // Start fresh -- stale .part from a prior failed attempt may be corrupt.
             if (part.exists() && !part.delete())
                 Log.w(TAG, fmt("Could not clear stale part file: %s", part.getAbsolutePath()));
             String lastError = null;

@@ -182,7 +182,7 @@ public final class VMEditBootTab extends VMEditBaseTab {
             rescan();
         } else if (scanned != null) {
             // same image, but the protection mode may have changed in the
-            // basic tab — refresh the detection card so its warning tracks it
+            // basic tab -- refresh the detection card so its warning tracks it
             updateDetectionCard();
         }
     }
@@ -490,7 +490,7 @@ public final class VMEditBootTab extends VMEditBaseTab {
 
     /**
      * Whether the VM would boot as a gunyah protected VM (protected, or
-     * protected-without-firmware) — read live from the basic tab so a
+     * protected-without-firmware) -- read live from the basic tab so a
      * just-changed selection is reflected, then the stored config, then
      * the backend default. In such a VM a guest kernel without
      * CONFIG_DMA_RESTRICTED_POOL cannot drive virtio.
@@ -547,7 +547,7 @@ public final class VMEditBootTab extends VMEditBaseTab {
         return span;
     }
 
-    /** The value of {@code key}=… in {@code cmdline}, or null if absent. */
+    /** The value of {@code key}=... in {@code cmdline}, or null if absent. */
     @Nullable
     private static String paramValue(@NonNull String cmdline, @NonNull String key) {
         var m = ROOT_PARAM.matcher(cmdline);

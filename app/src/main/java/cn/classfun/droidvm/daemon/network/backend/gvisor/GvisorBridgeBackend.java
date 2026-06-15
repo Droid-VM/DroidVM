@@ -225,7 +225,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
 
     /**
      * Installs this NIC's port forwards one at a time so a single bind
-     * failure (host port already in use — gvswitch local forwards listen
+     * failure (host port already in use -- gvswitch local forwards listen
      * on the host) only drops that one rule. Successfully installed refs
      * are recorded per tap so detach removes exactly what this NIC added;
      * failures are surfaced via network_info.

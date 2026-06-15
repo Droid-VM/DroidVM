@@ -22,7 +22,7 @@ import java.util.function.Consumer;
  * The single entry point for every netlink operation the daemon performs.
  *
  * <p>The daemon used to shell out to the system {@code ip}/{@code bridge}
- * (iproute2), which vary per OEM — some are too old to even emit
+ * (iproute2), which vary per OEM -- some are too old to even emit
  * {@code IFA_RT_PRIORITY} in {@code -j} JSON, the field pbridge tags its
  * offload-proxy addresses with. {@code netbox} is our bundled, static Rust tool
  * that does the same operations straight over rtnetlink with a fixed JSON

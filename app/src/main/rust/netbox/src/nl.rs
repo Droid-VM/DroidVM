@@ -28,12 +28,12 @@ pub struct Net {
 /// The only rtnetlink multicast group we ever join: RTM_NEWADDR/RTM_DELADDR
 /// for IPv4. The host-IP set is *defined* as v4 addresses, so only address
 /// events can change it; staying off the link/route/neigh/v6-addr groups
-/// (all noisy and irrelevant) keeps daemon wakeups — and power — to a minimum.
+/// (all noisy and irrelevant) keeps daemon wakeups -- and power -- to a minimum.
 const RTNLGRP_IPV4_IFADDR: u32 = 5;
 
 // ----------------------------------------------------------------- query rows
 
-/// `metric` is IFA_RT_PRIORITY — the field the system `ip -j` may not emit but
+/// `metric` is IFA_RT_PRIORITY -- the field the system `ip -j` may not emit but
 /// pbridge tags its proxy addresses with; netlink always carries it.
 #[derive(Serialize)]
 pub struct AddrRow {
@@ -355,7 +355,7 @@ impl Net {
 
     /// `ip [-4|-6] rule add from all iif <iif> lookup <table>` (idempotent).
     /// `.v4()`/`.v6()` yield distinct typed builders, so the family branch
-    /// can't be factored out (it returns different types) — inline like pbridge.
+    /// can't be factored out (it returns different types) -- inline like pbridge.
     pub async fn rule_add(&self, v6: bool, iif: &str, table: u32) -> Result<()> {
         let req = self
             .handle
@@ -500,7 +500,7 @@ impl Net {
         prefixes: &[String],
         exclude_metric: Option<u32>,
     ) -> Result<Vec<String>> {
-        // one link dump → ifindex's name and whether it's a bridge
+        // one link dump -> ifindex's name and whether it's a bridge
         let mut names: HashMap<u32, String> = HashMap::new();
         let mut is_bridge: HashMap<u32, bool> = HashMap::new();
         let mut ls = self.handle.link().get().execute();
@@ -735,7 +735,7 @@ pub async fn monitor_host_ipv4(
     let mut last = net.host_ipv4(prefixes, exclude_metric).await?;
     emit(&last)?;
     // every message arrives on RTNLGRP_IPV4_IFADDR, so any of them is a v4
-    // address add/del — no need to inspect it, just re-evaluate the set.
+    // address add/del -- no need to inspect it, just re-evaluate the set.
     while messages.next().await.is_some() {
         // coalesce a burst (a DHCP renew is a del+add, etc.) into one recompute
         let _ = tokio::time::timeout(std::time::Duration::from_millis(200), async {

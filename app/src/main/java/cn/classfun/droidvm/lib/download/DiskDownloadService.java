@@ -34,7 +34,7 @@ import cn.classfun.droidvm.ui.main.MainActivity;
 /**
  * Foreground service that runs {@link DiskDownloadManager#runDownload} on a
  * background thread and renders one notification per download covering every
- * state — connecting, downloading (%/size/speed/ETA), retrying, failed, done —
+ * state -- connecting, downloading (%/size/speed/ETA), retrying, failed, done --
  * in the same notification (no separate completion/failure notification).
  */
 public final class DiskDownloadService extends Service {
@@ -255,9 +255,9 @@ public final class DiskDownloadService extends Service {
             ? getString(R.string.download_size_progress, formatSize(p.downloaded), formatSize(p.total))
             : getString(R.string.download_size_unknown, formatSize(p.downloaded));
         if (speed > 0) {
-            text += " · " + getString(R.string.download_speed, formatSize(speed));
+            text += " | " + getString(R.string.download_speed, formatSize(speed));
             if (p.total > 0)
-                text += " · " + getString(R.string.download_eta,
+                text += " | " + getString(R.string.download_eta,
                     formatDuration((p.total - p.downloaded) / speed));
         }
         return text;

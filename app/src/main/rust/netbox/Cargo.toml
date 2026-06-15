@@ -3,7 +3,7 @@ name = "netbox"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.91"
-description = "netbox: a minimal netlink CLI toolbox for DroidVM — replaces the iproute2/bridge subset the daemon shells out to, so the APK doesn't depend on each OEM's system ip/bridge (versions vary; some don't even emit IFA_RT_PRIORITY in -j JSON)"
+description = "netbox: a minimal netlink CLI toolbox for DroidVM -- replaces the iproute2/bridge subset the daemon shells out to, so the APK doesn't depend on each OEM's system ip/bridge (versions vary; some don't even emit IFA_RT_PRIORITY in -j JSON)"
 
 [[bin]]
 name = "netbox"

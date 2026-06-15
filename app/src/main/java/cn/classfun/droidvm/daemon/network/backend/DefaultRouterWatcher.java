@@ -27,7 +27,7 @@ public final class DefaultRouterWatcher {
      * reachable IPs for port-forward DNAT scoping: Wi-Fi, cellular, VPN,
      * ethernet, and hotspot/USB/BT tethering. Passed to netbox, which also
      * drops bridge devices and pbridge-offload addresses. Cellular names other
-     * than rmnet_data (ccmni, pdp_ip…) are intentionally not matched — same
+     * than rmnet_data (ccmni, pdp_ip...) are intentionally not matched -- same
      * assumption the iptables EXT_IFACES list already makes.
      */
     private static final List<String> HOST_IFACE_PREFIXES = List.of(
@@ -85,9 +85,9 @@ public final class DefaultRouterWatcher {
      * (the egress half of guest routing: forwarded packets carry no fwmark
      * and Android's netd rules end in "from all unreachable", so each
      * bridge needs an explicit rule into the default network's table).
-     * Declarative per tick: deletes stale rules — wrong table, duplicates
+     * Declarative per tick: deletes stale rules -- wrong table, duplicates
      * (added twice across restarts) and [detached] leftovers from a
-     * recreated bridge — and adds what is missing. Stale-rule deletion by
+     * recreated bridge -- and adds what is missing. Stale-rule deletion by
      * spec may remove either twin first; the next tick converges.
      */
     private void reconcileRules(boolean ipv6, @Nullable String table) {

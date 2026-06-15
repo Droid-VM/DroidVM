@@ -11,7 +11,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 /**
  * PD route-table persistence on the VLAN config: the id is bridgedhcp's
  * crash-cleanup key, so a value written through one wrapper must be seen
- * by every later read of the same stored item — that is what makes the
+ * by every later read of the same stored item -- that is what makes the
  * allocation stable across network restarts.
  */
 public class VlanConfigPdTest {

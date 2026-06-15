@@ -84,7 +84,7 @@ public final class LinuxNetwork extends BackendBase {
     /**
      * The device carrying a VLAN's L3. VLAN 0 is the untagged domain: its
      * traffic lives on the main bridge itself (the IP stack has no trunk
-     * semantics — untagged frames are simply what the bridge device sees),
+     * semantics -- untagged frames are simply what the bridge device sees),
      * so no per-VLAN bridge and no 802.1q leg exist for it. An 802.1q
      * subinterface with VID 0 would receive only priority-tagged frames,
      * never the untagged traffic it is meant to serve.

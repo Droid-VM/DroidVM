@@ -44,7 +44,7 @@ public class VMConfig extends DataConfig {
         var boot = BootConfig.of(this);
         var uefi = item.optBoolean("use_uefi", true);
         // legacy QEMU oddity: use_uefi=false + "bios" + no kernel meant
-        // "boot a custom firmware" — that is UEFI protocol in the new model
+        // "boot a custom firmware" -- that is UEFI protocol in the new model
         if (!uefi && item.optString("kernel", "").isEmpty()
             && !item.optString("bios", "").isEmpty())
             uefi = true;

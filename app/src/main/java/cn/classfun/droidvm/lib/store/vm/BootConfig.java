@@ -11,7 +11,7 @@ import cn.classfun.droidvm.lib.store.enums.Enums;
 import cn.classfun.droidvm.lib.store.enums.StringEnum;
 
 /**
- * Wrapper over a VM config's "boot" object — the single source of truth
+ * Wrapper over a VM config's "boot" object -- the single source of truth
  * for how the guest is brought up:
  *
  * <pre>
@@ -36,7 +36,7 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  * {@code source} below it) only select which one takes effect, so toggling
  * in the UI never loses the other branch's values. Legacy flat keys
  * ({@code use_uefi}/{@code kernel}/{@code initrd}/{@code cmdline}/
- * {@code bios}) are folded into this object once, on config load — see
+ * {@code bios}) are folded into this object once, on config load -- see
  * {@link VMConfig#migrateBoot}.
  */
 public final class BootConfig {
@@ -81,7 +81,7 @@ public final class BootConfig {
 
     /**
      * Reserved {@code vm_start} boot_entry / boot-menu selection key for
-     * "boot this disk with DroidVM's built-in kernel" — not a disk image
+     * "boot this disk with DroidVM's built-in kernel" -- not a disk image
      * entry, so it is matched as a sentinel (see {@code BootPlan.resolve})
      * and can never collide with an lbx entry id (which never start '@').
      */

@@ -149,7 +149,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         // the main bridge. Access ports attach to the per-VLAN bridge,
         // trunk ports to the main bridge; L3 lives on the per-VLAN bridge.
         // VLAN 0 is the untagged domain: its L3 lives directly on the main
-        // bridge (no per-VLAN bridge, no VID-0 leg — that would only catch
+        // bridge (no per-VLAN bridge, no VID-0 leg -- that would only catch
         // priority-tagged frames, not untagged traffic).
         //
         // These bridges and legs face the VMs, so harden them as a router's
@@ -225,7 +225,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
 
     /**
      * Reloads bridgedhcp when a DHCP-PD VLAN's uplink now resolves to a
-     * different device than the running config has — most importantly when it
+     * different device than the running config has -- most importantly when it
      * was unresolved at start (so PD was skipped) and the interface (e.g.
      * Wi-Fi) has since come up. A still-unresolved uplink is left alone: a
      * running PD client already retries on its own. Invoked on host-network
@@ -254,7 +254,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
     /**
      * PD event from bridgedhcp: the helper already plumbed the address on
      * the per-VLAN bridge (and DHCPv6/RA follow it automatically); what is
-     * left is the host side — firewall accept rules for the delegated
+     * left is the host side -- firewall accept rules for the delegated
      * subnet and the policy-routing entries for return traffic.
      */
     private synchronized void onPdAddressChanged(int vlanId, @Nullable IPv6Network address) {
@@ -383,7 +383,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
      * The bridge a NIC's tap attaches to: a trunk port (no VLAN id / the
      * 4095 marker) or any non-L3 network joins the main bridge; a tagged
      * access port joins its VLAN's per-VLAN bridge. VLAN 0 (untagged-only)
-     * ports don't exist on a Linux bridge — validation rejects them, since
+     * ports don't exist on a Linux bridge -- validation rejects them, since
      * without VLAN filtering they could only behave as trunks.
      */
     @NonNull
@@ -510,15 +510,15 @@ public final class LinuxBridgeBackend extends BridgeBackend {
     }
 
     /**
-     * One row per address with three dimensions — VLAN, bound/unbound,
-     * configured/auto — over the union, in every mode, of every address the
+     * One row per address with three dimensions -- VLAN, bound/unbound,
+     * configured/auto -- over the union, in every mode, of every address the
      * network carries: the live addresses on each bridge device (the main
      * bridge = VLAN 0, every per-VLAN bridge = its VID) and every configured
      * CIDR. A configured address that is also live appears once (configured +
      * bound); a configured one not yet on a device is configured + unbound; a
      * live one with no config is auto (link-local, RA, the L2 uplink mirror
      * pbridge parks on the main bridge, ...). The main bridge is always
-     * scanned — including L2/none mode, where it is the only device and carries
+     * scanned -- including L2/none mode, where it is the only device and carries
      * that mirror; per-VLAN bridges include on-demand ones, not just configured.
      */
     @NonNull
@@ -531,7 +531,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         for (var vlan : inst.getVlans())
             configured.put(vlan.getVlanId(), configuredCidrs(vlan));
         // Every VID whose L3 device may carry addresses, in a stable order:
-        // VLAN 0 (the main bridge, always — the L2 mirror lands here), the
+        // VLAN 0 (the main bridge, always -- the L2 mirror lands here), the
         // configured VLANs in config order, then any on-demand per-VLAN bridge.
         var vids = new java.util.LinkedHashSet<Integer>();
         vids.add(0);
@@ -561,7 +561,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         // L2 pseudo-bridge: pbridge parks each learned guest address on the
         // uplink tagged with the offload magic (so the Wi-Fi firmware answers
         // ARP/NS for them). Those tagged addresses are exactly the pseudo-
-        // bridged guests' IPs — surface them under their own source; the metric
+        // bridged guests' IPs -- surface them under their own source; the metric
         // filter drops the host's own (untagged) uplink addresses.
         if (pbridge != null && resolvedUplink != null) {
             var guests = net.listAddresses(resolvedUplink, Constants.PBRIDGE_OFFLOAD_MAGIC);

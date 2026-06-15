@@ -33,7 +33,7 @@ import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
  * image (a URL); pressing Analyze runs a single cloud analysis
  * ({@code lbx entries <url> --json}, via the daemon's {@code vm_bootscan})
  * and the card shows, per boot entry, the kernel / initrd / cmdline and the
- * protected-VM DMA warning — the same read-only view the VM edit screen
+ * protected-VM DMA warning -- the same read-only view the VM edit screen
  * gives a local disk image.
  *
  * <p>One analysis is one lbx call that returns every entry with every field,

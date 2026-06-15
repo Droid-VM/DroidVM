@@ -6,7 +6,7 @@
 #   ./build.sh arm64      # aarch64-unknown-linux-musl -> dist/netbox-android-arm64
 #   ./build.sh host       # quick host debug build (./target/debug/netbox)
 #
-# Both release targets are fully static (musl), so they run under any libc —
+# Both release targets are fully static (musl), so they run under any libc --
 # glibc, musl, or Android bionic. The aarch64 target links with the bundled
 # rust-lld, so no external cross toolchain is needed.
 set -euo pipefail

@@ -89,7 +89,7 @@ public class NetworkConfig extends DataConfig {
     }
 
     /**
-     * L2 mode: configured uplink — a literal interface name or a
+     * L2 mode: configured uplink -- a literal interface name or a
      * "WiFi"/"Ethernet"/"Tethering" logical identifier resolved at start.
      */
     @Nullable

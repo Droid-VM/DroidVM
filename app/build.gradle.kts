@@ -99,7 +99,7 @@ android {
         jniLibs {
             // Extract native libs to a real on-disk dir so lbx (shipped as
             // liblbx.so) is an executable file the app can run from its own
-            // nativeLibraryDir — no root, no daemon needed for a URL fetch.
+            // nativeLibraryDir -- no root, no daemon needed for a URL fetch.
             useLegacyPackaging = true
         }
     }
@@ -140,7 +140,7 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
 }
 
 // Ship lbx as `liblbx.so` in jniLibs so the (non-root) UI process can exec it
-// from its nativeLibraryDir — the data-dir copy used by the daemon isn't
+// from its nativeLibraryDir -- the data-dir copy used by the daemon isn't
 // executable by the app's untrusted_app SELinux domain.
 abstract class CopyLbxJniLibsTask : DefaultTask() {
     @get:InputDirectory

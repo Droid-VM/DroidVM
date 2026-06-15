@@ -20,7 +20,7 @@ import cn.classfun.droidvm.R;
 
 /**
  * A progress view for a download owned elsewhere (e.g. {@link android.app.DownloadManager}).
- * It renders only — it never runs a download itself. Drive it from the main thread:
+ * It renders only -- it never runs a download itself. Drive it from the main thread:
  * call {@link #startExternal} once, then feed it {@link #updateExternal} and the
  * {@code markExternal*} state transitions as the download progresses. The cancel
  * button invokes the handler passed to {@link #startExternal}.
@@ -115,7 +115,7 @@ public final class DownloadWidget extends FrameLayout {
         updateUI(downloaded, total, speedBytesPerSec);
     }
 
-    /** Renders the download as paused, showing why (waiting for network, retrying, …). */
+    /** Renders the download as paused, showing why (waiting for network, retrying, ...). */
     public void markExternalPaused(@NonNull String reasonText) {
         if (state == STATE_FINISHED) return;
         progressBar.setIndeterminate(false);

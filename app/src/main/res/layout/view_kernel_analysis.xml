@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Reusable "kernel analysis" card: an Analyze button that runs one cloud
      analysis (lbx entries <url>) and shows, per boot entry, the kernel /
-     initrd / cmdline plus the protected-VM DMA warning — mirroring the VM
+     initrd / cmdline plus the protected-VM DMA warning - mirroring the VM
      edit screen's boot-detection card. Driven by KernelAnalysisWidget. -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
