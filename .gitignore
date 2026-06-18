@@ -3,6 +3,7 @@
 /local.properties
 /.idea
 /.vscode
+/DroidVM-Prebuilt-Root
 .DS_Store
 /build
 /captures
@@ -10,9 +11,13 @@
 .cxx
 local.properties
 
-# build.sh stages the compiled network/boot binaries next to the committed
-# 7za prebuilt; only 7za is tracked, the rest are build output.
+# Legacy native-util source locations -- the daemons + lbx are now built by the
+# DroidVM-Prebuilt-Root pipeline, not staged into the app tree.
 /app/src/thirdparty
+/app/src/main/rust
+
+# Stale daemon binaries from the old build.sh staging (now delivered via the
+# prebuilt tar.xz); ignore leftovers so they are never packaged or committed.
 /app/src/main/assets/bin/*/bridgedhcp
 /app/src/main/assets/bin/*/gvswitch
 /app/src/main/assets/bin/*/lbx
