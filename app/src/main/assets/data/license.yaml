@@ -80,11 +80,11 @@ license:
     urls:
       - https://www.ivarch.com/programs/pv.shtml
 
-  - name: 7-zip
-    description: Assets extractor
-    license: LGPL-2.1
+  - name: XZ for Java
+    description: Prebuilt archive (tar.xz) decompressor
+    license: 0BSD
     urls:
-      - https://www.7-zip.org/
+      - https://tukaani.org/xz/java.html
 
   - name: udisasm
     description: Disassembler for libsimpledump.so

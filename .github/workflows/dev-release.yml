@@ -1,18 +1,24 @@
-name: Build
+name: Dev release
 
+# Every push to the default branch (re)publishes a rolling pre-release on a
+# dedicated `dev` tag. The tag is a moving label -- it is deleted and recreated
+# at the current commit each run, so it never pins a specific version. A GitHub
+# Release must be attached to a tag, hence the dummy `dev` tag.
+# (release.yml still cuts real, versioned releases on real tag pushes.)
 on:
   push:
-    branches: [ "**" ]
-  pull_request:
-    branches: [ "**" ]
+    branches: [ master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 concurrency:
-  group: build-${{ github.ref }}
+  group: dev-release
   cancel-in-progress: true
 
 jobs:
-  build:
+  dev-release:
     runs-on: ubuntu-latest
 
     steps:
@@ -39,9 +45,6 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug
-
       - name: Build release APK
         run: ./gradlew assembleRelease
 
@@ -65,27 +68,26 @@ jobs:
             "$ALIGNED"
           rm -f "$ALIGNED" /tmp/keystore.jks
 
-      - name: Get version name
-        id: version
+      - name: Stage APK
         run: |
-          desc="$(git describe --long --tags | sed 's/^[vV]//')"
-          if echo "$desc" | grep -qE '\-0\-g[0-9a-f]+$'; then
-            ver="$(echo "$desc" | sed 's/-0-g[0-9a-f]*$//')"
-          else
-            ver="$(echo "$desc" | sed 's/\([^-]*-g\)/r\1/;s/-/./g')"
-          fi
-          echo "name=${ver}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          mkdir -p release
+          cp app/build/outputs/apk/release/*.apk "release/DroidVM-dev.apk"
 
-      - name: Upload debug APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: DroidVM-${{ steps.version.outputs.name }}-debug
-          path: app/build/outputs/apk/debug/*.apk
-          archive: false
+      - name: Publish rolling dev pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
 
-      - name: Upload release APK
-        uses: actions/upload-artifact@v7
-        with:
-          name: DroidVM-${{ steps.version.outputs.name }}-release
-          path: app/build/outputs/apk/release/*.apk
-          archive: false
+          # Drop the previous dev release + tag, then recreate at this commit so
+          # `dev` always points at latest master (a moving, version-less tag).
+          gh release delete dev --yes --cleanup-tag 2>/dev/null || true
+          git push origin :refs/tags/dev 2>/dev/null || true
+
+          gh release create dev "release/DroidVM-dev.apk" \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "DroidVM dev (${ver})" \
+            --notes "Rolling development build from ${GITHUB_SHA} (${ver}). Not a stable release."
