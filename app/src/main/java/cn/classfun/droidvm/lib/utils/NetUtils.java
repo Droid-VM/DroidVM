@@ -228,6 +228,10 @@ public final class NetUtils {
         );
     }
 
+    public static boolean isValidMac(@Nullable String mac) {
+        return mac != null && mac.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}");
+    }
+
     @NonNull
     public static String stripScopeId(@NonNull String addr) {
         int i = addr.indexOf('%');

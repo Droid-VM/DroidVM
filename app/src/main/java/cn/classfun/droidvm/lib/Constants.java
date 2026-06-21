@@ -20,9 +20,18 @@ public final class Constants {
     public static final String PATH_EDK2_QEMU_FIRMWARE = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-qemu.fd");
     public static final String GITHUB_WIKI_URL = "https://github.com/Droid-VM/DroidVM/wiki";
     public static final String GITHUB_ISSUE_URL = "https://github.com/Droid-VM/DroidVM/issues";
-    public static final String[] BINARIES_PREBUILT = {"7za"};
+    // droidvm + daemon are CMake-built and shipped as APK assets. The
+    // third-party daemons (gvswitch/pbridge/bridgedhcp/netbox) and lbx now
+    // arrive via the prebuilt tar.xz, extracted to DATA/bin/<name>.
     public static final String[] BINARIES_BUILT = {"droidvm", "daemon"};
     public static final String[] LIBRARIES_BUILT = {"libsimpledump.so", "libunixhelper.so"};
+    /**
+     * IFA_RT_PRIORITY magic that pbridge tags its ND/ARP-offload proxy
+     * addresses with (its --offload-workaround-magic). Host-IP discovery
+     * excludes addresses carrying this metric: they are guest addresses
+     * pbridge parks on the uplink, not the phone's own addresses.
+     */
+    public static final long PBRIDGE_OFFLOAD_MAGIC = 4243672773L;
 
     private Constants() {
     }

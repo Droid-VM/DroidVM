@@ -26,6 +26,9 @@ public final class StopHandler extends RequestHandler {
         var inst = request.getContext().getNetworks().findById(id);
         if (inst == null)
             throw new RequestException(fmt("network %s not found", id));
+        var vm = inst.findRunningVMUsing();
+        if (vm != null)
+            throw new RequestException(fmt("network is in use by running VM %s", vm));
         if (!inst.stop())
             throw new RequestException("failed to stop network");
     }

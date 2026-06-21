@@ -135,6 +135,14 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
+                <cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget
+                    android:id="@+id/kernel_analysis"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="16dp" />
+
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
             <com.google.android.material.divider.MaterialDivider

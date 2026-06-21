@@ -17,7 +17,6 @@ import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
 import cn.classfun.droidvm.ui.vm.edit.boot.VMEditBootTab;
 import cn.classfun.droidvm.ui.vm.edit.graphics.VMEditGraphicsTab;
 import cn.classfun.droidvm.ui.vm.edit.network.VMEditNetworkTab;
-import cn.classfun.droidvm.ui.vm.edit.portforward.VMEditPortForwardTab;
 import cn.classfun.droidvm.ui.vm.edit.storage.VMEditStorageTab;
 
 public enum VMEditTab implements StringEnum {
@@ -40,11 +39,6 @@ public enum VMEditTab implements StringEnum {
         R.string.create_vm_tab_network,
         R.id.tab_content_network,
         VMEditNetworkTab.class
-    ),
-    TAB_PORT_FORWARD(
-        R.string.create_vm_tab_port_forward,
-        R.id.tab_content_port_forward,
-        VMEditPortForwardTab.class
     ),
     TAB_GRAPHICS(
         R.string.create_vm_tab_graphics,

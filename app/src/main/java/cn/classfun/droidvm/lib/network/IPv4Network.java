@@ -95,6 +95,19 @@ public final class IPv4Network extends IPNetwork<Long, IPv4Address, IPv4Network>
         return thisNet <= otherBcast && otherNet <= thisBcast;
     }
 
+    /**
+     * Address at network base + offset. Offset must address a usable host
+     * within this prefix (not the network or broadcast address).
+     */
+    @NonNull
+    public IPv4Address addressAtOffset(long offset) {
+        long total = totalAddresses();
+        if (offset <= 0 || offset >= total - 1) throw new IllegalArgumentException(fmt(
+            "Offset %d out of range for /%d network (1..%d)", offset, prefix, total - 2
+        ));
+        return networkAddress().add(offset);
+    }
+
     @Nullable
     public IPv4Address dhcpPoolStart() {
         if (prefix >= 31) return null;

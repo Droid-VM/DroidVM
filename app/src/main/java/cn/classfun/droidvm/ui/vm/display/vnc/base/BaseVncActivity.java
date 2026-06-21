@@ -47,10 +47,11 @@ import java.util.concurrent.ExecutorService;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
 
-public abstract class BaseVncActivity extends AppCompatActivity {
+public abstract class BaseVncActivity extends AppCompatActivity implements ImeInsetsExempt {
     protected final String TAG = getClass().getSimpleName();
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";

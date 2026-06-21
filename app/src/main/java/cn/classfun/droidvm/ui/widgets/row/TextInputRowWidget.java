@@ -2,6 +2,7 @@ package cn.classfun.droidvm.ui.widgets.row;
 
 import android.content.Context;
 import android.text.Editable;
+import android.text.InputFilter;
 import android.text.InputType;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
@@ -325,6 +326,11 @@ public final class TextInputRowWidget extends FrameLayout {
 
     public void setError(@StringRes int resId) {
         textInputLayout.setError(context.getString(resId));
+    }
+
+    /** Restricts what can be typed/pasted (e.g. an allowed-charset + length cap). */
+    public void setFilters(@NonNull InputFilter... filters) {
+        editText.setFilters(filters);
     }
 
     @NonNull

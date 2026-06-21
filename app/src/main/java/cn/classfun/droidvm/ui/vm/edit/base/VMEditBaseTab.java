@@ -21,6 +21,10 @@ public abstract class VMEditBaseTab {
 
     public abstract void initValue();
 
+    /** Called when this tab becomes the visible one. */
+    public void onTabShown() {
+    }
+
     public abstract void loadConfig(@NonNull VMConfig config);
 
     public abstract boolean validateInput(@NonNull VMStore store);

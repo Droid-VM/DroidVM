@@ -17,18 +17,131 @@ import androidx.annotation.NonNull;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.utils.FileUtils;
+import cn.classfun.droidvm.lib.utils.ProcessUtils;
 
 public final class Daemon {
     public static final String TAG = "Daemon";
     private static final String RUN_DIR = pathJoin(DATA_DIR, "run");
+    private static final String LOCK_FILE = pathJoin(RUN_DIR, "droidvmd.lock");
     private static final AtomicBoolean cleaned = new AtomicBoolean(false);
     public static String daemonHash = null;
+
+    // Held for the whole process lifetime so the advisory lock stays taken; the
+    // kernel drops it automatically when this process dies (including SIGKILL),
+    // so a stale lock can never block the next daemon.
+    @SuppressWarnings({"FieldCanBeLocal", "unused"})
+    private static FileChannel lockChannel;
+    private static FileLock daemonLock;
+
+    /**
+     * Single-instance gate. Tries to take an exclusive lock on
+     * {@code droidvmd.lock}. Returns true when held by this process. When the
+     * lock is already taken by a live daemon: with {@code force}, that daemon
+     * is terminated (SIGINT, then SIGKILL) and the lock is taken over;
+     * without it, this returns false so the caller exits instead of running a
+     * second daemon.
+     */
+    private static boolean acquireLock(boolean force) {
+        var runDir = new File(RUN_DIR);
+        if (!runDir.exists() && !runDir.mkdirs())
+            Log.w(TAG, fmt("Failed to create run directory: %s", runDir));
+        try {
+            lockChannel = FileChannel.open(Paths.get(LOCK_FILE),
+                StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
+        } catch (IOException e) {
+            Log.e(TAG, fmt("Failed to open lock file: %s", LOCK_FILE), e);
+            return false;
+        }
+        if (tryLock()) {
+            writeLockOwner();
+            return true;
+        }
+        int holder = readLockOwner();
+        if (!force) {
+            Log.e(TAG, fmt(
+                "Another daemon (pid=%d) is already running; exiting "
+                    + "(start with --force to take over)", holder));
+            return false;
+        }
+        Log.i(TAG, fmt("--force: terminating existing daemon (pid=%d)", holder));
+        if (holder > 1) ProcessUtils.shellKillProcess(holder, ProcessUtils.SIGINT);
+        if (waitForLock(10_000)) {
+            writeLockOwner();
+            return true;
+        }
+        if (holder > 1) {
+            Log.w(TAG, fmt("Existing daemon (pid=%d) did not exit; sending SIGKILL", holder));
+            ProcessUtils.shellKillProcess(holder, ProcessUtils.SIGKILL);
+        }
+        if (waitForLock(3_000)) {
+            writeLockOwner();
+            return true;
+        }
+        Log.e(TAG, "Failed to take over the daemon lock");
+        return false;
+    }
+
+    private static boolean tryLock() {
+        try {
+            daemonLock = lockChannel.tryLock();
+            return daemonLock != null;
+        } catch (Exception e) {
+            // OverlappingFileLockException can't happen (single attempt); any
+            // other failure is treated as "not acquired".
+            Log.w(TAG, "tryLock failed", e);
+            return false;
+        }
+    }
+
+    private static boolean waitForLock(long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (tryLock()) return true;
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException e) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /** Records this daemon's pid in the lock file so a later --force can find it. */
+    private static void writeLockOwner() {
+        try {
+            lockChannel.truncate(0);
+            lockChannel.position(0);
+            lockChannel.write(ByteBuffer.wrap(String.valueOf(Process.myPid()).getBytes()));
+            lockChannel.force(false);
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to write lock owner pid", e);
+        }
+    }
+
+    /** Pid of the current lock holder: from the lock file, else the pid file. */
+    private static int readLockOwner() {
+        for (var path : new String[]{LOCK_FILE, getPidFile()}) {
+            try {
+                var s = new String(Files.readAllBytes(Paths.get(path))).trim();
+                if (!s.isEmpty()) return Integer.parseInt(s);
+            } catch (Exception ignored) {
+            }
+        }
+        return -1;
+    }
 
     private static void writePidFile() {
         var runDir = new File(RUN_DIR);
@@ -97,10 +210,15 @@ public final class Daemon {
     }
 
     public static void main(String... args) {
+        boolean force = Arrays.asList(args).contains("--force");
         System.out.print("Starting DroidVM Daemon...\n");
         UnixHelper.load();
         System.out.printf("Current pid: %d\n", Process.myPid());
         Log.d(TAG, "DroidVM Daemon is starting...");
+        if (!acquireLock(force)) {
+            System.out.print("Another DroidVM Daemon is already running.\n");
+            System.exit(1);
+        }
         daemonHash = getMyHash();
         Log.i(TAG, fmt("DroidVM Daemon hash: %s", daemonHash));
         writePidFile();

@@ -20,6 +20,8 @@ import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startO
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
@@ -37,7 +39,6 @@ import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 
@@ -54,18 +55,19 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
 import cn.classfun.droidvm.lib.data.Repos;
-import cn.classfun.droidvm.lib.store.disk.DiskConfig;
-import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.download.DiskDownloadManager;
+import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget;
-import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget.OnDownloadListener;
+import cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget;
 
-public final class ImportLxcImagesActivity extends AppCompatActivity implements OnDownloadListener {
+public final class ImportLxcImagesActivity extends AppCompatActivity {
     private static final String TAG = "ImportLxcImages";
     private static final String IMAGES_META_PATH = "/streams/v1/images.json";
+    private static final long POLL_INTERVAL_MS = 500;
     private final Map<String, String> displayVersionToRelease = new LinkedHashMap<>();
     private Repos.Repo lxcRepo;
     private String[] metaSourceKeys;
@@ -87,6 +89,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     private TextView tvInfoSize, tvInfoPath;
     private ExtendedFloatingActionButton fabImport;
     private DownloadWidget downloadWidget;
+    private KernelAnalysisWidget kernelAnalysis;
     private NestedScrollView scrollView;
     private CollapsingToolbarLayout collapsingToolbar;
     private MaterialToolbar toolbar;
@@ -95,10 +98,15 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     private boolean isLoading = false;
     private boolean isDownloading = false;
     private boolean isClassFunApiAvailable = false;
+    /** True once the user explicitly picks a source, so a background refresh
+     * won't override their choice (but may still upgrade an untouched default). */
+    private boolean userTouchedSource = false;
     private String downloadName = null;
     private String downloadFolder = null;
     private ApiManager apiManager = null;
     private ActivityResultLauncher<Uri> folderPickerLauncher;
+    private long currentDownloadId = -1;
+    private final Handler pollHandler = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -128,6 +136,9 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         tvInfoPath = findViewById(R.id.tv_info_path);
         fabImport = findViewById(R.id.fab_import);
         downloadWidget = findViewById(R.id.download_widget);
+        kernelAnalysis = findViewById(R.id.kernel_analysis);
+        kernelAnalysis.setUrlProvider(() -> selectedImage == null
+            ? null : pathJoin(getDownloadBaseUrl(), selectedImage.getDownloadPath()));
         scrollView = findViewById(R.id.scroll_view);
         initialize();
     }
@@ -148,47 +159,204 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         inputFolder.setText(path);
         inputFolder.setIconButtonOnClickListener(() -> folderPickerLauncher.launch(null));
         fabImport.setOnClickListener(v -> doImport());
-        setMetaIdle();
-        runOnPool(this::asyncLoad);
+        // show the built-in source list immediately (screen usable at once),
+        // then refresh from the API in the background and swap it in when ready
+        loadBuiltinSources();
+        runOnPool(this::asyncRefreshSources);
+        // If this screen was re-created while its download is still running,
+        // restore the whole form; otherwise just re-attach the progress bar.
+        if (!restoreSession()) reattachActiveDownload();
     }
 
-    private void asyncLoad() {
-        if (Privacy.isPrivacyAgreed(this)) {
-            apiManager = ApiManager.create(this);
-            isClassFunApiAvailable = apiManager.isServiceEnabled("lxc_images_metadata");
+    /** Snapshot of the form, kept across activity re-creation while a download runs. */
+    private static final class Session {
+        String metaSource, customMetaUrl, dlSource, customDlUrl;
+        List<LxcImage> allImages;
+        String distro, version, variant, build;
+        String filename, folder;
+    }
+
+    /** The in-progress import (only one download runs at a time), or {@code null}. */
+    private static Session session;
+
+    private void captureSession() {
+        var s = new Session();
+        s.metaSource = dropdownMetaSource.getText();
+        s.customMetaUrl = inputCustomMetaUrl.getText();
+        s.dlSource = dropdownDlSource.getText();
+        s.customDlUrl = inputCustomDlUrl.getText();
+        s.allImages = new ArrayList<>(allImages);
+        s.distro = dropdownDistro.getText();
+        s.version = dropdownVersion.getText();
+        s.variant = dropdownVariant.getText();
+        s.build = dropdownBuild.getText();
+        s.filename = inputFilename.getText();
+        s.folder = inputFolder.getText();
+        session = s;
+    }
+
+    /**
+     * Rebuilds the form from the last saved session (replays the
+     * distro->version->variant->build cascade) and re-attaches the progress bar if a
+     * download is still running. The session is kept after the download ends too,
+     * so reopening restores the last selections (hit Load to refresh). Returns
+     * false if there's nothing to restore.
+     */
+    private boolean restoreSession() {
+        var s = session;
+        if (s == null) return false;
+        if (lxcRepo == null) return false; // sources unavailable; can't rebuild
+        dropdownMetaSource.setText(s.metaSource);
+        inputCustomMetaUrl.setText(s.customMetaUrl);
+        inputCustomMetaUrl.setVisibility(
+            getSelectedMetaSourceKey().equals("custom") ? VISIBLE : GONE);
+        dropdownDlSource.setText(s.dlSource);
+        inputCustomDlUrl.setText(s.customDlUrl);
+        inputCustomDlUrl.setVisibility(
+            getSelectedDlSourceKey().equals("custom") ? VISIBLE : GONE);
+        onImagesLoaded(s.allImages, s.allImages.size());
+        dropdownDistro.setText(s.distro);
+        onDistroSelected(s.distro);
+        dropdownVersion.setText(s.version);
+        onVersionSelected(s.version);
+        dropdownVariant.setText(s.variant);
+        onVariantSelected(s.variant);
+        dropdownBuild.setText(s.build);
+        onBuildSelected(s.build);
+        inputFilename.setText(s.filename);
+        inputFolder.setText(s.folder);
+        reattachActiveDownload();
+        return true;
+    }
+
+    /** Re-attaches just the progress bar to the running download (no form state). */
+    private void reattachActiveDownload() {
+        long id = DiskDownloadManager.activeDownloadId(getClass().getName());
+        if (id < 0) return;
+        currentDownloadId = id;
+        isDownloading = true;
+        setInputsEnabled(false);
+        fabImport.setVisibility(GONE);
+        downloadWidget.setVisibility(VISIBLE);
+        var name = DiskDownloadManager.downloadName(id);
+        downloadWidget.startExternal(name != null ? name : "", this::cancelDownload);
+        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        pollHandler.post(pollRunnable);
+    }
+
+    /**
+     * Populates the source dropdowns synchronously from the bundled repo list
+     * so the screen is usable immediately, before the API refresh returns.
+     */
+    private void loadBuiltinSources() {
+        var repos = Repos.loadYAML(this);
+        if (repos != null) lxcRepo = repos.getRepo().get("lxc-images");
+        if (lxcRepo == null) {
+            // bundled data missing/corrupt: fall back to a blocking load
+            setMetaSourcesLoading();
+            return;
         }
-        var repos = Repos.load(this);
-        if (repos == null)
-            throw new IllegalStateException("Repo data not found or failed to load");
-        lxcRepo = repos.getRepo().get("lxc-images");
-        if (lxcRepo == null)
-            throw new IllegalStateException("LXC repo info not found in the data");
-        runOnUiThread(this::afterApiDone);
-    }
-
-    private void afterApiDone() {
         setupSourceDropdown();
         setupImageDropdowns();
+        setMetaRefreshing();
+    }
+
+    /**
+     * Background refresh: fetches the freshest repo/mirror list (and ClassFun
+     * availability) from the API, then swaps it into the dropdowns without
+     * disturbing a user who has already moved on to loading images.
+     */
+    private void asyncRefreshSources() {
+        boolean classfun = false;
+        Repos.Repo freshRepo = null;
+        try {
+            if (Privacy.isPrivacyAgreed(this)) {
+                apiManager = ApiManager.create(this);
+                classfun = apiManager.isServiceEnabled("lxc_images_metadata");
+            }
+            var repos = Repos.load(this);
+            if (repos != null) freshRepo = repos.getRepo().get("lxc-images");
+        } catch (Exception e) {
+            Log.w(TAG, "Background source refresh failed; keeping built-in list", e);
+        }
+        final boolean classfunAvailable = classfun;
+        final Repos.Repo repo = freshRepo;
+        runOnUiThread(() -> applyRefreshedSources(repo, classfunAvailable));
+    }
+
+    private void applyRefreshedSources(@Nullable Repos.Repo freshRepo, boolean classfunAvailable) {
+        if (isFinishing()) return;
+        isClassFunApiAvailable = classfunAvailable;
+        if (freshRepo != null) {
+            // capture any explicit choice before the list swap
+            var metaSel = getSelectedMetaSourceKey();
+            var dlSel = getSelectedDlSourceKey();
+            lxcRepo = freshRepo;
+            setupSourceDropdown();
+            // keep an explicit pick; otherwise take the fresh default
+            // (which now prefers ClassFun when it just became available)
+            if (userTouchedSource) restoreSourceSelection(metaSel, dlSel);
+        } else if (lxcRepo == null) {
+            // both the bundled list and the refresh failed
+            setMetaError("source list unavailable");
+            btnLoad.setEnabled(false);
+            return;
+        }
+        // clear the "refreshing" spinner only if the user hasn't moved on
+        if (!isLoading && !isDownloading && allImages.isEmpty())
+            setMetaIdle();
+    }
+
+    /** Re-applies a previously selected source key after the list is rebuilt. */
+    private void restoreSourceSelection(@NonNull String metaKey, @NonNull String dlKey) {
+        int mi = findSourceIndex(metaSourceKeys, metaKey);
+        dropdownMetaSource.setText(metaSourceLabels[mi]);
+        inputCustomMetaUrl.setVisibility(
+            metaSourceKeys[mi].equals("custom") ? VISIBLE : GONE);
+        int di = findSourceIndex(dlSourceKeys, dlKey);
+        dropdownDlSource.setText(dlSourceLabels[di]);
+        inputCustomDlUrl.setVisibility(
+            dlSourceKeys[di].equals("custom") ? VISIBLE : GONE);
+    }
+
+    private void setMetaRefreshing() {
+        progressMeta.setVisibility(VISIBLE);
+        tvMetaStatus.setText(R.string.lxc_meta_refreshing);
+        tvMetaStatus.setTextColor(resolveThemeColor(colorOnSurfaceVariant));
+        btnLoad.setEnabled(true);
+        setImageSectionEnabled(false);
+        setOutputEnabled(false);
+    }
+
+    private void setMetaSourcesLoading() {
+        progressMeta.setVisibility(VISIBLE);
+        tvMetaStatus.setText(R.string.lxc_meta_loading);
+        tvMetaStatus.setTextColor(resolveThemeColor(colorOnSurfaceVariant));
+        btnLoad.setEnabled(false);
+        setImageSectionEnabled(false);
+        setOutputEnabled(false);
+    }
+
+    private boolean sourcesReady() {
+        return metaSourceKeys != null && metaSourceLabels != null
+            && dlSourceKeys != null && dlSourceLabels != null;
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (downloadWidget != null)
-            downloadWidget.stopAndCleanup();
+        // Stop driving the on-screen widget; the download keeps running in the
+        // foreground service (notification shade) and registers the disk itself.
+        pollHandler.removeCallbacks(pollRunnable);
     }
 
     private void confirmExit() {
-        if (isDownloading && downloadWidget != null && downloadWidget.isRunning()) {
-            new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.download_exit_title)
-                .setMessage(R.string.download_exit_message)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(android.R.string.ok, (d, w) -> finish())
-                .show();
-        } else {
-            finish();
-        }
+        // Leave normally (so you can navigate to other screens while downloading).
+        // The download keeps running in the foreground service; its state is
+        // restored when this screen is re-opened.
+        if (isDownloading && currentDownloadId >= 0)
+            Toast.makeText(this, R.string.download_background_toast, LENGTH_SHORT).show();
+        finish();
     }
 
     private void onFolderPickerResult(Uri uri) {
@@ -264,6 +432,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         dropdownMetaSource.setAdapter(aMeta);
         dropdownMetaSource.setText(metaSourceLabels[metaDefaultIndex]);
         dropdownMetaSource.setOnItemClickListener((p, v, pos, id) -> {
+            userTouchedSource = true;
             boolean isCustom = metaSourceKeys[pos].equals("custom");
             inputCustomMetaUrl.setVisibility(isCustom ? VISIBLE : GONE);
             setMetaIdle();
@@ -276,6 +445,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         dropdownDlSource.setAdapter(aDown);
         dropdownDlSource.setText(dlSourceLabels[downDefaultIndex]);
         dropdownDlSource.setOnItemClickListener((p, v, pos, id) -> {
+            userTouchedSource = true;
             boolean isCustom = dlSourceKeys[pos].equals("custom");
             inputCustomDlUrl.setVisibility(isCustom ? VISIBLE : GONE);
         });
@@ -291,6 +461,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
 
     @Nullable
     private String resolveSourceUrl(@NonNull String key) {
+        if (lxcRepo == null) return null;
         if (key.equals("official")) return lxcRepo.getUrl();
         if (key.equals("custom")) return null;
         var mirror = lxcRepo.getMirror(key);
@@ -328,7 +499,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     }
 
     private void loadImages() {
-        if (isLoading || isDownloading) return;
+        if (isLoading || isDownloading || !sourcesReady()) return;
         var baseUrl = getMetaBaseUrl();
         if (baseUrl.isEmpty()) {
             if (getSelectedMetaSourceKey().equals("custom"))
@@ -469,6 +640,9 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         var downloadUrl = pathJoin(getDownloadBaseUrl(), img.getDownloadPath());
         tvInfoPath.setText(getString(R.string.lxc_info_path, downloadUrl));
         cardInfo.setVisibility(VISIBLE);
+        // A new image is selected: offer a fresh kernel analysis for it.
+        kernelAnalysis.setVisibility(VISIBLE);
+        kernelAnalysis.reset();
     }
 
     private void hideOutput() {
@@ -478,6 +652,10 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
 
     private void doImport() {
         if (isDownloading) return;
+        if (DiskDownloadManager.hasActiveDownload()) {
+            Toast.makeText(this, R.string.download_one_at_a_time, LENGTH_SHORT).show();
+            return;
+        }
         if (selectedImage == null) {
             Toast.makeText(
                 this, R.string.lxc_error_no_image,
@@ -512,58 +690,118 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
         }
         downloadName = name;
         downloadFolder = folder;
-        startDownload(downloadUrl, destPath);
+        startDownload(downloadUrl);
     }
 
-    private void startDownload(String url, String destPath) {
+    private void startDownload(String url) {
         isDownloading = true;
+        captureSession();
         setInputsEnabled(false);
         fabImport.setVisibility(GONE);
-        downloadWidget.setUserAgent(LXC_USER_AGENT);
         downloadWidget.setVisibility(VISIBLE);
         scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
-        downloadWidget.setOnDownloadListener(this);
-        downloadWidget.start(url, destPath);
+        downloadWidget.startExternal(downloadName, this::cancelDownload);
+        final var folder = downloadFolder;
+        final var name = downloadName;
+        // enqueue() resolves redirects (network I/O), so run it off the main thread.
+        runOnPool(() -> {
+            long id = DiskDownloadManager.enqueue(
+                this, url, LXC_USER_AGENT, folder, name, ImportLxcImagesActivity.class);
+            runOnUiThread(() -> onDownloadEnqueued(id));
+        });
     }
 
-    @Override
-    public void onFinished(DownloadWidget widget, File file) {
-        var config = new DiskConfig();
-        config.setName(downloadName);
-        config.item.set("folder", downloadFolder);
-        Runnable done = () -> {
-            var resultData = new Intent();
-            resultData.putExtra("result_disk_path", config.getFullPath());
-            setResult(RESULT_OK, resultData);
-            if (config.getFormat() == DiskFormat.QCOW2)
-                startOptimize(this, config.getId());
+    private void onDownloadEnqueued(long id) {
+        if (id < 0) {
+            if (isDownloading) onDownloadFailed(getString(R.string.download_error_start));
+            return;
+        }
+        if (!isDownloading) {
+            // Cancelled while still enqueueing.
+            DiskDownloadManager.cancel(id);
+            return;
+        }
+        currentDownloadId = id;
+        DiskDownloadService.start(this, id);
+        if (!isDestroyed()) pollHandler.post(pollRunnable);
+    }
+
+    /** Mirrors the download's live state into the on-screen widget. */
+    private final Runnable pollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (currentDownloadId < 0) return;
+            var p = DiskDownloadManager.query(currentDownloadId);
+            if (p == null) {
+                cancelDownload(); // job gone (cancelled elsewhere)
+                return;
+            }
+            switch (p.state) {
+                case DiskDownloadManager.STATE_SUCCESS:
+                    onDownloadSucceeded();
+                    break;
+                case DiskDownloadManager.STATE_FAILED:
+                    onDownloadFailed(p.reason);
+                    break;
+                case DiskDownloadManager.STATE_CANCELLED:
+                    cancelDownload();
+                    break;
+                case DiskDownloadManager.STATE_PAUSED:
+                    downloadWidget.updateExternal(p.downloaded, p.total);
+                    downloadWidget.markExternalPaused(
+                        p.reason != null ? p.reason : getString(R.string.download_paused));
+                    pollHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    break;
+                default: // CONNECTING, RUNNING
+                    downloadWidget.updateExternal(p.downloaded, p.total);
+                    pollHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    break;
+            }
+        }
+    };
+
+    private void onDownloadSucceeded() {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        downloadWidget.markExternalFinished();
+        var result = DiskDownloadManager.getResult(id);
+        if (result == null) {
             finish();
-        };
-        runOnPool(() -> {
-            var store = new DiskStore();
-            store.load(this);
-            store.add(config);
-            store.save(this);
-            runOnUiThread(done);
-        });
+            return;
+        }
         Toast.makeText(
             this,
-            getString(R.string.lxc_import_success, downloadName),
+            getString(R.string.lxc_import_success, result.name),
             LENGTH_SHORT
         ).show();
+        var resultData = new Intent();
+        resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
+        setResult(RESULT_OK, resultData);
+        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2)
+            startOptimize(this, result.diskId);
+        finish();
     }
 
-    @Override
-    public void onFailed(DownloadWidget widget, String error) {
-        isDownloading = false;
-        setInputsEnabled(true);
-        progressMeta.setVisibility(GONE);
-        btnLoad.setEnabled(true);
-        fabImport.setVisibility(VISIBLE);
+    private void cancelDownload() {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        if (id >= 0) DiskDownloadManager.cancel(id);
+        downloadWidget.markExternalCancelled();
+        resetAfterDownloadStop();
     }
 
-    @Override
-    public void onCancelled(DownloadWidget widget) {
+    private void onDownloadFailed(@Nullable String reason) {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        if (id >= 0) DiskDownloadManager.cancel(id);
+        downloadWidget.markExternalFailed(reason);
+        resetAfterDownloadStop();
+    }
+
+    private void resetAfterDownloadStop() {
         isDownloading = false;
         setInputsEnabled(true);
         progressMeta.setVisibility(GONE);
@@ -623,11 +861,14 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
             tvInfoSize.setText("");
             tvInfoPath.setText("");
             cardInfo.setVisibility(GONE);
+            kernelAnalysis.setVisibility(GONE);
             selectedImage = null;
         }
     }
 
     private String getSelectedMetaSourceKey() {
+        if (metaSourceLabels == null || metaSourceKeys == null)
+            return isClassFunApiAvailable ? "classfun" : "official";
         var label = dropdownMetaSource.getText();
         for (int i = 0; i < metaSourceLabels.length; i++)
             if (metaSourceLabels[i].equals(label))
@@ -636,6 +877,8 @@ public final class ImportLxcImagesActivity extends AppCompatActivity implements 
     }
 
     private String getSelectedDlSourceKey() {
+        if (dlSourceLabels == null || dlSourceKeys == null)
+            return "official";
         var label = dropdownDlSource.getText();
         for (int i = 0; i < dlSourceLabels.length; i++)
             if (dlSourceLabels[i].equals(label))
