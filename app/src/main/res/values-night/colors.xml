@@ -3,4 +3,6 @@
     <color name="daemon_card_background_running">#FF1A3825</color>
     <color name="daemon_card_background_checking">#FF382D1A</color>
     <color name="daemon_card_background_stopped">#FF3A1B1B</color>
+
+    <color name="kernel_analysis_title">#FF64B5F6</color>
 </resources>

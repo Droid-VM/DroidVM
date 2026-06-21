@@ -32,12 +32,15 @@ public final class InfoHandler extends RequestHandler {
         var res = request.res();
         var data = inst.toInfoJson();
         data.put("state", inst.getState().name());
+        data.put("tools", inst.listTools());
         if (inst.getState() == NetworkState.RUNNING) {
             data.put("live_addresses", inst.listAddresses());
+            var entries = inst.listAddressEntries();
+            if (entries != null) data.put("address_entries", entries);
+            data.put("pd", inst.listPdStatus());
             data.put("live_interfaces", inst.listInterfaces());
             data.put("neighbors", inst.listNeighbors());
-            if (inst.item.optBoolean("dhcp_enabled", false))
-                data.put("dhcp_leases", inst.listDhcpLeases());
+            data.put("dhcp_leases", inst.listDhcpLeases());
         }
         res.put("data", data);
     }

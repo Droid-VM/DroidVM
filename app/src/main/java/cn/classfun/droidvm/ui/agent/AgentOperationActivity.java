@@ -39,6 +39,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
 import cn.classfun.droidvm.ui.agent.base.AgentVM;
 import cn.classfun.droidvm.ui.agent.base.BaseAction;
@@ -61,7 +62,7 @@ public final class AgentOperationActivity extends AppCompatActivity
     private AgentVM agentVM = null;
     private BaseAction action = null;
 
-    private final SimpleTerminalSessionClient sessionClient = new SimpleTerminalSessionClient() {
+    private final SimpleTerminalSessionClient sessionClient = new SimpleTerminalSessionClient(this) {
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
@@ -148,6 +149,7 @@ public final class AgentOperationActivity extends AppCompatActivity
         terminalSession = new TerminalSession(shell, cwd, args, env, null, sessionClient);
         float density = getResources().getDisplayMetrics().density;
         terminalView.setTextSize((int) (4 * density));
+        TerminalFonts.apply(terminalView);
         terminalView.attachSession(terminalSession);
     }
 

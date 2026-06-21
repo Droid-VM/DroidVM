@@ -28,6 +28,7 @@ import cn.classfun.droidvm.lib.store.base.JSONSerialize;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.utils.FileUtils;
@@ -108,10 +109,12 @@ public final class AgentVM implements JSONSerialize {
         vm.item.set("cpu_count", 1);
         vm.item.set("memory_mb", 384);
         vm.item.set("prepare_lend_mthp", false);
-        vm.item.set("use_uefi", false);
-        vm.item.set("kernel", PATH_BUILTIN_KERNEL);
-        vm.item.set("initrd", PATH_BUILTIN_INITRD);
-        vm.item.set("cmdline", "rd.systemd.unit=host-agent.target");
+        var boot = BootConfig.of(vm);
+        boot.setProtocol(BootConfig.Protocol.LINUX);
+        boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
+        boot.setKernel(PATH_BUILTIN_KERNEL);
+        boot.setInitrd(PATH_BUILTIN_INITRD);
+        boot.setCmdline("rd.systemd.unit=host-agent.target");
         var diskItems = DataItem.newArray();
         for (var disk : disks) {
             var item = DataItem.newObject();

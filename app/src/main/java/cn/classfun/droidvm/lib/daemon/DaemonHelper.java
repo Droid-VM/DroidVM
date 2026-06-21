@@ -15,7 +15,6 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
-import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleepOrKill;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -99,19 +98,30 @@ public final class DaemonHelper {
     }
 
     public boolean startDaemon() {
+        return startDaemon(false);
+    }
+
+    /**
+     * Launches the daemon. The daemon takes a single-instance lock at startup,
+     * so a normal ({@code force == false}) launch is a no-op when one is
+     * already running. With {@code force}, the new daemon terminates the
+     * running one and takes over -- used for restart.
+     */
+    public boolean startDaemon(boolean force) {
         var zipPath = getDaemonZipPath();
-        Log.i(TAG, fmt("Starting daemon via app_process64 with %s", zipPath));
+        Log.i(TAG, fmt("Starting daemon via app_process64 with %s (force=%b)", zipPath, force));
         var runDir = pathJoin(DATA_DIR, "run");
         var uid = Process.myUid();
         run("mkdir -p %s", runDir);
         // Best-effort ownership fix; chown may be denied on some contexts (e.g. Android).
         run("chown %d:%d %s || true", uid, uid, runDir);
         var cmd = fmt(
-            "env CLASSPATH=%s %s %s / %s",
+            "env CLASSPATH=%s %s %s / %s%s",
             escapedString(zipPath),
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(findExecute("app_process64")),
-            escapedString(Daemon.class.getName())
+            escapedString(Daemon.class.getName()),
+            force ? " --force" : ""
         );
         Log.i(TAG, fmt("Running command: %s", cmd));
         var result = run(cmd);
@@ -132,11 +142,10 @@ public final class DaemonHelper {
     }
 
     public boolean restartDaemon() {
-        Log.i(TAG, "Restarting daemon");
-        stopDaemon();
-        while (isDaemonRunning())
-            threadSleepOrKill(1000);
-        return startDaemon();
+        // Force-launch: the new daemon kills the running one and takes the lock
+        // itself, which is atomic and avoids waiting on a possibly-stuck stop.
+        Log.i(TAG, "Restarting daemon (force takeover)");
+        return startDaemon(true);
     }
 
 

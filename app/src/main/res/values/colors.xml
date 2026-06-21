@@ -20,4 +20,6 @@
     <color name="daemon_card_background_running">#FFDFFAE4</color>
     <color name="daemon_card_background_checking">#FFFFF9E0</color>
     <color name="daemon_card_background_stopped">#FFFADFE0</color>
+
+    <color name="kernel_analysis_title">#FF1976D2</color>
 </resources>

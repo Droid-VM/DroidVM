@@ -22,19 +22,60 @@ import cn.classfun.droidvm.daemon.network.backend.iptables.IptablesBackend;
 import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
+import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
 import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.utils.JsonUtils;
 
 @SuppressWarnings("BooleanMethodIsAlwaysInverted")
 public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
     private static final String TAG = "NetworkInstanceStore";
     public final FirewallHelper firewall = new IptablesBackend();
-    public final BackendBase backend = new LinuxNetwork();
+    public final LinuxNetwork backend = new LinuxNetwork();
     public final ServerContext context;
+    private final NetworkWatchdog watchdog = new NetworkWatchdog(this);
 
     public NetworkInstanceStore(@NonNull ServerContext context) {
         super();
         this.context = context;
         Log.i(TAG, "Network instance store initialized");
+    }
+
+    /** Starts the helper-process watchdog (idempotent); called when a network comes up. */
+    public void ensureWatchdog() {
+        watchdog.start();
+    }
+
+    @Override
+    protected boolean load(@NonNull DataStore<NetworkInstance> store, @NonNull JSONObject obj) {
+        try {
+            store.clear();
+            JsonUtils.forEachArray(obj, getTypeName(), (JSONObject entry) -> {
+                var migrated = NetworkConfig.migrate(entry);
+                if (migrated == null) {
+                    Log.w(TAG, "Skipping network config with unsupported schema: "
+                        + entry.optString("name"));
+                    return;
+                }
+                if (migrated != entry) {
+                    // A config we just upgraded from a legacy schema: only keep
+                    // it if the migrated result validates (e.g. a DHCP pool
+                    // offset that lands outside the network is rejected here).
+                    try {
+                        NetworkConfigValidator.validate(new NetworkConfig(migrated));
+                    } catch (Exception e) {
+                        Log.w(TAG, "Skipping legacy network that failed migration/validation: "
+                            + entry.optString("name"), e);
+                        return;
+                    }
+                }
+                store.addObject(migrated);
+            });
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load network configs", e);
+            store.clear();
+            return false;
+        }
     }
 
     @Nullable
@@ -49,6 +90,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
             Log.w(TAG, fmt("Network %s already exists", netIdStr));
             return null;
         }
+        NetworkConfigValidator.validate(config);
         var inst = getNetworkInstance(config, netIdStr);
         add(inst);
         Log.i(TAG, fmt("Created network: %s [%s] bridge=%s",
@@ -73,6 +115,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
             Log.w(TAG, fmt("Network %s is not stopped, cannot modify", netIdStr));
             return null;
         }
+        NetworkConfigValidator.validate(config);
         removeById(netId);
         var inst = getNetworkInstance(config, netIdStr);
         add(inst);
@@ -122,6 +165,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
 
     public void stopAll() {
         Log.i(TAG, "Stopping all networks...");
+        watchdog.stop();
         var toStop = new ArrayList<NetworkInstance>();
         forEach((id, inst) -> {
             var s = inst.getState();
@@ -129,7 +173,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
                 toStop.add(inst);
         });
         for (var inst : toStop)
-            inst.stop();
+            inst.stop(true);
         clear();
     }
 

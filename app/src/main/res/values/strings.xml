@@ -226,26 +226,22 @@
     <string name="edit_vm_net_delete">Remove network</string>
     <string name="edit_vm_net_mac_hint">MAC address (optional)</string>
     <string name="edit_vm_net_mac_random">Random</string>
-    <!-- Port forwarding -->
-    <string name="create_vm_tab_port_forward">Ports</string>
-    <string name="create_vm_category_port_forward">Port Forwarding</string>
-    <string name="edit_vm_pf_add">Add Rule</string>
-    <string name="edit_vm_pf_empty">No port forwarding rules.</string>
-    <string name="edit_vm_pf_delete">Remove rule</string>
-    <string name="edit_vm_pf_protocol">Protocol</string>
-    <string name="edit_vm_pf_host_port">Host Port</string>
-    <string name="edit_vm_pf_guest_port">Guest Port</string>
-    <string name="edit_vm_pf_arrow">→</string>
-    <string name="edit_vm_pf_enabled">Enabled</string>
-    <string name="edit_vm_pf_advanced">Advanced</string>
-    <string name="edit_vm_pf_host_ip">Host IP (optional)</string>
-    <string name="edit_vm_pf_guest_ip">Guest IP (auto if empty)</string>
-    <string name="edit_vm_pf_network">Network</string>
-    <string name="edit_vm_pf_invalid_port">Host port must be 1-65535</string>
+    <string name="edit_vm_net_mac_security">MAC filtering</string>
+    <string name="edit_vm_net_isolated">Isolated</string>
+    <string name="edit_vm_net_vlan">VLAN ID</string>
+    <string name="edit_vm_net_vlan_id">VLAN</string>
+    <string name="edit_vm_net_vlan_no_untagged">Untagged-only (0) ports are not supported on a Linux bridge; use a tagged VLAN or trunk</string>
+    <string name="edit_vm_net_vlan_invalid">VLAN must be 0-4094, or 4095 for trunk</string>
+    <string name="edit_vm_net_dhcp4_lease">DHCPv4 static lease</string>
+    <string name="edit_vm_net_dhcp6_lease">DHCPv6 static lease</string>
+    <string name="edit_vm_net_lease_offset">Address offset</string>
+    <string name="edit_vm_net_forwards">Port forwards (e.g. tcp 80:80)</string>
+    <string name="edit_vm_net_forwards_hint">One per line: [proto] host:guest (no proto = tcp+udp), ranges like 8000-9000:8000-9000</string>
+    <string name="edit_vm_net_forwards_need_snat">Port forwards only take effect with SNAT enabled</string>
+    <string name="edit_vm_net_dhcp_need_enable">Enable DHCPv%1$s on network \"%2$s\" VLAN %3$d first</string>
+    <string name="edit_vm_net_dhcp_trunk_note">" (VLAN 4095 maps to the network\'s VLAN 0)"</string>
     <string name="vm_info_port_forwards">Port Forwarding</string>
     <string name="vm_info_pf_none">No active forwards</string>
-    <string name="vm_info_pf_edit">Edit Forwards</string>
-    <string name="edit_vm_pf_apply">Apply</string>
     <string name="edit_vm_disk_path_hint">Path</string>
     <string name="edit_vm_disk_readonly">Read-only</string>
     <string name="edit_vm_disk_bus">Bus</string>
@@ -279,7 +275,56 @@
     <string name="edit_vm_kernel_external">Select an external file</string>
     <string name="edit_vm_kernel_not_found">Target kernel is not exists: %1$s</string>
     <string name="edit_vm_boot_uefi">Boot with UEFI</string>
+    <string name="edit_vm_boot_protocol">Boot protocol</string>
+    <string name="edit_vm_boot_protocol_uefi">UEFI</string>
+    <string name="edit_vm_boot_protocol_linux">Linux boot protocol</string>
+    <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
+    <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
+    <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
+    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2\nBooting Linux via UEFI is still being adapted and is not usable yet -- to boot Linux, choose the Linux kernel boot protocol</string>
+    <string name="edit_vm_kernel_source">Kernel source</string>
+    <string name="edit_vm_kernel_source_image">Disk image</string>
+    <string name="edit_vm_kernel_source_manual">Manual</string>
+    <string name="edit_vm_boot_image_disk">Boot disk</string>
+    <string name="edit_vm_boot_image_disk_title">Select boot disk</string>
+    <string name="edit_vm_boot_entry">Boot entry</string>
+    <string name="edit_vm_boot_entry_auto">Auto (bootloader default)</string>
+    <string name="edit_vm_boot_entry_auto_hint">Follows guest kernel updates automatically</string>
+    <string name="edit_vm_boot_entry_default_mark">%1$s (default)</string>
+    <string name="edit_vm_boot_entry_builtin">DroidVM built-in Linux kernel</string>
+    <string name="edit_vm_boot_entry_dma_warn">Missing DMA_RESTRICTED_POOL</string>
+    <string name="edit_vm_boot_detect_title">Detected boot files</string>
+    <string name="edit_vm_boot_detect_entry">entry</string>
+    <string name="edit_vm_boot_detect_kernel">Kernel</string>
+    <string name="edit_vm_boot_detect_initrd">initrd</string>
+    <string name="edit_vm_boot_detect_cmdline">Kernel cmdline</string>
+    <string name="edit_vm_boot_detect_source">Source</string>
+    <string name="edit_vm_boot_detect_scanning">Scanning...</string>
+    <string name="edit_vm_boot_detect_failed">Scan failed: %1$s</string>
+    <string name="edit_vm_boot_detect_no_disk">No disk image configured for this VM</string>
+    <string name="edit_vm_boot_detect_root_warn">root= names a physical device; enable auto-fix or override the cmdline</string>
+    <string name="edit_vm_boot_rescan">Rescan</string>
+    <string name="edit_vm_boot_vdafix">Auto-fix root= device</string>
+    <string name="edit_vm_boot_vdafix_hint">Rewrites root=/dev/sdX to PARTUUID for virtio</string>
+    <string name="edit_vm_boot_wait">Boot menu countdown (seconds)</string>
+    <string name="edit_vm_boot_wait_hint">0 = boot immediately without menu</string>
+    <string name="edit_vm_boot_wait_invalid">Must be a number of seconds</string>
+    <string name="edit_vm_boot_cmdline_override">Kernel cmdline override (empty = from image)</string>
+    <string name="edit_vm_boot_cmdline_override_hint">Empty = use cmdline from the image</string>
+    <string name="edit_vm_boot_menu_title">Select boot entry -- %1$s</string>
+    <string name="edit_vm_boot_menu_boot">Boot</string>
+    <string name="edit_vm_boot_menu_boot_in">Boot (%1$d)</string>
+    <string name="edit_vm_boot_menu_remember">Remember this choice</string>
+    <string name="edit_vm_boot_menu_fallback">Pinned entry "%1$s" not found; using default</string>
+    <string name="edit_vm_boot_protected_dma_warn">This kernel lacks CONFIG_DMA_RESTRICTED_POOL.\nUnder a protected VM the guest cannot share DMA memory with the host, so virtio devices (disk/network) will fail to start.\nUse the built-in kernel, or rebuild with CONFIG_DMA_RESTRICTED_POOL.</string>
     <string name="edit_vm_boot_uefi_hint">To boot a Linux kernel directly, please disable UEFI</string>
+    <string name="kernel_analysis_title">Kernel analysis</string>
+    <string name="kernel_analysis_analyze">Analyze</string>
+    <string name="kernel_analysis_hint">Analyze the image\'s kernel/initrd over the network before importing</string>
+    <string name="kernel_analysis_need_url">Enter a valid http(s):// image URL first</string>
+    <string name="kernel_analysis_found">%1$d boot entries found</string>
+    <string name="kernel_analysis_progress">Downloading: %1$d/%2$d chunks</string>
+    <string name="kernel_analysis_progress_n">Downloading: %1$d chunks</string>
     <string name="edit_vm_initrd_browse_title">Select initramfs</string>
     <string name="edit_vm_initrd_clear">Clear</string>
     <string name="edit_vm_initrd_builtin">DroidVM built-in Linux initrd</string>
@@ -354,6 +399,13 @@
     <string name="key_f12" translatable="false">F12</string>
 
     <string name="vm_daemon_error">Failed to communicate with daemon.</string>
+    <string name="vm_compressed_disk_title">Compressed disk image</string>
+    <string name="vm_compressed_disk_message">crosvm can\'t read compressed qcow2 images -- the VM would boot to disk I/O errors with no partition table. Convert it to uncompressed and start?\n%1$s</string>
+    <string name="vm_compressed_disk_convert">Convert &amp; start</string>
+    <string name="vm_compressed_disk_start_anyway">Start anyway</string>
+    <string name="vm_compressed_disk_start_countdown">Start anyway (%1$d)</string>
+    <string name="field_copy">Copy</string>
+    <string name="field_copied">Copied to clipboard</string>
 
     <string name="disk_icon_desc">Disk icon</string>
     <string name="disk_meta">%1$s space \u00B7 %2$s on disk \u00B7 %3$s</string>
@@ -460,6 +512,7 @@
     <string name="lxc_custom_download_url_hint">Download mirror base URL</string>
     <string name="lxc_meta_idle">Please load metadata first</string>
     <string name="lxc_meta_loading">Loading\u2026</string>
+    <string name="lxc_meta_refreshing">Updating source list\u2026</string>
     <plurals name="lxc_meta_count">
         <item quantity="one">Metadata: %1$d image</item>
         <item quantity="other">Metadata: %1$d images</item>
@@ -607,6 +660,24 @@
     <string name="download_file_icon_desc">File icon</string>
     <string name="download_exit_title">Download in progress</string>
     <string name="download_exit_message">A download is still in progress. Leaving now will cancel it and delete the partial file. Are you sure?</string>
+    <string name="download_paused">Paused...</string>
+    <string name="download_paused_network">Paused, waiting for network...</string>
+    <string name="download_paused_retry">Connection interrupted, retrying...</string>
+    <string name="download_paused_wifi">Paused, waiting for Wi-Fi...</string>
+    <string name="download_retrying">Connection lost, retrying (%1$d/%2$d)...</string>
+    <string name="download_one_at_a_time">A download is already in progress. Please wait for it to finish.</string>
+    <string name="download_background_toast">Download continues in the background. Check the notification shade.</string>    <string name="download_error_start">Could not start the download. Make sure the system Download Manager is enabled.</string>
+
+    <string name="notif_channel_downloads">Downloads</string>
+    <string name="notif_channel_downloads_desc">Disk image download notifications</string>
+    <string name="notif_download_complete_title">Import complete</string>
+    <string name="notif_download_complete_text">\"%1$s\" was added to the disk list.</string>
+    <string name="notif_download_failed_title">Download failed</string>
+    <string name="notif_download_failed_text">Failed to download \"%1$s\".</string>
+    <string name="notif_channel_downloads_progress">Downloading</string>
+    <string name="notif_channel_downloads_progress_desc">Ongoing download progress</string>
+    <string name="notif_download_connecting">Connecting...</string>
+    <string name="notif_download_cancel">Cancel</string>
 
     <string name="vm_state_suspended">Suspended</string>
     <string name="vm_info_state_suspended">VM is suspended</string>
@@ -693,6 +764,61 @@
     <string name="network_edit_error_dns_not_added">DNS server input is not empty, please add it first or clear the field</string>
     <string name="network_edit_error_dns_invalid">Invalid DNS server address</string>
     <string name="network_edit_error_dns_empty">At least one DNS server is required</string>
+    <string name="network_edit_save">Save network</string>
+    <string name="network_edit_running_banner">This network is running. Stop it before editing.</string>
+    <string name="network_edit_bridge_type">Bridge type</string>
+    <string name="network_edit_bridge_type_linux">Linux bridge</string>
+    <string name="network_edit_bridge_type_gvisor">gVisor bridge</string>
+    <string name="network_edit_uplink_mode">External connectivity</string>
+    <string name="network_edit_uplink_l2">L2 bridging</string>
+    <string name="network_edit_uplink_l3">L3 routing</string>
+    <string name="network_edit_uplink_none">None (VM-internal)</string>
+    <string name="network_edit_category_l2">L2 Bridging</string>
+    <string name="network_edit_category_l3">L3 Routing</string>
+    <string name="network_edit_l2_uplink">Upstream interface</string>
+    <string name="network_edit_pseudo_bridge">Pseudo-bridge</string>
+    <string name="network_edit_uplink_wifi">Wi-Fi</string>
+    <string name="network_edit_uplink_ethernet">Ethernet</string>
+    <string name="network_edit_uplink_tethering">Tethering</string>
+    <string name="network_edit_uplink_unavailable">unavailable</string>
+    <string name="network_edit_uplink_identifier">%1$s (%2$s)</string>
+    <string name="network_edit_pseudo_hint_wifi">Wi-Fi uplinks cannot be bridged directly; the pseudo-bridge is required.</string>
+    <string name="network_edit_pseudo_hint_wired">This uplink can be bridged directly; the pseudo-bridge is optional.</string>
+    <string name="network_edit_vlan_empty_hint">VM-internal network: the host does not participate. Add a VLAN for the host to join.</string>
+    <string name="network_edit_add_vlan">Add VLAN</string>
+    <string name="network_edit_remove_vlan">Remove VLAN</string>
+    <string name="network_edit_vlan_untagged">Untagged</string>
+    <string name="network_edit_vlan_title">VLAN</string>
+    <string name="network_edit_vlan_id">VLAN ID</string>
+    <string name="network_edit_vlan_ipv4">Primary IPv4 Network</string>
+    <string name="network_edit_vlan_ipv6">Primary IPv6 Network</string>
+    <string name="network_edit_vlan_advanced">Advanced</string>
+    <string name="network_edit_vlan_v4_cidr">IPv4 CIDR (e.g. 10.181.7.1/24)</string>
+    <string name="network_edit_vlan_v4_snat">IPv4 SNAT</string>
+    <string name="network_edit_vlan_v4_dhcp">DHCPv4</string>
+    <string name="network_edit_vlan_offset_start">Pool offset start</string>
+    <string name="network_edit_vlan_offset_end">Pool offset end</string>
+    <string name="network_edit_vlan_v6_source">IPv6 source</string>
+    <string name="network_edit_vlan_v6_static">Static CIDR</string>
+    <string name="network_edit_vlan_v6_pd">DHCP-PD</string>
+    <string name="network_edit_vlan_v6_cidr">IPv6 CIDR (e.g. fd00:7::1/64)</string>
+    <string name="network_edit_vlan_pd_uplink">PD upstream interface</string>
+    <string name="network_edit_vlan_pd_duid">DUID (auto-generated when empty)</string>
+    <string name="network_edit_vlan_v6_snat">IPv6 SNAT (gVisor bridge only)</string>
+    <string name="network_edit_vlan_v6_dhcp">DHCPv6</string>
+    <string name="network_edit_vlan_slaac">SLAAC (::/64)</string>
+    <string name="network_edit_vlan_v4_secondary">Secondary IPv4 networks (comma separated)</string>
+    <string name="network_edit_vlan_v6_secondary">Secondary IPv6 networks (comma separated)</string>
+    <string name="network_edit_vlan_dns">DNS servers (empty = follow system DNS)</string>
+    <string name="network_edit_error_self_overlap">Subnets %1$s and %2$s overlap</string>
+    <string name="network_item_subtitle">%1$s | %2$s</string>
+    <string name="network_info_pbridge">Pseudo-bridge (pbridge)</string>
+    <string name="network_info_bridgedhcp">bridgedhcp</string>
+    <string name="network_info_gvswitch">gvswitch</string>
+    <string name="network_info_tool_running">Running</string>
+    <string name="network_info_tool_stopped">Stopped</string>
+    <string name="network_info_tool_view_log">Tap to view log</string>
+    <string name="network_info_tool_log_empty">No log output</string>
 
     <string name="network_info_start">Start</string>
     <string name="network_info_stop">Stop</string>
@@ -718,7 +844,18 @@
     <string name="network_info_enabled">Enabled</string>
     <string name="network_info_disabled">Disabled</string>
     <string name="network_info_no_addresses">No addresses</string>
+    <string name="network_info_addr_bound">Bound</string>
+    <string name="network_info_addr_unbound">Unbound</string>
+    <string name="network_info_addr_source_config">Config</string>
+    <string name="network_info_addr_source_auto">Auto</string>
+    <string name="network_info_addr_source_pbridge">Pseudo-bridge VM</string>
+    <string name="network_info_pd_label">DHCP-PD</string>
+    <string name="network_info_pd_searching">Searching...</string>
+    <string name="network_info_pd_no_uplink">Uplink unavailable</string>
+    <string name="network_info_pd_release">Release</string>
+    <string name="network_info_pd_renew">Renew</string>
     <string name="network_info_no_ports">No ports connected</string>
+    <string name="network_info_forward_failed">Port forward failed: %1$s</string>
     <string name="network_info_no_leases">No DHCP leases</string>
     <string name="network_info_no_neighbors">No neighbors</string>
     <string name="network_info_dhcp_expires">Expires: %1$s</string>

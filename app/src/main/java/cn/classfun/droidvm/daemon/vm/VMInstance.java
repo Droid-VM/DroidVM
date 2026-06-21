@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
-import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
@@ -30,6 +29,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
 
@@ -42,8 +42,9 @@ public final class VMInstance extends VMConfig {
     private BackendBase backend;
     private VMBackendInstance backendInstance;
     private Thread workerThread;
-    private volatile VMPortForwarder portForwarder;
     private final VMInstanceStore store;
+    private BootPlan bootPlan;
+    private String bootEntryOverride;
 
     public interface VMEventCallback {
         @SuppressWarnings("unused")
@@ -122,6 +123,21 @@ public final class VMInstance extends VMConfig {
         return getBackendInstance().runControlCommand(command) == 0;
     }
 
+    /** Boot plan prepared for the current start; null when not started. */
+    @Nullable
+    public BootPlan getBootPlan() {
+        return bootPlan;
+    }
+
+    /**
+     * One-shot boot entry selection (id or title) from the GUI boot menu;
+     * applies to the next {@link #start()} only and does not touch the
+     * pinned entry in the config.
+     */
+    public void setBootEntryOverride(@Nullable String entryId) {
+        bootEntryOverride = entryId;
+    }
+
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean start() {
         if (state != VMState.STOPPED) {
@@ -145,12 +161,12 @@ public final class VMInstance extends VMConfig {
         return true;
     }
 
-    private void setupTap(int index, List<String> createdTaps, @NonNull DataItem netCfg, String vmId) {
-        var netId = netCfg.optString("network_id", "");
-        if (netId == null || netId.isEmpty()) return;
+    private void setupTap(int index, List<DataItem> createdNics, @NonNull DataItem netCfg, String vmId) throws Exception {
+        var nic = new VMNicConfig(netCfg);
+        var netId = nic.getNetworkId();
+        if (netId == null) return;
         var netInst = store.networkStore.findById(UUID.fromString(netId));
         if (netInst == null) throw new RuntimeException(fmt("Network %s not found", netId));
-        var br = netInst.item.optString("bridge_name", "");
         var netState = netInst.getState();
         if (netState != NetworkState.RUNNING) {
             Log.i(TAG, fmt("Network %s is %s, attempting to start it", netId, netState));
@@ -161,24 +177,16 @@ public final class VMInstance extends VMConfig {
                 throw new RuntimeException(fmt("Network %s still not running after start (state=%s)", netId, netState));
             Log.i(TAG, fmt("Network %s started successfully", netId));
         }
-        var tapName = requireNonNull(netCfg.optString("tap_name", ""));
-        if (tapName.isEmpty()) {
+        var tapName = nic.getTapName();
+        if (tapName == null) {
             tapName = fmt("vm%s-%d", vmId.substring(0, 8), index);
-            netCfg.set("tap_name", tapName);
+            nic.setTapName(tapName);
         }
-        var bridge = store.networkStore.backend;
-        if (bridge.isInterfaceExists(tapName)) bridge.deleteTap(tapName);
-        if (!bridge.createTap(tapName))
-            throw new RuntimeException(fmt("Failed to create TAP %s", tapName));
-        createdTaps.add(tapName);
-        if (!netInst.addInterface(tapName))
-            throw new RuntimeException(fmt("Failed to add TAP %s to bridge %s", tapName, br));
-        var tapMac = requireNonNull(netCfg.optString("mac_address", ""));
-        if (!tapMac.isEmpty() && !bridge.setMacAddress(tapName, tapMac))
-            Log.w(TAG, fmt("Failed to set MAC %s on TAP %s", tapMac, tapName));
-        if (!bridge.setLinkState(tapName, true))
-            Log.w(TAG, fmt("Failed to bring up TAP %s", tapName));
-        Log.i(TAG, fmt("TAP %s attached to bridge %s for VM %s", tapName, br, vmId));
+        netInst.attachNic(nic, tapName);
+        createdNics.add(netCfg);
+        Log.i(TAG, fmt(
+            "NIC %s attached to network %s for VM %s", tapName, netInst.getName(), vmId
+        ));
     }
 
     private boolean setupTaps() {
@@ -189,25 +197,38 @@ public final class VMInstance extends VMConfig {
             return false;
         }
         var vmId = getId().toString();
-        var createdTaps = new ArrayList<String>();
+        var createdNics = new ArrayList<DataItem>();
         try {
             var arr = nets.asArray();
             for (int i = 0; i < arr.size(); i++) {
-                setupTap(i, createdTaps, arr.get(i), vmId);
+                setupTap(i, createdNics, arr.get(i), vmId);
             }
         } catch (Exception e) {
             Log.e(TAG, fmt("Error setting up TAP for VM %s: %s", vmId, e.getMessage()), e);
-            cleanupCreatedTaps(createdTaps);
+            cleanupCreatedNics(createdNics);
             return false;
         }
         return true;
     }
 
-    private void cleanupCreatedTaps(@NonNull List<String> taps) {
-        var net = store.networkStore.backend;
-        for (var tap : taps) {
-            net.removeInterface(tap);
-            net.deleteTap(tap);
+    private void cleanupCreatedNics(@NonNull List<DataItem> nics) {
+        for (var netCfg : nics)
+            detachNic(new VMNicConfig(netCfg));
+    }
+
+    private void detachNic(@NonNull VMNicConfig nic) {
+        var tapName = nic.getTapName();
+        if (tapName == null) return;
+        var netId = nic.getNetworkId();
+        var netInst = netId != null
+            ? store.networkStore.findById(UUID.fromString(netId)) : null;
+        if (netInst != null) {
+            netInst.detachNic(nic, tapName);
+        } else {
+            // network gone; remove the tap directly
+            var net = store.networkStore.backend;
+            net.removeInterface(tapName);
+            net.deleteTap(tapName);
         }
     }
 
@@ -313,6 +334,24 @@ public final class VMInstance extends VMConfig {
     private void runVM() {
         var inst = getBackendInstance();
         var vmId = getId().toString();
+        try {
+            // image-source boot runs lbx here (scan + cached extract), so
+            // backends only ever see resolved kernel/initrd/cmdline paths
+            bootPlan = BootPlan.resolve(this, bootEntryOverride);
+        } catch (Exception e) {
+            Log.e(TAG, fmt("VM %s: boot resolution failed", getName()), e);
+            var sio = getStream("stdio");
+            if (sio != null)
+                sio.appendBuffer(fmt("boot resolution failed: %s\n", e.getMessage()));
+            exitCode = -1;
+            setState(VMState.STOPPED);
+            fireEvent("exited", null);
+            return;
+        } finally {
+            bootEntryOverride = null;
+        }
+        if (bootPlan.entryFallback)
+            fireEvent("boot_entry_fallback", null);
         var result = inst.start();
         if (!result.isSuccess()) {
             exitCode = -1;
@@ -327,7 +366,6 @@ public final class VMInstance extends VMConfig {
                 startReaderThread(vmId, stream);
         }
         setState(VMState.RUNNING);
-        startPortForwarding();
         int code = process.waitFor();
         for (var stream : inst.streams.values()) {
             var reader = stream.getReaderThread();
@@ -352,7 +390,6 @@ public final class VMInstance extends VMConfig {
         } else {
             Log.i(TAG, fmt("VM %s exited with code %d", getName(), code));
         }
-        stopPortForwarding();
         cleanupTap();
         inst.cleanup();
         setState(VMState.STOPPED);
@@ -362,58 +399,12 @@ public final class VMInstance extends VMConfig {
     private void cleanupTap() {
         var nets = requireNonNull(item.opt("networks", DataItem.newArray()));
         if (nets.isEmpty()) return;
-        var bridge = new LinuxNetwork();
         for (var iter : nets) {
-            var tapVal = iter.getValue().optString("tap_name", "");
-            if (tapVal == null || tapVal.isEmpty()) continue;
-            Log.i(TAG, fmt("Cleaning up TAP %s for VM %s", tapVal, getName()));
-            bridge.removeInterface(tapVal);
-            bridge.deleteTap(tapVal);
+            var nic = new VMNicConfig(iter.getValue());
+            if (nic.getTapName() == null) continue;
+            Log.i(TAG, fmt("Cleaning up TAP %s for VM %s", nic.getTapName(), getName()));
+            detachNic(nic);
         }
-    }
-
-    private void startPortForwarding() {
-        try {
-            portForwarder = new VMPortForwarder(this, store.networkStore);
-            portForwarder.start();
-        } catch (Exception e) {
-            Log.w(TAG, fmt("Failed to start port forwarding for VM %s", getName()), e);
-        }
-    }
-
-    private void stopPortForwarding() {
-        if (portForwarder == null) return;
-        try {
-            portForwarder.stop();
-        } catch (Exception e) {
-            Log.w(TAG, fmt("Failed to stop port forwarding for VM %s", getName()), e);
-        }
-        portForwarder = null;
-    }
-
-    @NonNull
-    public JSONArray getConfiguredPortForwards() throws JSONException {
-        var arr = new JSONArray();
-        var pf = item.opt("port_forwards", null);
-        if (pf != null && pf.is(DataItem.Type.ARRAY))
-            for (var iter : pf) {
-                var r = iter.getValue();
-                if (r.is(DataItem.Type.OBJECT)) arr.put(r.toJson());
-            }
-        return arr;
-    }
-
-    @NonNull
-    public JSONArray getActivePortForwards() {
-        var pf = portForwarder;
-        return pf != null ? pf.snapshotApplied() : new JSONArray();
-    }
-
-    /** Runtime-only hot-update of DNAT rules; the frontend owns persistence (re-pushed via vm_modify on next start). */
-    public void applyPortForwards(@NonNull JSONArray rules) {
-        item.set("port_forwards", rules);
-        var pf = portForwarder;
-        if (pf != null) pf.sync();
     }
 
     private void startReaderThread(@NonNull String vmId, @NonNull ConsoleStream stream) {

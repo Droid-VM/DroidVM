@@ -224,26 +224,22 @@
     <string name="edit_vm_net_delete">移除网络</string>
     <string name="edit_vm_net_mac_hint">MAC 地址（可选）</string>
     <string name="edit_vm_net_mac_random">随机</string>
-    <!-- 端口转发 -->
-    <string name="create_vm_tab_port_forward">端口</string>
-    <string name="create_vm_category_port_forward">端口转发</string>
-    <string name="edit_vm_pf_add">添加规则</string>
-    <string name="edit_vm_pf_empty">暂无端口转发规则。</string>
-    <string name="edit_vm_pf_delete">删除规则</string>
-    <string name="edit_vm_pf_protocol">协议</string>
-    <string name="edit_vm_pf_host_port">主机端口</string>
-    <string name="edit_vm_pf_guest_port">Guest 端口</string>
-    <string name="edit_vm_pf_arrow">→</string>
-    <string name="edit_vm_pf_enabled">启用</string>
-    <string name="edit_vm_pf_advanced">高级</string>
-    <string name="edit_vm_pf_host_ip">主机 IP（可选）</string>
-    <string name="edit_vm_pf_guest_ip">Guest IP（留空自动发现）</string>
-    <string name="edit_vm_pf_network">网卡</string>
-    <string name="edit_vm_pf_invalid_port">主机端口须为 1-65535</string>
+    <string name="edit_vm_net_mac_security">源 MAC 过滤</string>
+    <string name="edit_vm_net_isolated">端口隔离</string>
+    <string name="edit_vm_net_vlan">VLAN ID</string>
+    <string name="edit_vm_net_vlan_id">VLAN</string>
+    <string name="edit_vm_net_vlan_no_untagged">Linux 网桥不支持仅未标记(0)端口,请使用标记 VLAN 或 trunk</string>
+    <string name="edit_vm_net_vlan_invalid">VLAN 须为 0–4094,4095 表示 trunk</string>
+    <string name="edit_vm_net_dhcp4_lease">DHCPv4 静态分配</string>
+    <string name="edit_vm_net_dhcp6_lease">DHCPv6 静态分配</string>
+    <string name="edit_vm_net_lease_offset">地址偏移</string>
+    <string name="edit_vm_net_forwards">端口转发（例如 tcp 80:80）</string>
+    <string name="edit_vm_net_forwards_hint">每行一条：[协议] 主机:客户机（不填协议 = tcp+udp），范围如 8000-9000:8000-9000</string>
+    <string name="edit_vm_net_forwards_need_snat">端口转发只在 SNAT 启用时生效</string>
+    <string name="edit_vm_net_dhcp_need_enable">请先启用网络「%2$s」VLAN %3$d 的 DHCPv%1$s</string>
+    <string name="edit_vm_net_dhcp_trunk_note">（VLAN 4095 匹配网络的 VLAN 0）</string>
     <string name="vm_info_port_forwards">端口转发</string>
     <string name="vm_info_pf_none">暂无生效转发</string>
-    <string name="vm_info_pf_edit">编辑转发</string>
-    <string name="edit_vm_pf_apply">应用</string>
     <string name="edit_vm_disk_path_hint">路径</string>
     <string name="edit_vm_disk_readonly">只读</string>
     <string name="edit_vm_disk_bus">总线</string>
@@ -277,7 +273,56 @@
     <string name="edit_vm_kernel_external">选择外部文件</string>
     <string name="edit_vm_kernel_not_found">目标内核不存在: %1$s</string>
     <string name="edit_vm_boot_uefi">使用 UEFI 启动</string>
+    <string name="edit_vm_boot_protocol">引导方式</string>
+    <string name="edit_vm_boot_protocol_uefi">UEFI</string>
+    <string name="edit_vm_boot_protocol_linux">Linux 开机协议</string>
+    <string name="edit_vm_uefi_firmware">UEFI 固件(留空 = 内置 EDK2)</string>
+    <string name="edit_vm_uefi_firmware_builtin">内置 EDK2</string>
+    <string name="edit_vm_uefi_firmware_browse_title">选择 UEFI 固件</string>
+    <string name="edit_vm_uefi_firmware_hint">自定义固件仅对 QEMU 后端生效\ncrosvm 始终使用内置 EDK2\nUEFI 引导 Linux 适配中,尚不可用;如需引导 Linux,请选择 Linux 内核引导方式</string>
+    <string name="edit_vm_kernel_source">内核来源</string>
+    <string name="edit_vm_kernel_source_image">磁盘镜像</string>
+    <string name="edit_vm_kernel_source_manual">手动指定</string>
+    <string name="edit_vm_boot_image_disk">引导磁盘</string>
+    <string name="edit_vm_boot_image_disk_title">选择引导磁盘</string>
+    <string name="edit_vm_boot_entry">引导项</string>
+    <string name="edit_vm_boot_entry_auto">自动(跟随引导加载器)</string>
+    <string name="edit_vm_boot_entry_auto_hint">客户机更新内核后自动生效</string>
+    <string name="edit_vm_boot_entry_default_mark">%1$s(默认)</string>
+    <string name="edit_vm_boot_entry_builtin">DroidVM 内置 Linux 内核</string>
+    <string name="edit_vm_boot_entry_dma_warn">缺失 DMA_RESTRICTED_POOL</string>
+    <string name="edit_vm_boot_detect_title">检测到的引导文件</string>
+    <string name="edit_vm_boot_detect_entry">引导项</string>
+    <string name="edit_vm_boot_detect_kernel">内核</string>
+    <string name="edit_vm_boot_detect_initrd">initrd</string>
+    <string name="edit_vm_boot_detect_cmdline">内核命令行</string>
+    <string name="edit_vm_boot_detect_source">来源</string>
+    <string name="edit_vm_boot_detect_scanning">正在扫描…</string>
+    <string name="edit_vm_boot_detect_failed">扫描失败:%1$s</string>
+    <string name="edit_vm_boot_detect_no_disk">此虚拟机尚未配置磁盘镜像</string>
+    <string name="edit_vm_boot_detect_root_warn">root= 指向物理设备;请启用自动修正或覆盖 cmdline</string>
+    <string name="edit_vm_boot_rescan">重新扫描</string>
+    <string name="edit_vm_boot_vdafix">自动修正 root= 设备</string>
+    <string name="edit_vm_boot_vdafix_hint">将 root=/dev/sdX 重写为 PARTUUID 以适配 virtio</string>
+    <string name="edit_vm_boot_wait">开机菜单等待秒数</string>
+    <string name="edit_vm_boot_wait_hint">0 = 不显示菜单直接启动</string>
+    <string name="edit_vm_boot_wait_invalid">必须为秒数(数字)</string>
+    <string name="edit_vm_boot_cmdline_override">内核命令行覆盖(留空 = 使用镜像内的)</string>
+    <string name="edit_vm_boot_cmdline_override_hint">留空 = 使用镜像内的 cmdline</string>
+    <string name="edit_vm_boot_menu_title">选择引导项 — %1$s</string>
+    <string name="edit_vm_boot_menu_boot">启动</string>
+    <string name="edit_vm_boot_menu_boot_in">启动 (%1$d)</string>
+    <string name="edit_vm_boot_menu_remember">记住此选择</string>
+    <string name="edit_vm_boot_menu_fallback">未找到固定的引导项“%1$s”,已改用默认</string>
+    <string name="edit_vm_boot_protected_dma_warn">此内核未启用 CONFIG_DMA_RESTRICTED_POOL。\n在受保护 VM 下客户机无法与主机共享 DMA 内存,virtio 设备(磁盘/网络)将无法启动。\n请改用内置内核,或重新编译并启用该选项。</string>
     <string name="edit_vm_boot_uefi_hint">如果想要直接启动 Linux 内核则请禁用 UEFI</string>
+    <string name="kernel_analysis_title">内核分析</string>
+    <string name="kernel_analysis_analyze">分析</string>
+    <string name="kernel_analysis_hint">导入前通过网络分析镜像的内核/initrd</string>
+    <string name="kernel_analysis_need_url">请先输入有效的 http(s):// 镜像 URL</string>
+    <string name="kernel_analysis_found">找到 %1$d 个引导项</string>
+    <string name="kernel_analysis_progress">下载中：%1$d/%2$d 块</string>
+    <string name="kernel_analysis_progress_n">下载中：%1$d 块</string>
     <string name="edit_vm_initrd_browse_title">选择 initramfs</string>
     <string name="edit_vm_initrd_clear">清空</string>
     <string name="edit_vm_initrd_builtin">DroidVM 内置 Linux initrd</string>
@@ -318,6 +363,13 @@
     <string name="license_detail_urls">链接</string>
 
     <string name="vm_daemon_error">与守护进程通信失败。</string>
+    <string name="vm_compressed_disk_title">压缩的磁盘镜像</string>
+    <string name="vm_compressed_disk_message">crosvm 无法读取压缩的 qcow2 镜像——启动时会出现磁盘 I/O 错误且找不到分区表。要先转换成非压缩再启动吗？\n%1$s</string>
+    <string name="vm_compressed_disk_convert">转换并启动</string>
+    <string name="vm_compressed_disk_start_anyway">仍要启动</string>
+    <string name="vm_compressed_disk_start_countdown">仍要启动 (%1$d)</string>
+    <string name="field_copy">复制</string>
+    <string name="field_copied">已复制到剪贴板</string>
 
     <string name="disk_icon_desc">磁盘图标</string>
     <string name="disk_meta">空间 %1$s \u00B7 实际 %2$s \u00B7 %3$s</string>
@@ -424,6 +476,7 @@
     <string name="lxc_custom_download_url_hint">下载镜像站基础 URL</string>
     <string name="lxc_meta_idle">请先加载元数据</string>
     <string name="lxc_meta_loading">加载中\u2026</string>
+    <string name="lxc_meta_refreshing">正在更新源列表\u2026</string>
     <plurals name="lxc_meta_count">
         <item quantity="other">元数据：%1$d 个镜像</item>
     </plurals>
@@ -570,6 +623,24 @@
     <string name="download_file_icon_desc">文件图标</string>
     <string name="download_exit_title">正在下载</string>
     <string name="download_exit_message">下载仍在进行中。现在离开将取消下载并删除已下载的部分文件。确定要退出吗？</string>
+    <string name="download_paused">已暂停…</string>
+    <string name="download_paused_network">已暂停，等待网络…</string>
+    <string name="download_paused_retry">连接中断，正在重试…</string>
+    <string name="download_paused_wifi">已暂停，等待 Wi-Fi…</string>
+    <string name="download_retrying">连接中断，重试中 (%1$d/%2$d)…</string>
+    <string name="download_one_at_a_time">已有下载正在进行，请等待完成。</string>
+    <string name="download_background_toast">下载将在后台继续，可在通知栏查看。</string>
+    <string name="download_error_start">无法开始下载，请确认系统下载管理器已启用。</string>
+    <string name="notif_channel_downloads">下载</string>
+    <string name="notif_channel_downloads_desc">磁盘镜像下载通知</string>
+    <string name="notif_download_complete_title">导入完成</string>
+    <string name="notif_download_complete_text">"%1$s"已添加到磁盘列表。</string>
+    <string name="notif_download_failed_title">下载失败</string>
+    <string name="notif_download_failed_text">无法下载"%1$s"。</string>
+    <string name="notif_channel_downloads_progress">下载中</string>
+    <string name="notif_channel_downloads_progress_desc">下载进行中的通知</string>
+    <string name="notif_download_connecting">连接中…</string>
+    <string name="notif_download_cancel">取消</string>
 
     <string name="vm_state_suspended">已挂起</string>
     <string name="vm_info_state_suspended">虚拟机已挂起</string>
@@ -655,6 +726,61 @@
     <string name="network_edit_error_dns_not_added">DNS 服务器输入框不为空，请先添加或清空</string>
     <string name="network_edit_error_dns_invalid">无效的 DNS 服务器地址</string>
     <string name="network_edit_error_dns_empty">至少需要一个 DNS 服务器</string>
+    <string name="network_edit_save">保存网络</string>
+    <string name="network_edit_running_banner">网络正在运行，请先停止后再编辑。</string>
+    <string name="network_edit_bridge_type">网桥类型</string>
+    <string name="network_edit_bridge_type_linux">Linux 网桥</string>
+    <string name="network_edit_bridge_type_gvisor">gVisor 网桥</string>
+    <string name="network_edit_uplink_mode">外网连接</string>
+    <string name="network_edit_uplink_l2">二层桥接</string>
+    <string name="network_edit_uplink_l3">三层路由</string>
+    <string name="network_edit_uplink_none">无（虚拟机内网）</string>
+    <string name="network_edit_category_l2">二层桥接</string>
+    <string name="network_edit_category_l3">三层路由</string>
+    <string name="network_edit_l2_uplink">上游接口</string>
+    <string name="network_edit_pseudo_bridge">伪桥接</string>
+    <string name="network_edit_uplink_wifi">Wi-Fi</string>
+    <string name="network_edit_uplink_ethernet">以太网</string>
+    <string name="network_edit_uplink_tethering">网络共享</string>
+    <string name="network_edit_uplink_unavailable">不可用</string>
+    <string name="network_edit_uplink_identifier">%1$s (%2$s)</string>
+    <string name="network_edit_pseudo_hint_wifi">Wi-Fi 上游无法直接桥接，必须使用伪桥接。</string>
+    <string name="network_edit_pseudo_hint_wired">此上游可直接桥接，伪桥接为可选项。</string>
+    <string name="network_edit_vlan_empty_hint">纯虚拟机内部网络，宿主机不参与。若要参与请添加 VLAN。</string>
+    <string name="network_edit_add_vlan">添加 VLAN</string>
+    <string name="network_edit_remove_vlan">移除 VLAN</string>
+    <string name="network_edit_vlan_untagged">Untagged</string>
+    <string name="network_edit_vlan_title">VLAN</string>
+    <string name="network_edit_vlan_id">VLAN ID</string>
+    <string name="network_edit_vlan_ipv4">主 IPv4 网络</string>
+    <string name="network_edit_vlan_ipv6">主 IPv6 网络</string>
+    <string name="network_edit_vlan_advanced">高级</string>
+    <string name="network_edit_vlan_v4_cidr">IPv4 CIDR（例如 10.181.7.1/24）</string>
+    <string name="network_edit_vlan_v4_snat">IPv4 SNAT</string>
+    <string name="network_edit_vlan_v4_dhcp">DHCPv4</string>
+    <string name="network_edit_vlan_offset_start">地址池偏移起始</string>
+    <string name="network_edit_vlan_offset_end">地址池偏移结束</string>
+    <string name="network_edit_vlan_v6_source">IPv6 来源</string>
+    <string name="network_edit_vlan_v6_static">静态 CIDR</string>
+    <string name="network_edit_vlan_v6_pd">DHCP-PD</string>
+    <string name="network_edit_vlan_v6_cidr">IPv6 CIDR（例如 fd00:7::1/64）</string>
+    <string name="network_edit_vlan_pd_uplink">PD 上游接口</string>
+    <string name="network_edit_vlan_pd_duid">DUID（留空自动生成）</string>
+    <string name="network_edit_vlan_v6_snat">IPv6 SNAT（仅 gVisor 网桥）</string>
+    <string name="network_edit_vlan_v6_dhcp">DHCPv6</string>
+    <string name="network_edit_vlan_slaac">SLAAC（::/64）</string>
+    <string name="network_edit_vlan_v4_secondary">次要 IPv4 网络（逗号分隔）</string>
+    <string name="network_edit_vlan_v6_secondary">次要 IPv6 网络（逗号分隔）</string>
+    <string name="network_edit_vlan_dns">DNS 服务器（留空 = 跟随系统 DNS）</string>
+    <string name="network_edit_error_self_overlap">子网 %1$s 与 %2$s 重叠</string>
+    <string name="network_item_subtitle">%1$s · %2$s</string>
+    <string name="network_info_pbridge">伪桥接（pbridge）</string>
+    <string name="network_info_bridgedhcp">bridgedhcp</string>
+    <string name="network_info_gvswitch">gvswitch</string>
+    <string name="network_info_tool_running">运行中</string>
+    <string name="network_info_tool_stopped">已停止</string>
+    <string name="network_info_tool_view_log">点按查看日志</string>
+    <string name="network_info_tool_log_empty">无日志输出</string>
 
     <string name="network_info_start">启动</string>
     <string name="network_info_stop">停止</string>
@@ -679,7 +805,18 @@
     <string name="network_info_enabled">已启用</string>
     <string name="network_info_disabled">已禁用</string>
     <string name="network_info_no_addresses">无地址</string>
+    <string name="network_info_addr_bound">已绑定</string>
+    <string name="network_info_addr_unbound">未绑定</string>
+    <string name="network_info_addr_source_config">配置</string>
+    <string name="network_info_addr_source_auto">自动</string>
+    <string name="network_info_addr_source_pbridge">伪桥接VM</string>
+    <string name="network_info_pd_label">DHCP-PD</string>
+    <string name="network_info_pd_searching">搜索中…</string>
+    <string name="network_info_pd_no_uplink">上游接口不可用</string>
+    <string name="network_info_pd_release">释放</string>
+    <string name="network_info_pd_renew">更新</string>
     <string name="network_info_no_ports">无已连接端口</string>
+    <string name="network_info_forward_failed">端口转发失败：%1$s</string>
     <string name="network_info_no_leases">无 DHCP 租约</string>
     <string name="network_info_no_neighbors">无邻居</string>
     <string name="network_info_dhcp_expires">到期: %1$s</string>

@@ -21,6 +21,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -45,16 +48,15 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.ui.vm.VMActions;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
-import cn.classfun.droidvm.ui.vm.edit.portforward.PortForwardEditAdapter;
-import cn.classfun.droidvm.ui.vm.edit.portforward.VMEditPortForwardTab;
-import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
@@ -63,6 +65,20 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private final UIContext ui = UIContext.fromActivity(this);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean wantOpenConsole = new AtomicBoolean(false);
+    // Pre-start convert (decompress a crosvm-unreadable qcow2): run this once
+    // the convert Activity returns RESULT_OK.
+    @Nullable
+    private Runnable pendingAfterConvert;
+    private final ActivityResultLauncher<Intent> convertResultLauncher =
+        registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
+            var cb = pendingAfterConvert;
+            pendingAfterConvert = null;
+            if (result.getResultCode() == RESULT_OK && cb != null) cb.run();
+        });
+    private final VMActions.ConvertLauncher convertLauncher = (intent, onConverted) -> {
+        pendingAfterConvert = onConverted;
+        convertResultLauncher.launch(intent);
+    };
     private final ConsoleButton toolConsole = new ConsoleButton(this);
     private VMState oldState = VMState.STOPPED;
     private CollapsingToolbarLayout collapsingToolbar;
@@ -87,7 +103,6 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private CollapsibleContainer ccPortForwards;
     private LinearLayout containerPortForwards;
     private TextView tvPfEmpty;
-    private MaterialButton btnPfEdit;
     public VMState currentState = VMState.STOPPED;
     public UUID vmId;
     public VMConfig config;
@@ -118,7 +133,6 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         ccPortForwards = findViewById(R.id.cc_port_forwards);
         containerPortForwards = findViewById(R.id.container_port_forwards);
         tvPfEmpty = findViewById(R.id.tv_pf_empty);
-        btnPfEdit = findViewById(R.id.btn_pf_edit);
         toolbar = findViewById(R.id.toolbar);
         initialize();
     }
@@ -143,7 +157,6 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             sendControlCommand("powerbtn", vmId, mainHandler, ui));
         btnSleepBtn.setOnClickListener(v ->
             sendControlCommand("sleepbtn", vmId, mainHandler, ui));
-        btnPfEdit.setOnClickListener(v -> showPortForwardEditor());
     }
 
     @Override
@@ -209,12 +222,27 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         });
     }
 
+    @NonNull
+    private String bootSummary() {
+        var boot = BootConfig.of(config);
+        if (boot.getProtocol() == BootConfig.Protocol.UEFI)
+            return getString(R.string.edit_vm_boot_protocol_uefi);
+        if (boot.getLinuxSource() == BootConfig.LinuxSource.IMAGE) {
+            var pinned = boot.getImageEntry();
+            var label = getString(R.string.edit_vm_kernel_source_image);
+            if (pinned != null && pinned.title != null)
+                return label + " | " + pinned.title;
+            return label;
+        }
+        return basename(boot.getKernel());
+    }
+
     private void populateInfo() {
         var item = config.item;
         collapsingToolbar.setTitle(config.getName());
         rowCpu.setValue(getString(R.string.vm_info_cpu_value, item.optLong("cpu_count", 0)));
         rowMemory.setValue(getString(R.string.vm_info_memory_value, item.optLong("memory_mb", 0)));
-        rowKernel.setValue(basename(item.optString("kernel", "")));
+        rowKernel.setValue(bootSummary());
         var protectedVm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
         rowProtected.setValue(protectedVm.getDisplayString(this));
         var disks = item.opt("disks", DataItem.newArray());
@@ -317,115 +345,64 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             mainHandler.postDelayed(this::refreshPortForwards, 2000);
     }
 
+    /** Renders the per-NIC port forwards configured in the VM's NIC settings. */
     private void refreshPortForwards() {
-        if (currentState != VMState.RUNNING) {
+        if (config == null) {
             ccPortForwards.setVisibility(View.GONE);
             return;
         }
-        DaemonConnection.OnResponse res = resp -> {
-            var data = resp.optJSONObject("data");
-            var active = data != null ? data.optJSONArray("active") : null;
-            mainHandler.post(() -> renderPortForwards(active));
-        };
-        DaemonConnection.getInstance().buildRequest("vm_port_forward_list")
-            .put("vm_id", vmId.toString())
-            .onResponse(res)
-            .onUnsuccessful(r -> {
-            })
-            .onError(e -> Log.w(TAG, "Failed to query port forwards", e))
-            .invoke();
-    }
-
-    private void renderPortForwards(@Nullable JSONArray active) {
-        if (isFinishing()) return;
-        if (currentState != VMState.RUNNING) {
+        var lines = new java.util.ArrayList<String>();
+        var networks = new NetworkStore();
+        networks.load(this);
+        config.forEachNic(nic -> {
+            var netId = nic.getNetworkId();
+            var network = netId != null ? networks.findById(netId) : null;
+            var vlan = network != null ? nic.resolveDhcpVlan(network) : null;
+            if (vlan == null) return;
+            if (nic.isDhcp4LeaseEnabled() && vlan.isDhcp4Enabled()) {
+                var net4 = vlan.getIpv4Network();
+                for (var fwd : nic.getDhcp4Forwards()) {
+                    String guest;
+                    try {
+                        guest = net4 != null
+                            ? net4.addressAtOffset(nic.getDhcp4Offset()).toString()
+                            : "?";
+                    } catch (Exception e) {
+                        guest = "?";
+                    }
+                    lines.add(fwd.proto.toUpperCase() + "  *:" + fwd.host
+                        + " -> " + guest + ":" + fwd.guest);
+                }
+            }
+            if (nic.isDhcp6LeaseEnabled() && vlan.isDhcp6Enabled()) {
+                var net6 = vlan.getIpv6Network();
+                for (var fwd : nic.getDhcp6Forwards()) {
+                    String guest;
+                    try {
+                        guest = net6 != null
+                            ? net6.addressAtOffset(nic.getDhcp6Offset()).toString()
+                            : "?";
+                    } catch (Exception e) {
+                        guest = "?";
+                    }
+                    lines.add(fwd.proto.toUpperCase() + "  *:" + fwd.host
+                        + " -> [" + guest + "]:" + fwd.guest);
+                }
+            }
+        });
+        if (lines.isEmpty()) {
             ccPortForwards.setVisibility(View.GONE);
             return;
         }
         ccPortForwards.setVisibility(View.VISIBLE);
         containerPortForwards.removeAllViews();
-        int count = active != null ? active.length() : 0;
-        if (count == 0) {
-            tvPfEmpty.setVisibility(View.VISIBLE);
-            return;
-        }
         tvPfEmpty.setVisibility(View.GONE);
         var inflater = LayoutInflater.from(this);
-        for (int i = 0; i < count; i++) {
-            var o = active.optJSONObject(i);
-            if (o == null) continue;
-            var protocol = o.optString("protocol", "tcp");
-            var proto = "udp".equals(protocol) ? "UDP" : "TCP";
-            var hostIp = o.optString("host_ip", "");
-            var hostPort = o.optInt("host_port", 0);
-            var guestIp = o.optString("guest_ip", "");
-            var guestPort = o.optInt("guest_port", 0);
-            var hostDisplay = (hostIp.isEmpty() ? "*" : hostIp) + ":" + hostPort;
-            var line = proto + "  " + hostDisplay + " -> " + guestIp + ":" + guestPort;
+        for (var line : lines) {
             var row = inflater.inflate(
                 R.layout.item_port_forward_active, containerPortForwards, false);
             ((TextView) row.findViewById(R.id.tv_pf_line)).setText(line);
             containerPortForwards.addView(row);
-        }
-    }
-
-    private void showPortForwardEditor() {
-        if (config == null) return;
-        var view = LayoutInflater.from(this).inflate(R.layout.dialog_port_forward_edit, null);
-        CardItemListView list = view.findViewById(R.id.list_port_forwards);
-        list.setAdapter(PortForwardEditAdapter.class);
-        list.setItems(copyArray(config.item.opt("port_forwards", DataItem.newArray())));
-        var dialog = new MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.vm_info_port_forwards)
-            .setView(view)
-            .setPositiveButton(R.string.edit_vm_pf_apply, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .create();
-        // Override the button so failed validation keeps the dialog open.
-        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-            .setOnClickListener(v -> {
-                if (applyPortForwardEdits(list)) dialog.dismiss();
-            }));
-        dialog.show();
-    }
-
-    private boolean applyPortForwardEdits(CardItemListView list) {
-        var items = list.getItems();
-        if (items == null) items = DataItem.newArray();
-        if (!VMEditPortForwardTab.rulesValid(items)) {
-            Toast.makeText(this, R.string.edit_vm_pf_invalid_port, Toast.LENGTH_SHORT).show();
-            return false;
-        }
-        config.item.set("port_forwards", items);
-        runOnPool(() -> store.save(this));
-        JSONArray rules;
-        try {
-            rules = items.toJsonArray();
-        } catch (JSONException e) {
-            rules = new JSONArray();
-        }
-        DaemonConnection.getInstance().buildRequest("vm_port_forward_set")
-            .put("vm_id", vmId.toString())
-            .put("rules", rules)
-            .onResponse(r -> {
-                // Apply may take effect sync (reconcile) or async (loop start); refresh now and after a delay.
-                mainHandler.post(this::refreshPortForwards);
-                mainHandler.postDelayed(this::refreshPortForwards, 1500);
-            })
-            .onUnsuccessful(r -> {
-            })
-            .onError(e -> Log.w(TAG, "Failed to set port forwards", e))
-            .invoke();
-        return true;
-    }
-
-    /** Deep copy so a cancelled dialog doesn't mutate config. */
-    private static DataItem copyArray(DataItem src) {
-        if (!src.is(DataItem.Type.ARRAY)) return DataItem.newArray();
-        try {
-            return DataItem.fromJson(src.toJsonArray());
-        } catch (JSONException e) {
-            return DataItem.newArray();
         }
     }
 
@@ -449,7 +426,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
 
     private void doStart() {
         if (config == null) return;
-        VMActions.createAndStart(config, mainHandler, ui, wantOpenConsole);
+        VMActions.createAndStart(config, mainHandler, ui, wantOpenConsole, convertLauncher);
     }
 
     private void doStop() {

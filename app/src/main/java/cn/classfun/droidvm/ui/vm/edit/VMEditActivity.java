@@ -93,6 +93,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
         currentTab = VMEditTab.fromIndex(newIndex);
         tabLayout.selectTab(tabLayout.getTabAt(newIndex));
         scrollView.scrollTo(0, 0);
+        tabs.get(newIndex).onTabShown();
+    }
+
+    /** The live tab instance, e.g. to read another tab's unsaved state. */
+    @NonNull
+    public VMEditBaseTab getTab(@NonNull VMEditTab tab) {
+        return tabs.get(tab.ordinal());
     }
 
     private void setupTabs() {
@@ -108,6 +115,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
                 currentTab = VMEditTab.fromIndex(newPos);
                 swipeHelper.animateToTab(newPos, direction);
                 scrollView.scrollTo(0, 0);
+                tabs.get(newPos).onTabShown();
             }
 
             @Override
@@ -161,6 +169,11 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     private void doSave() {
+        // Commit any field still being edited: NIC MAC/offset/forward inputs
+        // write back to the model on focus loss, so flush the focused view
+        // before reading the tabs' config.
+        var focused = getCurrentFocus();
+        if (focused != null) focused.clearFocus();
         var store = new VMStore();
         store.load(this);
         boolean valid = true;

@@ -1,0 +1,106 @@
+name: Dev release
+
+# Every push to the default branch (re)publishes a rolling pre-release on a
+# dedicated `dev` tag. The tag is a moving label -- it is deleted and recreated
+# at the current commit each run, so it never pins a specific version. A GitHub
+# Release must be attached to a tag, hence the dummy `dev` tag.
+# (release.yml still cuts real, versioned releases on real tag pushes.)
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: dev-release
+  cancel-in-progress: true
+
+jobs:
+  dev-release:
+    runs-on: ubuntu-latest
+    env:
+      HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;36.0.0
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # With a signing key: build and sign a real release APK (current
+      # behaviour). Without one: ship the debug APK -- signed with the
+      # auto-generated debug keystore -- instead of an unsigned release.
+      - name: Build release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
+        run: ./gradlew assembleRelease
+
+      - name: Sign release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
+        env:
+          APP_SIGN_KEY_JKS: ${{ secrets.APP_SIGN_KEY_JKS }}
+          APP_SIGN_KEY_PASS: ${{ secrets.APP_SIGN_KEY_PASS }}
+        run: |
+          BUILD_TOOLS="${ANDROID_HOME}/build-tools/36.0.0"
+          echo "$APP_SIGN_KEY_JKS" | base64 -d > /tmp/keystore.jks
+          UNSIGNED=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          ALIGNED="${UNSIGNED%.apk}-aligned.apk"
+          "${BUILD_TOOLS}/zipalign" -f -v 4 "$UNSIGNED" "$ALIGNED"
+          "${BUILD_TOOLS}/apksigner" sign \
+            --ks /tmp/keystore.jks \
+            --ks-pass "pass:${APP_SIGN_KEY_PASS}" \
+            --key-pass "pass:${APP_SIGN_KEY_PASS}" \
+            --out "$UNSIGNED" \
+            "$ALIGNED"
+          rm -f "$ALIGNED" /tmp/keystore.jks
+
+      - name: Build debug APK (no signing key)
+        if: ${{ env.HAS_SIGN_KEY != 'true' }}
+        run: ./gradlew assembleDebug
+
+      - name: Stage APK
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          if [ "${HAS_SIGN_KEY}" = "true" ]; then
+            cp app/build/outputs/apk/release/*.apk "release/DroidVM-dev.apk"
+          else
+            cp app/build/outputs/apk/debug/*.apk "release/DroidVM-dev.apk"
+          fi
+
+      - name: Publish rolling dev pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          ver="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+
+          # Drop the previous dev release + tag, then recreate at this commit so
+          # `dev` always points at latest master (a moving, version-less tag).
+          gh release delete dev --yes --cleanup-tag 2>/dev/null || true
+          git push origin :refs/tags/dev 2>/dev/null || true
+
+          gh release create dev "release/DroidVM-dev.apk" \
+            --prerelease \
+            --target "${GITHUB_SHA}" \
+            --title "DroidVM dev (${ver})" \
+            --notes "Rolling development build from ${GITHUB_SHA} (${ver}). Not a stable release."

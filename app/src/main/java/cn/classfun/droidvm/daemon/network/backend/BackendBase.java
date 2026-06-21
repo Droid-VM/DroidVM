@@ -46,7 +46,5 @@ public abstract class BackendBase {
 
     public abstract JSONArray listNeighbors(String bridge);
 
-    public abstract JSONArray listDhcpLeases(String bridge);
-
     public abstract void populateRuleRoute(@NonNull NetworkInstance inst);
 }

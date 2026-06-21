@@ -28,6 +28,7 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
+import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
@@ -150,15 +151,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--hugepages");
         if (item.optBoolean("prepare_lend_mthp", true))
             args.add("--prepare-lend-mthp");
-        var initrd = item.optString("initrd", "");
-        if (!initrd.isEmpty()) {
+        var boot = BootPlan.of(config);
+        if (!boot.initrd.isEmpty()) {
             args.add("--initrd");
-            args.add(initrd);
+            args.add(boot.initrd);
         }
-        var cmdline = item.optString("cmdline", "");
-        if (!cmdline.isEmpty()) {
+        if (!boot.cmdline.isEmpty()) {
             args.add("--params");
-            args.add(cmdline);
+            args.add(boot.cmdline);
         }
         if (controlSocketPath != null) {
             args.add("--socket");
@@ -170,12 +170,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildGpuCommand(args);
         buildVncCommand(args);
         buildSerialCommand(args);
-        if (item.optBoolean("use_uefi", true)) {
+        if (boot.uefi) {
+            // crosvm has no custom-firmware support; always builtin EDK2
             args.add(PATH_EDK2_FIRMWARE);
-        } else {
-            var kernel = item.optString("kernel", "");
-            if (!kernel.isEmpty())
-                args.add(kernel);
+        } else if (!boot.kernel.isEmpty()) {
+            args.add(boot.kernel);
         }
         return args;
     }

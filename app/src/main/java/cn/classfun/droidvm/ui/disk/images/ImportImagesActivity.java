@@ -14,6 +14,8 @@ import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startO
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -29,7 +31,6 @@ import androidx.core.widget.NestedScrollView;
 import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.card.MaterialCardView;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 
 import java.io.File;
@@ -37,16 +38,16 @@ import java.util.ArrayList;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.Repos;
-import cn.classfun.droidvm.lib.store.disk.DiskConfig;
-import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.download.DiskDownloadManager;
+import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget;
-import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget.OnDownloadListener;
 
-public final class ImportImagesActivity extends AppCompatActivity implements OnDownloadListener {
+public final class ImportImagesActivity extends AppCompatActivity {
+    private static final long POLL_INTERVAL_MS = 500;
     private Repos repos;
     private CollapsingToolbarLayout collapsingToolbar;
     private MaterialToolbar toolbar;
@@ -68,6 +69,8 @@ public final class ImportImagesActivity extends AppCompatActivity implements OnD
     private boolean isDownloading = false;
     private String downloadName = null;
     private String downloadFolder = null;
+    private long currentDownloadId = -1;
+    private final Handler pollHandler = new Handler(Looper.getMainLooper());
     private FlatImage selectedImage;
     private ActivityResultLauncher<Uri> folderPickerLauncher;
 
@@ -111,13 +114,60 @@ public final class ImportImagesActivity extends AppCompatActivity implements OnD
         cardPlaceholder.setOnClickListener(v -> showImagePicker());
         cardSelected.setOnClickListener(v -> showImagePicker());
         hideSelection();
+        // Restore the whole form if re-created mid-download; else just the progress bar.
+        if (!restoreSession()) reattachActiveDownload();
+    }
+
+    /** Snapshot of the form, kept across activity re-creation while a download runs. */
+    private static final class Session {
+        FlatImage image;
+        String mirror, filename, folder;
+    }
+
+    /** The in-progress import (only one download runs at a time), or {@code null}. */
+    private static Session session;
+
+    private void captureSession() {
+        var s = new Session();
+        s.image = selectedImage;
+        s.mirror = dropdownMirror.getText();
+        s.filename = inputFilename.getText();
+        s.folder = inputFolder.getText();
+        session = s;
+    }
+
+    private boolean restoreSession() {
+        var s = session;
+        if (s == null || s.image == null) return false;
+        onImageSelected(s.image);
+        dropdownMirror.setText(s.mirror);
+        updateInfoCard();
+        inputFilename.setText(s.filename);
+        inputFolder.setText(s.folder);
+        reattachActiveDownload();
+        return true;
+    }
+
+    /** Re-attaches just the progress bar to the running download (no form state). */
+    private void reattachActiveDownload() {
+        long id = DiskDownloadManager.activeDownloadId(getClass().getName());
+        if (id < 0) return;
+        currentDownloadId = id;
+        isDownloading = true;
+        setInputsEnabled(false);
+        fabDownload.setVisibility(GONE);
+        downloadWidget.setVisibility(VISIBLE);
+        var name = DiskDownloadManager.downloadName(id);
+        downloadWidget.startExternal(name != null ? name : "", this::cancelDownload);
+        scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
+        pollHandler.post(pollRunnable);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (downloadWidget != null)
-            downloadWidget.stopAndCleanup();
+        // The download keeps running in the foreground service; just stop polling.
+        pollHandler.removeCallbacks(pollRunnable);
     }
 
     private void onChooseFolder() {
@@ -131,16 +181,12 @@ public final class ImportImagesActivity extends AppCompatActivity implements OnD
     }
 
     private void confirmExit() {
-        if (isDownloading && downloadWidget != null && downloadWidget.isRunning()) {
-            new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.download_exit_title)
-                .setMessage(R.string.download_exit_message)
-                .setNegativeButton(android.R.string.cancel, null)
-                .setPositiveButton(android.R.string.ok, (d, w) -> finish())
-                .show();
-        } else {
-            finish();
-        }
+        // Leave normally (so you can navigate to other screens while downloading).
+        // The download keeps running in the foreground service; the screen's state
+        // is preserved and restored when re-opened.
+        if (isDownloading && currentDownloadId >= 0)
+            Toast.makeText(this, R.string.download_background_toast, LENGTH_SHORT).show();
+        finish();
     }
 
     private void showImagePicker() {
@@ -230,6 +276,10 @@ public final class ImportImagesActivity extends AppCompatActivity implements OnD
 
     private void doDownload() {
         if (isDownloading) return;
+        if (DiskDownloadManager.hasActiveDownload()) {
+            Toast.makeText(this, R.string.download_one_at_a_time, LENGTH_SHORT).show();
+            return;
+        }
         if (selectedImage == null) {
             Toast.makeText(this, R.string.images_error_no_image, LENGTH_SHORT).show();
             return;
@@ -254,55 +304,116 @@ public final class ImportImagesActivity extends AppCompatActivity implements OnD
         downloadName = name;
         downloadFolder = folder;
         var url = resolveDownloadUrl();
-        startDownload(url, destPath);
+        startDownload(url);
     }
 
-    private void startDownload(String url, String destPath) {
+    private void startDownload(String url) {
         isDownloading = true;
+        captureSession();
         setInputsEnabled(false);
         fabDownload.setVisibility(GONE);
         downloadWidget.setVisibility(VISIBLE);
         scrollView.post(() -> scrollView.fullScroll(View.FOCUS_DOWN));
-        downloadWidget.setOnDownloadListener(this);
-        downloadWidget.setUserAgent(DL_USER_AGENT);
-        downloadWidget.start(url, destPath);
+        downloadWidget.startExternal(downloadName, this::cancelDownload);
+        final var folder = downloadFolder;
+        final var name = downloadName;
+        // enqueue() resolves redirects (network I/O), so run it off the main thread.
+        runOnPool(() -> {
+            long id = DiskDownloadManager.enqueue(
+                this, url, DL_USER_AGENT, folder, name, ImportImagesActivity.class);
+            runOnUiThread(() -> onDownloadEnqueued(id));
+        });
     }
 
-    @Override
-    public void onFinished(DownloadWidget widget, File file) {
-        var config = new DiskConfig();
-        config.setName(downloadName);
-        config.item.set("folder", downloadFolder);
-        Runnable done = () -> {
-            var resultData = new Intent();
-            resultData.putExtra("result_disk_path", config.getFullPath());
-            setResult(RESULT_OK, resultData);
-            if (config.getFormat() == DiskFormat.QCOW2)
-                startOptimize(this, config.getId());
+    private void onDownloadEnqueued(long id) {
+        if (id < 0) {
+            if (isDownloading) onDownloadFailed(getString(R.string.download_error_start));
+            return;
+        }
+        if (!isDownloading) {
+            // Cancelled while still enqueueing.
+            DiskDownloadManager.cancel(id);
+            return;
+        }
+        currentDownloadId = id;
+        DiskDownloadService.start(this, id);
+        if (!isDestroyed()) pollHandler.post(pollRunnable);
+    }
+
+    /** Mirrors the download's live state into the on-screen widget. */
+    private final Runnable pollRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (currentDownloadId < 0) return;
+            var p = DiskDownloadManager.query(currentDownloadId);
+            if (p == null) {
+                cancelDownload(); // job gone (cancelled elsewhere)
+                return;
+            }
+            switch (p.state) {
+                case DiskDownloadManager.STATE_SUCCESS:
+                    onDownloadSucceeded();
+                    break;
+                case DiskDownloadManager.STATE_FAILED:
+                    onDownloadFailed(p.reason);
+                    break;
+                case DiskDownloadManager.STATE_CANCELLED:
+                    cancelDownload();
+                    break;
+                case DiskDownloadManager.STATE_PAUSED:
+                    downloadWidget.updateExternal(p.downloaded, p.total);
+                    downloadWidget.markExternalPaused(
+                        p.reason != null ? p.reason : getString(R.string.download_paused));
+                    pollHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    break;
+                default: // CONNECTING, RUNNING
+                    downloadWidget.updateExternal(p.downloaded, p.total);
+                    pollHandler.postDelayed(this, POLL_INTERVAL_MS);
+                    break;
+            }
+        }
+    };
+
+    private void onDownloadSucceeded() {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        downloadWidget.markExternalFinished();
+        var result = DiskDownloadManager.getResult(id);
+        if (result == null) {
             finish();
-        };
-        runOnPool(() -> {
-            var store = new DiskStore();
-            store.load(this);
-            store.add(config);
-            store.save(this);
-            runOnUiThread(done);
-        });
+            return;
+        }
         Toast.makeText(this,
-            getString(R.string.images_success, downloadName),
+            getString(R.string.images_success, result.name),
             LENGTH_SHORT
         ).show();
+        var resultData = new Intent();
+        resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
+        setResult(RESULT_OK, resultData);
+        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2)
+            startOptimize(this, result.diskId);
+        finish();
     }
 
-    @Override
-    public void onFailed(DownloadWidget widget, String error) {
+    private void cancelDownload() {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        if (id >= 0) DiskDownloadManager.cancel(id);
+        downloadWidget.markExternalCancelled();
         isDownloading = false;
         setInputsEnabled(true);
         fabDownload.setVisibility(VISIBLE);
+        downloadWidget.setVisibility(GONE);
     }
 
-    @Override
-    public void onCancelled(DownloadWidget widget) {
+    private void onDownloadFailed(@Nullable String reason) {
+        long id = currentDownloadId;
+        currentDownloadId = -1;
+        pollHandler.removeCallbacks(pollRunnable);
+        if (id >= 0) DiskDownloadManager.cancel(id);
+        downloadWidget.markExternalFailed(reason);
         isDownloading = false;
         setInputsEnabled(true);
         fabDownload.setVisibility(VISIBLE);
