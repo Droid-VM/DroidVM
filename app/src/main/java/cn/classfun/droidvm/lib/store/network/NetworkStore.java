@@ -40,12 +40,29 @@ public final class NetworkStore extends DataStore<NetworkConfig> {
         try {
             store.clear();
             JsonUtils.forEachArray(obj, getTypeName(), (JSONObject entry) -> {
-                if (!NetworkConfig.isSupportedSchema(entry)) {
+                var migrated = NetworkConfig.migrate(entry);
+                if (migrated == null) {
                     Log.w(TAG, "Skipping network config with unsupported schema: "
                         + entry.optString("name"));
                     return;
                 }
-                store.addObject(entry);
+                if (migrated == entry) { // already current schema
+                    store.addObject(entry);
+                    return;
+                }
+                // A config we just upgraded from a legacy schema: only keep it
+                // if the migrated result actually validates (e.g. a DHCP pool
+                // offset that lands outside the network is rejected here).
+                NetworkConfig cfg;
+                try {
+                    cfg = new NetworkConfig(migrated);
+                    NetworkConfigValidator.validate(cfg);
+                } catch (Exception e) {
+                    Log.w(TAG, "Skipping legacy network that failed migration/validation: "
+                        + entry.optString("name"), e);
+                    return;
+                }
+                store.add(cfg);
             });
             return true;
         } catch (Exception e) {

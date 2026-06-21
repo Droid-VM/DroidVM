@@ -92,6 +92,31 @@ public final class VMNicConfig {
         return lease("dhcp6_lease").optLong("offset", 64);
     }
 
+    /**
+     * Whether this NIC has a concrete DHCPv4 lease offset stored. A migrated
+     * config (or any lease enabled without an offset) leaves it empty; the
+     * offset is allocated at start time. Reads without creating the lease
+     * object so it stays a pure query.
+     */
+    public boolean hasDhcp4Offset() {
+        return hasOffset("dhcp4_lease");
+    }
+
+    public boolean hasDhcp6Offset() {
+        return hasOffset("dhcp6_lease");
+    }
+
+    private boolean hasOffset(@NonNull String leaseKey) {
+        var l = item.opt(leaseKey, null);
+        if (l == null || !l.is(DataItem.Type.OBJECT)) return false;
+        var off = l.opt("offset", null);
+        return off != null && off.is(DataItem.Type.INTEGER) && off.asInteger() > 0;
+    }
+
+    public void setDhcp4Offset(long offset) {
+        lease("dhcp4_lease").set("offset", offset);
+    }
+
     @NonNull
     public List<PortForward> getDhcp4Forwards() {
         return forwards("dhcp4_lease");
@@ -167,6 +192,13 @@ public final class VMNicConfig {
                 );
             if (mac == null)
                 throw new IllegalArgumentException("DHCPv4 static lease requires a MAC address");
+            // an unassigned offset means there is no IP to boot with. Every
+            // path but daemon autoUp assigns one first (the GUI forces it, app
+            // start runs the allocator), so an empty offset here is a migrated
+            // VM autoUp has never resolved -- refuse rather than guess.
+            if (!hasDhcp4Offset())
+                throw new IllegalArgumentException(
+                    "DHCPv4 static lease has no assigned offset");
             var net4 = vlan.getIpv4Network();
             if (net4 != null) net4.addressAtOffset(getDhcp4Offset());
             for (var fwd : getDhcp4Forwards()) {
@@ -181,6 +213,9 @@ public final class VMNicConfig {
                 throw new IllegalArgumentException(
                     "DHCPv6 static lease requires an L3 network with DHCPv6 enabled"
                 );
+            if (!hasDhcp6Offset())
+                throw new IllegalArgumentException(
+                    "DHCPv6 static lease has no assigned offset");
             var net6 = vlan.getIpv6Network();
             if (net6 != null) net6.addressAtOffset(getDhcp6Offset());
             for (var fwd : getDhcp6Forwards()) {

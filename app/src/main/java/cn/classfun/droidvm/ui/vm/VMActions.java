@@ -284,6 +284,10 @@ public final class VMActions {
         @NonNull AtomicBoolean wantOpenConsole,
         @Nullable String bootEntry
     ) {
+        // migrated / decoupled NICs may have a static lease enabled but no
+        // offset yet; assign a conflict-free one (and persist it) before the
+        // config is pushed to the daemon, which never allocates offsets itself
+        NicLeaseAllocator.resolveAndPersist(config, ui.getContext());
         var conn = DaemonConnection.getInstance();
         var createReq = conn.buildRequest("vm_exists");
         createReq.put("vm_id", config.getId().toString());
