@@ -47,6 +47,7 @@ import java.util.concurrent.Executors;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.download.DiskDownloadManager;
 import cn.classfun.droidvm.lib.download.DiskDownloadService;
+import cn.classfun.droidvm.lib.ui.NotificationPermission;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.lib.utils.NetUtils.HttpException;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
@@ -68,6 +69,7 @@ public final class ImportURLActivity extends AppCompatActivity {
     private KernelAnalysisWidget kernelAnalysis;
     private NestedScrollView scrollView;
     private ExtendedFloatingActionButton fabImport;
+    private NotificationPermission notifPermission;
     private CollapsingToolbarLayout collapsingToolbar;
     private MaterialToolbar toolbar;
     private boolean isLoading = false;
@@ -83,6 +85,7 @@ public final class ImportURLActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_import_url);
+        notifPermission = new NotificationPermission(this);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         toolbar = findViewById(R.id.toolbar);
         inputUrl = findViewById(R.id.input_url);
@@ -345,7 +348,7 @@ public final class ImportURLActivity extends AppCompatActivity {
         }
         downloadName = name;
         downloadFolder = folder;
-        startDownload(urlStr);
+        notifPermission.ensureThen(() -> startDownload(urlStr));
     }
 
     private void startDownload(String url) {

@@ -933,4 +933,9 @@
     <string name="hugepage_stop_confirm">確定要停止大頁預留模組嗎？這將釋放所有預分配的頁面，可能會影響正在執行的虛擬機器。</string>
     <string name="hugepage_unloaded">模組已解除安裝</string>
     <string name="hugepage_unload_failed">解除安裝模組失敗</string>
+
+    <string name="notification_permission_title">允許通知？</string>
+    <string name="notification_permission_message">DroidVM 會在背景下載磁碟映像，並透過通知顯示進度。請允許通知，以便隨時查看下載進度。</string>
+    <string name="notification_permission_allow">繼續</string>
+    <string name="notification_permission_skip">暫不</string>
 </resources>
