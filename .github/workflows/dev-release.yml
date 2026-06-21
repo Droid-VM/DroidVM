@@ -20,6 +20,8 @@ concurrency:
 jobs:
   dev-release:
     runs-on: ubuntu-latest
+    env:
+      HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
 
     steps:
       - name: Checkout repository
@@ -45,13 +47,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # With a signing key: build and sign a real release APK (current
+      # behaviour). Without one: ship the debug APK -- signed with the
+      # auto-generated debug keystore -- instead of an unsigned release.
       - name: Build release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
         run: ./gradlew assembleRelease
 
       - name: Sign release APK
         if: ${{ env.HAS_SIGN_KEY == 'true' }}
         env:
-          HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
           APP_SIGN_KEY_JKS: ${{ secrets.APP_SIGN_KEY_JKS }}
           APP_SIGN_KEY_PASS: ${{ secrets.APP_SIGN_KEY_PASS }}
         run: |
@@ -68,11 +73,19 @@ jobs:
             "$ALIGNED"
           rm -f "$ALIGNED" /tmp/keystore.jks
 
+      - name: Build debug APK (no signing key)
+        if: ${{ env.HAS_SIGN_KEY != 'true' }}
+        run: ./gradlew assembleDebug
+
       - name: Stage APK
         run: |
           set -euo pipefail
           mkdir -p release
-          cp app/build/outputs/apk/release/*.apk "release/DroidVM-dev.apk"
+          if [ "${HAS_SIGN_KEY}" = "true" ]; then
+            cp app/build/outputs/apk/release/*.apk "release/DroidVM-dev.apk"
+          else
+            cp app/build/outputs/apk/debug/*.apk "release/DroidVM-dev.apk"
+          fi
 
       - name: Publish rolling dev pre-release
         env:

@@ -11,6 +11,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
 
     steps:
       - name: Checkout repository
@@ -36,10 +38,15 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # With a signing key: build and sign a real release APK (current
+      # behaviour). Without one: ship the debug APK -- signed with the
+      # auto-generated debug keystore -- instead of an unsigned release.
       - name: Build release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
         run: ./gradlew assembleRelease
 
       - name: Sign release APK
+        if: ${{ env.HAS_SIGN_KEY == 'true' }}
         env:
           APP_SIGN_KEY_JKS: ${{ secrets.APP_SIGN_KEY_JKS }}
           APP_SIGN_KEY_PASS: ${{ secrets.APP_SIGN_KEY_PASS }}
@@ -57,6 +64,10 @@ jobs:
             "$ALIGNED"
           rm -f "$ALIGNED" /tmp/keystore.jks
 
+      - name: Build debug APK (no signing key)
+        if: ${{ env.HAS_SIGN_KEY != 'true' }}
+        run: ./gradlew assembleDebug
+
       - name: Get version info
         id: version
         run: |
@@ -70,8 +81,13 @@ jobs:
 
       - name: Rename APK
         run: |
+          set -euo pipefail
           mkdir -p release
-          cp app/build/outputs/apk/release/*.apk "release/DroidVM-v${{ steps.version.outputs.name }}.apk"
+          if [ "${HAS_SIGN_KEY}" = "true" ]; then
+            cp app/build/outputs/apk/release/*.apk "release/DroidVM-v${{ steps.version.outputs.name }}.apk"
+          else
+            cp app/build/outputs/apk/debug/*.apk "release/DroidVM-v${{ steps.version.outputs.name }}-debug.apk"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -79,4 +95,4 @@ jobs:
           name: DroidVM v${{ steps.version.outputs.name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: release/DroidVM-v${{ steps.version.outputs.name }}.apk
+          files: release/*.apk
