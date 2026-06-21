@@ -50,10 +50,19 @@ final class GvswitchConfigBuilder {
         // per-family SNAT toggles are expressed via deny ranges
         boolean snat4 = net4 != null && vlan.isIpv4Snat();
         boolean snat6 = net6 != null && vlan.isIpv6Snat();
-        gw.put("enable_internet_routing", snat4 || snat6);
+        boolean routing = snat4 || snat6;
+        gw.put("enable_internet_routing", routing);
+        // The single routing switch serves both families, so once it's on we
+        // deny each family that isn't SNAT-enabled. !snat covers both cases:
+        // SNAT toggled off, and the family having no network at all.
         var deny = new JSONArray();
-        if (!snat4 && snat6) deny.put("0.0.0.0/0");
-        if (!snat6 && snat4 && net6 != null) deny.put("::/0");
+        if (routing) {
+            if (!snat4) deny.put("0.0.0.0/0");
+            // slirpnetstack's range parser splits on bare ':' outside
+            // brackets, so an IPv6 CIDR must be bracketed ("[::]/0"); a
+            // plain "::/0" fails with "error parsing ipportrange".
+            if (!snat6) deny.put("[::]/0");
+        }
         if (deny.length() > 0) gw.put("deny", deny);
         // No explicit DNS: gvswitch advertises the gateway IP via DHCP and
         // the dns_proxy answers it through the Android system resolver

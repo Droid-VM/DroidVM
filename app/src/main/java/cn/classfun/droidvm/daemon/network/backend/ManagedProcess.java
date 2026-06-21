@@ -122,6 +122,13 @@ public class ManagedProcess {
     }
 
     public synchronized void stop() {
+        // Diagnostic: a live helper being stopped is either a legitimate
+        // teardown or the still-unexplained SIGTERM source -- log who asked so
+        // the caller is identifiable in logcat. Restarts go through start()
+        // only after the process already died, so this stays quiet for those.
+        if (running)
+            Log.w(logTag, fmt("stop() on live process; caller:\n%s",
+                Log.getStackTraceString(new Throwable())));
         running = false;
         if (monitor != null) {
             monitor.interrupt();

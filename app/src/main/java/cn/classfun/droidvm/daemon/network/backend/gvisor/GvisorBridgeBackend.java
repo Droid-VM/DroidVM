@@ -20,6 +20,7 @@ import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,6 +48,8 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     private final String id8;
     private String token = null;
     private GvswitchClient client = null;
+    /** Set once stop() runs so the watchdog never relaunches a torn-down switch. */
+    private volatile boolean stopped = false;
     /** tapName -> NIC config of currently attached ports. */
     private final Map<String, VMNicConfig> attached = new ConcurrentHashMap<>();
     /** tapName -> installed gvswitch forward refs ("vlan/id"). */
@@ -71,7 +74,12 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     }
 
     @Override
-    public void start() throws Exception {
+    public synchronized void start() throws Exception {
+        launch();
+    }
+
+    /** (Re)writes the config, spawns gvswitch and waits for its API. */
+    private synchronized void launch() throws Exception {
         var bytes = new byte[16];
         random.nextBytes(bytes);
         var sb = new StringBuilder();
@@ -103,6 +111,41 @@ public final class GvisorBridgeBackend extends BridgeBackend {
         waitReady();
     }
 
+    /**
+     * Watchdog tick: gvswitch IS the data path here, so if it died the whole
+     * network is down. Relaunch it and re-attach every port that was attached
+     * -- the taps are daemon-owned and still exist (crosvm holds them open), so
+     * we only re-POST the af_xdp ports + their static leases and forwards; the
+     * taps are never touched. Dynamic gvswitch state (learned FDB, DHCP leases)
+     * is rebuilt by the guests reconnecting through the restored switch.
+     */
+    @Override
+    public synchronized void reconcile() {
+        if (stopped || process.isRunning()) return;
+        var nics = new LinkedHashMap<>(attached);
+        Log.w(TAG, fmt(
+            "gvswitch %s is down (exit=%d), restarting and re-attaching %d port(s)",
+            id8, process.getExitCode(), nics.size()
+        ));
+        // The previous process's installs are gone; rebuild them from scratch.
+        installedForwards.clear();
+        forwardFailures.clear();
+        try {
+            launch();
+        } catch (Exception e) {
+            Log.e(TAG, fmt("gvswitch %s relaunch failed", id8), e);
+            return;
+        }
+        for (var e : nics.entrySet()) {
+            try {
+                postPort(e.getValue(), e.getKey());
+            } catch (Exception ex) {
+                Log.w(TAG, fmt("Re-attach of port %s failed", e.getKey()), ex);
+            }
+        }
+        Log.i(TAG, fmt("gvswitch %s recovered", id8));
+    }
+
     private void waitReady() throws Exception {
         var deadline = System.currentTimeMillis() + 5000;
         Exception last = null;
@@ -124,7 +167,8 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     }
 
     @Override
-    public void stop() {
+    public synchronized void stop() {
+        stopped = true;
         attached.clear();
         installedForwards.clear();
         forwardFailures.clear();
@@ -136,7 +180,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     }
 
     @Override
-    public void attachNic(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
+    public synchronized void attachNic(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
         if (client == null) throw new IllegalStateException("gvswitch not running");
         var net = inst.getStore().backend;
         if (net.isInterfaceExists(tapName)) net.deleteTap(tapName);
@@ -145,25 +189,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
         try {
             if (!net.setLinkState(tapName, true))
                 throw new RuntimeException(fmt("Failed to bring up TAP %s", tapName));
-            var port = new JSONObject();
-            port.put("identifier", tapName);
-            var vlanId = nic.getVlanId();
-            port.put("vlan", vlanId == null ? 4095 : vlanId);
-            if (nic.isIsolated()) port.put("isolated", true);
-            var mac = nic.getMacAddress();
-            if (nic.isMacSecurity() && mac != null)
-                port.put("port_security", mac);
-            port.put("mode", "client");
-            port.put("transport", "af_xdp");
-            port.put("interface", tapName);
-            port.put("bpdu_guard", true);
-            var response = client.post("/api/v1/ports", port);
-            if (!response.isSuccess())
-                throw new RuntimeException(fmt(
-                    "gvswitch port create failed (%d): %s", response.code, response.body));
-            attached.put(tapName, nic);
-            applyStaticLeases(nic, tapName);
-            installNicForwards(nic, tapName);
+            postPort(nic, tapName);
         } catch (Exception e) {
             attached.remove(tapName);
             try {
@@ -173,6 +199,34 @@ public final class GvisorBridgeBackend extends BridgeBackend {
             net.deleteTap(tapName);
             throw e;
         }
+    }
+
+    /**
+     * Creates the gvswitch af_xdp port over the (already existing, up) tap plus
+     * its static leases and forwards. Never creates or deletes the tap, so it
+     * is reusable for watchdog re-attach without disturbing crosvm.
+     */
+    private void postPort(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
+        if (client == null) throw new IllegalStateException("gvswitch not running");
+        var port = new JSONObject();
+        port.put("identifier", tapName);
+        var vlanId = nic.getVlanId();
+        port.put("vlan", vlanId == null ? 4095 : vlanId);
+        if (nic.isIsolated()) port.put("isolated", true);
+        var mac = nic.getMacAddress();
+        if (nic.isMacSecurity() && mac != null)
+            port.put("port_security", mac);
+        port.put("mode", "client");
+        port.put("transport", "af_xdp");
+        port.put("interface", tapName);
+        port.put("bpdu_guard", true);
+        var response = client.post("/api/v1/ports", port);
+        if (!response.isSuccess())
+            throw new RuntimeException(fmt(
+                "gvswitch port create failed (%d): %s", response.code, response.body));
+        attached.put(tapName, nic);
+        applyStaticLeases(nic, tapName);
+        installNicForwards(nic, tapName);
     }
 
     private void applyStaticLeases(@NonNull VMNicConfig nic, @NonNull String tapName)
@@ -361,7 +415,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     }
 
     @Override
-    public void detachNic(@NonNull VMNicConfig nic, @NonNull String tapName) {
+    public synchronized void detachNic(@NonNull VMNicConfig nic, @NonNull String tapName) {
         attached.remove(tapName);
         if (client != null) {
             try {

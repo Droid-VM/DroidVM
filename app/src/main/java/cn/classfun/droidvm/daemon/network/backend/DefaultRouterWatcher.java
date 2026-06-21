@@ -18,6 +18,9 @@ import java.util.concurrent.TimeUnit;
 import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.Constants;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
+import cn.classfun.droidvm.lib.store.network.NetworkState;
+import cn.classfun.droidvm.lib.store.network.UplinkMode;
 
 public final class DefaultRouterWatcher {
     private static final String TAG = "DefaultRouterWatcher";
@@ -96,7 +99,19 @@ public final class DefaultRouterWatcher {
         context.getNetworks().forEach((uuid, inst) -> {
             var br = inst.getBridgeName();
             if (br != null && !br.isEmpty()) bridges.add(br);
-            if (table != null) desired.addAll(inst.getL3Devices());
+            // Only a running Linux-bridge L3 network has a real kernel bridge
+            // that forwarded guest traffic needs an "iif <bridge> lookup
+            // <table>" rule for. gvisor is a userspace data path (gvswitch +
+            // AF_XDP) with no kernel device for its bridge name, so a rule on
+            // it would sit [detached] and flap every tick; a stopped network
+            // has no bridge either. Whitelist the one case that needs rules --
+            // any other backend is excluded by default. Both still go into
+            // `bridges` above so their leftover rules are swept here.
+            if (table != null
+                && inst.getState() == NetworkState.RUNNING
+                && inst.getBridgeType() == BridgeType.LINUX
+                && inst.getUplinkMode() == UplinkMode.L3)
+                desired.addAll(inst.getL3Devices());
         });
 
         var satisfied = new LinkedHashSet<String>();

@@ -32,11 +32,17 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
     public final FirewallHelper firewall = new IptablesBackend();
     public final LinuxNetwork backend = new LinuxNetwork();
     public final ServerContext context;
+    private final NetworkWatchdog watchdog = new NetworkWatchdog(this);
 
     public NetworkInstanceStore(@NonNull ServerContext context) {
         super();
         this.context = context;
         Log.i(TAG, "Network instance store initialized");
+    }
+
+    /** Starts the helper-process watchdog (idempotent); called when a network comes up. */
+    public void ensureWatchdog() {
+        watchdog.start();
     }
 
     @Override
@@ -146,6 +152,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
 
     public void stopAll() {
         Log.i(TAG, "Stopping all networks...");
+        watchdog.stop();
         var toStop = new ArrayList<NetworkInstance>();
         forEach((id, inst) -> {
             var s = inst.getState();

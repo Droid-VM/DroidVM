@@ -307,6 +307,20 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         forwardFailures.clear();
     }
 
+    /**
+     * Restarts pbridge / bridgedhcp if they died. The kernel bridge is the data
+     * path, so these are auxiliary: pbridge (Wi-Fi uplink offload) is stateless,
+     * and bridgedhcp recovers its leases/PD from its state file. The tap ports
+     * stay enslaved to the bridge throughout, so nothing here touches them.
+     */
+    @Override
+    public void reconcile() {
+        var p = pbridge;
+        if (p != null) p.reconcile();
+        var d = dhcp;
+        if (d != null) d.reconcile();
+    }
+
     @Override
     public void attachNic(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
         if (net.isInterfaceExists(tapName)) net.deleteTap(tapName);

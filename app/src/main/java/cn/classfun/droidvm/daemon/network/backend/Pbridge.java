@@ -16,18 +16,15 @@ import java.util.List;
  */
 public final class Pbridge {
     private static final String TAG = "Pbridge";
-    private static final int MAX_RESTARTS = 3;
     private final ManagedProcess process;
     private final String uplink;
     private final String bridge;
-    private int restarts = 0;
     private volatile boolean active = false;
 
     public Pbridge(@NonNull String uplink, @NonNull String bridge) {
         this.uplink = uplink;
         this.bridge = bridge;
         this.process = new ManagedProcess("pbridge", bridge);
-        this.process.setOnUnexpectedExit(this::onUnexpectedExit);
     }
 
     @NonNull
@@ -49,7 +46,6 @@ public final class Pbridge {
 
     public boolean start() {
         active = true;
-        restarts = 0;
         return process.start(buildArgs());
     }
 
@@ -58,25 +54,17 @@ public final class Pbridge {
         process.stop();
     }
 
-    private void onUnexpectedExit() {
-        if (!active) return;
-        if (restarts >= MAX_RESTARTS) {
-            Log.e(TAG, fmt(
-                "pbridge for %s died %d times, giving up", bridge, restarts
-            ));
-            return;
-        }
-        restarts++;
+    /**
+     * Restarts pbridge if it died (stateless eBPF forwarder; a fresh process
+     * re-establishes the data path). Called on the watchdog's 5s tick while the
+     * network is running. Returns true when healthy.
+     */
+    public synchronized boolean reconcile() {
+        if (!active || process.isRunning()) return true;
         Log.w(TAG, fmt(
-            "Restarting pbridge for %s (attempt %d/%d)", bridge, restarts, MAX_RESTARTS
+            "pbridge for %s is down (exit=%d), restarting", bridge, process.getExitCode()
         ));
-        try {
-            Thread.sleep(1000L * restarts);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return;
-        }
-        if (active) process.start(buildArgs());
+        return process.start(buildArgs());
     }
 
     public boolean isRunning() {

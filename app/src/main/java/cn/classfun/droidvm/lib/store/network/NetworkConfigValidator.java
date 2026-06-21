@@ -28,8 +28,11 @@ public final class NetworkConfigValidator {
         var bridgeName = config.getBridgeName();
         if (bridgeName == null || !bridgeName.matches("[a-zA-Z][a-zA-Z0-9_-]*"))
             throw new IllegalArgumentException(fmt("Invalid bridge name: %s", bridgeName));
-        if (bridgeName.length() > 15)
-            throw new IllegalArgumentException("Bridge name longer than 15 characters");
+        // Cap at 12 so the longest derived name still fits IFNAMSIZ (15 usable):
+        // a per-VLAN bridge / trunk leg appends "v" or "." plus a 2-char VLAN
+        // code (bridge + 3). See LinuxNetwork.vlanCode / perVlanBridge.
+        if (bridgeName.length() > 12)
+            throw new IllegalArgumentException("Bridge name longer than 12 characters");
 
         var type = config.getBridgeType();
         var mode = config.getUplinkMode();

@@ -10,6 +10,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputFilter;
 import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -50,6 +51,11 @@ import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class NetworkEditActivity extends AppCompatActivity {
     public static final String EXTRA_NETWORK_ID = "network_id";
+    /** bridge + "v"/"." + 2-char VLAN code must fit IFNAMSIZ (15 usable). */
+    private static final int MAX_BRIDGE_NAME_LEN = 12;
+    /** Interface-name charset: ASCII letters, digits, hyphen, underscore. */
+    private static final InputFilter BRIDGE_NAME_CHARSET = (src, start, end, dst, ds, de) ->
+        src.subSequence(start, end).toString().matches("[A-Za-z0-9_-]*") ? null : "";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
     private final List<VlanConfig> vlans = new ArrayList<>();
@@ -62,10 +68,10 @@ public final class NetworkEditActivity extends AppCompatActivity {
     private String selectedUplink = UplinkResolver.ID_WIFI;
     private boolean editMode = false;
     private UUID editNetworkId = null;
-    private String existingBridgeName = null;
     private CollapsingToolbarLayout collapsingToolbar;
     private TextView tvRunningBanner;
     private TextInputRowWidget inputName;
+    private TextInputRowWidget inputBridge;
     private SwitchRowWidget swAutoUp, swStp;
     private DropdownRowWidget ddBridgeType, ddUplinkMode;
     private DropdownRowWidget ddL2Uplink;
@@ -90,6 +96,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         tvRunningBanner = findViewById(R.id.tv_running_banner);
         inputName = findViewById(R.id.input_name);
+        inputBridge = findViewById(R.id.input_bridge);
         swAutoUp = findViewById(R.id.sw_auto_up);
         swStp = findViewById(R.id.sw_stp);
         ddBridgeType = findViewById(R.id.dd_bridge_type);
@@ -128,6 +135,10 @@ public final class NetworkEditActivity extends AppCompatActivity {
         ddL2Uplink.setOnItemClickListener((p, v, pos, id) -> onUplinkSelected(pos));
         btnAddVlan.setOnClickListener(v -> onAddVlan());
         inputMac.setEndIconOnClickListener(v -> inputMac.setText(generateRandomMac()));
+        inputBridge.setFilters(new InputFilter[]{
+            new InputFilter.LengthFilter(MAX_BRIDGE_NAME_LEN),
+            BRIDGE_NAME_CHARSET,
+        });
         fab.setOnClickListener(v -> onSaveClicked());
         updateUplinkModeDropdown();
         loadUplinks();
@@ -311,6 +322,8 @@ public final class NetworkEditActivity extends AppCompatActivity {
         uplinkMode = UplinkMode.L3;
         ddUplinkMode.setText(labelOfMode(uplinkMode));
         inputMac.setText(generateRandomMac());
+        // suggest "br" + 8 UUID hex (10 chars, within the 12 cap); user may edit
+        inputBridge.setText(fmt("br%s", UUID.randomUUID().toString().substring(0, 8)));
         vlans.add(newVlan(0));
     }
 
@@ -422,7 +435,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         swStp.setChecked(config.isStp());
         bridgeType = config.getBridgeType();
         uplinkMode = config.getUplinkMode();
-        existingBridgeName = config.getBridgeName();
+        inputBridge.setText(config.getBridgeName());
         ddUplinkMode.setText(labelOfMode(uplinkMode));
         var l2Uplink = config.getL2Uplink();
         if (l2Uplink != null && !l2Uplink.isEmpty()) selectedUplink = l2Uplink;
@@ -508,13 +521,26 @@ public final class NetworkEditActivity extends AppCompatActivity {
             inputName.setError(getString(R.string.network_edit_error_name_duplicate));
             return;
         }
+        var bridgeName = inputBridge.getText().trim();
+        if (bridgeName.isEmpty()) {
+            inputBridge.setError(getString(R.string.network_edit_error_bridge_empty));
+            return;
+        }
+        if (!bridgeName.matches("[a-zA-Z][a-zA-Z0-9_-]*")
+            || bridgeName.length() > MAX_BRIDGE_NAME_LEN) {
+            inputBridge.setError(getString(R.string.network_edit_error_bridge_invalid));
+            return;
+        }
+        inputBridge.setError(null);
+        if (!store.isBridgeNameUnique(bridgeName, editNetworkId)) {
+            inputBridge.setError(getString(R.string.network_edit_error_bridge_duplicate));
+            return;
+        }
         var config = new NetworkConfig();
         if (editMode && editNetworkId != null)
             config.setId(editNetworkId);
         config.setName(name);
-        config.setBridgeName(existingBridgeName != null
-            ? existingBridgeName
-            : fmt("br%s", config.getId().toString().substring(0, 8).replace("-", "")));
+        config.setBridgeName(bridgeName);
         config.item.set("auto_up", swAutoUp.isChecked());
         config.item.set("stp", swStp.isChecked());
         config.setBridgeType(bridgeType);

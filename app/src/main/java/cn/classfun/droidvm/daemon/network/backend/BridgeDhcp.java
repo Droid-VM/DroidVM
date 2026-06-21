@@ -54,6 +54,7 @@ public final class BridgeDhcp {
     private final ManagedProcess process;
     private final PdListener pdListener;
     private final String apiKey;
+    private volatile boolean active = false;
     private GvswitchClient client = null;
 
     public BridgeDhcp(@NonNull NetworkInstance inst, @Nullable PdListener pdListener) {
@@ -80,6 +81,7 @@ public final class BridgeDhcp {
     }
 
     public boolean start() {
+        active = true;
         try {
             writeKeyFile();
             writeConf();
@@ -97,8 +99,24 @@ public final class BridgeDhcp {
     }
 
     public void stop() {
+        active = false;
         process.stop();
         client = null;
+    }
+
+    /**
+     * Restarts bridgedhcp if it died. The helper reloads its persisted state
+     * file on start, so active DHCP leases and PD delegations survive the
+     * restart; config and static leases are rebuilt deterministically. Called
+     * on the watchdog's 5s tick while the network is running. Returns true when
+     * healthy.
+     */
+    public synchronized boolean reconcile() {
+        if (!active || process.isRunning()) return true;
+        Log.w(TAG, fmt(
+            "bridgedhcp for %s is down (exit=%d), restarting", br, process.getExitCode()
+        ));
+        return restart();
     }
 
     /**
@@ -107,7 +125,7 @@ public final class BridgeDhcp {
      * the now-resolvable interface gets a PD client. Persisted leases and PD
      * delegations survive via the state file.
      */
-    public boolean restart() {
+    public synchronized boolean restart() {
         stop();
         return start();
     }

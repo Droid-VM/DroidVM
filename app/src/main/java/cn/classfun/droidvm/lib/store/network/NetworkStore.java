@@ -4,11 +4,13 @@ import android.content.Context;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.base.DataStore;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
@@ -51,6 +53,15 @@ public final class NetworkStore extends DataStore<NetworkConfig> {
             store.clear();
             return false;
         }
+    }
+
+    /** True if no other network (besides {@code exclude}) uses this bridge name. */
+    public boolean isBridgeNameUnique(@NonNull String bridgeName, @Nullable UUID exclude) {
+        for (var item : dataMap) {
+            if (exclude != null && exclude.equals(item.getId())) continue;
+            if (bridgeName.equals(item.getBridgeName())) return false;
+        }
+        return true;
     }
 
     @NonNull

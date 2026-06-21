@@ -34,6 +34,13 @@ public abstract class BridgeBackend {
     public abstract void stop();
 
     /**
+     * Watchdog tick (every 5s while the network is RUNNING): restart any helper
+     * process that has died and re-initialise its state. Must be idempotent and
+     * a no-op when everything is healthy. Default: nothing to supervise.
+     */
+    public void reconcile() {}
+
+    /**
      * Creates the tap device for one VM NIC and applies the per-port
      * settings (VLAN, isolation, MAC security), static DHCP leases and
      * port forwards.

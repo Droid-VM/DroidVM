@@ -66,6 +66,14 @@
                     android:icon="@drawable/ic_edit"
                     android:inputType="text" />
 
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_bridge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/network_edit_bridge_hint"
+                    android:icon="@drawable/ic_switch"
+                    android:inputType="textNoSuggestions" />
+
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                     android:id="@+id/sw_auto_up"
                     android:layout_width="match_parent"

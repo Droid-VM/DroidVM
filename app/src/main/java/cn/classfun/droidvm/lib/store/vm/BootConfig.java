@@ -74,7 +74,7 @@ public final class BootConfig {
         }
     }
 
-    public static final long DEFAULT_BOOT_WAIT = 1;
+    public static final long DEFAULT_BOOT_WAIT = 2;
 
     /** Manual-source cmdline seed: first virtio disk, second partition. */
     public static final String DEFAULT_MANUAL_CMDLINE = "root=/dev/vda2";

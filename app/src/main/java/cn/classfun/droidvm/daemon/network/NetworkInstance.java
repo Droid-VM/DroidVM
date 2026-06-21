@@ -85,6 +85,7 @@ public final class NetworkInstance extends NetworkConfig {
             backend = createBackend();
             backend.start();
             state = NetworkState.RUNNING;
+            store.ensureWatchdog();
             Log.i(TAG, fmt(
                 "Network %s started on bridge %s", getName(), getBridgeName()
             ));
@@ -131,6 +132,21 @@ public final class NetworkInstance extends NetworkConfig {
         state = NetworkState.STOPPED;
         Log.i(TAG, fmt("Network %s stopped", getName()));
         return true;
+    }
+
+    /**
+     * Watchdog entry point: while the network is RUNNING, ask the backend to
+     * restart and re-initialise any helper that has died. No-op otherwise, so a
+     * stopping/stopped network is never resurrected.
+     */
+    public void reconcile() {
+        var b = backend;
+        if (state != NetworkState.RUNNING || b == null) return;
+        try {
+            b.reconcile();
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Reconcile failed for network %s", getName()), e);
+        }
     }
 
     /** Name of a non-stopped VM with a NIC on this network, or null. */
