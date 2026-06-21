@@ -1,6 +1,7 @@
 package cn.classfun.droidvm.daemon.server;
 
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
+import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
@@ -28,10 +29,15 @@ public final class ServerContext {
         networks.load(new File(filesDir, networks.getFileName()));
         Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         vms.setNetworkStore(networks);
-        // strays survive a daemon crash (children are orphaned, not killed)
+        // Strays survive a daemon crash or a forced (SIGKILL) takeover: the
+        // children are orphaned, not killed. Reap any left over from a previous
+        // daemon before we start fresh and auto-up. VM backends are matched by
+        // their full prebuilt path so unrelated processes are never hit.
         run("pkill dnsmasq");
         run("pkill gvswitch");
         run("pkill pbridge");
+        run("pkill -f %s", getPrebuiltBinaryPath("crosvm"));
+        run("pkill -f %s", getPrebuiltBinaryPath("qemu-system-aarch64"));
         try {
             networks.firewall.initialize();
         } catch (Exception e) {
