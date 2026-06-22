@@ -3,6 +3,9 @@ package cn.classfun.droidvm.ui.vm.edit.base;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
+
+import com.google.android.material.snackbar.Snackbar;
 
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -23,6 +26,15 @@ public abstract class VMEditBaseTab {
 
     /** Called when this tab becomes the visible one. */
     public void onTabShown() {
+    }
+
+    protected final boolean showValidateFailed(@StringRes int message) {
+        return showValidateFailed(parent.getString(message));
+    }
+
+    protected final boolean showValidateFailed(@NonNull CharSequence message) {
+        Snackbar.make(parent, view, message, Snackbar.LENGTH_LONG).show();
+        return false;
     }
 
     public abstract void loadConfig(@NonNull VMConfig config);
