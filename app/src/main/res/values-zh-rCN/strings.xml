@@ -879,4 +879,19 @@
     <string name="notification_permission_message">DroidVM 会在后台下载磁盘镜像，并通过通知显示进度。请允许通知，以便随时查看下载进度。</string>
     <string name="notification_permission_allow">继续</string>
     <string name="notification_permission_skip">暂不</string>
+
+    <string name="log_helper_open_url">打开</string>
+    <string name="log_helper_bad_sm8650_kernel_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9AGunyah%E8%B5%84%E6%BA%90%E7%AE%A1%E7%90%86%E5%99%A8%E6%8B%92%E7%BB%9D%E5%90%AF%E5%8A%A8%E8%99%9A%E6%8B%9F%E6%9C%BA</string>
+    <string name="log_helper_bad_sm8650_kernel_title">Gunyah资源管理器拒绝启动虚拟机</string>
+    <string name="log_helper_bad_sm8650_kernel_message">您的设备运行的内核存在某些问题，请尝试更换或重新编译。\n请尝试开启或关闭"预分配大页"选项。\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_huge_page_fault_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9A%E8%99%9A%E6%8B%9F%E6%9C%BA%E8%BF%90%E8%A1%8C%E6%97%B6%E5%87%BA%E7%8E%B0%E5%86%85%E5%AD%98%E4%B8%8D%E8%B6%B3%E9%94%99%E8%AF%AF</string>
+    <string name="log_helper_huge_page_fault_title">大页内存不足</string>
+    <string name="log_helper_huge_page_fault_message">虚拟机 %1$s 遇到了大页内存不足的情况。\n请尝试修改内存大小，或者使用预分配模块。\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9A%E8%99%9A%E6%8B%9F%E6%9C%BA%E7%9A%84%E7%B3%BB%E7%BB%9F%E4%B8%8D%E6%94%AF%E6%8C%81SWIOTLB-Restrict-DMA-Pool</string>
+    <string name="log_helper_no_restrict_pool_title">虚拟机内核功能缺失</string>
+    <string name="log_helper_no_restrict_pool_message">虚拟机 %1$s 的内核不支持 Restricted DMA Pool。\n请更换内核或使用DroidVM内置内核。\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_unsupported_gunyah_title">不支持的Gunyah版本</string>
+    <string name="log_helper_unsupported_gunyah_message">您的设备上的Gunyah版本过旧（如骁龙8 Gen 2），请尝试更新系统或更换新的设备。</string>
+    <string name="log_helper_unsupported_sandbox_title">沙箱模式不支持</string>
+    <string name="log_helper_unsupported_sandbox_message">crosvm的沙箱模式在此平台不可用，请禁用沙箱模式。</string>
 </resources>

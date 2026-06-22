@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.diag.LogHelper;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
@@ -57,6 +58,7 @@ public final class VMEventHandler implements
     private int activeActivityCount = 0;
     private WeakReference<Activity> currentActivity = new WeakReference<>(null);
     private volatile boolean hashMismatchShown = false;
+    private final LogHelper logHelper = new LogHelper(this);
 
     public interface ActivityTask {
         void run(@NonNull Activity activity);
@@ -140,6 +142,7 @@ public final class VMEventHandler implements
 
     @Override
     public void onDaemonEvent(@NonNull JSONObject msg) {
+        logHelper.onDaemonEvent(msg);
         var type = msg.optString("type", "");
         if (!type.equals("event")) return;
         var data = msg.optJSONObject("data");

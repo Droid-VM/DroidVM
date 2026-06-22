@@ -916,4 +916,19 @@
     <string name="notification_permission_message">DroidVM downloads disk images in the background and shows the progress in a notification. Allow notifications so you can keep an eye on the download.</string>
     <string name="notification_permission_allow">Continue</string>
     <string name="notification_permission_skip">Not now</string>
+
+    <string name="log_helper_open_url">Open</string>
+    <string name="log_helper_bad_sm8650_kernel_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-Gunyah-Resource-Manager-refuses-to-start-the-virtual-machine%2e</string>
+    <string name="log_helper_bad_sm8650_kernel_title">Gunyah Resource Manager refuses to start the virtual machine</string>
+    <string name="log_helper_bad_sm8650_kernel_message">There are some issues with the kernel running on your device. Try replacing or recompiling it.\nTry enabling or disabling the "Prepare Lend mTHP" option.\nOpen the browser for more information.</string>
+    <string name="log_helper_huge_page_fault_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-An-out%E2%80%90of%E2%80%90memory-error-occurred-while-the-virtual-machine-was-running%2e</string>
+    <string name="log_helper_huge_page_fault_title">Insufficient huge page memory</string>
+    <string name="log_helper_huge_page_fault_message">Virtual machine %s ran into insufficient huge page memory.\nTry changing the memory size, or use the pre-allocation module.\nOpen the browser for more information.</string>
+    <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-The-virtual-machine%27s-system-does-not-support-SWIOTLB-Restrict-DMA-Pool%2e</string>
+    <string name="log_helper_no_restrict_pool_title">Missing virtual machine kernel functionality</string>
+    <string name="log_helper_no_restrict_pool_message">The kernel of virtual machine %s does not support Restricted DMA Pool.\nPlease replace the kernel or use the built-in DroidVM kernel.\nOpen the browser for more information.</string>
+    <string name="log_helper_unsupported_gunyah_title">Unsupported Gunyah version</string>
+    <string name="log_helper_unsupported_gunyah_message">The Gunyah version on your device is too old (for example, Snapdragon 8 Gen 2). Try updating the system or switching to a newer device.</string>
+    <string name="log_helper_unsupported_sandbox_title">Sandbox is not supported</string>
+    <string name="log_helper_unsupported_sandbox_message">crosvm\'s sandbox is not available on this platform. Please disable sandbox.</string>
 </resources>
