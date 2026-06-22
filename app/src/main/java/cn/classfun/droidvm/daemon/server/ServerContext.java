@@ -36,6 +36,7 @@ public final class ServerContext {
         run("pkill dnsmasq");
         run("pkill gvswitch");
         run("pkill pbridge");
+        run("pkill netbox");
         run("pkill -f %s", getPrebuiltBinaryPath("crosvm"));
         run("pkill -f %s", getPrebuiltBinaryPath("qemu-system-aarch64"));
         try {
