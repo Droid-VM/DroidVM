@@ -11,14 +11,16 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import cn.classfun.droidvm.daemon.network.backend.BridgeBackend;
 import cn.classfun.droidvm.daemon.network.backend.LinuxBridgeBackend;
+import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.daemon.network.backend.gvisor.GvisorBridgeBackend;
 import cn.classfun.droidvm.lib.network.IPNetwork;
 import cn.classfun.droidvm.lib.network.IPv6Network;
-import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
@@ -136,7 +138,7 @@ public final class NetworkInstance extends NetworkConfig {
 
     /**
      * Watchdog entry point: while the network is RUNNING, ask the backend to
-     * restart and re-initialise any helper that has died. No-op otherwise, so a
+     * restart and re-initialize any helper that has died. No-op otherwise, so a
      * stopping/stopped network is never resurrected.
      */
     public void reconcile() {
@@ -153,7 +155,6 @@ public final class NetworkInstance extends NetworkConfig {
     @Nullable
     public String findRunningVMUsing() {
         var vms = store.context.getVMs();
-        if (vms == null) return null;
         var netId = getId().toString();
         var found = new String[1];
         vms.forEach((vmId, vm) -> {
@@ -172,10 +173,10 @@ public final class NetworkInstance extends NetworkConfig {
             throw new IllegalStateException(fmt("Network %s is not running", getName()));
         // The NIC may carry L3-only options (DHCP static lease / port forwards)
         // kept in its saved config for when it moves back to an L3 network.
-        // Strip the ones this network can't honour into a throwaway copy so the
+        // Strip the ones this network can't honor into a throwaway copy so the
         // VM still boots; the stored config is untouched, and genuine
         // misconfigurations still fail validation below.
-        var dropped = new java.util.ArrayList<String>();
+        var dropped = new ArrayList<String>();
         var effective = nic.sanitizedFor(this, dropped);
         if (!dropped.isEmpty())
             Log.i(TAG, fmt("NIC %s on network %s: ignoring unsupported options: %s",
@@ -257,7 +258,7 @@ public final class NetworkInstance extends NetworkConfig {
 
     /** Captured stdout/stderr of a named tool, or null when unknown. */
     @Nullable
-    public java.util.List<String> toolLog(@NonNull String key) {
+    public List<String> toolLog(@NonNull String key) {
         return backend == null ? null : backend.toolLog(key);
     }
 
@@ -294,15 +295,14 @@ public final class NetworkInstance extends NetworkConfig {
      * VLANs (L3 mode only).
      */
     @NonNull
-    public java.util.List<String> getL3Devices() {
-        var out = new java.util.ArrayList<String>();
+    public List<String> getL3Devices() {
+        var out = new ArrayList<String>();
         var br = getBridgeName();
         if (br == null) return out;
         switch (getUplinkMode()) {
             case L3:
                 for (var vlan : getVlans()) {
-                    var dev = cn.classfun.droidvm.daemon.network.backend.LinuxNetwork
-                        .vlanDevice(br, vlan.getVlanId());
+                    var dev = LinuxNetwork.vlanDevice(br, vlan.getVlanId());
                     if (!out.contains(dev)) out.add(dev);
                 }
                 break;

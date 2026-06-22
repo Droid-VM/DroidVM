@@ -38,7 +38,7 @@ val generatedVersionName: String = if (gitDescribe.matches(Regex(".*-0-g[0-9a-f]
     gitDescribe.replace(Regex("-0-g[0-9a-f]+$"), "")
 } else {
     gitDescribe
-        .replace(Regex("([^-]*-g)"), "r\$1")
+        .replace(Regex("([^-]*-g)"), $$"r$1")
         .replace("-", ".")
 }
 
@@ -157,11 +157,11 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
 // Build-time extraction (unlike a first-run extract) is fine because the package
 // installer, not the app, populates nativeLibraryDir.
 abstract class UnpackComptimeJniLibsTask : DefaultTask() {
-    @get:javax.inject.Inject
-    abstract val archives: org.gradle.api.file.ArchiveOperations
+    @get:Inject
+    abstract val archives: ArchiveOperations
 
-    @get:javax.inject.Inject
-    abstract val fs: org.gradle.api.file.FileSystemOperations
+    @get:Inject
+    abstract val fs: FileSystemOperations
 
     @get:InputDirectory
     abstract val prebuiltsDir: DirectoryProperty
@@ -192,13 +192,13 @@ abstract class UnpackComptimeJniLibsTask : DefaultTask() {
 // are packaged. Pure-Java devs don't have this dir, so the CI-published
 // submodule artifacts are used as-is (the task no-ops via onlyIf).
 abstract class RegenPrebuiltsTask : DefaultTask() {
-    @get:javax.inject.Inject
-    abstract val exec: org.gradle.process.ExecOperations
+    @get:Inject
+    abstract val exec: ExecOperations
 
-    @get:org.gradle.api.tasks.Internal
+    @get:Internal
     abstract val prebuiltRoot: DirectoryProperty
 
-    @get:org.gradle.api.tasks.Internal
+    @get:Internal
     abstract val prebuiltsOut: DirectoryProperty
 
     @TaskAction
@@ -218,14 +218,14 @@ abstract class RegenPrebuiltsTask : DefaultTask() {
 // never runs. Download is best-effort: a failure logs a warning and the app falls
 // back to the system monospace, so it never breaks the build.
 abstract class FetchTerminalFontTask : DefaultTask() {
-    @get:javax.inject.Inject
-    abstract val archives: org.gradle.api.file.ArchiveOperations
+    @get:Inject
+    abstract val archives: ArchiveOperations
 
-    @get:org.gradle.api.tasks.Input
-    abstract val url: org.gradle.api.provider.Property<String>
+    @get:Input
+    abstract val url: Property<String>
 
-    @get:org.gradle.api.tasks.Input
-    abstract val sha256: org.gradle.api.provider.Property<String>
+    @get:Input
+    abstract val sha256: Property<String>
 
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
@@ -269,10 +269,11 @@ abstract class FetchTerminalFontTask : DefaultTask() {
 val prebuiltRootDir = rootProject.layout.projectDirectory.dir("DroidVM-Prebuilt-Root")
 val prebuiltsSubmoduleDir = rootProject.layout.projectDirectory.dir("app/src/main/assets/prebuilts")
 val regenPrebuilts = tasks.register<RegenPrebuiltsTask>("regenPrebuilts") {
+    description = "Regenerate prebuilts from DroidVM-Prebuilt-Root if it exists and has auto-build/ content"
     prebuiltRoot.set(prebuiltRootDir)
     prebuiltsOut.set(prebuiltsSubmoduleDir)
     // Only when a native dev has checked out DroidVM-Prebuilt-Root with source
-    // under auto-build/. Otherwise the published submodule artifacts are used.
+    // under auto-build/. Otherwise, the published submodule artifacts are used.
     onlyIf {
         val autoBuild = prebuiltRootDir.dir("auto-build").asFile
         prebuiltRootDir.file("auto-build.py").asFile.isFile &&
@@ -289,6 +290,7 @@ androidComponents {
         val unpackComptimeTask = tasks.register<UnpackComptimeJniLibsTask>(
             "unpackComptimeJniLibs${variantName}"
         ) {
+            description = "Unpack prebuilt-<abi>-comptime.zip into jniLibs/<abi>/ for ${variant.name}"
             dependsOn(regenPrebuilts)
             prebuiltsDir.set(prebuiltsSubmoduleDir)
             outputDir.set(
@@ -301,6 +303,7 @@ androidComponents {
         val fetchFontTask = tasks.register<FetchTerminalFontTask>(
             "fetchTerminalFont${variantName}"
         ) {
+            description = "Fetch terminal font for ${variant.name}"
             url.set("https://github.com/subframe7536/maple-font/releases/download/v7.9/MapleMonoNL-NF.zip")
             sha256.set("aa3b096bc92df8503d77482b285a0567bafa6e83230d969700f455e610b1f655")
             outputDir.set(layout.buildDirectory.dir("generated/font_assets/${variant.name}"))
@@ -311,6 +314,7 @@ androidComponents {
         val copyNativeTask = tasks.register<CopyNativeBinAssetsTask>(
             "copyNativeBinAssets${variantName}"
         ) {
+            description = "Copy native bin assets for ${variant.name}"
             dependsOn("externalNativeBuild${variantName}")
             cmakeOutputDir.set(
                 layout.buildDirectory.dir(

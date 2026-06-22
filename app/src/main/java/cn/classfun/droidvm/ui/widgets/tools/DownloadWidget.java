@@ -107,7 +107,7 @@ public final class DownloadWidget extends FrameLayout {
         long elapsed = now - lastUpdateTime;
         if (elapsed >= UI_UPDATE_INTERVAL_MS) {
             long deltaBytes = downloaded - lastUpdateBytes;
-            speedBytesPerSec = elapsed > 0 ? (deltaBytes * 1000 / elapsed) : 0;
+            speedBytesPerSec = deltaBytes * 1000 / elapsed;
             lastUpdateTime = now;
             lastUpdateBytes = downloaded;
         }

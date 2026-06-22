@@ -11,7 +11,13 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstance;
@@ -44,16 +50,16 @@ public final class LinuxBridgeBackend extends BridgeBackend {
     private final Map<Integer, IPv6Network> liveV6 = new ConcurrentHashMap<>();
     private final Map<String, Boolean> macSecurityActive = new ConcurrentHashMap<>();
     /** tapName -> forwards this NIC actually installed (for exact teardown). */
-    private final Map<String, java.util.List<InstalledForward>> installedForwards = new ConcurrentHashMap<>();
+    private final Map<String, List<InstalledForward>> installedForwards = new ConcurrentHashMap<>();
     /** tapName -> human-readable forward install failures. */
-    private final Map<String, java.util.List<String>> forwardFailures = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> forwardFailures = new ConcurrentHashMap<>();
     /** vids whose per-VLAN bridge + trunk leg exist (configured or on-demand). */
-    private final java.util.Set<Integer> createdVlanBridges = ConcurrentHashMap.newKeySet();
+    private final Set<Integer> createdVlanBridges = ConcurrentHashMap.newKeySet();
     /** DHCP-PD vlanId -> uplink device written into the running bridgedhcp
      *  config ("" when it was unresolved). Lets us reload when it appears. */
     private final Map<Integer, String> pdConfiguredUplink = new ConcurrentHashMap<>();
     /** Host IPv4 set the installed DNAT rules currently reflect; kept in sync. */
-    private final java.util.Set<String> appliedHostIps = new java.util.LinkedHashSet<>();
+    private final Set<String> appliedHostIps = new LinkedHashSet<>();
     /** Re-scopes DNAT rules when the phone's host IPv4 set changes. */
     private Runnable hostIpListener = null;
 
@@ -83,7 +89,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         if (!net.createBridge(br))
             throw new RuntimeException(fmt("Failed to create bridge %s", br));
         var mac = resolveBridgeMac();
-        if (mac != null && !net.setMacAddress(br, mac))
+        if (!net.setMacAddress(br, mac))
             Log.w(TAG, fmt("Failed to set MAC %s on %s", mac, br));
         net.setStp(br, inst.isStp());
         switch (inst.getUplinkMode()) {
@@ -105,7 +111,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
      * auto-generated persisted one otherwise. Without it the bridge MAC
      * would follow whichever port is enslaved.
      */
-    @Nullable
+    @NonNull
     private String resolveBridgeMac() {
         var mac = inst.getBridgeMacAddress();
         if (mac != null) return mac;
@@ -117,7 +123,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         return generated;
     }
 
-    private void startL2() throws Exception {
+    private void startL2() {
         var configured = inst.getL2Uplink();
         if (configured == null)
             throw new RuntimeException("L2 network has no uplink configured");
@@ -125,7 +131,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         if (uplink == null)
             throw new RuntimeException(fmt("Uplink \"%s\" not found", configured));
         resolvedUplink = uplink;
-        // honour the configured toggle, but force pseudo-bridging when the
+        // honor the configured toggle, but force pseudo-bridging when the
         // resolved device can't be enslaved (Wi-Fi STA / non-ethernet)
         boolean pseudo = inst.isL2PseudoBridge()
             || UplinkResolver.assumeDontBridge(uplink);
@@ -193,16 +199,14 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         firewall.initNetwork(inst);
         net.populateRuleRoute(inst);
         var watcher = inst.getStore().context.getRouterWatcher();
-        if (watcher != null) {
-            watcher.setForNewNetwork(inst);
-            // seed the host-IP set DNAT rules are scoped to, then track changes
-            synchronized (this) {
-                appliedHostIps.clear();
-                appliedHostIps.addAll(watcher.getHostIpv4Addresses());
-            }
-            hostIpListener = this::onHostIpsChanged;
-            watcher.addHostIpListener(hostIpListener);
+        watcher.setForNewNetwork();
+        // seed the host-IP set DNAT rules are scoped to, then track changes
+        synchronized (this) {
+            appliedHostIps.clear();
+            appliedHostIps.addAll(watcher.getHostIpv4Addresses());
         }
+        hostIpListener = this::onHostIpsChanged;
+        watcher.addHostIpListener(hostIpListener);
         if (BridgeDhcp.isNeeded(inst.getVlans())) {
             dhcp = new BridgeDhcp(inst, this::onPdAddressChanged);
             if (!dhcp.start())
@@ -273,8 +277,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
     public void stop() {
         if (hostIpListener != null) {
             var watcher = inst.getStore().context.getRouterWatcher();
-            if (watcher != null)
-                watcher.removeHostIpListener(hostIpListener);
+            watcher.removeHostIpListener(hostIpListener);
             hostIpListener = null;
         }
         synchronized (this) {
@@ -322,7 +325,7 @@ public final class LinuxBridgeBackend extends BridgeBackend {
     }
 
     @Override
-    public void attachNic(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
+    public void attachNic(@NonNull VMNicConfig nic, @NonNull String tapName) {
         if (net.isInterfaceExists(tapName)) net.deleteTap(tapName);
         if (!net.createTap(tapName))
             throw new RuntimeException(fmt("Failed to create TAP %s", tapName));
@@ -425,8 +428,8 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         // NAT-loopback: a guest in this subnet reaching the forward gets
         // masqueraded so the target's reply returns via the gateway
         var hairpinSubnet = net4.toNetworkString();
-        var installed = new java.util.ArrayList<InstalledForward>();
-        var failures = new java.util.ArrayList<String>();
+        var installed = new ArrayList<InstalledForward>();
+        var failures = new ArrayList<String>();
         for (var fwd : nic.getDhcp4Forwards()) {
             try {
                 fwd.validate();
@@ -478,10 +481,9 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         // pick up a PD uplink that was unavailable when the network started
         reconcilePdUplinks();
         var watcher = inst.getStore().context.getRouterWatcher();
-        if (watcher == null) return;
         var target = watcher.getHostIpv4Addresses();
-        var added = new java.util.ArrayList<String>();
-        var removed = new java.util.ArrayList<String>();
+        var added = new ArrayList<String>();
+        var removed = new ArrayList<String>();
         for (var ip : target)
             if (!appliedHostIps.contains(ip)) added.add(ip);
         for (var ip : appliedHostIps)
@@ -541,26 +543,26 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         var out = new JSONArray();
         // VID -> configured (VMM-managed) CIDRs; VLAN 0 included if declared,
         // empty in L2/none mode (getVlans() is L3-only).
-        var configured = new java.util.LinkedHashMap<Integer, java.util.List<String>>();
+        var configured = new LinkedHashMap<Integer, List<String>>();
         for (var vlan : inst.getVlans())
             configured.put(vlan.getVlanId(), configuredCidrs(vlan));
         // Every VID whose L3 device may carry addresses, in a stable order:
         // VLAN 0 (the main bridge, always -- the L2 mirror lands here), the
         // configured VLANs in config order, then any on-demand per-VLAN bridge.
-        var vids = new java.util.LinkedHashSet<Integer>();
+        var vids = new LinkedHashSet<Integer>();
         vids.add(0);
         vids.addAll(configured.keySet());
         vids.addAll(createdVlanBridges);
         for (var vid : vids) {
             var dev = LinuxNetwork.vlanDevice(br, vid);
             // canonical key -> raw "ip/plen" of every live address on the device
-            var live = new java.util.LinkedHashMap<String, String>();
+            var live = new LinkedHashMap<String, String>();
             var liveArr = net.listAddresses(dev);
             for (int i = 0; i < liveArr.length(); i++) {
                 var raw = liveArr.optString(i, "");
                 if (!raw.isEmpty()) live.put(canonAddr(raw), raw);
             }
-            for (var cidr : configured.getOrDefault(vid, java.util.List.of())) {
+            for (var cidr : Objects.requireNonNull(configured.getOrDefault(vid, List.of()))) {
                 boolean bound = live.remove(canonAddr(cidr)) != null;
                 out.put(addressEntry(cidr, vid, bound, "configured"));
             }
@@ -574,8 +576,8 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         }
         // L2 pseudo-bridge: pbridge parks each learned guest address on the
         // uplink tagged with the offload magic (so the Wi-Fi firmware answers
-        // ARP/NS for them). Those tagged addresses are exactly the pseudo-
-        // bridged guests' IPs -- surface them under their own source; the metric
+        // ARP/NS for them). Those tagged addresses are exactly the pseudo-bridged
+        // guests' IPs -- surface them under their own source; the metric
         // filter drops the host's own (untagged) uplink addresses.
         if (pbridge != null && resolvedUplink != null) {
             var guests = net.listAddresses(resolvedUplink, Constants.PBRIDGE_OFFLOAD_MAGIC);
@@ -590,8 +592,8 @@ public final class LinuxBridgeBackend extends BridgeBackend {
 
     /** Configured (VMM-managed) CIDRs of one VLAN: primary + secondary v4/v6. */
     @NonNull
-    private static java.util.List<String> configuredCidrs(@NonNull VlanConfig vlan) {
-        var list = new java.util.ArrayList<String>();
+    private static List<String> configuredCidrs(@NonNull VlanConfig vlan) {
+        var list = new ArrayList<String>();
         var v4 = vlan.getIpv4Cidr();
         if (v4 != null) list.add(v4);
         list.addAll(vlan.getIpv4Secondary());
@@ -681,9 +683,9 @@ public final class LinuxBridgeBackend extends BridgeBackend {
 
     @Nullable
     @Override
-    public java.util.List<String> toolLog(@NonNull String key) {
-        if ("pbridge".equals(key) && pbridge != null) return pbridge.getLog();
-        if ("bridgedhcp".equals(key) && dhcp != null) return dhcp.getLog();
+    public List<String> toolLog(@NonNull String key) {
+        if (key.equals("pbridge") && pbridge != null) return pbridge.getLog();
+        if (key.equals("bridgedhcp") && dhcp != null) return dhcp.getLog();
         return null;
     }
 

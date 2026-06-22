@@ -5,6 +5,7 @@ import static android.view.View.VISIBLE;
 import androidx.annotation.NonNull;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
@@ -26,7 +27,7 @@ public final class NetworkAdapter extends StatefulAdapter<NetworkConfig, Network
         var ctx = holder.itemView.getContext();
         var config = items.get(position);
         String typeLabel = ctx.getString(
-            config.getBridgeType() == cn.classfun.droidvm.lib.store.network.BridgeType.GVISOR
+            config.getBridgeType() == BridgeType.GVISOR
                 ? R.string.network_edit_bridge_type_gvisor
                 : R.string.network_edit_bridge_type_linux);
         String modeLabel;

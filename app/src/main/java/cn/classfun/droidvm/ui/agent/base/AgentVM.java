@@ -142,6 +142,7 @@ public final class AgentVM implements JSONSerialize {
         vars.put(key, value);
     }
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean hasActionVar(@NonNull String key) {
         return vars.containsKey(key);
     }

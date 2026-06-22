@@ -70,6 +70,7 @@ public final class GvswitchClient {
     }
 
     @NonNull
+    @SuppressWarnings("UnusedReturnValue")
     public Response delete(@NonNull String path) throws IOException {
         return request("DELETE", path, null);
     }

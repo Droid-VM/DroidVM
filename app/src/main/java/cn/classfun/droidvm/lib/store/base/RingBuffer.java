@@ -44,6 +44,7 @@ public class RingBuffer {
         return adds(data, 0, data.length);
     }
 
+    @SuppressWarnings("SameReturnValue")
     public synchronized boolean adds(@NonNull byte[] data, int off, int len) {
         if (len > capacity) {
             off += len - capacity;

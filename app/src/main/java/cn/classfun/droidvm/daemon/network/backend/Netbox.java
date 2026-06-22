@@ -13,6 +13,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -26,7 +27,7 @@ import java.util.function.Consumer;
  * {@code IFA_RT_PRIORITY} in {@code -j} JSON, the field pbridge tags its
  * offload-proxy addresses with. {@code netbox} is our bundled, static Rust tool
  * that does the same operations straight over rtnetlink with a fixed JSON
- * schema, so behaviour is identical on every device. All argv building, binary
+ * schema, so behavior is identical on every device. All argv building, binary
  * resolution and JSON parsing live here; callers use the typed methods only.
  *
  * <p>Mutations return {@code true} on success (the tool's exit code); queries
@@ -96,14 +97,17 @@ final class Netbox {
 
     // ------------------------------------------------------- route/rule/fdb
 
+    @SuppressWarnings("UnusedReturnValue")
     static boolean routeAdd(@NonNull String dev, @NonNull String dst, @NonNull String table, boolean v6) {
         return run(v6Args("route-add", v6, "--dev", dev, "--dst", dst, "--table", table));
     }
 
+    @SuppressWarnings("UnusedReturnValue")
     static boolean ruleAdd(@NonNull String iif, @NonNull String table, boolean v6) {
         return run(v6Args("rule-add", v6, "--iif", iif, "--table", table));
     }
 
+    @SuppressWarnings("UnusedReturnValue")
     static boolean ruleDel(@NonNull String iif, @NonNull String table, boolean v6) {
         return run(v6Args("rule-del", v6, "--iif", iif, "--table", table));
     }
@@ -143,7 +147,7 @@ final class Netbox {
         return query(args);
     }
 
-    /** Neighbours of one device as {@code [{dst,lladdr,dev,state[]}]}. */
+    /** Neighbors of one device as {@code [{dst,lladdr,dev,state[]}]}. */
     @NonNull
     static JSONArray neighList(@NonNull String dev) {
         return query(List.of("neigh-list", dev));
@@ -241,7 +245,7 @@ final class Netbox {
     private static String[] v6Args(@NonNull String sub, boolean v6, @NonNull String... rest) {
         var args = new ArrayList<String>();
         args.add(sub);
-        java.util.Collections.addAll(args, rest);
+        Collections.addAll(args, rest);
         if (v6) args.add("--v6");
         return args.toArray(new String[0]);
     }
@@ -249,7 +253,7 @@ final class Netbox {
     private static boolean run(@NonNull String... args) {
         var cmd = new ArrayList<String>(args.length + 1);
         cmd.add(getAssetBinaryPath("netbox"));
-        java.util.Collections.addAll(cmd, args);
+        Collections.addAll(cmd, args);
         var result = runListQuiet(cmd);
         if (!result.isSuccess()) {
             Log.w(TAG, fmt("netbox %s failed (exit %d): %s",

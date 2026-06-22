@@ -24,6 +24,7 @@ import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -352,8 +353,7 @@ public final class BootMenuDialog {
     @Nullable
     private static String firstImagePath(@NonNull VMConfig config, int preferred) {
         var disks = config.item.opt("disks", null);
-        if (disks == null
-            || !disks.is(cn.classfun.droidvm.lib.store.base.DataItem.Type.ARRAY))
+        if (disks == null || !disks.is(DataItem.Type.ARRAY))
             return null;
         var arr = disks.asArray();
         if (preferred >= 0 && preferred < arr.size()) {

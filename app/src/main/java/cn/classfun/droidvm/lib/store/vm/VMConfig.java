@@ -72,7 +72,7 @@ public class VMConfig extends DataConfig {
     private void migrateNicForwards() {
         var pfs = item.opt("port_forwards", null);
         var nics = item.opt("networks", null);
-        if (pfs == null || !pfs.is(DataItem.Type.ARRAY) || pfs.size() == 0
+        if (pfs == null || !pfs.is(DataItem.Type.ARRAY) || pfs.isEmpty()
             || nics == null || !nics.is(DataItem.Type.ARRAY)) {
             item.remove("port_forwards");
             return;

@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.vm;
 
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
@@ -14,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -26,6 +28,7 @@ import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.utils.FileUtils;
 
 /**
  * A VM's boot configuration resolved into concrete backend inputs:
@@ -156,11 +159,9 @@ public final class BootPlan {
                 var entry = pinned != null
                     ? matchEntry(entries, pinned.id, pinned.title) : null;
                 if (entry == null) entry = defaultEntry(entries);
-                if (entry != null) {
-                    var fixed = boot.isVdafix() ? optStr(entry, "cmdline_fixed") : "";
-                    var cmdline = !fixed.isEmpty() ? fixed : optStr(entry, "cmdline");
-                    if (!cmdline.isEmpty()) return cmdline;
-                }
+                var fixed = boot.isVdafix() ? optStr(entry, "cmdline_fixed") : "";
+                var cmdline = !fixed.isEmpty() ? fixed : optStr(entry, "cmdline");
+                if (!cmdline.isEmpty()) return cmdline;
             }
         } catch (IOException e) {
             Log.w(TAG, fmt(
@@ -350,9 +351,11 @@ public final class BootPlan {
                 }
             }
         }
-        Files.write(
-            manifest.toPath(),
-            buildManifest(image, entry).toString().getBytes(StandardCharsets.UTF_8));
+        try {
+            FileUtils.saveJSONFile(manifest, buildManifest(image, entry));
+        } catch (JSONException e) {
+            Log.w(TAG, fmt("failed to write manifest for %s: %s", cacheDir, e.getMessage()));
+        }
     }
 
     /**
@@ -371,8 +374,7 @@ public final class BootPlan {
     ) {
         JSONObject old;
         try {
-            old = new JSONObject(new String(
-                Files.readAllBytes(manifestFile.toPath()), StandardCharsets.UTF_8));
+            old = FileUtils.loadJSONFile(manifestFile);
         } catch (Exception e) {
             return false;
         }
@@ -463,6 +465,7 @@ public final class BootPlan {
         return sp > 0 ? out.substring(0, sp) : out;
     }
 
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private static boolean sameArray(
         @Nullable JSONArray a, @Nullable JSONArray b) {
         return String.valueOf(a).equals(String.valueOf(b));
@@ -479,15 +482,14 @@ public final class BootPlan {
         var argv = new String[args.length + 1];
         argv[0] = getAssetBinaryPath("lbx");
         System.arraycopy(args, 0, argv, 1, args.length);
-        var process = new NativeProcess.Builder(argv).start();
-        try {
+        try (var process = new NativeProcess.Builder(argv).start()) {
             var stdout = new String(
                 process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
             var stderr = new String(
                 process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
             int code;
             try {
-                if (!process.waitFor(LBX_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                if (!process.waitFor(LBX_TIMEOUT_MS, MILLISECONDS)) {
                     process.destroy();
                     throw new IOException(fmt("lbx timed out: %s", String.join(" ", argv)));
                 }
@@ -502,8 +504,6 @@ public final class BootPlan {
                         ? String.join(" ", argv) : stderr.trim()
                 ));
             return stdout;
-        } finally {
-            process.close();
         }
     }
 }

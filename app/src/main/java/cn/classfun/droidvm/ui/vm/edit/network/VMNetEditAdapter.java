@@ -5,6 +5,7 @@ import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomMac;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.view.View;
@@ -15,11 +16,14 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
@@ -99,7 +103,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
 
     private void bindSwitch(
         @NonNull VMNetEditViewHolder holder,
-        @NonNull com.google.android.material.materialswitch.MaterialSwitch sw,
+        @NonNull MaterialSwitch sw,
         @NonNull String key, boolean value
     ) {
         sw.setOnCheckedChangeListener(null);
@@ -162,8 +166,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
     private boolean isLinuxBridge(@NonNull VMNicConfig nic) {
         var netId = nic.getNetworkId();
         var network = netId != null ? networks().findById(netId) : null;
-        return network != null && network.getBridgeType()
-            == cn.classfun.droidvm.lib.store.network.BridgeType.LINUX;
+        return network != null && network.getBridgeType() == BridgeType.LINUX;
     }
 
     /** First tagged VLAN configured on the NIC's network, or 1. */
@@ -190,6 +193,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
     }
 
     /** Toggle off = trunk: the ID field locks to the 4095 trunk marker. */
+    @SuppressLint("SetTextI18n")
     private static void applyVlanFieldState(
         @NonNull VMNetEditViewHolder holder, @Nullable Integer vlanId
     ) {
@@ -262,7 +266,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
         // IPv6 forwards need IPv6 SNAT, which the Linux bridge can't do
         // (Android kernel has no IPv6 NAT) -- hide them there entirely
         boolean fwdSupported = !v6
-            || network.getBridgeType() == cn.classfun.droidvm.lib.store.network.BridgeType.GVISOR;
+            || network.getBridgeType() == BridgeType.GVISOR;
         fwdTil.setVisibility(fwdSupported ? VISIBLE : GONE);
         boolean snat = fwdSupported && vlan != null
             && (v6 ? vlan.isIpv6Snat() : vlan.isIpv4Snat());
@@ -270,7 +274,6 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
         fwd.setEnabled(snat);
         fwdTil.setHelperText(snat ? context.getString(R.string.edit_vm_net_forwards_hint)
             : context.getString(R.string.edit_vm_net_forwards_need_snat));
-        var vlanFinal = vlan;
         sw.setOnCheckedChangeListener((b, checked) -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
@@ -279,8 +282,8 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
             offsetTil.setEnabled(checked);
             var lease = leaseItem(items.get(pos), leaseKey);
             lease.set("enabled", checked);
-            if (checked && lease.optLong("offset", 0) <= 0 && vlanFinal != null) {
-                long free = nextFreeOffset(network, vlanFinal, pos, v6);
+            if (checked && lease.optLong("offset", 0) <= 0 && vlan != null) {
+                long free = nextFreeOffset(network, vlan, pos, v6);
                 lease.set("offset", free);
                 offset.setText(String.valueOf(free));
             }
@@ -356,7 +359,7 @@ public final class VMNetEditAdapter extends CardItemAdapter<VMNetEditViewHolder>
 
     /** "tcp 80:80" lines <-> forwards array of {proto, host, guest}. */
     @NonNull
-    static String formatForwards(@NonNull java.util.List<VMNicConfig.PortForward> forwards) {
+    static String formatForwards(@NonNull List<VMNicConfig.PortForward> forwards) {
         var sb = new StringBuilder();
         for (var fwd : forwards) {
             if (sb.length() > 0) sb.append('\n');

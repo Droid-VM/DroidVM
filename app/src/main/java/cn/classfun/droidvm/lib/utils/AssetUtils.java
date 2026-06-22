@@ -6,6 +6,7 @@ import static cn.classfun.droidvm.lib.utils.FileUtils.*;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.Log;
 
@@ -305,6 +306,8 @@ public final class AssetUtils {
     // symlink-free tree, so this reader stays small; corruption is still caught
     // by the per-file sha256 manifest check in needsExtractPrebuilt().
 
+    @SuppressLint("SetWorldReadable")
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     private static void extractTarXz(@NonNull InputStream rawIn, @NonNull File destRoot)
         throws IOException {
         try (var xz = new XZInputStream(new BufferedInputStream(rawIn))) {
@@ -342,6 +345,7 @@ public final class AssetUtils {
                 }
                 skip(xz, padding(size));
                 outFile.setReadable(true, false);
+                //noinspection OctalInteger
                 if ((mode & 0111) != 0 || path.startsWith("bin/") || path.startsWith("usr/bin/"))
                     outFile.setExecutable(true, false);
             }

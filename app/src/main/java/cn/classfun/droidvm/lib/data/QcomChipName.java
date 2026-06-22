@@ -44,6 +44,7 @@ public final class QcomChipName {
         }
     }
 
+    @SuppressWarnings("ReplaceAllNonRegex")
     public String lookupChipName(String soc) {
         if (chips == null)
             throw new IllegalStateException("Chips not loaded");

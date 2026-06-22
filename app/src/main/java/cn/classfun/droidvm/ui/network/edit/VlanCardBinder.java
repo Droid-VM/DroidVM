@@ -15,7 +15,6 @@ import androidx.annotation.NonNull;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.textfield.TextInputEditText;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import cn.classfun.droidvm.R;

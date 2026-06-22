@@ -135,6 +135,7 @@ public final class LxcImage {
     }
 
     @NonNull
+    @SuppressWarnings("ReplaceAllNonRegex")
     public String getDefaultFileName() {
         var name = fmt(
             "%s-%s-%s-%s-%s.qcow2", distro.toLowerCase(),

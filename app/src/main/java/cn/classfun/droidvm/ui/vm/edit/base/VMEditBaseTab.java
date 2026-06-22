@@ -32,6 +32,7 @@ public abstract class VMEditBaseTab {
         return showValidateFailed(parent.getString(message));
     }
 
+    @SuppressWarnings("SameReturnValue")
     protected final boolean showValidateFailed(@NonNull CharSequence message) {
         Snackbar.make(parent, view, message, Snackbar.LENGTH_LONG).show();
         return false;

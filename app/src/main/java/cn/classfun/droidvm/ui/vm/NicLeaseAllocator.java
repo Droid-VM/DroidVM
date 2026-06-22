@@ -23,8 +23,9 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
  * VLAN's dynamic pool and any offset already used by another VM -- or this VM's
  * own other NICs -- on the same network/VLAN, then persists the result so the
  * guest IP stays stable across restarts.
- *
+ * <p>
  * Allocation is app-side and persisted here; nothing else assigns offsets.
+ * </p>
  */
 public final class NicLeaseAllocator {
     private static final String TAG = "NicLeaseAllocator";
@@ -114,7 +115,7 @@ public final class NicLeaseAllocator {
     ) {
         long poolStart = vlan.getDhcp4OffsetStart();
         long poolEnd = vlan.getDhcp4OffsetEnd();
-        long maxOffset = net4.totalAddresses() - 2; // addressAtOffset valid 1..total-2
+        long maxOffset = net4.totalAddresses() - 2; // addressAtOffset valid 1...total-2
         for (long c = 64; c <= maxOffset; c++) {
             if (c >= poolStart && c <= poolEnd) continue; // skip the dynamic pool
             if (used.contains(c)) continue;

@@ -24,14 +24,16 @@ import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.network.IPv4Address;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -84,7 +86,9 @@ public final class NetworkEditActivity extends AppCompatActivity {
     private MaterialButton btnAddVlan;
     private FloatingActionButton fab;
     private NetworkStore store;
+    @SuppressWarnings("FieldCanBeLocal")
     private String[] bridgeTypeLabels;
+    @SuppressWarnings("FieldCanBeLocal")
     private String[] uplinkModeLabels;
     private BridgeType bridgeType = BridgeType.LINUX;
     private UplinkMode uplinkMode = UplinkMode.L3;
@@ -135,10 +139,10 @@ public final class NetworkEditActivity extends AppCompatActivity {
         ddL2Uplink.setOnItemClickListener((p, v, pos, id) -> onUplinkSelected(pos));
         btnAddVlan.setOnClickListener(v -> onAddVlan());
         inputMac.setEndIconOnClickListener(v -> inputMac.setText(generateRandomMac()));
-        inputBridge.setFilters(new InputFilter[]{
+        inputBridge.setFilters(
             new InputFilter.LengthFilter(MAX_BRIDGE_NAME_LEN),
-            BRIDGE_NAME_CHARSET,
-        });
+            BRIDGE_NAME_CHARSET
+        );
         fab.setOnClickListener(v -> onSaveClicked());
         updateUplinkModeDropdown();
         loadUplinks();
@@ -217,7 +221,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
      * with their live-resolved name or "unavailable") followed by the concrete
      * physical L2 devices. The current selection is preserved.
      */
-    private void rebuildUplinks(@Nullable org.json.JSONObject data) {
+    private void rebuildUplinks(@Nullable JSONObject data) {
         uplinkLabels.clear();
         uplinkValues.clear();
         uplinkBridgeable.clear();
@@ -253,7 +257,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
 
     private void addIdentifier(
         @NonNull String id, @NonNull String display, boolean bridgeable,
-        @Nullable org.json.JSONObject data
+        @Nullable JSONObject data
     ) {
         String resolved = "";
         boolean br = bridgeable;
@@ -398,7 +402,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
     ) {
         storeAllBinders();
-        var sources = new ArrayList<VlanConfig>(vlans);
+        var sources = new ArrayList<>(vlans);
         store.forEach((id, cfg) -> {
             if (id.equals(editNetworkId)) return;
             sources.addAll(cfg.getVlans());
@@ -476,7 +480,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
     private void onAddVlan() {
         storeAllBinders();
         // smallest free id in 0, 10, 20, ...
-        var used = new java.util.HashSet<Integer>();
+        var used = new HashSet<Integer>();
         for (var vlan : vlans) used.add(vlan.getVlanId());
         int id = 0;
         while (used.contains(id) && id < 4090) id += 10;

@@ -9,8 +9,10 @@ import cn.classfun.droidvm.lib.network.IPv6Network;
 @SuppressWarnings({"BooleanMethodIsAlwaysInverted", "unused", "UnusedReturnValue"})
 public abstract class FirewallHelper {
 
+    @SuppressWarnings("SameReturnValue")
     public abstract boolean initialize();
 
+    @SuppressWarnings("SameReturnValue")
     public abstract boolean shutdown();
 
     public abstract void initNetwork(NetworkInstance inst);

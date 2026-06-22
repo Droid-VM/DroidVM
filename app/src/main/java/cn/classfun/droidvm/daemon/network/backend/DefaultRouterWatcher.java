@@ -10,12 +10,14 @@ import androidx.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.Constants;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
@@ -38,8 +40,8 @@ public final class DefaultRouterWatcher {
         "ap", "swlan", "softap", "rndis", "usb", "bt-pan"
     );
     private final ServerContext context;
-    private final List<Runnable> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
-    private final List<Runnable> hostIpListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
+    private final List<Runnable> hostIpListeners = new CopyOnWriteArrayList<>();
     private volatile ScheduledExecutorService scheduler;
     private String lastDefault4 = null;
     private String lastDefault6 = null;
@@ -130,8 +132,9 @@ public final class DefaultRouterWatcher {
             if (!ours) continue;
             var tbl = String.valueOf(r.optInt("table", 0));
             boolean stale = r.optBoolean("detached", false)
-                || table == null || !tbl.equals(table)
-                || !desired.contains(dev) || satisfied.contains(dev);
+                || !tbl.equals(table)
+                || !desired.contains(dev)
+                || satisfied.contains(dev);
             if (stale) {
                 Log.i(TAG, fmt("Removing stale rule: iif %s lookup %s (v%d)",
                     dev, tbl, ipv6 ? 6 : 4));
@@ -140,7 +143,7 @@ public final class DefaultRouterWatcher {
                 satisfied.add(dev);
             }
         }
-        for (var dev : desired) {
+        if (table != null) for (var dev : desired) {
             if (satisfied.contains(dev)) continue;
             Log.i(TAG, fmt("Adding rule: iif %s lookup %s (v%d)",
                 dev, table, ipv6 ? 6 : 4));
@@ -160,8 +163,8 @@ public final class DefaultRouterWatcher {
             var new6 = currentDefaultTable(true);
             reconcileRules(false, new4);
             reconcileRules(true, new6);
-            boolean changed = !java.util.Objects.equals(new4, lastDefault4)
-                || !java.util.Objects.equals(new6, lastDefault6);
+            boolean changed = !Objects.equals(new4, lastDefault4)
+                || !Objects.equals(new6, lastDefault6);
             if (changed)
                 Log.i(TAG, fmt("Default network now v4=%s v6=%s", new4, new6));
             lastDefault4 = new4;
@@ -225,7 +228,7 @@ public final class DefaultRouterWatcher {
         if (s == null) return;
         try {
             s.execute(() -> applyHostIps(fresh));
-        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        } catch (RejectedExecutionException ignored) {
             // scheduler shutting down; the next start() reseeds
         }
     }
@@ -256,16 +259,18 @@ public final class DefaultRouterWatcher {
     }
 
     /** Notified (on the watcher thread) when the default network changes. */
+    @SuppressWarnings("unused")
     public void addListener(@NonNull Runnable listener) {
         listeners.add(listener);
     }
 
+    @SuppressWarnings("unused")
     public void removeListener(@NonNull Runnable listener) {
         listeners.remove(listener);
     }
 
     /** Installs the new network's rules immediately (the tick would lag 5s). */
-    public synchronized void setForNewNetwork(@NonNull NetworkInstance inst) {
+    public synchronized void setForNewNetwork() {
         try {
             reconcileRules(false, currentDefaultTable(false));
             reconcileRules(true, currentDefaultTable(true));

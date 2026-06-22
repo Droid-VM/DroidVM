@@ -21,8 +21,10 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -53,7 +55,7 @@ public final class DiskDownloadService extends Service {
     private final Set<Long> active = new LinkedHashSet<>();
     /** Ids already handed to the executor, so a repeat START doesn't double-run. */
     private final Set<Long> submitted = new HashSet<>();
-    private final java.util.Map<Long, Tracker> trackers = new java.util.HashMap<>();
+    private final Map<Long, Tracker> trackers = new HashMap<>();
     private NotificationManager nm;
     private long foregroundId = -1;
     private boolean polling = false;
@@ -282,7 +284,7 @@ public final class DiskDownloadService extends Service {
         }
         long elapsed = now - t.lastTime;
         if (elapsed >= SPEED_WINDOW_MS) {
-            t.speed = elapsed > 0 ? (downloaded - t.lastBytes) * 1000 / elapsed : 0;
+            t.speed = (downloaded - t.lastBytes) * 1000 / elapsed;
             t.lastTime = now;
             t.lastBytes = downloaded;
         }

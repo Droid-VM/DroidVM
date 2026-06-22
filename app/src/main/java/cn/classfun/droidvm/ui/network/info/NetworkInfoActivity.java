@@ -7,7 +7,6 @@ import static android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
 import static android.widget.LinearLayout.VERTICAL;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
-import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.store.enums.Enums.applyText;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -457,18 +456,19 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
                               : R.string.network_info_tool_stopped),
             getString(R.string.network_info_tool_view_log)));
         line2.setVisibility(VISIBLE);
-        var ta = getTheme().obtainStyledAttributes(
-            new int[]{android.R.attr.selectableItemBackground});
-        view.setBackgroundResource(ta.getResourceId(0, 0));
-        ta.recycle();
-        view.setOnClickListener(v -> {
-            var intent = new Intent(this, NetworkToolLogActivity.class);
-            intent.putExtra("network_id", networkId.toString());
-            intent.putExtra("tool", key);
-            intent.putExtra("title", label);
-            startActivity(intent);
-        });
-        container.addView(view);
+        var attrs = new int[]{android.R.attr.selectableItemBackground};
+        try (var ta = getTheme().obtainStyledAttributes(attrs)) {
+            view.setBackgroundResource(ta.getResourceId(0, 0));
+            ta.recycle();
+            view.setOnClickListener(v -> {
+                var intent = new Intent(this, NetworkToolLogActivity.class);
+                intent.putExtra("network_id", networkId.toString());
+                intent.putExtra("tool", key);
+                intent.putExtra("title", label);
+                startActivity(intent);
+            });
+            container.addView(view);
+        }
     }
 
     private void bindBasic(@NonNull LinearLayout container) {
@@ -672,7 +672,7 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         // while searching) -- so this row matches the live nic address and the
         // "bound" chip reflects the real binding, not the raw delegation.
         var address = pd.optString("address", "");
-        var noUplink = "no_uplink".equals(state);
+        var noUplink = state.equals("no_uplink");
         var bound = !address.isEmpty();
         // CIDR area: the bound host address, or the status while there is none
         String line1;

@@ -18,8 +18,8 @@ import java.io.FileWriter;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.zip.CRC32;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstance;
@@ -111,6 +111,7 @@ public final class BridgeDhcp {
      * on the watchdog's 5s tick while the network is running. Returns true when
      * healthy.
      */
+    @SuppressWarnings("UnusedReturnValue")
     public synchronized boolean reconcile() {
         if (!active || process.isRunning()) return true;
         Log.w(TAG, fmt(
@@ -134,6 +135,7 @@ public final class BridgeDhcp {
         return process.isRunning();
     }
 
+    @SuppressWarnings("unused")
     public int getExitCode() {
         return process.getExitCode();
     }
@@ -392,12 +394,11 @@ public final class BridgeDhcp {
      * configs (mac -> offset, matching the NIC's DHCP lease settings).
      */
     @NonNull
-    private JSONArray[] buildStatics(@NonNull VlanConfig vlan) throws Exception {
+    private JSONArray[] buildStatics(@NonNull VlanConfig vlan) {
         var v4 = new JSONArray();
         var v6 = new JSONArray();
         var netId = inst.getId().toString();
         var vms = inst.getStore().context.getVMs();
-        if (vms == null) return new JSONArray[]{v4, v6};
         vms.forEach((vmId, vm) -> {
             final int[] idx = {0};
             var failed = new Exception[1];
@@ -450,7 +451,7 @@ public final class BridgeDhcp {
         synchronized (routeTableLock) {
             var existing = vlan.getPdRouteTable();
             if (existing != 0) return existing;
-            var used = new java.util.HashSet<Long>();
+            var used = new HashSet<Long>();
             inst.getStore().forEach((id, other) -> {
                 for (var v : other.getVlans())
                     used.add(v.getPdRouteTable());

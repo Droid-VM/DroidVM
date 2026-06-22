@@ -5,6 +5,8 @@ import static org.junit.Assert.assertThrows;
 
 import org.junit.Test;
 
+import java.util.List;
+
 import cn.classfun.droidvm.lib.store.vm.VMNicConfig.PortForward;
 
 public class PortForwardTest {
@@ -48,12 +50,12 @@ public class PortForwardTest {
     public void anyExpandsToTcpAndUdp() {
         var fwd = new PortForward("any", "8080", "80");
         fwd.validate();
-        assertEquals(java.util.List.of("tcp", "udp"), fwd.protocols());
+        assertEquals(List.of("tcp", "udp"), fwd.protocols());
     }
 
     @Test
     public void concreteProtoIsSingleton() {
-        assertEquals(java.util.List.of("udp"), new PortForward("udp", "53", "53").protocols());
+        assertEquals(List.of("udp"), new PortForward("udp", "53", "53").protocols());
     }
 
     @Test

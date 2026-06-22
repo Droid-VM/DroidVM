@@ -36,8 +36,7 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  * {@code source} below it) only select which one takes effect, so toggling
  * in the UI never loses the other branch's values. Legacy flat keys
  * ({@code use_uefi}/{@code kernel}/{@code initrd}/{@code cmdline}/
- * {@code bios}) are folded into this object once, on config load -- see
- * {@link VMConfig#migrateBoot}.
+ * {@code bios}) are folded into this object once, on config load
  */
 public final class BootConfig {
     public enum Protocol implements StringEnum {
@@ -83,7 +82,7 @@ public final class BootConfig {
      * Reserved {@code vm_start} boot_entry / boot-menu selection key for
      * "boot this disk with DroidVM's built-in kernel" -- not a disk image
      * entry, so it is matched as a sentinel (see {@code BootPlan.resolve})
-     * and can never collide with an lbx entry id (which never start '@').
+     * and can never collide with a lbx entry id (which never start '@').
      */
     public static final String BUILTIN_ENTRY_KEY = "@droidvm:builtin-kernel";
 

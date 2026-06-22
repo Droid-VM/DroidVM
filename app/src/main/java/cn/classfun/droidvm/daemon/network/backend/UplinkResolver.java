@@ -8,16 +8,18 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Enumerates host L2 uplink candidates and resolves the logical
- * "WiFi"/"Ethernet"/"Tethering" identifiers to a concrete interface at
+ * "Wi-Fi"/"Ethernet"/"Tethering" identifiers to a concrete interface at
  * network start: device names drift across reboots (wlan0 <-> wlan1), so the
  * identifier is stored and re-resolved live; a literal interface name is
  * pinned and used as-is.
@@ -111,8 +113,8 @@ public final class UplinkResolver {
     }
 
     /** DEVTYPEs that are virtual L2 constructs, never a real uplink. */
-    private static final java.util.Set<String> VIRTUAL_DEVTYPES =
-        java.util.Set.of("vlan", "vxlan", "gretap", "erspan");
+    private static final Set<String> VIRTUAL_DEVTYPES =
+        Set.of("vlan", "vxlan", "gretap", "erspan");
 
     private static boolean isVirtualDevtype(@NonNull File entry) {
         try {
@@ -193,6 +195,7 @@ public final class UplinkResolver {
     }
 
     /** Whether a logical identifier's uplink can be bridged (Wi-Fi STA can't). */
+    @SuppressWarnings("unused")
     public static boolean identifierBridgeable(@NonNull String id) {
         return !id.equalsIgnoreCase(ID_WIFI);
     }
@@ -241,7 +244,7 @@ public final class UplinkResolver {
     @NonNull
     private static JSONObject identifierJson(
         @NonNull String id, @Nullable String name, boolean bridgeable
-    ) throws org.json.JSONException {
+    ) throws JSONException {
         var obj = new JSONObject();
         obj.put("id", id);
         obj.put("name", name == null ? "" : name);

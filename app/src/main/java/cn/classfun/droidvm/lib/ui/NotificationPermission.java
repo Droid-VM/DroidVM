@@ -18,9 +18,10 @@ import cn.classfun.droidvm.R;
  * the app's minSdk) at the moment a background download is about to start,
  * after a short rationale. The download proceeds either way -- the permission
  * only controls whether the foreground-service progress notification is shown.
- *
+ * <p>
  * Construct from an activity's {@code onCreate}: the result launcher has to be
  * registered before the activity reaches STARTED.
+ * </p>
  */
 public final class NotificationPermission {
     private final AppCompatActivity activity;

@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
@@ -42,8 +41,9 @@ public final class Daemon {
     // Held for the whole process lifetime so the advisory lock stays taken; the
     // kernel drops it automatically when this process dies (including SIGKILL),
     // so a stale lock can never block the next daemon.
-    @SuppressWarnings({"FieldCanBeLocal", "unused"})
+    @SuppressWarnings("FieldCanBeLocal")
     private static FileChannel lockChannel;
+    @SuppressWarnings("FieldCanBeLocal")
     private static FileLock daemonLock;
 
     /**
@@ -111,6 +111,7 @@ public final class Daemon {
         while (System.currentTimeMillis() < deadline) {
             if (tryLock()) return true;
             try {
+                //noinspection BusyWait
                 Thread.sleep(200);
             } catch (InterruptedException e) {
                 return false;
@@ -120,6 +121,7 @@ public final class Daemon {
     }
 
     /** Records this daemon's pid in the lock file so a later --force can find it. */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
     private static void writeLockOwner() {
         try {
             lockChannel.truncate(0);
@@ -135,7 +137,7 @@ public final class Daemon {
     private static int readLockOwner() {
         for (var path : new String[]{LOCK_FILE, getPidFile()}) {
             try {
-                var s = new String(Files.readAllBytes(Paths.get(path))).trim();
+                var s = FileUtils.readFile(path).trim();
                 if (!s.isEmpty()) return Integer.parseInt(s);
             } catch (Exception ignored) {
             }

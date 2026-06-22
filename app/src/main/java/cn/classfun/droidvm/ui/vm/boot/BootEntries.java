@@ -123,13 +123,6 @@ public final class BootEntries {
             return vdafix && !cmdlineFixed.isEmpty() ? cmdlineFixed : cmdline;
         }
 
-        /** vdafix did not (or could not) neutralize a device-name root=. */
-        public boolean hasRootDeviceWarning(boolean vdafix) {
-            var c = effectiveCmdline(vdafix);
-            return c.contains("root=/dev/sd") || c.contains("root=/dev/nvme")
-                || c.contains("root=/dev/hd");
-        }
-
         /**
          * Kernel is known to lack CONFIG_DMA_RESTRICTED_POOL, so its virtio
          * DMA cannot reach the host-shared pool and the devices fail under a
@@ -232,7 +225,7 @@ public final class BootEntries {
             }
             int code = proc.exitValue();
             if (code == 0) {
-                onScan.onScan(parse(new JSONArray(stdout.toString("UTF-8"))), null);
+                onScan.onScan(parse(new JSONArray(stdout.toString(StandardCharsets.UTF_8))), null);
             } else {
                 // Surface lbx's real stderr rather than a generic error.
                 var msg = errBuf.toString().trim();

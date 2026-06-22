@@ -12,6 +12,7 @@ import androidx.activity.result.ActivityResult;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.HashSet;
 
@@ -114,7 +115,7 @@ public final class VMEditStorageTab extends VMEditBaseTab {
     }
 
     /** Live disk entries as edited right now (not yet saved to config). */
-    @NonNull
+    @Nullable
     public DataItem getCurrentDisks() {
         return listDisks.getItems();
     }

@@ -3,6 +3,7 @@ package cn.classfun.droidvm.ui.vm.edit.network;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -27,7 +28,7 @@ public final class VMNetEditViewHolder extends RecyclerView.ViewHolder {
     final LinearLayout groupDhcp4;
     final MaterialSwitch swDhcp4;
     final View groupDhcp4Detail;
-    final android.widget.TextView tvDhcp4Hint;
+    final TextView tvDhcp4Hint;
     final TextInputEditText etDhcp4Offset;
     final TextInputLayout tilDhcp4Offset;
     final TextInputLayout tilFwd4;
@@ -35,7 +36,7 @@ public final class VMNetEditViewHolder extends RecyclerView.ViewHolder {
     final LinearLayout groupDhcp6;
     final MaterialSwitch swDhcp6;
     final View groupDhcp6Detail;
-    final android.widget.TextView tvDhcp6Hint;
+    final TextView tvDhcp6Hint;
     final TextInputEditText etDhcp6Offset;
     final TextInputLayout tilDhcp6Offset;
     final TextInputLayout tilFwd6;

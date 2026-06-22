@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.network.backend;
 
+import static cn.classfun.droidvm.lib.Constants.*;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getAssetBinaryPath;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
@@ -38,7 +39,7 @@ public final class Pbridge {
             "--offload-workaround", "v4,v6",
             // pin the proxy-address tag so host-IP discovery can exclude them
             "--offload-workaround-magic",
-            String.valueOf(cn.classfun.droidvm.lib.Constants.PBRIDGE_OFFLOAD_MAGIC),
+            String.valueOf(PBRIDGE_OFFLOAD_MAGIC),
             "--arp-keepalive", "10",
             "--loglevel", "info"
         );
@@ -59,6 +60,7 @@ public final class Pbridge {
      * re-establishes the data path). Called on the watchdog's 5s tick while the
      * network is running. Returns true when healthy.
      */
+    @SuppressWarnings("UnusedReturnValue")
     public synchronized boolean reconcile() {
         if (!active || process.isRunning()) return true;
         Log.w(TAG, fmt(
@@ -71,12 +73,13 @@ public final class Pbridge {
         return process.isRunning();
     }
 
+    @SuppressWarnings("unused")
     public int getExitCode() {
         return process.getExitCode();
     }
 
     @NonNull
-    public java.util.List<String> getLog() {
+    public List<String> getLog() {
         return process.getLog();
     }
 }

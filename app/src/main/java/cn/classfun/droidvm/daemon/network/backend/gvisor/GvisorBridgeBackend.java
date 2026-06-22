@@ -19,7 +19,6 @@ import java.io.FileWriter;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +28,8 @@ import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.network.backend.BridgeBackend;
 import cn.classfun.droidvm.daemon.network.backend.ManagedProcess;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
+import cn.classfun.droidvm.lib.network.IPv4Network;
+import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
 import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
@@ -46,7 +47,6 @@ public final class GvisorBridgeBackend extends BridgeBackend {
     private static final SecureRandom random = new SecureRandom();
     private final ManagedProcess process;
     private final String id8;
-    private String token = null;
     private GvswitchClient client = null;
     /** Set once stop() runs so the watchdog never relaunches a torn-down switch. */
     private volatile boolean stopped = false;
@@ -84,7 +84,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
         random.nextBytes(bytes);
         var sb = new StringBuilder();
         for (var b : bytes) sb.append(fmt("%02x", b));
-        token = sb.toString();
+        var token = sb.toString();
         var config = GvswitchConfigBuilder.build(inst);
         var configFile = new File(configPath());
         var parent = configFile.getParentFile();
@@ -161,6 +161,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
             } catch (Exception e) {
                 last = e;
             }
+            //noinspection BusyWait
             Thread.sleep(200);
         }
         throw new RuntimeException("gvswitch API did not become ready", last);
@@ -206,6 +207,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
      * its static leases and forwards. Never creates or deletes the tap, so it
      * is reusable for watchdog re-attach without disturbing crosvm.
      */
+    @SuppressWarnings("ExtractMethodRecommender")
     private void postPort(@NonNull VMNicConfig nic, @NonNull String tapName) throws Exception {
         if (client == null) throw new IllegalStateException("gvswitch not running");
         var port = new JSONObject();
@@ -317,7 +319,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
 
     @Nullable
     private static String guestIpAtOffset(
-        @NonNull cn.classfun.droidvm.lib.network.IPv4Network net, long offset
+        @NonNull IPv4Network net, long offset
     ) {
         try {
             return net.addressAtOffset(offset).toString();
@@ -328,7 +330,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
 
     @Nullable
     private static String guestIpAtOffset(
-        @NonNull cn.classfun.droidvm.lib.network.IPv6Network net, long offset
+        @NonNull IPv6Network net, long offset
     ) {
         try {
             return net.addressAtOffset(BigInteger.valueOf(offset)).toString();
@@ -566,7 +568,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
 
     @Nullable
     @Override
-    public java.util.List<String> toolLog(@NonNull String key) {
-        return "gvswitch".equals(key) ? process.getLog() : null;
+    public List<String> toolLog(@NonNull String key) {
+        return key.equals("gvswitch") ? process.getLog() : null;
     }
 }

@@ -153,7 +153,7 @@ public class NetworkConfig extends DataConfig {
         for (var e : arr.asArray()) {
             if (!e.is(DataItem.Type.STRING)) continue;
             var s = e.asString();
-            if (s != null && !s.isEmpty()) out.add(s);
+            if (!s.isEmpty()) out.add(s);
         }
         return out;
     }
