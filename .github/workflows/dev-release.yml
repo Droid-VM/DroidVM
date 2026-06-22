@@ -77,30 +77,50 @@ jobs:
         if: ${{ env.HAS_SIGN_KEY != 'true' }}
         run: ./gradlew assembleDebug
 
+      # Derive a version string from the latest real tag, e.g. `0.0.6.r63.52993d4`
+      # (matches release.yml). The moving `dev` tag is excluded so it never
+      # shadows the real version tag in `git describe`.
+      - name: Get version info
+        id: version
+        run: |
+          set -euo pipefail
+          if desc="$(git describe --long --tags --exclude dev 2>/dev/null)"; then
+            desc="$(echo "$desc" | sed 's/^[vV]//')"
+            if echo "$desc" | grep -qE '\-0\-g[0-9a-f]+$'; then
+              ver="$(echo "$desc" | sed 's/-0-g[0-9a-f]*$//')"
+            else
+              ver="$(echo "$desc" | sed 's/-\([0-9]*\)-g/.r\1./')"
+            fi
+          else
+            ver="$(git rev-parse --short HEAD)"
+          fi
+          echo "name=${ver}" >> "$GITHUB_OUTPUT"
+
       - name: Stage APK
         run: |
           set -euo pipefail
           mkdir -p release
+          apk="release/DroidVM-${{ steps.version.outputs.name }}-dev.apk"
           if [ "${HAS_SIGN_KEY}" = "true" ]; then
-            cp app/build/outputs/apk/release/*.apk "release/DroidVM-dev.apk"
+            cp app/build/outputs/apk/release/*.apk "$apk"
           else
-            cp app/build/outputs/apk/debug/*.apk "release/DroidVM-dev.apk"
+            cp app/build/outputs/apk/debug/*.apk "$apk"
           fi
 
       - name: Publish rolling dev pre-release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VER: ${{ steps.version.outputs.name }}
         run: |
           set -euo pipefail
-          ver="$(git describe --tags --always 2>/dev/null || git rev-parse --short HEAD)"
 
           # Drop the previous dev release + tag, then recreate at this commit so
           # `dev` always points at latest master (a moving, version-less tag).
           gh release delete dev --yes --cleanup-tag 2>/dev/null || true
           git push origin :refs/tags/dev 2>/dev/null || true
 
-          gh release create dev "release/DroidVM-dev.apk" \
+          gh release create dev "release/DroidVM-${VER}-dev.apk" \
             --prerelease \
             --target "${GITHUB_SHA}" \
-            --title "DroidVM dev (${ver})" \
-            --notes "Rolling development build from ${GITHUB_SHA} (${ver}). Not a stable release."
+            --title "DroidVM dev (${VER})" \
+            --notes "Rolling development build from ${GITHUB_SHA} (${VER}). Not a stable release."
