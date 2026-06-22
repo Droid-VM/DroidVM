@@ -1,6 +1,7 @@
 package cn.classfun.droidvm.ui.vm.edit.storage;
 
 import static android.app.Activity.RESULT_OK;
+import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFilePath;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 
@@ -135,7 +136,7 @@ public final class VMEditStorageTab extends VMEditBaseTab {
             if (!checkFilePath(d.optString("path", ""), true))
                 return false;
             var tag = d.optString("tag", "");
-            if (!checkFilePath(tag, true))
+            if (!checkFileName(tag))
                 return false;
             if (set.contains(tag))
                 return false;
