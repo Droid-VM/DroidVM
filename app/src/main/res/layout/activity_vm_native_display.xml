@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/vnc_background"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
+    tools:context=".ui.vm.display.nativedisplay.display.VMNativeDisplayActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="?attr/homeAsUpIndicator"
+        app:titleTextColor="@android:color/white" />
+
+    <LinearLayout
+        android:id="@+id/status_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/vnc_status_bar_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp">
+
+        <View
+            android:id="@+id/status_indicator"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:background="@android:color/holo_orange_dark" />
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:text="@string/native_display_connecting"
+            android:textColor="@android:color/white"
+            android:textSize="13sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_fullscreen"
+            style="@style/Widget.Material3.Button.IconButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:contentDescription="@string/vnc_display_fullscreen"
+            app:icon="@drawable/ic_fullscreen"
+            app:iconTint="@android:color/white" />
+
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/display_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/vnc_background"
+        android:clickable="true">
+
+        <SurfaceView
+            android:id="@+id/surface_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center" />
+
+        <!-- Editor that hosts the IME; SurfaceView is an unreliable keyboard target. Kept visually
+             imperceptible (1px, transparent text/background, no cursor) rather than alpha=0, because
+             some ROMs (e.g. OPlus) refuse to show the keyboard for a fully invisible editor. -->
+        <cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeKeyboardEditText
+            android:id="@+id/keyboard_input"
+            android:layout_width="1dp"
+            android:layout_height="1dp"
+            android:layout_gravity="bottom|start"
+            android:background="@android:color/transparent"
+            android:cursorVisible="false"
+            android:focusable="true"
+            android:focusableInTouchMode="true"
+            android:importantForAccessibility="no"
+            android:importantForAutofill="no"
+            android:inputType="text"
+            android:textColor="@android:color/transparent"
+            tools:ignore="LabelFor,TextFields" />
+
+        <LinearLayout
+            android:id="@+id/overlay_connecting"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <ProgressBar
+                android:id="@+id/progress_connecting"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:indeterminate="true"
+                android:indeterminateTint="@android:color/white" />
+
+            <TextView
+                android:id="@+id/tv_connecting_message"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:gravity="center"
+                android:text="@string/native_display_connecting"
+                android:textColor="@android:color/white"
+                android:textSize="14sp" />
+
+        </LinearLayout>
+
+        <com.google.android.material.floatingactionbutton.FloatingActionButton
+            android:id="@+id/fab_menu"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            android:alpha="0.7"
+            android:contentDescription="@string/menu"
+            app:backgroundTint="@color/vnc_fab_background"
+            app:elevation="4dp"
+            app:fabCustomSize="32dp"
+            app:maxImageSize="16dp"
+            app:shapeAppearanceOverlay="@style/ShapeAppearanceOverlay.Fab.Circle"
+            app:srcCompat="@drawable/ic_more_vert"
+            app:tint="@android:color/white"
+            tools:ignore="ClassNameCheck" />
+
+    </FrameLayout>
+
+    <cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel
+        android:id="@+id/extra_keys_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="bottom"
+        android:orientation="vertical" />
+
+</LinearLayout>

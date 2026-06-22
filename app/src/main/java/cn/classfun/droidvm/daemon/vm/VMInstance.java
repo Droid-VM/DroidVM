@@ -81,6 +81,11 @@ public final class VMInstance extends VMConfig {
         return this.backendInstance;
     }
 
+    /** Forwards UI-sent evdev bytes to the running backend's native-display input channel. */
+    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+        return getBackendInstance().writeNativeInput(channel, data);
+    }
+
     @NonNull
     public VMState getState() {
         return state;

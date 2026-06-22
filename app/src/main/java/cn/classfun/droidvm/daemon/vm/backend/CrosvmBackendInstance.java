@@ -15,6 +15,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
+import android.system.Os;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -32,10 +33,13 @@ import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.natives.UnixHelper;
+import cn.classfun.droidvm.lib.network.FDSocket;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
@@ -48,6 +52,30 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private final VMConfig config;
     private SerialPipe uart = null;
     private String controlSocketPath = null;
+    /** Server fds for the per-VM native-display input sockets, kept while crosvm is running. */
+    private int[] inputServerFds = null;
+    /** Paths of the input sockets we listened on, so cleanup() can unlink them. */
+    private String[] inputSocketPaths = null;
+    /**
+     * The crosvm-side connection accepted on each input channel. crosvm connects to OUR socket at
+     * startup (we are the only listener), so writing UI-forwarded evdev here is what actually
+     * reaches the guest. Indexed by NativeDisplay channel constants.
+     */
+    private FDSocket[] inputPeers = null;
+    /** Per-channel write lock; also guards swapping {@link #inputPeers} on reconnect. */
+    private Object[] inputWriteLocks = null;
+    /**
+     * UI-facing input sockets: the daemon listens here and the UI connects directly (bypassing the
+     * JSON-RPC round-trip on the touch hot path). Bytes received from the UI peer are forwarded to
+     * the matching {@link #inputPeers} entry (crosvm). Indexed by NativeDisplay channel constants.
+     */
+    private int[] uiInputServerFds = null;
+    private String[] uiInputSocketPaths = null;
+    private FDSocket[] uiInputPeers = null;
+    private Object[] uiInputWriteLocks = null;
+    private Thread[] uiInputForwardThreads = null;
+    private volatile boolean uiInputClosed = false;
+    private volatile boolean inputClosed = false;
     private final FDPipeConsoleStream uartStream;
     private final InputConsoleStream stdoutStream;
     private final InputConsoleStream stderrStream;
@@ -85,6 +113,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         controlSocketPath = pathJoin(RUN_PATH, fmt("%s.sock", config.getName()));
         deleteFile(controlSocketPath);
         Log.i(TAG, fmt("Control socket path: %s", controlSocketPath));
+        // Native display: crosvm's --input <kind>[path=...] connects to a unix socket whose inode
+        // must already exist (crosvm is the *client*), and the display-page entry only appears after
+        // the VM is up — so the daemon is the only process that can both bind the socket before
+        // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
+        // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
+        if (isNativeDisplayEnabled()) {
+            if (!ensureInputSocketsListening()) {
+                Log.e(TAG, "Native display input sockets unavailable; crosvm will likely fail");
+            }
+        }
         var args = buildCommand();
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
         try {
@@ -107,6 +145,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 uart = null;
             }
             controlSocketPath = null;
+            releaseInputSockets();
             return result;
         }
         return result;
@@ -309,6 +348,357 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 item.optLong("display_height", 720)
             ));
         }
+        // Native display: crosvm registers an ICrosvmAndroidDisplayService binder under a per-VM
+        // name and renders the gfxstream/virtio-gpu output straight into the Android Surface the UI
+        // hands it. Requires the GPU (virtio-gpu) path above. Touch/keyboard come back over the
+        // per-VM unix sockets the root service listens on; their paths must match NativeDisplay.
+        if (useGpu && useDisplay && backend == VIRTIO_GPU
+            && item.optBoolean("native_display_enabled", false)) {
+            buildNativeDisplayCommand(args);
+        }
+    }
+
+    private void buildNativeDisplayCommand(@NonNull List<String> args) {
+        var item = config.item;
+        var serviceName = NativeDisplay.serviceName(config);
+        var width = item.optLong("display_width", 1280);
+        var height = item.optLong("display_height", 720);
+        args.add("--android-display-service");
+        args.add(serviceName);
+        // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
+        // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
+        args.add("--input");
+        args.add(fmt(
+            "multi-touch[path=%s,width=%d,height=%d]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH), width, height
+        ));
+        args.add("--input");
+        args.add(fmt(
+            "keyboard[path=%s]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
+        ));
+    }
+
+    /** True iff the per-VM crosvm command will reference native-display input sockets. */
+    private boolean isNativeDisplayEnabled() {
+        var item = config.item;
+        if (!item.optBoolean("gpu_enabled", false)) return false;
+        if (!item.optBoolean("display_enabled", false)) return false;
+        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
+        if (backend != DisplayBackend.VIRTIO_GPU) return false;
+        return item.optBoolean("native_display_enabled", false);
+    }
+
+    /**
+     * Pre-creates the per-VM native-display input sockets as listening unix sockets. crosvm
+     * connects to these paths at startup, so a listener must exist before {@link #start()} execs
+     * the crosvm process. nativeUnixListen unlinks any stale inode and re-binds, so a leftover
+     * socket file from a crashed run is replaced rather than blocking us. If the UI's RootService
+     * already bound the path, bind fails with EADDRINUSE and that channel keeps the UI's listener;
+     * we just skip it. Returns true iff every channel ended up with a live listener (ours or the
+     * UI's). Server fds we open are tracked for release in {@link #releaseInputSockets()}.
+     */
+    private boolean ensureInputSocketsListening() {
+        if (!UnixHelper.isLoaded()) {
+            Log.w(TAG, "UnixHelper not loaded; cannot pre-bind native-display input sockets");
+            return false;
+        }
+        var serviceName = NativeDisplay.serviceName(config);
+        var paths = new String[NativeDisplay.CHANNEL_COUNT];
+        var fds = new int[NativeDisplay.CHANNEL_COUNT];
+        inputClosed = false;
+        inputPeers = new FDSocket[NativeDisplay.CHANNEL_COUNT];
+        inputWriteLocks = new Object[NativeDisplay.CHANNEL_COUNT];
+        boolean allListening = true;
+        for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
+            inputWriteLocks[ch] = new Object();
+            var path = NativeDisplay.inputSocketPath(serviceName, ch);
+            paths[ch] = path;
+            var fd = UnixHelper.nativeUnixListen(path);
+            if (fd < 0) {
+                Log.w(TAG, fmt("Failed to pre-listen on input socket: %s", path));
+                allListening = false;
+                fds[ch] = -1;
+            } else {
+                Log.i(TAG, fmt("Pre-listening on input socket: %s (fd=%d)", path, fd));
+                fds[ch] = fd;
+                // Accept crosvm's connection in the background. crosvm is the client and connects
+                // at its own startup, so a peer may not arrive until after start() execs it.
+                startInputAcceptThread(ch, fd);
+            }
+        }
+        inputSocketPaths = paths;
+        inputServerFds = fds;
+        // Best-effort: open the UI-facing sockets too. Failure here is non-fatal — the UI will
+        // fall back to the vm_input IPC path — so we never let it mask the crosvm sockets above.
+        try {
+            ensureUiInputSocketsListening(serviceName);
+        } catch (Exception e) {
+            Log.w(TAG, "UI input sockets unavailable; UI will fall back to vm_input IPC", e);
+        }
+        return allListening;
+    }
+
+    /**
+     * Opens one UI-facing unix socket per channel ({@link NativeDisplay#uiInputSocketPath}) and
+     * spawns a forwarder thread that accepts the UI's connection, reads evdev bytes from it and
+     * writes them to the matching {@link #inputPeers} (crosvm). chmods the inode world-readable so
+     * the app-uid UI can connect to a root-owned listener. Released in {@link #releaseInputSockets()}.
+     */
+    private void ensureUiInputSocketsListening(@NonNull String vmKey) {
+        if (!UnixHelper.isLoaded()) {
+            Log.w(TAG, "UnixHelper not loaded; cannot open UI input sockets");
+            return;
+        }
+        uiInputClosed = false;
+        uiInputPeers = new FDSocket[NativeDisplay.CHANNEL_COUNT];
+        uiInputWriteLocks = new Object[NativeDisplay.CHANNEL_COUNT];
+        uiInputForwardThreads = new Thread[NativeDisplay.CHANNEL_COUNT];
+        var paths = new String[NativeDisplay.CHANNEL_COUNT];
+        var fds = new int[NativeDisplay.CHANNEL_COUNT];
+        for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
+            uiInputWriteLocks[ch] = new Object();
+            var path = NativeDisplay.uiInputSocketPath(vmKey, ch);
+            paths[ch] = path;
+            var fd = UnixHelper.nativeUnixListen(path);
+            if (fd < 0) {
+                Log.w(TAG, fmt("Failed to listen on UI input socket: %s", path));
+                fds[ch] = -1;
+                continue;
+            }
+            // The UI runs as the app uid (not root); the inode created by our root listener is
+            // 0755 root:root by default, so the UI can't connect. Open it up — the data is just
+            // evdev input events, no secrets, and the path is private to our package dir.
+            // The UI runs as the app uid (not root). The inode created by our root listener is owned by
+            // root; SELinux and DAC together block the app from connecting. Hand the inode to the
+            // app uid (chown via stat(DATA_DIR).st_uid — the app's home dir owner is the app) and
+            // restrict to owner-only rw. chmod 0660 is enough because the app is now the owner.
+            int appUid = -1;
+            try {
+                appUid = cn.classfun.droidvm.daemon.server.Server.getDroidVMUid();
+            } catch (Exception e) {
+                Log.w(TAG, "getDroidVMUid failed: " + e.getMessage());
+            }
+            try {
+                if (appUid >= 0) {
+                    Os.chown(path, appUid, appUid);
+                    Os.chmod(path, 0660);
+                } else {
+                    Os.chmod(path, 0666);
+                }
+            } catch (Exception e) {
+                Log.w(TAG, fmt("chown/chmod(%s) failed: %s", path, e.getMessage()));
+            }
+            fds[ch] = fd;
+            Log.i(TAG, fmt("Listening on UI input socket: %s (fd=%d)", path, fd));
+            startUiInputForwardThread(ch, fd);
+        }
+        uiInputSocketPaths = paths;
+        uiInputServerFds = fds;
+    }
+
+    /**
+     * Accepts the UI's connection on one UI input channel, then pumps evdev bytes from it into
+     * the matching crosvm peer. Runs until {@link #uiInputClosed} flips or the server fd is closed
+     * by {@link #releaseInputSockets()}.
+     */
+    private void startUiInputForwardThread(int channel, int serverFd) {
+        var t = new Thread(() -> {
+            while (!uiInputClosed) {
+                int clientFd = UnixHelper.nativeUnixAccept(serverFd);
+                if (clientFd < 0) {
+                    if (uiInputClosed) break;
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                    continue;
+                }
+                var peer = new FDSocket(clientFd);
+                synchronized (uiInputWriteLocks[channel]) {
+                    var old = uiInputPeers[channel];
+                    uiInputPeers[channel] = peer;
+                    if (old != null) {
+                        try { old.close(); } catch (Exception ignored) {}
+                    }
+                }
+                forwardUiInput(channel, peer);
+                synchronized (uiInputWriteLocks[channel]) {
+                    if (uiInputPeers[channel] == peer) uiInputPeers[channel] = null;
+                }
+                peer.close();
+            }
+        }, fmt("UiInputForward-%d", channel));
+        t.setDaemon(true);
+        t.start();
+        uiInputForwardThreads[channel] = t;
+    }
+
+    /**
+     * Reads from the UI peer on [channel] and writes to the crosvm peer on the same channel, one
+     * buffer at a time. crosvm reads fixed 8-byte evdev records, so we forward raw bytes without
+     * re-encoding. Returns when the UI disconnects (EOF) or the VM is shutting down.
+     */
+    private void forwardUiInput(int channel, @NonNull FDSocket uiPeer) {
+        Log.i(TAG, fmt("UI input connected: channel %d", channel));
+        var in = uiPeer.getInputStream();
+        var buf = new byte[4096];
+        try {
+            while (!uiInputClosed && !inputClosed) {
+                int n = in.read(buf);
+                if (n <= 0) break;
+                forwardToCrosvm(channel, buf, n);
+            }
+        } catch (IOException e) {
+            if (!uiInputClosed && !inputClosed)
+                Log.w(TAG, fmt("UI input channel %d read failed: %s", channel, e.getMessage()));
+        }
+        Log.i(TAG, fmt("UI input disconnected: channel %d", channel));
+    }
+
+    /** Writes [len] bytes to the crosvm peer for [channel]; no-op if crosvm isn't connected yet. */
+    private void forwardToCrosvm(int channel, @NonNull byte[] data, int len) {
+        if (inputWriteLocks == null || inputPeers == null) return;
+        synchronized (inputWriteLocks[channel]) {
+            var peer = inputPeers[channel];
+            if (peer == null || !peer.isOpen()) return; // crosvm not connected yet; drop silently
+            try {
+                var os = peer.getOutputStream();
+                os.write(data, 0, len);
+                os.flush();
+            } catch (IOException e) {
+                Log.w(TAG, fmt("forward channel %d to crosvm failed: %s", channel, e.getMessage()));
+                inputPeers[channel] = null;
+                try { peer.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    /**
+     * Accepts crosvm's connection on one input channel and keeps the live peer in
+     * {@link #inputPeers}. Loops so a crosvm restart (new connection on the same socket) replaces
+     * the dead peer; ends when {@link #releaseInputSockets()} closes the server fd.
+     */
+    private void startInputAcceptThread(int channel, int serverFd) {
+        var t = new Thread(() -> {
+            while (!inputClosed) {
+                int peerFd = UnixHelper.nativeUnixAccept(serverFd);
+                if (peerFd < 0) {
+                    if (inputClosed) break;
+                    try {
+                        Thread.sleep(200);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                    continue;
+                }
+                var peer = new FDSocket(peerFd);
+                synchronized (inputWriteLocks[channel]) {
+                    var old = inputPeers[channel];
+                    inputPeers[channel] = peer;
+                    if (old != null) old.close();
+                }
+                Log.i(TAG, fmt("crosvm input connected: channel %d", channel));
+            }
+        }, fmt("CrosvmInputAccept-%d", channel));
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * Writes pre-encoded evdev bytes (8-byte records) to the crosvm connection for [channel].
+     * Called from the daemon IPC thread on behalf of the UI. Returns false if no crosvm peer is
+     * connected yet or the write fails.
+     */
+    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+        if (channel < 0 || channel >= NativeDisplay.CHANNEL_COUNT
+            || inputPeers == null || inputWriteLocks == null || data.length == 0) return false;
+        synchronized (inputWriteLocks[channel]) {
+            var peer = inputPeers[channel];
+            if (peer == null || !peer.isOpen()) return false;
+            try {
+                var os = peer.getOutputStream();
+                os.write(data);
+                os.flush();
+                return true;
+            } catch (IOException e) {
+                Log.w(TAG, fmt("input write channel %d failed: %s", channel, e.getMessage()));
+                inputPeers[channel] = null;
+                peer.close();
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Closes the input server fds we opened and unlinks only the inodes we own. Channels that
+     * fell through to the UI's listener (fd == -1) are left untouched so we don't yank a socket
+     * the UI still holds.
+     */
+    private void releaseInputSockets() {
+        inputClosed = true; // stop accept loops; closing the server fd below unblocks nativeUnixAccept
+        if (inputPeers != null) {
+            for (int ch = 0; ch < inputPeers.length; ch++) {
+                if (inputWriteLocks != null && inputWriteLocks[ch] != null) {
+                    synchronized (inputWriteLocks[ch]) {
+                        if (inputPeers[ch] != null) {
+                            inputPeers[ch].close();
+                            inputPeers[ch] = null;
+                        }
+                    }
+                }
+            }
+            inputPeers = null;
+        }
+        inputWriteLocks = null;
+        if (inputServerFds == null) {
+            inputSocketPaths = null;
+            return;
+        }
+        for (int ch = 0; ch < inputServerFds.length; ch++) {
+            int fd = inputServerFds[ch];
+            if (fd < 0) continue;
+            UnixHelper.nativeCloseFd(fd);
+            if (inputSocketPaths != null && inputSocketPaths[ch] != null)
+                deleteFile(inputSocketPaths[ch]);
+        }
+        inputServerFds = null;
+        inputSocketPaths = null;
+        releaseUiInputSockets();
+    }
+
+    /** Releases the UI-facing input sockets and unlinks their inodes. */
+    private void releaseUiInputSockets() {
+        uiInputClosed = true;
+        if (uiInputPeers != null) {
+            for (int ch = 0; ch < uiInputPeers.length; ch++) {
+                if (uiInputWriteLocks != null && uiInputWriteLocks[ch] != null) {
+                    synchronized (uiInputWriteLocks[ch]) {
+                        if (uiInputPeers[ch] != null) {
+                            uiInputPeers[ch].close();
+                            uiInputPeers[ch] = null;
+                        }
+                    }
+                }
+            }
+            uiInputPeers = null;
+        }
+        uiInputWriteLocks = null;
+        if (uiInputServerFds == null) {
+            uiInputSocketPaths = null;
+            return;
+        }
+        for (int ch = 0; ch < uiInputServerFds.length; ch++) {
+            int fd = uiInputServerFds[ch];
+            if (fd < 0) continue;
+            UnixHelper.nativeCloseFd(fd);
+            if (uiInputSocketPaths != null && uiInputSocketPaths[ch] != null)
+                deleteFile(uiInputSocketPaths[ch]);
+        }
+        uiInputServerFds = null;
+        uiInputSocketPaths = null;
+        uiInputForwardThreads = null;
     }
 
     private void buildVncCommand(@NonNull List<String> args) {
@@ -410,5 +800,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             deleteFile(controlSocketPath);
             controlSocketPath = null;
         }
+        releaseInputSockets();
     }
 }
