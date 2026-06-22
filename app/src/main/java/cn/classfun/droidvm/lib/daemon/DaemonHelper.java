@@ -15,6 +15,7 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleepOrKill;
 
 import android.os.Handler;
 import android.os.Looper;
@@ -142,10 +143,11 @@ public final class DaemonHelper {
     }
 
     public boolean restartDaemon() {
-        // Force-launch: the new daemon kills the running one and takes the lock
-        // itself, which is atomic and avoids waiting on a possibly-stuck stop.
-        Log.i(TAG, "Restarting daemon (force takeover)");
-        return startDaemon(true);
+        Log.i(TAG, "Restarting daemon");
+        stopDaemon();
+        while (isDaemonRunning())
+            threadSleepOrKill(1000);
+        return startDaemon();
     }
 
 
