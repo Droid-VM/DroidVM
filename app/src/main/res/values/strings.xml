@@ -137,12 +137,7 @@
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
 
     <string name="vm_info_logs">Logs</string>
-    <string name="vm_info_logs_chooser_title">View Logs</string>
-    <string name="vm_info_logs_title">Logs - %1$s</string>
     <string name="vm_info_logs_no_logs">No logs available.</string>
-    <string name="vm_info_logs_copy">Copy</string>
-    <string name="vm_info_logs_save">Save</string>
-    <string name="vm_info_logs_copied">Logs copied to clipboard.</string>
     <string name="vm_info_logs_save_failed">Failed to save logs.</string>
 
     <string name="notif_channel_vm_events">VM Events</string>
@@ -274,7 +269,6 @@
     <string name="edit_vm_kernel_microdroid">System MicroDroid kernel</string>
     <string name="edit_vm_kernel_external">Select an external file</string>
     <string name="edit_vm_kernel_not_found">Target kernel is not exists: %1$s</string>
-    <string name="edit_vm_boot_uefi">Boot with UEFI</string>
     <string name="edit_vm_boot_protocol">Boot protocol</string>
     <string name="edit_vm_boot_protocol_uefi">UEFI</string>
     <string name="edit_vm_boot_protocol_linux">Linux boot protocol</string>
@@ -286,15 +280,12 @@
     <string name="edit_vm_kernel_source_image">Disk image</string>
     <string name="edit_vm_kernel_source_manual">Manual</string>
     <string name="edit_vm_boot_image_disk">Boot disk</string>
-    <string name="edit_vm_boot_image_disk_title">Select boot disk</string>
     <string name="edit_vm_boot_entry">Boot entry</string>
     <string name="edit_vm_boot_entry_auto">Auto (bootloader default)</string>
-    <string name="edit_vm_boot_entry_auto_hint">Follows guest kernel updates automatically</string>
     <string name="edit_vm_boot_entry_default_mark">%1$s (default)</string>
     <string name="edit_vm_boot_entry_builtin">DroidVM built-in Linux kernel</string>
     <string name="edit_vm_boot_entry_dma_warn">Missing DMA_RESTRICTED_POOL</string>
     <string name="edit_vm_boot_detect_title">Detected boot files</string>
-    <string name="edit_vm_boot_detect_entry">entry</string>
     <string name="edit_vm_boot_detect_kernel">Kernel</string>
     <string name="edit_vm_boot_detect_initrd">initrd</string>
     <string name="edit_vm_boot_detect_cmdline">Kernel cmdline</string>
@@ -302,22 +293,17 @@
     <string name="edit_vm_boot_detect_scanning">Scanning...</string>
     <string name="edit_vm_boot_detect_failed">Scan failed: %1$s</string>
     <string name="edit_vm_boot_detect_no_disk">No disk image configured for this VM</string>
-    <string name="edit_vm_boot_detect_root_warn">root= names a physical device; enable auto-fix or override the cmdline</string>
     <string name="edit_vm_boot_rescan">Rescan</string>
     <string name="edit_vm_boot_vdafix">Auto-fix root= device</string>
-    <string name="edit_vm_boot_vdafix_hint">Rewrites root=/dev/sdX to PARTUUID for virtio</string>
     <string name="edit_vm_boot_wait">Boot menu countdown (seconds)</string>
-    <string name="edit_vm_boot_wait_hint">0 = boot immediately without menu</string>
     <string name="edit_vm_boot_wait_invalid">Must be a number of seconds</string>
     <string name="edit_vm_boot_cmdline_override">Kernel cmdline override (empty = from image)</string>
-    <string name="edit_vm_boot_cmdline_override_hint">Empty = use cmdline from the image</string>
     <string name="edit_vm_boot_menu_title">Select boot entry -- %1$s</string>
     <string name="edit_vm_boot_menu_boot">Boot</string>
     <string name="edit_vm_boot_menu_boot_in">Boot (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">Remember this choice</string>
     <string name="edit_vm_boot_menu_fallback">Pinned entry "%1$s" not found; using default</string>
     <string name="edit_vm_boot_protected_dma_warn">This kernel lacks CONFIG_DMA_RESTRICTED_POOL.\nUnder a protected VM the guest cannot share DMA memory with the host, so virtio devices (disk/network) will fail to start.\nUse the built-in kernel, or rebuild with CONFIG_DMA_RESTRICTED_POOL.</string>
-    <string name="edit_vm_boot_uefi_hint">To boot a Linux kernel directly, please disable UEFI</string>
     <string name="kernel_analysis_title">Kernel analysis</string>
     <string name="kernel_analysis_analyze">Analyze</string>
     <string name="kernel_analysis_hint">Analyze the image\'s kernel/initrd over the network before importing</string>
@@ -663,22 +649,12 @@
     <string name="download_failed">Failed: %1$s</string>
     <string name="download_cancelled">Cancelled</string>
     <string name="download_file_icon_desc">File icon</string>
-    <string name="download_exit_title">Download in progress</string>
-    <string name="download_exit_message">A download is still in progress. Leaving now will cancel it and delete the partial file. Are you sure?</string>
     <string name="download_paused">Paused...</string>
-    <string name="download_paused_network">Paused, waiting for network...</string>
-    <string name="download_paused_retry">Connection interrupted, retrying...</string>
-    <string name="download_paused_wifi">Paused, waiting for Wi-Fi...</string>
     <string name="download_retrying">Connection lost, retrying (%1$d/%2$d)...</string>
     <string name="download_one_at_a_time">A download is already in progress. Please wait for it to finish.</string>
     <string name="download_background_toast">Download continues in the background. Check the notification shade.</string>    <string name="download_error_start">Could not start the download. Make sure the system Download Manager is enabled.</string>
 
-    <string name="notif_channel_downloads">Downloads</string>
-    <string name="notif_channel_downloads_desc">Disk image download notifications</string>
     <string name="notif_download_complete_title">Import complete</string>
-    <string name="notif_download_complete_text">\"%1$s\" was added to the disk list.</string>
-    <string name="notif_download_failed_title">Download failed</string>
-    <string name="notif_download_failed_text">Failed to download \"%1$s\".</string>
     <string name="notif_channel_downloads_progress">Downloading</string>
     <string name="notif_channel_downloads_progress_desc">Ongoing download progress</string>
     <string name="notif_download_connecting">Connecting...</string>
@@ -715,10 +691,6 @@
     <string name="test_build_warning_message">You are running a test build of DroidVM.\n\nThis version is for testing purposes only and may contain bugs or incomplete features. Data loss or instability may occur.\n\nPlease report any issues on GitHub.</string>
     <string name="test_build_warning_hide">Don\'t show again</string>
 
-    <plurals name="network_item_info">
-        <item quantity="one">bridge: %1$s \u00B7 %2$d address</item>
-        <item quantity="other">bridge: %1$s \u00B7 %2$d addresses</item>
-    </plurals>
     <string name="network_state_stopped">Stopped</string>
     <string name="network_state_starting">Starting</string>
     <string name="network_state_running">Running</string>
@@ -736,39 +708,14 @@
     <string name="network_edit_mac_hint">MAC address (e.g. 02:42:ac:11:00:01)</string>
     <string name="network_edit_auto_up">Bring up on start</string>
     <string name="network_edit_stp">Spanning Tree Protocol (STP)</string>
-    <string name="network_edit_nat">NAT (Network Address Translate)</string>
-    <string name="network_edit_category_ipv4">IPv4 Addresses</string>
-    <string name="network_edit_ipv4_hint">IPv4 CIDR (e.g. 192.168.1.1/24)</string>
-    <string name="network_edit_category_dns">DNS Servers</string>
-    <string name="network_edit_dns_hint">DNS server (e.g. 8.8.8.8)</string>
-    <string name="network_edit_category_ipv6">IPv6 Addresses</string>
-    <string name="network_edit_ipv6_hint">IPv6 CIDR (e.g. fd00::1/64)</string>
-    <string name="network_edit_no_addresses">No addresses configured.</string>
-    <string name="network_edit_remove_address">Remove address</string>
-    <string name="network_edit_category_dhcp">DHCP Server</string>
-    <string name="network_edit_dhcp_enabled">Enable DHCP server</string>
-    <string name="network_edit_dhcp_start_hint">Pool start (e.g. 192.168.1.100)</string>
-    <string name="network_edit_dhcp_end_hint">Pool end (e.g. 192.168.1.200)</string>
-    <string name="network_edit_btn_save">Save</string>
     <string name="network_edit_error_name_empty">Network name is required</string>
     <string name="network_edit_error_name_duplicate">A network with this name already exists</string>
     <string name="network_edit_error_bridge_empty">Bridge name is required</string>
     <string name="network_edit_error_bridge_invalid">Must start with a letter and contain only letters, digits, hyphens, or underscores</string>
-    <string name="network_edit_error_address_invalid">Invalid CIDR address</string>
-    <string name="network_edit_error_mac_invalid">Invalid MAC address format</string>
     <string name="network_edit_error_not_found">Network configuration not found</string>
     <string name="network_edit_error_bridge_duplicate">A network with this bridge name already exists</string>
-    <string name="network_edit_error_mac_duplicate">A network with this MAC address already exists</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
-    <string name="network_edit_error_dhcp_invalid">DHCP pool start must be before pool end</string>
-    <string name="network_edit_error_dhcp_start_invalid">Invalid DHCP pool start address</string>
-    <string name="network_edit_error_dhcp_end_invalid">Invalid DHCP pool end address</string>
-    <string name="network_edit_error_ipv4_not_added">IPv4 address input is not empty, please add it first or clear the field</string>
-    <string name="network_edit_error_ipv6_not_added">IPv6 address input is not empty, please add it first or clear the field</string>
-    <string name="network_edit_error_dns_not_added">DNS server input is not empty, please add it first or clear the field</string>
-    <string name="network_edit_error_dns_invalid">Invalid DNS server address</string>
-    <string name="network_edit_error_dns_empty">At least one DNS server is required</string>
     <string name="network_edit_save">Save network</string>
     <string name="network_edit_running_banner">This network is running. Stop it before editing.</string>
     <string name="network_edit_bridge_type">Bridge type</string>
@@ -838,13 +785,6 @@
     <string name="network_info_mac">MAC Address</string>
     <string name="network_info_auto_up">Auto start</string>
     <string name="network_info_stp">STP</string>
-    <string name="network_info_nat">NAT</string>
-    <string name="network_info_dhcp">DHCP Server</string>
-    <string name="network_info_dhcp_range">DHCP Range</string>
-    <plurals name="network_info_dhcp_pool">
-        <item quantity="one">%1$s - %2$s (%3$d address)</item>
-        <item quantity="other">%1$s - %2$s (%3$d addresses)</item>
-    </plurals>
     <string name="network_info_created">Created</string>
     <string name="network_info_enabled">Enabled</string>
     <string name="network_info_disabled">Disabled</string>
@@ -868,7 +808,6 @@
     <string name="vnc_display_title">VNC Display</string>
     <string name="vnc_display_connecting">Connecting\u2026</string>
     <string name="vnc_display_connected">Connected - %1$dx%2$d</string>
-    <string name="vnc_display_disconnected">Disconnected</string>
     <string name="vnc_display_reconnecting">Reconnecting (%1$d/%2$d)\u2026</string>
     <string name="vnc_display_reconnect_failed">Reconnect failed after %1$d attempts</string>
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
@@ -945,11 +884,6 @@
 
     <string name="hugepage_title">GH-Hugepage-Reserve Management</string>
     <string name="hugepage_subtitle">Manage module settings</string>
-    <string name="hugepage_section_status">Status</string>
-    <string name="hugepage_section_stats">Statistics</string>
-    <string name="hugepage_section_actions">Actions</string>
-    <string name="hugepage_module_loaded">Module Loaded</string>
-    <string name="hugepage_module_enabled">Module Status</string>
     <string name="hugepage_not_loaded">Kernel module is not loaded.</string>
     <string name="hugepage_not_installed">Magisk module is not installed.</string>
     <string name="hugepage_not_installed_desc">The gh-hugepage-reserve Magisk module is not installed. Please download and install it first.</string>

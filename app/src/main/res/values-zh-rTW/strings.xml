@@ -135,12 +135,7 @@
     <string name="vm_info_console_vnc_ext_select">外部顯示器的 VNC</string>
 
     <string name="vm_info_logs">日誌</string>
-    <string name="vm_info_logs_chooser_title">檢視日誌</string>
-    <string name="vm_info_logs_title">日誌 - %1$s</string>
     <string name="vm_info_logs_no_logs">無可用日誌。</string>
-    <string name="vm_info_logs_copy">複製</string>
-    <string name="vm_info_logs_save">儲存</string>
-    <string name="vm_info_logs_copied">日誌已複製到剪貼簿。</string>
     <string name="vm_info_logs_save_failed">儲存日誌失敗。</string>
 
     <string name="notif_channel_vm_events">虛擬機器事件</string>
@@ -272,7 +267,6 @@
     <string name="edit_vm_kernel_microdroid">系統自帶 MicroDroid 核心</string>
     <string name="edit_vm_kernel_external">選擇外部檔案</string>
     <string name="edit_vm_kernel_not_found">目標核心不存在: %1$s</string>
-    <string name="edit_vm_boot_uefi">使用 UEFI 啟動</string>
     <string name="edit_vm_boot_protocol">引導方式</string>
     <string name="edit_vm_boot_protocol_uefi">UEFI</string>
     <string name="edit_vm_boot_protocol_linux">Linux 開機協議</string>
@@ -284,15 +278,12 @@
     <string name="edit_vm_kernel_source_image">磁碟映像</string>
     <string name="edit_vm_kernel_source_manual">手動指定</string>
     <string name="edit_vm_boot_image_disk">引導磁碟</string>
-    <string name="edit_vm_boot_image_disk_title">選擇引導磁碟</string>
     <string name="edit_vm_boot_entry">引導項</string>
     <string name="edit_vm_boot_entry_auto">自動(跟隨引導載入器)</string>
-    <string name="edit_vm_boot_entry_auto_hint">客戶機更新核心後自動生效</string>
     <string name="edit_vm_boot_entry_default_mark">%1$s(預設)</string>
     <string name="edit_vm_boot_entry_builtin">DroidVM 內建 Linux 核心</string>
     <string name="edit_vm_boot_entry_dma_warn">缺失 DMA_RESTRICTED_POOL</string>
     <string name="edit_vm_boot_detect_title">檢測到的引導檔案</string>
-    <string name="edit_vm_boot_detect_entry">引導項</string>
     <string name="edit_vm_boot_detect_kernel">核心</string>
     <string name="edit_vm_boot_detect_initrd">initrd</string>
     <string name="edit_vm_boot_detect_cmdline">核心命令列</string>
@@ -300,22 +291,17 @@
     <string name="edit_vm_boot_detect_scanning">正在掃描…</string>
     <string name="edit_vm_boot_detect_failed">掃描失敗:%1$s</string>
     <string name="edit_vm_boot_detect_no_disk">此虛擬機器尚未配置磁碟映像</string>
-    <string name="edit_vm_boot_detect_root_warn">root= 指向物理裝置;請啟用自動修正或覆蓋 cmdline</string>
     <string name="edit_vm_boot_rescan">重新掃描</string>
     <string name="edit_vm_boot_vdafix">自動修正 root= 裝置</string>
-    <string name="edit_vm_boot_vdafix_hint">將 root=/dev/sdX 重寫為 PARTUUID 以適配 virtio</string>
     <string name="edit_vm_boot_wait">開機選單等待秒數</string>
-    <string name="edit_vm_boot_wait_hint">0 = 不顯示選單直接啟動</string>
     <string name="edit_vm_boot_wait_invalid">必須為秒數(數字)</string>
     <string name="edit_vm_boot_cmdline_override">核心命令列覆蓋(留空 = 使用映像內的)</string>
-    <string name="edit_vm_boot_cmdline_override_hint">留空 = 使用映像內的 cmdline</string>
     <string name="edit_vm_boot_menu_title">選擇引導項 — %1$s</string>
     <string name="edit_vm_boot_menu_boot">啟動</string>
     <string name="edit_vm_boot_menu_boot_in">啟動 (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">記住此選擇</string>
     <string name="edit_vm_boot_menu_fallback">未找到固定的引導項“%1$s”,已改用預設</string>
     <string name="edit_vm_boot_protected_dma_warn">此核心未啟用 CONFIG_DMA_RESTRICTED_POOL。\n在受保護 VM 下客戶機無法與主機共享 DMA 記憶體,virtio 裝置(磁碟/網路)將無法啟動。\n請改用內建核心,或重新編譯並啟用該選項。</string>
-    <string name="edit_vm_boot_uefi_hint">如果想要直接啟動 Linux 核心則請停用 UEFI</string>
     <string name="kernel_analysis_title">核心分析</string>
     <string name="kernel_analysis_analyze">分析</string>
     <string name="kernel_analysis_hint">匯入前通過網路分析映像的核心/initrd</string>
@@ -626,22 +612,12 @@
     <string name="download_failed">失敗：%1$s</string>
     <string name="download_cancelled">已取消</string>
     <string name="download_file_icon_desc">檔案圖示</string>
-    <string name="download_exit_title">正在下載</string>
-    <string name="download_exit_message">下載仍在進行中。現在離開將取消下載並刪除已下載的部分檔案。確定要退出嗎？</string>
     <string name="download_paused">已暫停…</string>
-    <string name="download_paused_network">已暫停，等待網路…</string>
-    <string name="download_paused_retry">連線中斷，正在重試…</string>
-    <string name="download_paused_wifi">已暫停，等待 Wi-Fi…</string>
     <string name="download_retrying">連線中斷，重試中 (%1$d/%2$d)…</string>
     <string name="download_one_at_a_time">已有下載正在進行，請等待完成。</string>
     <string name="download_background_toast">下載將在後臺繼續，可在通知欄檢視。</string>
     <string name="download_error_start">無法開始下載，請確認系統下載管理器已啟用。</string>
-    <string name="notif_channel_downloads">下載</string>
-    <string name="notif_channel_downloads_desc">磁碟映像下載通知</string>
     <string name="notif_download_complete_title">匯入完成</string>
-    <string name="notif_download_complete_text">"%1$s"已新增到磁碟列表。</string>
-    <string name="notif_download_failed_title">下載失敗</string>
-    <string name="notif_download_failed_text">無法下載"%1$s"。</string>
     <string name="notif_channel_downloads_progress">下載中</string>
     <string name="notif_channel_downloads_progress_desc">下載進行中的通知</string>
     <string name="notif_download_connecting">連線中…</string>
@@ -678,9 +654,6 @@
     <string name="test_build_warning_message">您正在執行 DroidVM 的測試版本。\n\n此版本僅供測試使用，可能包含錯誤或不完整的功能，可能導致資料丟失或執行不穩定。\n\n如遇到問題，請在 GitHub 上反饋。</string>
     <string name="test_build_warning_hide">不再提示</string>
 
-    <plurals name="network_item_info">
-        <item quantity="other">網橋：%1$s \u00B7 %2$d 個地址</item>
-    </plurals>
     <string name="network_state_stopped">已停止</string>
     <string name="network_state_starting">啟動中</string>
     <string name="network_state_running">執行中</string>
@@ -698,39 +671,14 @@
     <string name="network_edit_mac_hint">MAC 地址（例如 02:42:ac:11:00:01）</string>
     <string name="network_edit_auto_up">啟動時自動啟用</string>
     <string name="network_edit_stp">生成樹協議（STP）</string>
-    <string name="network_edit_nat">NAT（網路地址轉換）</string>
-    <string name="network_edit_category_ipv4">IPv4 地址</string>
-    <string name="network_edit_ipv4_hint">IPv4 CIDR（例如 192.168.1.1/24）</string>
-    <string name="network_edit_category_dns">DNS 伺服器</string>
-    <string name="network_edit_dns_hint">DNS 伺服器（例如 8.8.8.8）</string>
-    <string name="network_edit_category_ipv6">IPv6 地址</string>
-    <string name="network_edit_ipv6_hint">IPv6 CIDR（例如 fd00::1/64）</string>
-    <string name="network_edit_no_addresses">未配置地址。</string>
-    <string name="network_edit_remove_address">移除地址</string>
-    <string name="network_edit_category_dhcp">DHCP 服務</string>
-    <string name="network_edit_dhcp_enabled">啟用 DHCP 服務</string>
-    <string name="network_edit_dhcp_start_hint">地址池起始（例如 192.168.1.100）</string>
-    <string name="network_edit_dhcp_end_hint">地址池結束（例如 192.168.1.200）</string>
-    <string name="network_edit_btn_save">儲存</string>
     <string name="network_edit_error_name_empty">網路名稱不能為空</string>
     <string name="network_edit_error_name_duplicate">已存在同名網路</string>
     <string name="network_edit_error_bridge_empty">網橋名稱不能為空</string>
     <string name="network_edit_error_bridge_invalid">必須以字母開頭，且只能包含字母、數字、連字元或下劃線</string>
-    <string name="network_edit_error_address_invalid">無效的 CIDR 地址</string>
-    <string name="network_edit_error_mac_invalid">無效的 MAC 地址格式</string>
     <string name="network_edit_error_not_found">未找到網路配置</string>
     <string name="network_edit_error_bridge_duplicate">已存在使用此網橋名稱的網路</string>
-    <string name="network_edit_error_mac_duplicate">已存在使用此 MAC 地址的網路</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 子網 %1$s 與網路"%2$s"（%3$s）重疊</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 子網 %1$s 與網路"%2$s"（%3$s）重疊</string>
-    <string name="network_edit_error_dhcp_invalid">DHCP 地址池起始地址必須小於結束地址</string>
-    <string name="network_edit_error_dhcp_start_invalid">無效的 DHCP 地址池起始地址</string>
-    <string name="network_edit_error_dhcp_end_invalid">無效的 DHCP 地址池結束地址</string>
-    <string name="network_edit_error_ipv4_not_added">IPv4 地址輸入框不為空，請先新增或清空</string>
-    <string name="network_edit_error_ipv6_not_added">IPv6 地址輸入框不為空，請先新增或清空</string>
-    <string name="network_edit_error_dns_not_added">DNS 伺服器輸入框不為空，請先新增或清空</string>
-    <string name="network_edit_error_dns_invalid">無效的 DNS 伺服器地址</string>
-    <string name="network_edit_error_dns_empty">至少需要一個 DNS 伺服器</string>
     <string name="network_edit_save">儲存網路</string>
     <string name="network_edit_running_banner">網路正在執行，請先停止後再編輯。</string>
     <string name="network_edit_bridge_type">網橋型別</string>
@@ -800,12 +748,6 @@
     <string name="network_info_mac">MAC 地址</string>
     <string name="network_info_auto_up">自動啟動</string>
     <string name="network_info_stp">STP</string>
-    <string name="network_info_nat">NAT</string>
-    <string name="network_info_dhcp">DHCP 伺服器</string>
-    <string name="network_info_dhcp_range">DHCP 範圍</string>
-    <plurals name="network_info_dhcp_pool">
-        <item quantity="other">%1$s - %2$s (%3$d個地址)</item>
-    </plurals>
     <string name="network_info_created">建立時間</string>
     <string name="network_info_enabled">已啟用</string>
     <string name="network_info_disabled">已停用</string>
@@ -829,7 +771,6 @@
     <string name="vnc_display_title">VNC 顯示器</string>
     <string name="vnc_display_connecting">正在連線…</string>
     <string name="vnc_display_connected">已連線 - %1$dx%2$d</string>
-    <string name="vnc_display_disconnected">已斷開連線</string>
     <string name="vnc_display_reconnecting">正在重連 (%1$d/%2$d)…</string>
     <string name="vnc_display_reconnect_failed">重連失敗，已嘗試 %1$d 次</string>
     <string name="vnc_display_connect_failed">無法連線到 VNC 伺服器</string>
@@ -906,11 +847,6 @@
 
     <string name="hugepage_title">GH-Hugepage-Reserve 管理</string>
     <string name="hugepage_subtitle">管理模組設定</string>
-    <string name="hugepage_section_status">狀態</string>
-    <string name="hugepage_section_stats">統計資訊</string>
-    <string name="hugepage_section_actions">操作</string>
-    <string name="hugepage_module_loaded">模組已載入</string>
-    <string name="hugepage_module_enabled">模組狀態</string>
     <string name="hugepage_not_loaded">核心模組未載入。</string>
     <string name="hugepage_not_installed">Magisk 模組未安裝。</string>
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模組未安裝，請先下載並安裝。</string>

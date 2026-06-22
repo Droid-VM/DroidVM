@@ -135,12 +135,7 @@
     <string name="vm_info_console_vnc_ext_select">外部显示器的 VNC</string>
 
     <string name="vm_info_logs">日志</string>
-    <string name="vm_info_logs_chooser_title">查看日志</string>
-    <string name="vm_info_logs_title">日志 - %1$s</string>
     <string name="vm_info_logs_no_logs">无可用日志。</string>
-    <string name="vm_info_logs_copy">复制</string>
-    <string name="vm_info_logs_save">保存</string>
-    <string name="vm_info_logs_copied">日志已复制到剪贴板。</string>
     <string name="vm_info_logs_save_failed">保存日志失败。</string>
 
     <string name="notif_channel_vm_events">虚拟机事件</string>
@@ -272,7 +267,6 @@
     <string name="edit_vm_kernel_microdroid">系统自带 MicroDroid 内核</string>
     <string name="edit_vm_kernel_external">选择外部文件</string>
     <string name="edit_vm_kernel_not_found">目标内核不存在: %1$s</string>
-    <string name="edit_vm_boot_uefi">使用 UEFI 启动</string>
     <string name="edit_vm_boot_protocol">引导方式</string>
     <string name="edit_vm_boot_protocol_uefi">UEFI</string>
     <string name="edit_vm_boot_protocol_linux">Linux 开机协议</string>
@@ -284,15 +278,12 @@
     <string name="edit_vm_kernel_source_image">磁盘镜像</string>
     <string name="edit_vm_kernel_source_manual">手动指定</string>
     <string name="edit_vm_boot_image_disk">引导磁盘</string>
-    <string name="edit_vm_boot_image_disk_title">选择引导磁盘</string>
     <string name="edit_vm_boot_entry">引导项</string>
     <string name="edit_vm_boot_entry_auto">自动(跟随引导加载器)</string>
-    <string name="edit_vm_boot_entry_auto_hint">客户机更新内核后自动生效</string>
     <string name="edit_vm_boot_entry_default_mark">%1$s(默认)</string>
     <string name="edit_vm_boot_entry_builtin">DroidVM 内置 Linux 内核</string>
     <string name="edit_vm_boot_entry_dma_warn">缺失 DMA_RESTRICTED_POOL</string>
     <string name="edit_vm_boot_detect_title">检测到的引导文件</string>
-    <string name="edit_vm_boot_detect_entry">引导项</string>
     <string name="edit_vm_boot_detect_kernel">内核</string>
     <string name="edit_vm_boot_detect_initrd">initrd</string>
     <string name="edit_vm_boot_detect_cmdline">内核命令行</string>
@@ -300,22 +291,17 @@
     <string name="edit_vm_boot_detect_scanning">正在扫描…</string>
     <string name="edit_vm_boot_detect_failed">扫描失败:%1$s</string>
     <string name="edit_vm_boot_detect_no_disk">此虚拟机尚未配置磁盘镜像</string>
-    <string name="edit_vm_boot_detect_root_warn">root= 指向物理设备;请启用自动修正或覆盖 cmdline</string>
     <string name="edit_vm_boot_rescan">重新扫描</string>
     <string name="edit_vm_boot_vdafix">自动修正 root= 设备</string>
-    <string name="edit_vm_boot_vdafix_hint">将 root=/dev/sdX 重写为 PARTUUID 以适配 virtio</string>
     <string name="edit_vm_boot_wait">开机菜单等待秒数</string>
-    <string name="edit_vm_boot_wait_hint">0 = 不显示菜单直接启动</string>
     <string name="edit_vm_boot_wait_invalid">必须为秒数(数字)</string>
     <string name="edit_vm_boot_cmdline_override">内核命令行覆盖(留空 = 使用镜像内的)</string>
-    <string name="edit_vm_boot_cmdline_override_hint">留空 = 使用镜像内的 cmdline</string>
     <string name="edit_vm_boot_menu_title">选择引导项 — %1$s</string>
     <string name="edit_vm_boot_menu_boot">启动</string>
     <string name="edit_vm_boot_menu_boot_in">启动 (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">记住此选择</string>
     <string name="edit_vm_boot_menu_fallback">未找到固定的引导项“%1$s”,已改用默认</string>
     <string name="edit_vm_boot_protected_dma_warn">此内核未启用 CONFIG_DMA_RESTRICTED_POOL。\n在受保护 VM 下客户机无法与主机共享 DMA 内存,virtio 设备(磁盘/网络)将无法启动。\n请改用内置内核,或重新编译并启用该选项。</string>
-    <string name="edit_vm_boot_uefi_hint">如果想要直接启动 Linux 内核则请禁用 UEFI</string>
     <string name="kernel_analysis_title">内核分析</string>
     <string name="kernel_analysis_analyze">分析</string>
     <string name="kernel_analysis_hint">导入前通过网络分析镜像的内核/initrd</string>
@@ -626,22 +612,12 @@
     <string name="download_failed">失败：%1$s</string>
     <string name="download_cancelled">已取消</string>
     <string name="download_file_icon_desc">文件图标</string>
-    <string name="download_exit_title">正在下载</string>
-    <string name="download_exit_message">下载仍在进行中。现在离开将取消下载并删除已下载的部分文件。确定要退出吗？</string>
     <string name="download_paused">已暂停…</string>
-    <string name="download_paused_network">已暂停，等待网络…</string>
-    <string name="download_paused_retry">连接中断，正在重试…</string>
-    <string name="download_paused_wifi">已暂停，等待 Wi-Fi…</string>
     <string name="download_retrying">连接中断，重试中 (%1$d/%2$d)…</string>
     <string name="download_one_at_a_time">已有下载正在进行，请等待完成。</string>
     <string name="download_background_toast">下载将在后台继续，可在通知栏查看。</string>
     <string name="download_error_start">无法开始下载，请确认系统下载管理器已启用。</string>
-    <string name="notif_channel_downloads">下载</string>
-    <string name="notif_channel_downloads_desc">磁盘镜像下载通知</string>
     <string name="notif_download_complete_title">导入完成</string>
-    <string name="notif_download_complete_text">"%1$s"已添加到磁盘列表。</string>
-    <string name="notif_download_failed_title">下载失败</string>
-    <string name="notif_download_failed_text">无法下载"%1$s"。</string>
     <string name="notif_channel_downloads_progress">下载中</string>
     <string name="notif_channel_downloads_progress_desc">下载进行中的通知</string>
     <string name="notif_download_connecting">连接中…</string>
@@ -678,9 +654,6 @@
     <string name="test_build_warning_message">您正在运行 DroidVM 的测试版本。\n\n此版本仅供测试使用，可能包含错误或不完整的功能，可能导致数据丢失或运行不稳定。\n\n如遇到问题，请在 GitHub 上反馈。</string>
     <string name="test_build_warning_hide">不再提示</string>
 
-    <plurals name="network_item_info">
-        <item quantity="other">网桥：%1$s \u00B7 %2$d 个地址</item>
-    </plurals>
     <string name="network_state_stopped">已停止</string>
     <string name="network_state_starting">启动中</string>
     <string name="network_state_running">运行中</string>
@@ -698,39 +671,14 @@
     <string name="network_edit_mac_hint">MAC 地址（例如 02:42:ac:11:00:01）</string>
     <string name="network_edit_auto_up">启动时自动启用</string>
     <string name="network_edit_stp">生成树协议（STP）</string>
-    <string name="network_edit_nat">NAT（网络地址转换）</string>
-    <string name="network_edit_category_ipv4">IPv4 地址</string>
-    <string name="network_edit_ipv4_hint">IPv4 CIDR（例如 192.168.1.1/24）</string>
-    <string name="network_edit_category_dns">DNS 服务器</string>
-    <string name="network_edit_dns_hint">DNS 服务器（例如 8.8.8.8）</string>
-    <string name="network_edit_category_ipv6">IPv6 地址</string>
-    <string name="network_edit_ipv6_hint">IPv6 CIDR（例如 fd00::1/64）</string>
-    <string name="network_edit_no_addresses">未配置地址。</string>
-    <string name="network_edit_remove_address">移除地址</string>
-    <string name="network_edit_category_dhcp">DHCP 服务</string>
-    <string name="network_edit_dhcp_enabled">启用 DHCP 服务</string>
-    <string name="network_edit_dhcp_start_hint">地址池起始（例如 192.168.1.100）</string>
-    <string name="network_edit_dhcp_end_hint">地址池结束（例如 192.168.1.200）</string>
-    <string name="network_edit_btn_save">保存</string>
     <string name="network_edit_error_name_empty">网络名称不能为空</string>
     <string name="network_edit_error_name_duplicate">已存在同名网络</string>
     <string name="network_edit_error_bridge_empty">网桥名称不能为空</string>
     <string name="network_edit_error_bridge_invalid">必须以字母开头，且只能包含字母、数字、连字符或下划线</string>
-    <string name="network_edit_error_address_invalid">无效的 CIDR 地址</string>
-    <string name="network_edit_error_mac_invalid">无效的 MAC 地址格式</string>
     <string name="network_edit_error_not_found">未找到网络配置</string>
     <string name="network_edit_error_bridge_duplicate">已存在使用此网桥名称的网络</string>
-    <string name="network_edit_error_mac_duplicate">已存在使用此 MAC 地址的网络</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 子网 %1$s 与网络"%2$s"（%3$s）重叠</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 子网 %1$s 与网络"%2$s"（%3$s）重叠</string>
-    <string name="network_edit_error_dhcp_invalid">DHCP 地址池起始地址必须小于结束地址</string>
-    <string name="network_edit_error_dhcp_start_invalid">无效的 DHCP 地址池起始地址</string>
-    <string name="network_edit_error_dhcp_end_invalid">无效的 DHCP 地址池结束地址</string>
-    <string name="network_edit_error_ipv4_not_added">IPv4 地址输入框不为空，请先添加或清空</string>
-    <string name="network_edit_error_ipv6_not_added">IPv6 地址输入框不为空，请先添加或清空</string>
-    <string name="network_edit_error_dns_not_added">DNS 服务器输入框不为空，请先添加或清空</string>
-    <string name="network_edit_error_dns_invalid">无效的 DNS 服务器地址</string>
-    <string name="network_edit_error_dns_empty">至少需要一个 DNS 服务器</string>
     <string name="network_edit_save">保存网络</string>
     <string name="network_edit_running_banner">网络正在运行，请先停止后再编辑。</string>
     <string name="network_edit_bridge_type">网桥类型</string>
@@ -800,12 +748,6 @@
     <string name="network_info_mac">MAC 地址</string>
     <string name="network_info_auto_up">自动启动</string>
     <string name="network_info_stp">STP</string>
-    <string name="network_info_nat">NAT</string>
-    <string name="network_info_dhcp">DHCP 服务器</string>
-    <string name="network_info_dhcp_range">DHCP 范围</string>
-    <plurals name="network_info_dhcp_pool">
-        <item quantity="other">%1$s - %2$s (%3$d个地址)</item>
-    </plurals>
     <string name="network_info_created">创建时间</string>
     <string name="network_info_enabled">已启用</string>
     <string name="network_info_disabled">已禁用</string>
@@ -829,7 +771,6 @@
     <string name="vnc_display_title">VNC 显示器</string>
     <string name="vnc_display_connecting">正在连接…</string>
     <string name="vnc_display_connected">已连接 - %1$dx%2$d</string>
-    <string name="vnc_display_disconnected">已断开连接</string>
     <string name="vnc_display_reconnecting">正在重连 (%1$d/%2$d)…</string>
     <string name="vnc_display_reconnect_failed">重连失败，已尝试 %1$d 次</string>
     <string name="vnc_display_connect_failed">无法连接到 VNC 服务器</string>
@@ -906,11 +847,6 @@
 
     <string name="hugepage_title">GH-Hugepage-Reserve 管理</string>
     <string name="hugepage_subtitle">管理模块设置</string>
-    <string name="hugepage_section_status">状态</string>
-    <string name="hugepage_section_stats">统计信息</string>
-    <string name="hugepage_section_actions">操作</string>
-    <string name="hugepage_module_loaded">模块已加载</string>
-    <string name="hugepage_module_enabled">模块状态</string>
     <string name="hugepage_not_loaded">内核模块未加载。</string>
     <string name="hugepage_not_installed">Magisk 模块未安装。</string>
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模块未安装，请先下载并安装。</string>
