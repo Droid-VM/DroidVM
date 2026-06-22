@@ -63,9 +63,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            // arm64-v8a only: the VM runtime prebuilt (crosvm/qemu/kernel) ships
-            // for arm64 alone, so x86_64 could never boot a guest anyway.
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
         externalNativeBuild {
             cmake {
