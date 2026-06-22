@@ -459,7 +459,6 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
         var attrs = new int[]{android.R.attr.selectableItemBackground};
         try (var ta = getTheme().obtainStyledAttributes(attrs)) {
             view.setBackgroundResource(ta.getResourceId(0, 0));
-            ta.recycle();
             view.setOnClickListener(v -> {
                 var intent = new Intent(this, NetworkToolLogActivity.class);
                 intent.putExtra("network_id", networkId.toString());

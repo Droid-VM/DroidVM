@@ -35,6 +35,6 @@ public abstract class RunResult {
 
     @NonNull
     public String getErrString() {
-        return String.join("\n", getOut()).trim();
+        return String.join("\n", getErr()).trim();
     }
 }

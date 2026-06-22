@@ -8,13 +8,14 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.InterruptedIOException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.utils.ProcessUtils;
 
 /**
@@ -29,12 +30,15 @@ public class ManagedProcess {
 
     private final String tag;
     private final String logTag;
-    private Process process = null;
+    private NativeProcess process = null;
     private Thread monitor = null;
+    private Thread errPump = null;
     private volatile boolean running = false;
     private volatile int exitCode = -1;
     private Runnable onUnexpectedExit = null;
     private volatile LineListener lineListener = null;
+    /** Serialises line delivery across the stdout/stderr pumps. */
+    private final Object listenerLock = new Object();
     /** Recent merged stdout+stderr lines, surfaced to the network info UI. */
     private static final int LOG_CAP = 1000;
     private final ArrayDeque<String> logBuffer = new ArrayDeque<>();
@@ -61,44 +65,37 @@ public class ManagedProcess {
         stop();
         Log.i(logTag, fmt("Starting: %s", String.join(" ", args)));
         appendLog(fmt("=== starting: %s ===", String.join(" ", args)));
+        NativeProcess proc;
         try {
-            var pb = new ProcessBuilder(args);
-            pb.redirectErrorStream(true);
             exitCode = -1;
-            process = pb.start();
+            proc = new NativeProcess.Builder(args.toArray(new String[0])).start();
         } catch (Exception e) {
             Log.e(logTag, "Failed to start process", e);
             process = null;
             running = false;
             return false;
         }
+        process = proc;
         running = true;
-        monitor = new Thread(this::monitorThread, fmt("mon-%s", tag));
+        // NativeProcess keeps stdout/stderr on separate pipes (no
+        // redirectErrorStream); pump both into the same log/listener so the
+        // merged-output behaviour callers rely on is preserved.
+        var ep = new Thread(() -> pump(proc.getErrorStream()), fmt("err-%s", tag));
+        ep.setDaemon(true);
+        errPump = ep;
+        monitor = new Thread(() -> monitorThread(proc, ep), fmt("mon-%s", tag));
         monitor.setDaemon(true);
+        ep.start();
         monitor.start();
         return true;
     }
 
-    private void monitorThread() {
-        var proc = process;
-        if (proc == null) return;
+    private void monitorThread(@NonNull NativeProcess proc, @NonNull Thread errThread) {
         try {
-            try (var reader = new BufferedReader(
-                new InputStreamReader(proc.getInputStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    Log.d(logTag, line);
-                    appendLog(line);
-                    var listener = lineListener;
-                    if (listener != null) {
-                        try {
-                            listener.onLine(line);
-                        } catch (Exception e) {
-                            Log.w(logTag, "Line listener failed", e);
-                        }
-                    }
-                }
-            }
+            // stdout drains until the child closes it (i.e. exits / is killed)
+            pump(proc.getInputStream());
+            // flush any tail of stderr before reporting the exit
+            errThread.join();
             int code = proc.waitFor();
             exitCode = code;
             boolean unexpected = running;
@@ -111,13 +108,42 @@ public class ManagedProcess {
             } else {
                 Log.i(logTag, fmt("Process exited (code %d)", code));
             }
-        } catch (InterruptedException | InterruptedIOException e) {
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             Log.d(logTag, "Process monitor interrupted");
         } catch (Exception e) {
             Log.e(logTag, "Process monitor failed", e);
         } finally {
             running = false;
+            proc.close();
+        }
+    }
+
+    /** Reads one output stream line-by-line until EOF. */
+    private void pump(@NonNull InputStream in) {
+        try (var reader = new BufferedReader(new InputStreamReader(in))) {
+            String line;
+            while ((line = reader.readLine()) != null)
+                handleLine(line);
+        } catch (Exception e) {
+            // Expected when stop() kills the child and the pipe closes mid-read.
+            Log.d(logTag, fmt("output stream closed: %s", e.getMessage()));
+        }
+    }
+
+    /** Logs, buffers and dispatches one line; serialised so listeners see one
+     *  line at a time (as they did when stderr was merged into stdout). */
+    private void handleLine(@NonNull String line) {
+        Log.d(logTag, line);
+        appendLog(line);
+        var listener = lineListener;
+        if (listener == null) return;
+        synchronized (listenerLock) {
+            try {
+                listener.onLine(line);
+            } catch (Exception e) {
+                Log.w(logTag, "Line listener failed", e);
+            }
         }
     }
 
@@ -134,6 +160,10 @@ public class ManagedProcess {
             monitor.interrupt();
             monitor = null;
         }
+        if (errPump != null) {
+            errPump.interrupt();
+            errPump = null;
+        }
         var proc = process;
         process = null;
         if (proc == null) return;
@@ -145,37 +175,17 @@ public class ManagedProcess {
             Thread.currentThread().interrupt();
         }
         proc.destroyForcibly();
-        try {
-            proc.waitFor();
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        }
+        proc.waitFor();
+        proc.close();
     }
 
     /** Sends a signal (e.g. SIGHUP for config reload) to the running process. */
     public synchronized boolean signal(int signal) {
         var proc = process;
         if (proc == null || !proc.isAlive()) return false;
-        int pid = pidOf(proc);
+        int pid = proc.pid();
         if (pid <= 0) return false;
         return ProcessUtils.shellKillProcess(pid, signal);
-    }
-
-    /** java.lang.Process.pid() is not in the Android compile SDK; reflect. */
-    private static int pidOf(@NonNull Process proc) {
-        try {
-            var method = Process.class.getMethod("pid");
-            return (int) (long) (Long) method.invoke(proc);
-        } catch (Exception ignored) {
-        }
-        try {
-            var field = proc.getClass().getDeclaredField("pid");
-            field.setAccessible(true);
-            return field.getInt(proc);
-        } catch (Exception e) {
-            Log.w("ManagedProcess", "Failed to determine process pid", e);
-            return -1;
-        }
     }
 
     private void appendLog(@NonNull String line) {

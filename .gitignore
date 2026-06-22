@@ -4,6 +4,7 @@
 /.idea
 /.vscode
 /DroidVM-Prebuilt-Root
+/DroidVM-Prebuilt-Root_
 .DS_Store
 /build
 /captures

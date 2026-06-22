@@ -21,6 +21,7 @@ import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.daemon.network.backend.iptables.IptablesBackend;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
@@ -149,7 +150,10 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
             try {
                 var obj = inst.toInfoJson();
                 var s = inst.getState();
-                if (s == RUNNING) {
+                // Only a Linux-bridge network has a real kernel device to query
+                // via netbox; gvisor is a userspace data path (gvswitch) with no
+                // kernel interface, so querying it just spams ENODEV warnings.
+                if (s == RUNNING && inst.getBridgeType() == BridgeType.LINUX) {
                     var br = inst.item.optString("bridge_name", "");
                     obj.put("live_interfaces", backend.listBridgeInterfaces(br));
                     obj.put("live_addresses", backend.listAddresses(br));
