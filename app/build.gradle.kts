@@ -50,15 +50,14 @@ println("Version code: $generatedVersionCode")
 android {
     namespace = "cn.classfun.droidvm"
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
+        version = release(37) {
         }
     }
 
     defaultConfig {
         applicationId = "cn.classfun.droidvm"
         minSdk = 33
-        targetSdk = 36
+        targetSdk = 37
         versionCode = generatedVersionCode
         versionName = generatedVersionName
 
