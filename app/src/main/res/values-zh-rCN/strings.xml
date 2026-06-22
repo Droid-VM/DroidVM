@@ -933,4 +933,9 @@
     <string name="hugepage_stop_confirm">确定要停止大页预留模块吗？这将释放所有预分配的页面，可能会影响正在运行的虚拟机。</string>
     <string name="hugepage_unloaded">模块已卸载</string>
     <string name="hugepage_unload_failed">卸载模块失败</string>
+
+    <string name="notification_permission_title">允许通知？</string>
+    <string name="notification_permission_message">DroidVM 会在后台下载磁盘镜像，并通过通知显示进度。请允许通知，以便随时查看下载进度。</string>
+    <string name="notification_permission_allow">继续</string>
+    <string name="notification_permission_skip">暂不</string>
 </resources>

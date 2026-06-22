@@ -151,11 +151,17 @@ public final class DiskDownloadService extends Service {
             }
             switch (p.state) {
                 case DiskDownloadManager.STATE_SUCCESS:
-                    if (nm != null) nm.notify(notifId(id), buildDone(id));
+                    if (nm != null) {
+                        nm.cancel(notifId(id));
+                        nm.notify(doneNotifId(id), buildDone(id));
+                    }
                     active.remove(id);
                     break;
                 case DiskDownloadManager.STATE_FAILED:
-                    if (nm != null) nm.notify(notifId(id), buildFailed(id, p));
+                    if (nm != null) {
+                        nm.cancel(notifId(id));
+                        nm.notify(doneNotifId(id), buildFailed(id, p));
+                    }
                     active.remove(id);
                     break;
                 case DiskDownloadManager.STATE_CANCELLED:
@@ -193,8 +199,11 @@ public final class DiskDownloadService extends Service {
         handler.removeCallbacks(pollTask);
         polling = false;
         foregroundId = -1;
-        // DETACH so finished (success/failed) notifications stay in the shade.
-        stopForeground(STOP_FOREGROUND_DETACH);
+        // REMOVE clears the ongoing foreground notification for good (DETACH
+        // would leave a stuck, un-swipeable notification after a cancel).
+        // Finished downloads carry their own separate notification
+        // (doneNotifId) that this does not touch.
+        stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 
@@ -322,5 +331,13 @@ public final class DiskDownloadService extends Service {
 
     private static int notifId(long id) {
         return NOTIF_BASE + (int) (id & 0xFFFF);
+    }
+
+    /**
+     * Separate id for a finished (success/failed) notification, so it survives
+     * the ongoing foreground notification being removed when the service stops.
+     */
+    private static int doneNotifId(long id) {
+        return NOTIF_BASE + 0x1_0000 + (int) (id & 0xFFFF);
     }
 }

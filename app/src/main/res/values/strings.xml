@@ -972,4 +972,9 @@
     <string name="hugepage_stop_confirm">Are you sure you want to unload the hugepage reserve module? This will release all pre-allocated pages and may affect running VMs.</string>
     <string name="hugepage_unloaded">Module unloaded</string>
     <string name="hugepage_unload_failed">Failed to unload module</string>
+
+    <string name="notification_permission_title">Allow notifications?</string>
+    <string name="notification_permission_message">DroidVM downloads disk images in the background and shows the progress in a notification. Allow notifications so you can keep an eye on the download.</string>
+    <string name="notification_permission_allow">Continue</string>
+    <string name="notification_permission_skip">Not now</string>
 </resources>

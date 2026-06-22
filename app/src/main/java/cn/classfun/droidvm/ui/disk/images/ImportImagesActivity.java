@@ -41,6 +41,7 @@ import cn.classfun.droidvm.lib.data.Repos;
 import cn.classfun.droidvm.lib.download.DiskDownloadManager;
 import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.lib.ui.NotificationPermission;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -62,6 +63,7 @@ public final class ImportImagesActivity extends AppCompatActivity {
     private TextView tvInfoSize;
     private TextView tvInfoUrl;
     private ExtendedFloatingActionButton fabDownload;
+    private NotificationPermission notifPermission;
     private DownloadWidget downloadWidget;
     private NestedScrollView scrollView;
     private String[] mirrorKeys;
@@ -78,6 +80,7 @@ public final class ImportImagesActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_import_images);
+        notifPermission = new NotificationPermission(this);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         toolbar = findViewById(R.id.toolbar);
         cardPlaceholder = findViewById(R.id.card_placeholder);
@@ -304,7 +307,7 @@ public final class ImportImagesActivity extends AppCompatActivity {
         downloadName = name;
         downloadFolder = folder;
         var url = resolveDownloadUrl();
-        startDownload(url);
+        notifPermission.ensureThen(() -> startDownload(url));
     }
 
     private void startDownload(String url) {

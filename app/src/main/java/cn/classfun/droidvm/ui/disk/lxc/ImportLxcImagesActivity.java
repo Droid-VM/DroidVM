@@ -58,6 +58,7 @@ import cn.classfun.droidvm.lib.data.Repos;
 import cn.classfun.droidvm.lib.download.DiskDownloadManager;
 import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.lib.ui.NotificationPermission;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -88,6 +89,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     private MaterialCardView cardInfo;
     private TextView tvInfoSize, tvInfoPath;
     private ExtendedFloatingActionButton fabImport;
+    private NotificationPermission notifPermission;
     private DownloadWidget downloadWidget;
     private KernelAnalysisWidget kernelAnalysis;
     private NestedScrollView scrollView;
@@ -112,6 +114,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_import_lxc_images);
+        notifPermission = new NotificationPermission(this);
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         toolbar = findViewById(R.id.toolbar);
         dropdownMetaSource = findViewById(R.id.dropdown_meta_source);
@@ -690,7 +693,7 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         }
         downloadName = name;
         downloadFolder = folder;
-        startDownload(downloadUrl);
+        notifPermission.ensureThen(() -> startDownload(downloadUrl));
     }
 
     private void startDownload(String url) {
