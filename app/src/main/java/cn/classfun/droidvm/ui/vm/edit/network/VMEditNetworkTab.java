@@ -41,7 +41,7 @@ public final class VMEditNetworkTab extends VMEditBaseTab {
         var nets = requireNonNull(listNets.getItems());
         for (var net : nets)
             if (net.getValue().optString("network_id", "").isEmpty())
-                return false;
+                return showValidateFailed(R.string.edit_vm_network_cannot_be_empty);
         return true;
     }
 

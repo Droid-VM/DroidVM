@@ -332,6 +332,11 @@
     <string name="edit_vm_initrd_microdroid_debug">System MicroDroid initrd (debuggable)</string>
     <string name="edit_vm_initrd_external">Select an external file</string>
     <string name="edit_vm_initrd_not_found">Target initramfs is not exists: %1$s</string>
+    <string name="edit_vm_network_cannot_be_empty">Network cannot be empty.</string>
+    <string name="edit_vm_target_disk_path_invalid">Target disk path invalid</string>
+    <string name="edit_vm_shared_directory_path_invalid">Shared directory path invalid</string>
+    <string name="edit_vm_shared_dir_tag_invalid">Shared dir tag invalid</string>
+    <string name="edit_vm_shared_dir_tag_duplicated">Shared dir tag duplicated</string>
 
     <string name="settings_category_general">General</string>
     <string name="settings_language_title">Language</string>

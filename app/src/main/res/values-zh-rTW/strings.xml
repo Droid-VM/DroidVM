@@ -330,6 +330,11 @@
     <string name="edit_vm_initrd_microdroid_debug">系統自帶 MicroDroid initrd（可除錯）</string>
     <string name="edit_vm_initrd_external">選擇外部檔案</string>
     <string name="edit_vm_initrd_not_found">目標 initrd 不存在: %1$s</string>
+    <string name="edit_vm_network_cannot_be_empty">網路不能為空。</string>
+    <string name="edit_vm_target_disk_path_invalid">目標磁碟路徑無效</string>
+    <string name="edit_vm_shared_directory_path_invalid">共享目錄路徑無效</string>
+    <string name="edit_vm_shared_dir_tag_invalid">共享目錄標籤無效</string>
+    <string name="edit_vm_shared_dir_tag_duplicated">共享目錄標籤重複</string>
 
     <string name="settings_category_general">通用</string>
     <string name="settings_language_title">語言</string>

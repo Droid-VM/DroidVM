@@ -129,17 +129,17 @@ public final class VMEditStorageTab extends VMEditBaseTab {
     public boolean validateInput(@NonNull VMStore store) {
         for (var disk : diskAdapter.getItems())
             if (!checkFilePath(disk.getValue().optString("path", ""), true))
-                return false;
+                return showValidateFailed(R.string.edit_vm_target_disk_path_invalid);
         var set = new HashSet<String>();
         for (var dir : sharedDirAdapter.getItems()) {
             var d = dir.getValue();
             if (!checkFilePath(d.optString("path", ""), true))
-                return false;
+                return showValidateFailed(R.string.edit_vm_shared_directory_path_invalid);
             var tag = d.optString("tag", "");
             if (!checkFileName(tag))
-                return false;
+                return showValidateFailed(R.string.edit_vm_shared_dir_tag_invalid);
             if (set.contains(tag))
-                return false;
+                return showValidateFailed(R.string.edit_vm_shared_dir_tag_duplicated);
             set.add(tag);
         }
         return true;
