@@ -43,7 +43,6 @@
     <string name="setup_virt_desc">正在检查虚拟化支持&#8230;</string>
     <string name="setup_virt_success">\u2705 已找到虚拟化支持。</string>
     <string name="setup_virt_fail">\u274C 未找到虚拟化支持，请确认已安装 com.android.virt APEX。</string>
-    <string name="setup_virt_detail">KVM: %1$s\nGunyah: %2$s\n</string>
 
     <string name="setup_storage_title">文件访问权限</string>
     <string name="setup_storage_desc">正在检查文件访问权限&#8230;</string>
@@ -152,12 +151,19 @@
     <string name="create_vm_backend">后端</string>
     <string name="create_vm_backend_crosvm">CrosVM</string>
     <string name="create_vm_backend_qemu">QEMU</string>
+    <string name="create_vm_hypervisor">虚拟化</string>
+    <string name="create_vm_hypervisor_auto">自动</string>
+    <string name="create_vm_hypervisor_soft">软件模拟</string>
+    <string name="create_vm_hypervisor_kvm">Linux KVM</string>
+    <string name="create_vm_hypervisor_gunyah">高通 Gunyah</string>
+    <string name="create_vm_hypervisor_geniezone">联发科 GenieZone</string>
     <string name="create_vm_btn">创建</string>
     <string name="create_vm_error_name_empty">名称不能为空</string>
     <string name="create_vm_error_name_invalid">名称包含无效字符</string>
     <string name="create_vm_error_name_duplicate">已存在同名虚拟机</string>
     <string name="create_vm_error_save">保存配置时发生错误</string>
     <string name="create_vm_error_invalid_number">无效数字</string>
+    <string name="create_vm_error_hypervisor_not_supported">所选后端不支持选中的虚拟化模式</string>
     <string name="create_vm_error_path_invalid">无效的绝对路径</string>
     <string name="create_vm_category_kernel">Linux 内核</string>
     <string name="create_vm_kernel_hint">内核</string>
