@@ -68,6 +68,30 @@
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:title="@string/settings_category_backup"
+                app:cc_collapsible="false">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_export_config"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_export_to"
+                    android:subtitle="@string/settings_export_config_summary"
+                    android:text="@string/settings_export_config_title" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_import_config"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_import_from"
+                    android:subtitle="@string/settings_import_config_summary"
+                    android:text="@string/settings_import_config_title" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:title="@string/settings_category_daemon"
                 app:cc_collapsible="false">
 
