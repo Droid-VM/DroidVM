@@ -33,6 +33,7 @@ import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
@@ -202,6 +203,8 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add("-qmp");
         args.add(fmt("unix:%s,server,nowait", qmpSocketPath));
         args.add("-nodefaults");
+        item.opt("extra_options", DataItem.newArray())
+            .forEach(arg -> args.add(arg.getValue().asString()));
         return args;
     }
 

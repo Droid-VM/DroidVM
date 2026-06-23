@@ -178,6 +178,8 @@
     <string name="create_vm_protected_normal">Normal</string>
     <string name="create_vm_protected_protected">Protected</string>
     <string name="create_vm_protected_without_firmware">Protected without firmware</string>
+    <string name="create_vm_category_extra_options">Extra Options</string>
+    <string name="create_vm_extra_option_hint">Extra arguments (one per line)</string>
     <string name="create_vm_category_gpu">Graphics Accelerator</string>
     <string name="create_vm_gpu_enabled">Enable GPU</string>
     <string name="create_vm_gpu_backend">Renderer</string>

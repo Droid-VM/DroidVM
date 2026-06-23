@@ -3,6 +3,7 @@ package cn.classfun.droidvm.ui.vm.edit.basic;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.text.TextUtils;
 import android.view.View;
@@ -10,7 +11,10 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.textfield.TextInputEditText;
+
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.size.SizeUnit;
@@ -36,6 +40,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swPrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
+    private TextInputEditText etExtraOptions;
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -56,6 +61,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPrepareLendMthp = view.findViewById(R.id.sw_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
+        etExtraOptions = view.findViewById(R.id.et_extra_options);
     }
 
     @Override
@@ -82,6 +88,15 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPrepareLendMthp.setChecked(item.optBoolean("prepare_lend_mthp", true));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
+        var extraOpts = item.opt("extra_options", null);
+        if (extraOpts != null && extraOpts.is(DataItem.Type.ARRAY)) {
+            var sb = new StringBuilder();
+            for (int i = 0; i < extraOpts.size(); i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(extraOpts.optString(i, ""));
+            }
+            etExtraOptions.setText(sb.toString());
+        }
     }
 
     private boolean validateInputName(@NonNull VMStore store) {
@@ -158,6 +173,14 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("protected_vm", pvm);
         VMBackend backend = chooseBackend.getSelectedItem();
         item.set("backend", backend);
+        var arr = DataItem.newArray();
+        var text = getEditText(etExtraOptions);
+        for (var line : text.split("\n")) {
+            var trimmed = line.trim();
+            if (!trimmed.isEmpty())
+                arr.append(DataItem.newString(trimmed));
+        }
+        item.set("extra_options", arr);
     }
 
     /**

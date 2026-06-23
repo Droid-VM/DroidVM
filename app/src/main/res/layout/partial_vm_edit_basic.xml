@@ -126,4 +126,31 @@
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_extra_options">
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_extra_options"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_extra_option_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_extra_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="top"
+                android:inputType="text|textMultiLine"
+                android:minLines="3"
+                android:textSize="14sp"
+                android:layout_marginStart="24dp"
+                android:layout_marginEnd="24dp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
 </LinearLayout>

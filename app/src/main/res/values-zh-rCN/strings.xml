@@ -176,6 +176,8 @@
     <string name="create_vm_protected_normal">普通</string>
     <string name="create_vm_protected_protected">保护</string>
     <string name="create_vm_protected_without_firmware">无固件保护</string>
+    <string name="create_vm_category_extra_options">额外选项</string>
+    <string name="create_vm_extra_option_hint">额外选项（每行一个）</string>
     <string name="create_vm_category_gpu">图形加速器</string>
     <string name="create_vm_gpu_enabled">启用GPU</string>
     <string name="create_vm_gpu_backend">渲染器</string>

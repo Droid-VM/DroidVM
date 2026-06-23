@@ -33,6 +33,7 @@ import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
@@ -170,6 +171,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildGpuCommand(args);
         buildVncCommand(args);
         buildSerialCommand(args);
+        item.opt("extra_options", DataItem.newArray())
+            .forEach(arg -> args.add(arg.getValue().asString()));
         if (boot.uefi) {
             // crosvm has no custom-firmware support; always builtin EDK2
             args.add(PATH_EDK2_FIRMWARE);
