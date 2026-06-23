@@ -781,6 +781,8 @@
     <string name="vnc_menu_fullscreen">全屏</string>
     <string name="vnc_menu_input_mode_touch">触摸模式</string>
     <string name="vnc_menu_input_mode_mouse">鼠标模式</string>
+    <string name="usb_input_no_device">未找到USB键盘或鼠标</string>
+    <string name="usb_input_status">USB输入：%1$d个键盘，%2$d个鼠标</string>
     <string name="vnc_menu_rotate">旋转屏幕</string>
 
     <string name="vnc_op_mouse_move">鼠标移动</string>

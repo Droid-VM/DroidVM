@@ -81,6 +81,13 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected Bitmap displayBitmap;
     protected final Object bitmapLock = new Object();
     protected VncStatus status = VncStatus.CONNECTING;
+    protected boolean capsLockOn = false;
+    protected boolean numLockOn = false;
+    protected LedStateListener ledStateListener;
+
+    public interface LedStateListener {
+        void onLedStateChanged(boolean caps, boolean num);
+    }
 
     protected enum VncStatus {
         CONNECTING,
@@ -420,6 +427,13 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
                 metaState = (metaState | META_SHIFT_ON) & ~META_SHIFT_MASK | META_SHIFT_ON;
             }
             if (action == KeyEvent.ACTION_DOWN) {
+                if (keyCode == KEYCODE_CAPS_LOCK) {
+                    capsLockOn = !capsLockOn;
+                    notifyLedState();
+                } else if (keyCode == KEYCODE_NUM_LOCK) {
+                    numLockOn = !numLockOn;
+                    notifyLedState();
+                }
                 if (!modifier && vncExtraKeys.hasNonStickyModifiers())
                     vncExtraKeys.applyModifiers(true);
                 if (!modifier) sendMetaState(metaState, true);
@@ -493,6 +507,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             vncClient.sendKey(androidKeyToXKeysym(KEYCODE_ALT_LEFT), down);
         if ((metaState & META_META_ON) != 0)
             vncClient.sendKey(androidKeyToXKeysym(KEYCODE_META_LEFT), down);
+    }
+
+    private void notifyLedState() {
+        if (ledStateListener != null)
+            ledStateListener.onLedStateChanged(capsLockOn, numLockOn);
     }
 
     protected static boolean isModifierKey(int keyCode) {

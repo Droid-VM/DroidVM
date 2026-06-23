@@ -46,6 +46,8 @@ public final class X11Keymap {
     public static final int XK_Meta_R =                           0xffe8;  /* Right meta */
     public static final int XK_Alt_L =                            0xffe9;  /* Left alt */
     public static final int XK_Alt_R =                            0xffea;  /* Right alt */
+    public static final int XK_Super_L =                          0xffeb;  /* Left super (Win key) */
+    public static final int XK_Super_R =                          0xffec;  /* Right super (Win key) */
     public static final int XK_3270_PrintScreen =                 0xfd1d;
     public static final int XK_space =                            0x0020;  /* U+0020 SPACE */
     public static final int XK_exclam =                           0x0021;  /* U+0021 EXCLAMATION MARK */
@@ -221,9 +223,9 @@ public final class X11Keymap {
             case KeyEvent.KEYCODE_CAPS_LOCK:
                 return XK_Caps_Lock;
             case KeyEvent.KEYCODE_META_LEFT:
-                return XK_Meta_L;
+                return XK_Super_L;
             case KeyEvent.KEYCODE_META_RIGHT:
-                return XK_Meta_R;
+                return XK_Super_R;
             case KeyEvent.KEYCODE_SCROLL_LOCK:
                 return XK_Scroll_Lock;
             case KeyEvent.KEYCODE_NUM_LOCK:

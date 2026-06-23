@@ -41,6 +41,20 @@ public final class VncTouchPadPanel implements DisplayTouchPadPanel.TouchPadList
         cursorY = height / 2f;
     }
 
+    public float getCursorX() {
+        return cursorX;
+    }
+
+    public float getCursorY() {
+        return cursorY;
+    }
+
+    public void moveCursor(float dx, float dy) {
+        if (fbWidth <= 0 || fbHeight <= 0) return;
+        cursorX = max(0, min(cursorX + dx, fbWidth - 1));
+        cursorY = max(0, min(cursorY + dy, fbHeight - 1));
+    }
+
     @Override
     public void onCursorMove(float dx, float dy) {
         if (vncClient == null || !vncClient.isConnected()) return;
