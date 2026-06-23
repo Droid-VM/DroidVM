@@ -41,7 +41,9 @@ import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -126,7 +128,27 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         args.add(String.valueOf(Math.max(item.optLong("memory_mb", 512), 64)));
         args.add("--cpus");
         args.add(String.valueOf(Math.max(item.optLong("cpu_count", 1), 1)));
-        switch (optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE)) {
+        var hyp = item.optString("hypervisor", "auto");
+        var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
+        if (hypervisor == VMHypervisor.AUTO)
+            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.CROSVM);
+        if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for CROSVM backend");
+        args.add("--hypervisor");
+        var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
+        switch (hypervisor) {
+            case KVM:
+                args.add("kvm");
+                break;
+            case GUNYAH:
+                args.add("gunyah");
+                defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+                break;
+            case GENIEZONE:
+                args.add("geniezone");
+                break;
+            default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
+        }
+        switch (optEnum(item, "protected_vm", defProtectedMode)) {
             case PROTECTED_PROTECTED:
                 args.add("--protected-vm");
                 break;

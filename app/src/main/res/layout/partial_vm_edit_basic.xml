@@ -48,6 +48,13 @@
             android:icon="@drawable/ic_application_cog"
             android:text="@string/create_vm_backend" />
 
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_hypervisor"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_cellphone_cog"
+            android:text="@string/create_vm_hypervisor" />
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer

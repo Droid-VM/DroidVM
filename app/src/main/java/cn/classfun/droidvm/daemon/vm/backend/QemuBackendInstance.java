@@ -39,7 +39,9 @@ import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class QemuBackendInstance extends VMBackendInstance {
@@ -125,24 +127,44 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add(config.getName());
         args.add("-L");
         args.add(pathJoin(DATA_DIR, "usr", "share", "qemu"));
-        var protectedVm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
+        var hyp = item.optString("hypervisor", "auto");
+        var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
+        if (hypervisor == VMHypervisor.AUTO)
+            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.QEMU);
+        if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for QEMU backend");
+        args.add("-accel");
+        var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
+        switch (hypervisor) {
+            case KVM:
+                args.add("kvm");
+                break;
+            case GUNYAH:
+                args.add("gunyah");
+                defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+                break;
+            case SOFT:
+                args.add("tcg");
+                break;
+            default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
+        }
+        args.add("-machine");
+        var machine = item.optString("machine_type", "virt");
+        var protectedVm = optEnum(item, "protected_vm", defProtectedMode);
+        if (hypervisor == VMHypervisor.SOFT)
+            protectedVm = ProtectedVM.PROTECTED_NORMAL;
         switch (protectedVm) {
             case PROTECTED_PROTECTED:
             case PROTECTED_WITHOUT_FIRMWARE:
-                args.add("-machine");
-                args.add("virt,confidential-guest-support=prot0");
-                args.add("-accel");
-                args.add("gunyah");
-                break;
-            default:
-                args.add("-machine");
-                args.add("virt");
-                args.add("-accel");
-                args.add("gunyah");
+                machine += ",confidential-guest-support=prot0";
                 break;
         }
+        args.add(machine);
         args.add("-cpu");
-        args.add(item.optBoolean("pmu", false) ? "host" : "host,pmu=off");
+        var cpu = "host";
+        if (hypervisor == VMHypervisor.SOFT)
+            cpu = item.optString("cpu_model", "cortex-a710");
+        if (!item.optBoolean("pmu", false)) cpu += ",pmu=off";
+        args.add(cpu);
         long cpuCount = Math.max(item.optLong("cpu_count", 1), 1);
         boolean smt = item.optBoolean("smt", true);
         long threads = smt ? 2 : 1;

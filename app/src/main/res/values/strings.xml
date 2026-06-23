@@ -44,7 +44,6 @@
     <string name="setup_virt_desc">Checking virtualization support&#8230;</string>
     <string name="setup_virt_success">\u2705 Virtualization support found.</string>
     <string name="setup_virt_fail">\u274C Virtualization support not found. Please ensure the com.android.virt APEX is available.</string>
-    <string name="setup_virt_detail">KVM: %1$s\nGunyah: %2$s\n</string>
 
     <string name="setup_storage_title">File Access</string>
     <string name="setup_storage_desc">Checking file access permission&#8230;</string>
@@ -154,12 +153,19 @@
     <string name="create_vm_backend">Backend</string>
     <string name="create_vm_backend_crosvm">CrosVM</string>
     <string name="create_vm_backend_qemu">QEMU</string>
+    <string name="create_vm_hypervisor">Hypervisor</string>
+    <string name="create_vm_hypervisor_auto">Auto</string>
+    <string name="create_vm_hypervisor_soft">Software Emulated</string>
+    <string name="create_vm_hypervisor_kvm">Linux KVM</string>
+    <string name="create_vm_hypervisor_gunyah">Qualcomm Gunyah</string>
+    <string name="create_vm_hypervisor_geniezone">MediaTek GenieZone</string>
     <string name="create_vm_btn">Create</string>
     <string name="create_vm_error_name_empty">Name is required</string>
     <string name="create_vm_error_name_invalid">Name contains invalid characters</string>
     <string name="create_vm_error_name_duplicate">A VM with this name already exists</string>
     <string name="create_vm_error_save">Error while saving config</string>
     <string name="create_vm_error_invalid_number">Invalid number</string>
+    <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>

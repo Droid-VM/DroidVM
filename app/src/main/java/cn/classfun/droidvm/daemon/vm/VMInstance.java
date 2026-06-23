@@ -352,7 +352,14 @@ public final class VMInstance extends VMConfig {
         }
         if (bootPlan.entryFallback)
             fireEvent("boot_entry_fallback", null);
-        var result = inst.start();
+        VMStartResult result;
+        try {
+            result = inst.start();
+        } catch (Exception e) {
+            Log.e(TAG, fmt("VM %s: exception during start vm", getName()), e);
+            result = new VMStartResult();
+            result.setProcess(null);
+        }
         if (!result.isSuccess()) {
             exitCode = -1;
             setState(VMState.STOPPED);

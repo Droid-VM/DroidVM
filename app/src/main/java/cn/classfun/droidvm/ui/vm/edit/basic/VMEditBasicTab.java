@@ -19,6 +19,7 @@ import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
@@ -40,6 +41,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swPrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
+    private ChooseRowWidget chooseHypervisor;
     private TextInputEditText etExtraOptions;
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
@@ -61,6 +63,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPrepareLendMthp = view.findViewById(R.id.sw_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
+        chooseHypervisor = view.findViewById(R.id.choose_hypervisor);
         etExtraOptions = view.findViewById(R.id.et_extra_options);
     }
 
@@ -69,7 +72,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
-        chooseBackend.configure(VMBackend.class, VMBackend.CROSVM);
+        chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
+        chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
     }
 
     @Override
@@ -88,6 +92,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPrepareLendMthp.setChecked(item.optBoolean("prepare_lend_mthp", true));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
+        chooseHypervisor.setSelectedItem(optEnum(item, "hypervisor", VMHypervisor.DEFAULT));
         var extraOpts = item.opt("extra_options", null);
         if (extraOpts != null && extraOpts.is(DataItem.Type.ARRAY)) {
             var sb = new StringBuilder();
@@ -147,11 +152,20 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         return true;
     }
 
+    private boolean validateHypervisor(@NonNull VMStore ignored) {
+        VMBackend backend = chooseBackend.getSelectedItem();
+        VMHypervisor hypervisor = chooseHypervisor.getSelectedItem();
+        if (!VMHypervisor.isBackendSupported(backend, hypervisor))
+            return showValidateFailed(R.string.create_vm_error_hypervisor_not_supported);
+        return true;
+    }
+
     @Override
     public boolean validateInput(@NonNull VMStore store) {
         if (!validateInputName(store)) return false;
         if (!validateInputMemory(store)) return false;
         if (!validateInputCpu(store)) return false;
+        if (!validateHypervisor(store)) return false;
         return true;
     }
 
@@ -173,6 +187,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("protected_vm", pvm);
         VMBackend backend = chooseBackend.getSelectedItem();
         item.set("backend", backend);
+        VMHypervisor hypervisor = chooseHypervisor.getSelectedItem();
+        item.set("hypervisor", hypervisor);
         var arr = DataItem.newArray();
         var text = getEditText(etExtraOptions);
         for (var line : text.split("\n")) {

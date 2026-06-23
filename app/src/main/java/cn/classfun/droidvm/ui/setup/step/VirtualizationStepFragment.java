@@ -1,6 +1,5 @@
 package cn.classfun.droidvm.ui.setup.step;
 
-import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
@@ -16,6 +15,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseCheckStepFragment;
 
@@ -44,23 +44,30 @@ public final class VirtualizationStepFragment extends BaseCheckStepFragment {
 
     private void operationThread() {
         threadSleep(CHECK_DELAY);
-        var kvmExists = shellCheckExists("/dev/kvm");
-        var gunyahExists = shellCheckExists("/dev/gunyah");
-        boolean success = kvmExists || gunyahExists;
-        Log.i(TAG, fmt(
-            "kvm exists: %s gunyah exists: %s",
-            String.valueOf(kvmExists),
-            String.valueOf(gunyahExists)
-        ));
+        boolean success = false;
+        var ctx = requireContext();
+        var displayString = new StringBuilder();
+        for (var hyp : VMHypervisor.values()) {
+            if (hyp.getDevicePath() == null) continue;
+            var supported = hyp.isSupported();
+            displayString.append(fmt(
+                "%s: %s\n",
+                hyp.getDisplayString(ctx),
+                supported ? "✅" : "❌"
+            ));
+            Log.i(TAG, fmt(
+                "%s: %s",
+                hyp.name().toLowerCase(),
+                supported
+            ));
+            if (supported) success = true;
+        }
+        var finalSuccess = success;
         requireActivity().runOnUiThread(() -> {
             if (!isAdded()) return;
-            if (success) {
+            if (finalSuccess) {
                 showSuccess(R.string.setup_virt_title, R.string.setup_virt_success);
-                showDetail(getString(
-                    R.string.setup_virt_detail,
-                    String.valueOf(kvmExists),
-                    String.valueOf(gunyahExists)
-                ));
+                showDetail(displayString.toString());
             } else {
                 showError(R.string.setup_virt_title, R.string.setup_virt_fail);
             }
