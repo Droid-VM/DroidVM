@@ -6,6 +6,7 @@ import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.Constants.GITHUB_ISSUE_URL;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.Context;
@@ -17,6 +18,8 @@ import android.os.Looper;
 import android.view.View;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -25,11 +28,27 @@ import androidx.core.os.LocaleListCompat;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.data.Language;
+import cn.classfun.droidvm.lib.store.base.DataConfig;
+import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.store.network.NetworkStore;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.base.MainBaseFragment;
@@ -65,7 +84,11 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemPrivacy;
     private TextRowWidget itemApiManager;
     private TextRowWidget itemHugepageReserve;
+    private TextRowWidget itemExportConfig;
+    private TextRowWidget itemImportConfig;
     private DaemonHelper daemon;
+    private ActivityResultLauncher<String> exportConfigLauncher;
+    private ActivityResultLauncher<String[]> importConfigLauncher;
 
     @Override
     protected int getLayoutResId() {
@@ -113,6 +136,16 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemPrivacy = view.findViewById(R.id.item_privacy);
         itemApiManager = view.findViewById(R.id.item_api_manager);
         itemHugepageReserve = view.findViewById(R.id.item_hugepage_reserve);
+        itemExportConfig = view.findViewById(R.id.item_export_config);
+        itemImportConfig = view.findViewById(R.id.item_import_config);
+        exportConfigLauncher = registerForActivityResult(
+            new ActivityResultContracts.CreateDocument("application/json"),
+            this::onExportFileSelected
+        );
+        importConfigLauncher = registerForActivityResult(
+            new ActivityResultContracts.OpenDocument(),
+            this::onImportFileSelected
+        );
         initSettings();
     }
 
@@ -132,6 +165,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
         bindOnClick(itemApiManager, this::showApiManager);
         bindOnClick(itemHugepageReserve, this::showHugePageReserve);
+        bindOnClick(itemExportConfig, this::exportConfig);
+        bindOnClick(itemImportConfig, this::importConfig);
         itemDaemonStatus.setSubtitle(R.string.settings_daemon_checking);
         itemDaemonStart.setVisibility(GONE);
         itemDaemonStop.setVisibility(GONE);
@@ -295,5 +330,116 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showHugePageReserve() {
         startActivity(new Intent(requireContext(), HugePageActivity.class));
+    }
+
+    private void exportConfig() {
+        var sdf = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault());
+        var timestamp = sdf.format(new Date());
+        exportConfigLauncher.launch(fmt("DroidVM_backup_%s.json", timestamp));
+    }
+
+    @SuppressWarnings("unused")
+    private void onExportFileSelected(Uri uri) {
+        if (uri == null) return;
+        var ctx = requireContext().getApplicationContext();
+        runOnPool(() -> {
+            try {
+                var vmStore = new VMStore(ctx);
+                var diskStore = new DiskStore(ctx);
+                var netStore = new NetworkStore(ctx);
+                var exportJson = new JSONObject();
+                exportJson.put("version", 1);
+                exportJson.put("timestamp", System.currentTimeMillis());
+                var sdf = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss", Locale.getDefault());
+                exportJson.put("date", sdf.format(new Date()));
+                exportJson.put("app_version", BuildConfig.VERSION_NAME);
+                exportJson.put("app_version_code", BuildConfig.VERSION_CODE);
+                exportJson.put("app_version_name", BuildConfig.VERSION_NAME);
+                exportJson.put("app_build_type", BuildConfig.BUILD_TYPE);
+                exportJson.put("app_id", BuildConfig.APPLICATION_ID);
+                exportJson.put("vms", vmStore.toJson().getJSONArray("vms"));
+                exportJson.put("disks", diskStore.toJson().getJSONArray("disks"));
+                exportJson.put("networks", netStore.toJson().getJSONArray("networks"));
+                try (var os = ctx.getContentResolver().openOutputStream(uri)) {
+                    if (os == null) throw new Exception("Failed to open output stream");
+                    os.write(exportJson.toString(4).getBytes(StandardCharsets.UTF_8));
+                }
+                mainHandler.post(() -> Toast.makeText(requireContext(),
+                    R.string.settings_export_success, LENGTH_SHORT).show());
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(requireContext(),
+                    getString(R.string.settings_export_failed, e.getMessage()), LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void importConfig() {
+        new MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_import_confirm_title)
+            .setMessage(R.string.settings_import_confirm_message)
+            .setPositiveButton(android.R.string.ok, (d, w) ->
+                importConfigLauncher.launch(new String[]{"application/json"}))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private <T extends DataConfig> void loadStore(
+        @NonNull Class<? extends DataStore<T>> store,
+        @NonNull JSONObject json
+    ) throws Exception {
+        var ctx = requireContext().getApplicationContext();
+        var oldStore = store.newInstance();
+        var newStore = store.newInstance();
+        oldStore.load(ctx);
+        newStore.load(json);
+        newStore.forEach((k, v) -> {
+            if (oldStore.findById(k) == null)
+                oldStore.add(v);
+            else
+                oldStore.update(v);
+        });
+        oldStore.save(ctx);
+    }
+
+    @SuppressWarnings("unused")
+    private void onImportFileSelected(Uri uri) {
+        if (uri == null) return;
+        var ctx = requireContext().getApplicationContext();
+        runOnPool(() -> {
+            try {
+                StringBuilder sb = new StringBuilder();
+                try (var is = ctx.getContentResolver().openInputStream(uri)) {
+                    if (is == null) throw new Exception("Failed to open input stream");
+                    try (var reader = new BufferedReader(new InputStreamReader(is))) {
+                        String line;
+                        while ((line = reader.readLine()) != null)
+                            sb.append(line).append('\n');
+                    }
+                }
+                var importJson = new JSONObject(sb.toString());
+                int count = 0;
+                if (importJson.has("vms")) {
+                    loadStore(VMStore.class, importJson);
+                    count++;
+                }
+                if (importJson.has("disks")) {
+                    loadStore(DiskStore.class, importJson);
+                    count++;
+                }
+                if (importJson.has("networks")) {
+                    loadStore(NetworkStore.class, importJson);
+                    count++;
+                }
+                final int imported = count;
+                mainHandler.post(() -> Toast.makeText(requireContext(),
+                    getString(R.string.settings_import_success, imported), LENGTH_SHORT).show());
+            } catch (JSONException e) {
+                mainHandler.post(() -> Toast.makeText(requireContext(),
+                    R.string.settings_import_invalid_json, LENGTH_LONG).show());
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(requireContext(),
+                    getString(R.string.settings_import_failed, e.getMessage()), LENGTH_LONG).show());
+            }
+        });
     }
 }
