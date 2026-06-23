@@ -12,6 +12,11 @@
         android:title="@string/vnc_menu_extra_keys" />
 
     <item
+        android:id="@+id/menu_input_mode"
+        android:icon="@drawable/ic_touchpad"
+        android:title="@string/vnc_menu_input_mode_mouse" />
+
+    <item
         android:id="@+id/menu_fullscreen"
         android:icon="@drawable/ic_fullscreen"
         android:title="@string/vnc_menu_fullscreen" />

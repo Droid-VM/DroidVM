@@ -779,7 +779,19 @@
     <string name="vnc_menu_keyboard">軟鍵盤</string>
     <string name="vnc_menu_extra_keys">額外按鍵</string>
     <string name="vnc_menu_fullscreen">全屏</string>
+    <string name="vnc_menu_input_mode_touch">觸控模式</string>
+    <string name="vnc_menu_input_mode_mouse">滑鼠模式</string>
     <string name="vnc_menu_rotate">旋轉螢幕</string>
+
+    <string name="vnc_op_mouse_move">滑鼠移動</string>
+    <string name="vnc_op_left_click">左鍵單擊</string>
+    <string name="vnc_op_left_double_click">左鍵雙擊</string>
+    <string name="vnc_op_right_click">右鍵單擊</string>
+    <string name="vnc_op_right_double_click">右鍵雙擊</string>
+    <string name="vnc_op_middle_click">中鍵單擊</string>
+    <string name="vnc_op_middle_double_click">中鍵雙擊</string>
+    <string name="vnc_op_scroll_up">滾輪上滾</string>
+    <string name="vnc_op_scroll_down">滾輪下滾</string>
     <string name="vnc_menu_reconnect">重新連線</string>
     <string name="vnc_menu_external_app">使用外部程式連線</string>
     <string name="vnc_menu_view_url">檢視連線地址</string>
