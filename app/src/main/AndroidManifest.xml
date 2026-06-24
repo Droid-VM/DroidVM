@@ -83,6 +83,13 @@
             android:windowSoftInputMode="adjustResize" />
 
         <activity
+            android:name=".ui.vm.display.nativedisplay.display.VMNativeDisplayActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.disk.lxc.ImportLxcImagesActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"

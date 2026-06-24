@@ -36,6 +36,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
@@ -48,6 +49,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private final VMConfig config;
     private SerialPipe uart = null;
     private String controlSocketPath = null;
+    /** Owns the per-VM native-display input sockets (crosvm-facing + UI-facing); see start(). */
+    private final NativeDisplayInputBridge inputBridge = new NativeDisplayInputBridge();
     private final FDPipeConsoleStream uartStream;
     private final InputConsoleStream stdoutStream;
     private final InputConsoleStream stderrStream;
@@ -85,6 +88,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         controlSocketPath = pathJoin(RUN_PATH, fmt("%s.sock", config.getName()));
         deleteFile(controlSocketPath);
         Log.i(TAG, fmt("Control socket path: %s", controlSocketPath));
+        // Native display: crosvm's --input <kind>[path=...] connects to a unix socket whose inode
+        // must already exist (crosvm is the *client*), and the display-page entry only appears after
+        // the VM is up - so the daemon is the only process that can both bind the socket before
+        // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
+        // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
+        if (isNativeDisplayEnabled()) {
+            if (!inputBridge.startListening(NativeDisplay.serviceName(config))) {
+                Log.e(TAG, "Native display input sockets unavailable; crosvm will likely fail");
+            }
+        }
         var args = buildCommand();
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
         try {
@@ -107,6 +120,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 uart = null;
             }
             controlSocketPath = null;
+            inputBridge.release();
             return result;
         }
         return result;
@@ -309,6 +323,46 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 item.optLong("display_height", 720)
             ));
         }
+        // Native display: crosvm registers an ICrosvmAndroidDisplayService binder under a per-VM
+        // name and renders the gfxstream/virtio-gpu output straight into the Android Surface the UI
+        // hands it. Requires the GPU (virtio-gpu) path above. Touch/keyboard come back over the
+        // per-VM unix sockets the root service listens on; their paths must match NativeDisplay.
+        // Single source of truth for the enable check; isNativeDisplayEnabled() also gates the
+        // socket pre-bind in start(), so the two must never diverge.
+        if (isNativeDisplayEnabled()) {
+            buildNativeDisplayCommand(args);
+        }
+    }
+
+    private void buildNativeDisplayCommand(@NonNull List<String> args) {
+        var item = config.item;
+        var serviceName = NativeDisplay.serviceName(config);
+        var width = item.optLong("display_width", 1280);
+        var height = item.optLong("display_height", 720);
+        args.add("--android-display-service");
+        args.add(serviceName);
+        // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
+        // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
+        args.add("--input");
+        args.add(fmt(
+            "multi-touch[path=%s,width=%d,height=%d]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH), width, height
+        ));
+        args.add("--input");
+        args.add(fmt(
+            "keyboard[path=%s]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
+        ));
+    }
+
+    /** True iff the per-VM crosvm command will reference native-display input sockets. */
+    private boolean isNativeDisplayEnabled() {
+        var item = config.item;
+        if (!item.optBoolean("gpu_enabled", false)) return false;
+        if (!item.optBoolean("display_enabled", false)) return false;
+        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
+        if (backend != DisplayBackend.VIRTIO_GPU) return false;
+        return item.optBoolean("native_display_enabled", false);
     }
 
     private void buildVncCommand(@NonNull List<String> args) {
@@ -405,10 +459,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     @Override
+    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+        return inputBridge.writeNativeInput(channel, data);
+    }
+
+    @Override
     public void cleanup() {
         if (controlSocketPath != null) {
             deleteFile(controlSocketPath);
             controlSocketPath = null;
         }
+        inputBridge.release();
     }
 }

@@ -135,6 +135,7 @@
     <string name="vm_info_console_text_select">Text Console %1$s</string>
     <string name="vm_info_console_vnc_select">VNC Console</string>
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
+    <string name="vm_info_console_native_select">Native Display</string>
 
     <string name="vm_info_logs">Logs</string>
     <string name="vm_info_logs_chooser_title">View Logs</string>
@@ -206,6 +207,7 @@
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
     <string name="create_vm_category_vnc">VNC Server</string>
     <string name="create_vm_vnc_enabled">Enable VNC</string>
+    <string name="create_vm_native_display_enabled">Enable native display (virtio-gpu)</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>
@@ -731,6 +733,12 @@
     <string name="vnc_display_reconnect_failed">Reconnect failed after %1$d attempts</string>
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
     <string name="vnc_display_fullscreen">Fullscreen</string>
+
+    <string name="native_display_title">Native Display</string>
+    <string name="native_display_connecting">Connecting…</string>
+    <string name="native_display_waiting">Waiting for VM display…</string>
+    <string name="native_display_connected">Connected - %1$dx%2$d</string>
+    <string name="native_display_failed">Failed to start native display</string>
 
     <string name="vnc_menu_keyboard">Soft Keyboard</string>
     <string name="vnc_menu_extra_keys">Extra Keys</string>

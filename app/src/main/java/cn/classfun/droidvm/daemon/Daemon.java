@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.utils.FileUtils;
@@ -99,6 +100,9 @@ public final class Daemon {
     public static void main(String... args) {
         System.out.print("Starting DroidVM Daemon...\n");
         UnixHelper.load();
+        // Build a system Context on the main thread (it prepares the main looper) so the daemon can
+        // broadcast the native-display binder to the UI. Must happen before server.run() blocks here.
+        DaemonSystemContext.init();
         System.out.printf("Current pid: %d\n", Process.myPid());
         Log.d(TAG, "DroidVM Daemon is starting...");
         daemonHash = getMyHash();
