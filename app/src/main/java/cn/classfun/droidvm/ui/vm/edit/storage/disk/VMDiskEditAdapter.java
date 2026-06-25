@@ -28,6 +28,7 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     private OnItemClickListener browseFileListener;
     private OnItemClickListener importOrCreateListener;
     private boolean readonlyChanged = false;
+    private boolean updatingViews = false;
 
     public VMDiskEditAdapter(@NonNull Context context) {
         super(context);
@@ -60,6 +61,26 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         }
     }
 
+    // Handles path edits coming from the user typing in the field. Updates the
+    // data model (and the dependent views) directly without notifyItemChanged,
+    // which would rebind the row and reset the EditText cursor to the start.
+    private void onPathTyped(VMDiskEditViewHolder holder, int position, String path) {
+        if (position < 0 || position >= items.size()) return;
+        var disk = items.get(position);
+        disk.set("path", path);
+        if (path.toLowerCase().endsWith(".iso")) {
+            disk.set("readonly", true);
+            disk.set("bus", DiskBus.CDROM);
+            updatingViews = true;
+            try {
+                holder.switchReadonly.setChecked(true);
+                holder.btnBus.setSelectedItem(DiskBus.CDROM);
+            } finally {
+                updatingViews = false;
+            }
+        }
+    }
+
     @NonNull
     @Override
     protected VMDiskEditViewHolder createViewHolderInstance(@NonNull View view) {
@@ -79,6 +100,7 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         holder.switchReadonly.setChecked(disk.optBoolean("readonly", false));
         holder.btnBus.configure(DiskBus.class, Enums.optEnum(disk, "bus", DiskBus.VIRTIO));
         holder.btnBus.setOnValueChangedListener((oldVal, newVal) -> {
+            if (updatingViews) return;
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             var item = items.get(pos);
@@ -95,11 +117,12 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
             public void afterTextChanged(Editable s) {
                 int pos = holder.getBindingAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION)
-                    setPathAt(pos, s.toString());
+                    onPathTyped(holder, pos, s.toString());
             }
         };
         holder.etPath.addTextChangedListener(holder.pathWatcher);
         holder.switchReadonly.setOnCheckedChangeListener((btn, checked) -> {
+            if (updatingViews) return;
             int pos = holder.getBindingAdapterPosition();
             readonlyChanged = true;
             if (pos != RecyclerView.NO_POSITION)
