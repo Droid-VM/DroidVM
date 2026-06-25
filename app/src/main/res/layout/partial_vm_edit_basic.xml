@@ -76,6 +76,18 @@
             android:icon="@drawable/ic_shield"
             android:text="@string/create_vm_protected_vm" />
 
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_swiotlb"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_swiotlb_hint"
+            android:icon="@drawable/ic_memory"
+            android:inputType="number"
+            app:ti_max="1GiB"
+            app:ti_min="1MiB"
+            app:ti_mode="size"
+            app:ti_precision="1MiB" />
+
         <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
             android:id="@+id/sw_sandbox"
             android:layout_width="match_parent"

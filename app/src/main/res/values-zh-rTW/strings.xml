@@ -176,6 +176,7 @@
     <string name="create_vm_smt">SMT (同步多執行緒)</string>
     <string name="create_vm_usb">USB (通用序列匯流排)</string>
     <string name="create_vm_protected_vm">保護模式</string>
+    <string name="create_vm_swiotlb_hint">SWIOTLB 大小（保護模式）</string>
     <string name="create_vm_sandbox">沙箱</string>
     <string name="create_vm_hugepages">大頁記憶體</string>
     <string name="create_vm_prepare_lend_mthp">預分配大頁</string>
