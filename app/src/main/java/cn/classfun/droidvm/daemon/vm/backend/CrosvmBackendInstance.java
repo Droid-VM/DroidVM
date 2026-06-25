@@ -38,6 +38,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
@@ -186,8 +187,18 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--disable-sandbox");
         if (item.optBoolean("hugepages", true))
             args.add("--hugepages");
-        if (item.optBoolean("prepare_lend_mthp", true))
-            args.add("--prepare-lend-mthp");
+        switch (LendMthpMode.fromItem(item)) {
+            case SINGLE:
+                args.add("--prepare-lend-mthp-mode");
+                args.add("single");
+                break;
+            case CHUNKED:
+                args.add("--prepare-lend-mthp-mode");
+                args.add("chunked");
+                break;
+            default:
+                break;
+        }
         var boot = BootPlan.of(config);
         if (!boot.initrd.isEmpty()) {
             args.add("--initrd");
