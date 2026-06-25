@@ -103,11 +103,10 @@
             android:icon="@drawable/ic_memory"
             android:text="@string/create_vm_hugepages" />
 
-        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-            android:id="@+id/sw_prepare_lend_mthp"
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_prepare_lend_mthp"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:checked="true"
             android:icon="@drawable/ic_preallocate"
             android:text="@string/create_vm_prepare_lend_mthp" />
 

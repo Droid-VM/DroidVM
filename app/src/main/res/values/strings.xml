@@ -183,6 +183,9 @@
     <string name="create_vm_sandbox">Sandbox</string>
     <string name="create_vm_hugepages">Hugepages</string>
     <string name="create_vm_prepare_lend_mthp">Prepare Lend mTHP</string>
+    <string name="create_vm_prepare_lend_mthp_disabled">Disabled</string>
+    <string name="create_vm_prepare_lend_mthp_single">Single (whole region)</string>
+    <string name="create_vm_prepare_lend_mthp_chunked">Chunked (≤256MiB)</string>
     <string name="create_vm_protected_normal">Normal</string>
     <string name="create_vm_protected_protected">Protected</string>
     <string name="create_vm_protected_without_firmware">Protected without firmware</string>
