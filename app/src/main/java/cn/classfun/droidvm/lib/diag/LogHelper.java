@@ -1,5 +1,8 @@
 package cn.classfun.droidvm.lib.diag;
 
+import android.os.Handler;
+import android.os.Looper;
+
 import androidx.annotation.NonNull;
 
 import org.json.JSONObject;
@@ -70,7 +73,8 @@ public final class LogHelper implements DaemonConnection.EventListener {
         for (var handler : handlers) {
             if (logs.disabled.contains(handler)) continue;
             if (!handler.match(vmId, stream, full)) continue;
-            vmEventHandler.queueActivityTask(act -> handler.show(act, vmId, vmName));
+            Runnable show = () -> vmEventHandler.queueActivityTask(act -> handler.show(act, vmId, vmName));
+            new Handler(Looper.getMainLooper()).postDelayed(show, handler.getShowDelay().toMillis());
             if (handler.isOnce())
                 logs.disabled.add(handler);
         }

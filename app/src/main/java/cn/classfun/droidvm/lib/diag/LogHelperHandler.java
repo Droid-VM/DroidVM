@@ -12,6 +12,7 @@ import androidx.annotation.StringRes;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.time.Duration;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
@@ -25,6 +26,10 @@ public abstract class LogHelperHandler {
 
     public boolean isOnce() {
         return true;
+    }
+
+    public Duration getShowDelay() {
+        return Duration.ofSeconds(2);
     }
 
     public abstract void show(@NonNull Context ctx, @NonNull UUID vmId, @NonNull String vmName);
