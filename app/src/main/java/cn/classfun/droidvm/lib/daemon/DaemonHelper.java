@@ -75,10 +75,26 @@ public final class DaemonHelper {
     public static int readPid() {
         try {
             var pid = parseInt(shellReadFile(getPidFile()).trim());
-            return isPidExists(pid) ? pid : -1;
+            if (isPidExists(pid)) {
+                try {
+                    var comm = shellReadFile(fmt("/proc/%d/comm", pid)).trim();
+                    if (comm.equals("droidvmd")) return pid;
+                    Log.i(TAG, fmt("proctitle mismatch: %s", comm));
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to read proctitle", e);
+                }
+                try {
+                    var comm = shellReadFile(fmt("/proc/%d/cmdline", pid));
+                    if (comm.contains(Daemon.class.getName())) return pid;
+                    Log.i(TAG, fmt("cmdline mismatch: %s", comm.replace('\0', ' ')));
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to read cmdline", e);
+                }
+                Log.w(TAG, "pid file maybe stale");
+            }
         } catch (Exception ignored) {
-            return -1;
         }
+        return -1;
     }
 
     public static boolean isDaemonRunning() {
