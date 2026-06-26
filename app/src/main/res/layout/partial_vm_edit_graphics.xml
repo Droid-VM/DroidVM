@@ -69,6 +69,13 @@
                 android:icon="@drawable/ic_connection"
                 android:text="@string/create_vm_display_backend" />
 
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_native_display_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_monitor"
+                android:text="@string/create_vm_native_display_enabled" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

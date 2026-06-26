@@ -76,10 +76,18 @@ public final class VMInstance extends VMConfig {
     }
 
     @NonNull
-    VMBackendInstance getBackendInstance() {
+    synchronized VMBackendInstance getBackendInstance() {
         if (this.backendInstance == null)
             this.backendInstance = getBackend().create(this);
         return this.backendInstance;
+    }
+
+    /** Forwards UI-sent evdev bytes to the running backend's native-display input channel. */
+    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+        // Only a running VM has a backend with bound input sockets; skip otherwise so a stale or
+        // spoofed input call can't lazily create an idle backend instance.
+        if (state != VMState.RUNNING) return false;
+        return getBackendInstance().writeNativeInput(channel, data);
     }
 
     @NonNull

@@ -38,6 +38,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swVncEnabled;
     private SwitchRowWidget swVncPasswordAuth;
     private SwitchRowWidget swDisplayEnabled;
+    private SwitchRowWidget swNativeDisplayEnabled;
     private ChooseRowWidget chooseGpuBackend;
     private ChooseRowWidget chooseGpuApi;
     private ChooseRowWidget chooseDisplayBackend;
@@ -63,6 +64,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuApi = view.findViewById(R.id.choose_gpu_api);
         gpuOptions = view.findViewById(R.id.gpu_options);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
+        swNativeDisplayEnabled = view.findViewById(R.id.sw_native_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
         displayOptions = view.findViewById(R.id.display_options);
         etDisplayWidth = view.findViewById(R.id.et_display_width);
@@ -114,6 +116,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
+        swNativeDisplayEnabled.setChecked(item.optBoolean("native_display_enabled", false));
         etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
         etDisplayHeight.setText(String.valueOf(item.optLong("display_height", 720)));
         etDisplayRefreshRate.setText(String.valueOf(item.optLong("display_refresh_rate", 60)));
@@ -189,6 +192,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (displayEnabled) {
             DisplayBackend displayBackend = chooseDisplayBackend.getSelectedItem();
             item.set("display_backend", displayBackend);
+            // Native display only applies to virtio-gpu + GPU enabled.
+            item.set("native_display_enabled", gpuEnabled
+                && displayBackend == DisplayBackend.VIRTIO_GPU
+                && swNativeDisplayEnabled.isChecked());
             item.set("display_width", parseInt(getEditText(etDisplayWidth)));
             item.set("display_height", parseInt(getEditText(etDisplayHeight)));
             item.set("display_refresh_rate", parseInt(getEditText(etDisplayRefreshRate)));
@@ -214,6 +221,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (chooseDisplayBackend.getSelectedItem() == DisplayBackend.VIRTIO_GPU)
                 chooseDisplayBackend.setSelectedItem(SIMPLEFB);
         }
+        updateNativeDisplayVisibility();
     }
 
     private void updateDisplayVisibility() {
@@ -223,6 +231,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private void updateDisplayDpiVisibility() {
         var backend = chooseDisplayBackend.getSelectedItem();
         displayDpiOptions.setVisibility(backend != SIMPLEFB ? VISIBLE : GONE);
+        updateNativeDisplayVisibility();
+    }
+
+    private void updateNativeDisplayVisibility() {
+        // Native display rides on virtio-gpu (gfxstream) only.
+        boolean ok = swGpuEnabled.isChecked()
+            && chooseDisplayBackend.getSelectedItem() == DisplayBackend.VIRTIO_GPU;
+        swNativeDisplayEnabled.setVisibility(ok ? VISIBLE : GONE);
+        if (!ok) swNativeDisplayEnabled.setChecked(false);
     }
 
     private void updateVncVisibility() {

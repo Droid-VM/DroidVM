@@ -25,6 +25,14 @@ public abstract class VMBackendInstance {
 
     public abstract void cleanup();
 
+    /**
+     * Writes pre-encoded evdev bytes to the running backend's native-display input channel on
+     * behalf of the UI. Only the crosvm backend implements this; others report not-delivered.
+     */
+    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+        return false;
+    }
+
     @NonNull
     @SuppressWarnings("unused")
     public Map<String, ConsoleStream> getStreams() {

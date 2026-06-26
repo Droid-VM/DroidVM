@@ -131,6 +131,7 @@
     <string name="vm_info_console_not_found">找不到任何控制台</string>
     <string name="vm_info_console_text_select">文字控制台 %1$s</string>
     <string name="vm_info_console_vnc_select">VNC 控制台</string>
+    <string name="vm_info_console_native_select">原生显示</string>
     <string name="vm_info_console_vnc_ext_select">外部显示器的 VNC</string>
 
     <string name="vm_info_logs">日志</string>
@@ -208,6 +209,7 @@
     <string name="create_vm_display_dpi_v">垂直DPI</string>
     <string name="create_vm_category_vnc">VNC 服务器</string>
     <string name="create_vm_vnc_enabled">启用 VNC</string>
+    <string name="create_vm_native_display_enabled">启用原生显示 (virtio-gpu)</string>
     <string name="create_vm_vnc_host">主机地址</string>
     <string name="create_vm_vnc_port">端口</string>
     <string name="create_vm_vnc_password_auth">密码认证</string>
@@ -796,6 +798,12 @@
     <string name="vnc_display_reconnect_failed">重连失败，已尝试 %1$d 次</string>
     <string name="vnc_display_connect_failed">无法连接到 VNC 服务器</string>
     <string name="vnc_display_fullscreen">全屏</string>
+
+    <string name="native_display_title">原生显示器</string>
+    <string name="native_display_connecting">正在连接…</string>
+    <string name="native_display_waiting">正在等待虚拟机画面…</string>
+    <string name="native_display_connected">已连接 - %1$dx%2$d</string>
+    <string name="native_display_failed">原生显示启动失败</string>
 
     <string name="vnc_menu_keyboard">软键盘</string>
     <string name="vnc_menu_extra_keys">额外按键</string>

@@ -146,6 +146,9 @@ public final class Server {
 
     private void handleClient(@NonNull Socket client) {
         try {
+            // Disable Nagle on the accepted socket so daemon->UI responses (incl. input ACKs)
+            // aren't delayed; pairs with the client-side setTcpNoDelay in DaemonClient.
+            client.setTcpNoDelay(true);
             var handler = new ClientHandler(this, client);
             synchronized (clients) {
                 clients.add(handler);

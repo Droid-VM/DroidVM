@@ -24,6 +24,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncDisplayActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncPresentationActivity;
@@ -53,6 +54,11 @@ public final class ConsoleButton {
     }
 
     void openDefaultConsole() {
+        if (parent.config != null
+            && parent.config.item.optBoolean("native_display_enabled", false)) {
+            openNativeDisplay();
+            return;
+        }
         if (parent.config != null && parent.config.item.optBoolean("vnc_enabled", false)) {
             openVncDisplay();
             return;
@@ -96,6 +102,12 @@ public final class ConsoleButton {
         var running = parent.currentState != VMState.STOPPED;
         var cfg = parent.config == null ? DataItem.newObject() : parent.config.item;
         var hasVnc = running && cfg.optBoolean("vnc_enabled", false);
+        var hasNative = running && cfg.optBoolean("native_display_enabled", false);
+        if (hasNative) {
+            names.add("native");
+            titles.add(parent.getString(R.string.vm_info_console_native_select));
+            icons.add(R.drawable.ic_monitor);
+        }
         if (hasVnc) {
             names.add("vnc");
             titles.add(parent.getString(R.string.vm_info_console_vnc_select));
@@ -108,14 +120,16 @@ public final class ConsoleButton {
             Toast.makeText(parent, R.string.vm_info_console_not_found, LENGTH_SHORT).show();
             return;
         }
-        if (names.size() == 1 && !hasVnc) {
+        if (names.size() == 1 && !hasVnc && !hasNative) {
             openConsole(names.get(0));
             return;
         }
         var adapter = IconItemAdapter.create(parent, titles, icons);
         DialogInterface.OnClickListener callback = (dialog, which) -> {
             var selected = names.get(which);
-            if (selected.equals("vnc")) {
+            if (selected.equals("native")) {
+                openNativeDisplay();
+            } else if (selected.equals("vnc")) {
                 openVncDisplay();
             } else if (selected.equals("vnc-ext")) {
                 openVncExtDisplay();
@@ -135,6 +149,17 @@ public final class ConsoleButton {
         intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, parent.config.getName());
         intent.putExtra(VMConsoleActivity.EXTRA_STREAM, stream);
         intent.putExtra(VMConsoleActivity.EXTRA_LOGS, parent.currentState == VMState.STOPPED);
+        parent.startActivity(intent);
+    }
+
+    private void openNativeDisplay() {
+        if (parent.config == null) return;
+        var item = parent.config.item;
+        var intent = new Intent(parent, VMNativeDisplayActivity.class);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_ID, parent.vmId.toString());
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, parent.config.getName());
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
         parent.startActivity(intent);
     }
 
