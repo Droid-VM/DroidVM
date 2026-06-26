@@ -29,6 +29,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
+import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.utils.FileUtils;
@@ -108,7 +109,7 @@ public final class AgentVM implements JSONSerialize {
         vm.item.set("temporary", true);
         vm.item.set("cpu_count", 1);
         vm.item.set("memory_mb", 384);
-        vm.item.set("prepare_lend_mthp", false);
+        vm.item.set(LendMthpMode.KEY, LendMthpMode.DISABLED);
         var boot = BootConfig.of(vm);
         boot.setProtocol(BootConfig.Protocol.LINUX);
         boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
