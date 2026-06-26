@@ -6,6 +6,7 @@ import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIR
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.text.TextUtils;
+import android.util.Log;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -14,6 +15,8 @@ import androidx.annotation.Nullable;
 import com.google.android.material.textfield.TextInputEditText;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.data.QcomChipName;
+import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
@@ -29,6 +32,7 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class VMEditBasicTab extends VMEditBaseTab {
+    private final String TAG = "VMEditBasicTab";
     private TextInputRowWidget inputName;
     private TextInputRowWidget inputMemory;
     private TextInputRowWidget inputCpu;
@@ -79,6 +83,19 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
         chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
+        choosePrepareLendMthp.configure(LendMthpMode.class, LendMthpMode.CHUNKED);
+        try {
+            var socModel = QcomChipName.getCurrentSoC();
+            var gunyah = new QcomGunyahSupports(parent);
+            if (gunyah.isCapacitySupported(socModel, "no_mthp"))
+                choosePrepareLendMthp.setSelectedItem(LendMthpMode.DISABLED);
+            if (gunyah.isCapacitySupported(socModel, "mthp_chunked"))
+                choosePrepareLendMthp.setSelectedItem(LendMthpMode.CHUNKED);
+            if (gunyah.isCapacitySupported(socModel, "mthp_single"))
+                choosePrepareLendMthp.setSelectedItem(LendMthpMode.SINGLE);
+        } catch (Exception e) {
+            Log.w(TAG, "failed to load soc capacity", e);
+        }
     }
 
     @Override
