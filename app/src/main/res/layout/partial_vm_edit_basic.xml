@@ -142,6 +142,14 @@
             android:icon="@drawable/ic_usb"
             android:text="@string/create_vm_usb" />
 
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_debug"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_bug"
+            android:text="@string/create_vm_debug" />
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer

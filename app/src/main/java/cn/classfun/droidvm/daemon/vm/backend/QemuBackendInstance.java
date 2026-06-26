@@ -47,7 +47,6 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 public final class QemuBackendInstance extends VMBackendInstance {
     private static final String TAG = "QemuBackendInstance";
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
-    private final VMConfig config;
     private String qmpSocketPath = null;
     private String uartSocketPath = null;
     private int ioThreadCounter = 0;
@@ -58,7 +57,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private final SimpleConsoleStream stdioStream;
 
     public QemuBackendInstance(@NonNull VMConfig config) {
-        this.config = config;
+        super(config);
         uartStream = new LocalSocketConsoleStream(config, "uart", null);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);
@@ -122,6 +121,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private List<String> buildCommand() {
         var item = config.item;
         var args = new ArrayList<String>();
+        prepareStraceArguments(args);
         args.add(getPrebuiltBinaryPath("qemu-system-aarch64"));
         args.add("-name");
         args.add(config.getName());

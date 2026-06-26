@@ -51,7 +51,6 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 public final class CrosvmBackendInstance extends VMBackendInstance {
     private static final String TAG = "CrosvmBackendInstance";
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
-    private final VMConfig config;
     private SerialPipe uart = null;
     private String controlSocketPath = null;
     /** Owns the per-VM native-display input sockets (crosvm-facing + UI-facing); see start(). */
@@ -62,7 +61,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private final SimpleConsoleStream stdioStream;
 
     public CrosvmBackendInstance(@NonNull VMConfig config) {
-        this.config = config;
+        super(config);
         uartStream = new FDPipeConsoleStream(config, "uart", -1, -1);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);
@@ -135,6 +134,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private List<String> buildCommand() {
         var item = config.item;
         var args = new ArrayList<String>();
+        prepareStraceArguments(args);
         args.add(getPrebuiltBinaryPath("crosvm"));
         args.add("run");
         args.add("--name");

@@ -44,6 +44,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swUsb;
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
+    private SwitchRowWidget swDebug;
     private ChooseRowWidget choosePrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
@@ -67,6 +68,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swUsb = view.findViewById(R.id.sw_usb);
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
+        swDebug = view.findViewById(R.id.sw_debug);
         choosePrepareLendMthp = view.findViewById(R.id.choose_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
@@ -79,7 +81,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         inputSwiotlb.setValue(64, SizeUnit.MB);
-        choosePrepareLendMthp.configure(LendMthpMode.class, LendMthpMode.DEFAULT);
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
         chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
@@ -112,6 +113,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swUsb.setChecked(item.optBoolean("usb", false));
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
+        swDebug.setChecked(item.optBoolean("strace", false));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
@@ -206,6 +208,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("usb", swUsb.isChecked());
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
+        item.set("strace", swDebug.isChecked());
         LendMthpMode lendMthpMode = choosePrepareLendMthp.getSelectedItem();
         item.set(LendMthpMode.KEY, lendMthpMode);
         ProtectedVM pvm = chooseProtectedVm.getSelectedItem();
