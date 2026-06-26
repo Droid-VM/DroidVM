@@ -1,16 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/tv_log"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-
-    <TextView
-        android:id="@+id/tv_log"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:contentDescription="@string/logs_title"
-        android:fontFamily="monospace"
-        android:padding="16dp"
-        android:textIsSelectable="true"
-        android:textSize="12sp" />
-
-</ScrollView>
+    android:layout_height="wrap_content"
+    android:contentDescription="@string/logs_title"
+    android:fontFamily="monospace"
+    android:gravity="bottom"
+    android:maxLines="15"
+    android:padding="16dp"
+    android:scrollbars="vertical"
+    android:textIsSelectable="true"
+    android:textSize="12sp" />

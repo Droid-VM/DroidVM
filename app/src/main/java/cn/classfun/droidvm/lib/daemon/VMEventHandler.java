@@ -18,7 +18,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -104,16 +103,14 @@ public final class VMEventHandler implements
         store.load(act);
         var vm = store.findByName(vmName);
         if (vm != null && vm.item.optBoolean("temporary", false)) return;
-        var inf = LayoutInflater.from(act);
-        var view = inf.inflate(R.layout.dialog_logs, null);
-        TextView tvLog = view.findViewById(R.id.tv_log);
-        tvLog.setText(logText.toString().trim());
-        new MaterialAlertDialogBuilder(act)
+        var dialog = new MaterialAlertDialogBuilder(act)
             .setTitle(act.getString(R.string.vm_exit_dialog_title, vmName))
             .setMessage(act.getString(R.string.vm_exit_dialog_message, exitCode))
-            .setView(view)
+            .setView(R.layout.dialog_logs)
             .setPositiveButton(android.R.string.ok, null)
             .show();
+        TextView tvLog = dialog.findViewById(R.id.tv_log);
+        if (tvLog != null) tvLog.append(logText.toString().trim());
     }
 
     private void addExitHandler() {

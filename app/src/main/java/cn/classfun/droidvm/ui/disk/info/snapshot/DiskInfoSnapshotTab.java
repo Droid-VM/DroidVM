@@ -271,15 +271,13 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
     }
 
     private void showErrorDialog(@NonNull String message) {
-        var dialogView = LayoutInflater.from(activity)
-            .inflate(R.layout.dialog_logs, null);
-        TextView tvLog = dialogView.findViewById(R.id.tv_log);
-        tvLog.setText(message);
-        new MaterialAlertDialogBuilder(activity)
+        var dialog = new MaterialAlertDialogBuilder(activity)
             .setTitle(R.string.disk_info_snapshot_failed_title)
-            .setView(dialogView)
+            .setView(R.layout.dialog_logs)
             .setPositiveButton(android.R.string.ok, null)
             .show();
+        TextView tvLog = dialog.findViewById(R.id.tv_log);
+        if (tvLog != null) tvLog.append(message.trim());
     }
 }
 
