@@ -190,7 +190,8 @@ public final class MaterialMenu {
         listView.setDividerHeight(0);
     }
 
-    public static void setupToolbarMenu(
+    @NonNull
+    public static MenuItem setupToolbarMenu(
         @NonNull MaterialToolbar toolbar,
         @MenuRes int menuId,
         @Nullable MenuItem.OnMenuItemClickListener listener
@@ -212,6 +213,7 @@ public final class MaterialMenu {
             }
             return false;
         });
+        return item;
     }
 
     private static final class MenuEntry {

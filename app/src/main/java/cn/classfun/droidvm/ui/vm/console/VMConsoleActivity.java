@@ -14,6 +14,9 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
+import android.content.res.ColorStateList;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -146,7 +149,9 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         MaterialToolbar toolbar = findViewById(R.id.toolbar);
         toolbar.setTitle(fmt("%s - %s", vmName, streamName));
         toolbar.setNavigationOnClickListener(v -> finish());
-        setupToolbarMenu(toolbar, R.menu.menu_vm_console, this::onMenuItemClicked);
+        var item = setupToolbarMenu(toolbar, R.menu.menu_vm_console, this::onMenuItemClicked);
+        item.setIconTintList(ColorStateList.valueOf(Color.WHITE));
+        item.setIconTintMode(PorterDuff.Mode.SRC_IN);
         terminalView = findViewById(R.id.terminal_view);
         terminalView.setTerminalViewClient(viewClient);
         var consoleBin = getAssetBinaryPath("droidvm");
