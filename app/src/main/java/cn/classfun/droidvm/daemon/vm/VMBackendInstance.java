@@ -3,7 +3,10 @@ package cn.classfun.droidvm.daemon.vm;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.natives.NativeProcess.RLIM_INFINITY;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
+
+import android.os.Build;
 
 import androidx.annotation.NonNull;
 
@@ -54,6 +57,7 @@ public abstract class VMBackendInstance {
     protected void prepareProcess(@NonNull NativeProcess.Builder builder) {
         String[] preload = {
             pathJoin(DATA_DIR, "lib", "libsimpledump.so"),
+            pathJoin(DATA_DIR, "lib", fmt("libcompat_a%s.so", Build.VERSION.RELEASE)),
         };
         builder.environment("LD_PRELOAD", String.join(":", preload));
         builder.environment("LD_LIBRARY_PATH", pathJoin(DATA_DIR, "usr", "lib"));
