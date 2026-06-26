@@ -42,6 +42,7 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.SplashActivity;
 import cn.classfun.droidvm.ui.main.MainActivity;
+import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
 
 public final class VMEventHandler implements
     DaemonConnection.EventListener,
@@ -102,12 +103,22 @@ public final class VMEventHandler implements
         var store = new VMStore();
         store.load(act);
         var vm = store.findByName(vmName);
-        if (vm != null && vm.item.optBoolean("temporary", false)) return;
+        if (vm == null) return;
+        if (vm.item.optBoolean("temporary", false)) return;
+        DialogInterface.OnClickListener btnSeeMore = (d, w) -> {
+            if (act.isFinishing() || act.isDestroyed()) return;
+            var intent = new Intent(act, VMConsoleActivity.class);
+            intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, vm.getId().toString());
+            intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, vmName);
+            intent.putExtra(VMConsoleActivity.EXTRA_STREAM, "stdio");
+            intent.putExtra(VMConsoleActivity.EXTRA_LOGS, true);
+            act.startActivity(intent);
+        };
         var dialog = new MaterialAlertDialogBuilder(act)
             .setTitle(act.getString(R.string.vm_exit_dialog_title, vmName))
             .setMessage(act.getString(R.string.vm_exit_dialog_message, exitCode))
             .setView(R.layout.dialog_logs)
-            .setPositiveButton(android.R.string.ok, null)
+            .setPositiveButton(R.string.vm_exit_see_more, btnSeeMore)
             .show();
         TextView tvLog = dialog.findViewById(R.id.tv_log);
         if (tvLog != null) tvLog.append(logText.toString().trim());

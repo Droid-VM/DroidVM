@@ -112,6 +112,7 @@
     <string name="vm_exit_dialog_title">虚拟机"%1$s"启动失败</string>
     <string name="vm_exit_dialog_message">虚拟机以退出码 %1$d 退出。\n\n日志：</string>
     <string name="vm_exit_no_logs">无可用日志。</string>
+    <string name="vm_exit_see_more">查看更多</string>
 
     <string name="vm_info_start">启动</string>
     <string name="vm_info_stop">停止</string>

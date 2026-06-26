@@ -112,6 +112,7 @@
     <string name="vm_exit_dialog_title">虛擬機器"%1$s"啟動失敗</string>
     <string name="vm_exit_dialog_message">虛擬機器以退出碼 %1$d 退出。\n\n日誌：</string>
     <string name="vm_exit_no_logs">無可用日誌。</string>
+    <string name="vm_exit_see_more">查看更多</string>
 
     <string name="vm_info_start">啟動</string>
     <string name="vm_info_stop">停止</string>

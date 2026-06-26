@@ -113,6 +113,7 @@
     <string name="vm_exit_dialog_title">VM \"%1$s\" Failed</string>
     <string name="vm_exit_dialog_message">The virtual machine exited with code %1$d.\n\nLogs:</string>
     <string name="vm_exit_no_logs">No logs available.</string>
+    <string name="vm_exit_see_more">See more</string>
 
     <string name="vm_info_start">Start</string>
     <string name="vm_info_stop">Stop</string>
