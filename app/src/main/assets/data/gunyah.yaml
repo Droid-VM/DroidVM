@@ -11,6 +11,7 @@ gunyah:
       - SM8650QAB
     capabilities:
       gunyah: yes
+      mthp_single: yes
 
   # Qualcomm Snapdragon 8 Elite
   - socs:
