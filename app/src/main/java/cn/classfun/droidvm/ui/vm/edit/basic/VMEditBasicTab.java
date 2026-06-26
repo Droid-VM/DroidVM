@@ -31,6 +31,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private TextInputRowWidget inputName;
     private TextInputRowWidget inputMemory;
     private TextInputRowWidget inputCpu;
+    private TextInputRowWidget inputSwiotlb;
     private SwitchRowWidget swBalloon;
     private SwitchRowWidget swPmu;
     private SwitchRowWidget swRng;
@@ -53,6 +54,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputName = view.findViewById(R.id.input_name);
         inputMemory = view.findViewById(R.id.input_memory);
         inputCpu = view.findViewById(R.id.input_cpu);
+        inputSwiotlb = view.findViewById(R.id.input_swiotlb);
         swBalloon = view.findViewById(R.id.sw_balloon);
         swPmu = view.findViewById(R.id.sw_pmu);
         swRng = view.findViewById(R.id.sw_rng);
@@ -71,6 +73,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     public void initValue() {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
+        inputSwiotlb.setValue(64, SizeUnit.MB);
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
         chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
@@ -82,6 +85,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputName.setText(config.getName());
         inputMemory.setValue(item.optLong("memory_mb", 512), SizeUnit.MB);
         inputCpu.setValue(item.optLong("cpu_count", 1));
+        inputSwiotlb.setValue(item.optLong("swiotlb_mb", 64), SizeUnit.MB);
         swBalloon.setChecked(item.optBoolean("balloon", false));
         swPmu.setChecked(item.optBoolean("pmu", false));
         swRng.setChecked(item.optBoolean("rng", false));
@@ -175,6 +179,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         config.setName(inputName.getText());
         item.set("memory_mb", inputMemory.getValue(SizeUnit.MB));
         item.set("cpu_count", inputCpu.getValue());
+        item.set("swiotlb_mb", inputSwiotlb.getValue(SizeUnit.MB));
         item.set("balloon", swBalloon.isChecked());
         item.set("pmu", swPmu.isChecked());
         item.set("rng", swRng.isChecked());

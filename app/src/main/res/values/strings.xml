@@ -178,6 +178,7 @@
     <string name="create_vm_smt">SMT (Simultaneous MultiThread)</string>
     <string name="create_vm_usb">USB (Universal Serial Bus)</string>
     <string name="create_vm_protected_vm">Protected VM</string>
+    <string name="create_vm_swiotlb_hint">SWIOTLB Size (Protected VM)</string>
     <string name="create_vm_sandbox">Sandbox</string>
     <string name="create_vm_hugepages">Hugepages</string>
     <string name="create_vm_prepare_lend_mthp">Prepare Lend mTHP</string>

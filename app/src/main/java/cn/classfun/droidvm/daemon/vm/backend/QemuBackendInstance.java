@@ -177,8 +177,9 @@ public final class QemuBackendInstance extends VMBackendInstance {
         switch (protectedVm) {
             case PROTECTED_PROTECTED:
             case PROTECTED_WITHOUT_FIRMWARE:
+                long swiotlbMb = Math.max(item.optLong("swiotlb_mb", 64), 1);
                 args.add("-object");
-                args.add("arm-confidential-guest,id=prot0,swiotlb-size=64M");
+                args.add(fmt("arm-confidential-guest,id=prot0,swiotlb-size=%dM", swiotlbMb));
                 break;
         }
         var boot = BootPlan.of(config);
