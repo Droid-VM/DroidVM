@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(droidvm LANGUAGES C CXX)
+project(droidvm LANGUAGES C CXX ASM)
 
 set(SHARED_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp/include
@@ -60,6 +60,29 @@ add_library(simpledump SHARED
 )
 
 target_compile_options(simpledump PRIVATE -Wall -Wextra -O0 -Wno-format-security -Wno-format)
+
+add_library(compat_a13 SHARED compat/a13.cpp compat/a13.S)
+add_library(compat_a14 SHARED compat/a14.cpp compat/a14.S)
+add_library(compat_a15 SHARED compat/a15.cpp compat/a15.S)
+add_library(compat_a16 SHARED compat/a16.cpp compat/a16.S)
+add_library(compat_a17 SHARED compat/a17.cpp compat/a17.S)
+target_compile_options(compat_a13 PRIVATE -Wall -Wextra -O0 -Wno-nullability-completeness)
+target_compile_options(compat_a14 PRIVATE -Wall -Wextra -O0 -Wno-nullability-completeness)
+target_compile_options(compat_a15 PRIVATE -Wall -Wextra -O0 -Wno-nullability-completeness)
+target_compile_options(compat_a16 PRIVATE -Wall -Wextra -O0 -Wno-nullability-completeness)
+target_compile_options(compat_a17 PRIVATE -Wall -Wextra -O0 -Wno-nullability-completeness)
+target_link_options(compat_a13 PRIVATE
+        "-Wl,--undefined=_ZTVNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--undefined=_ZTTNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--defsym,_ZTVNSt3__114basic_ofstreamIcNS_11char_traitsIcEEEE=_ZTVNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--defsym,_ZTTNSt3__114basic_ofstreamIcNS_11char_traitsIcEEEE=_ZTTNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+)
+target_link_options(compat_a14 PRIVATE
+        "-Wl,--undefined=_ZTVNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--undefined=_ZTTNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--defsym,_ZTVNSt3__114basic_ofstreamIcNS_11char_traitsIcEEEE=_ZTVNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+        "-Wl,--defsym,_ZTTNSt3__114basic_ofstreamIcNS_11char_traitsIcEEEE=_ZTTNSt6__ndk114basic_ofstreamIcNS_11char_traitsIcEEEE"
+)
 
 set(LIBVNCSERVER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/libvncserver)
 set(LIBVNCSERVER_INSTALL OFF CACHE BOOL "" FORCE)
