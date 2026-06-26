@@ -212,6 +212,14 @@ public final class Daemon {
         }
     }
 
+    private static void setProcTitle() {
+        try {
+            FileUtils.writeFile("/proc/self/comm", "droidvmd");
+        } catch (IOException e) {
+            Log.w(TAG, "Failed to set process title", e);
+        }
+    }
+
     public static void main(String... args) {
         boolean force = Arrays.asList(args).contains("--force");
         System.out.print("Starting DroidVM Daemon...\n");
@@ -219,6 +227,7 @@ public final class Daemon {
         // Build a system Context on the main thread (it prepares the main looper) so the daemon can
         // broadcast the native-display binder to the UI. Must happen before server.run() blocks here.
         DaemonSystemContext.init();
+        setProcTitle();
         System.out.printf("Current pid: %d\n", Process.myPid());
         Log.d(TAG, "DroidVM Daemon is starting...");
         if (!acquireLock(force)) {
