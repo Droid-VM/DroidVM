@@ -241,6 +241,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var arg = new StringBuilder(path);
             switch (bus) {
                 case SCSI:
+                    arg.append(",lock=false");
                     if (readonly) arg.append(",ro=true");
                     args.add("--scsi-block");
                     args.add(arg.toString());
