@@ -81,6 +81,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         inputSwiotlb.setValue(64, SizeUnit.MB);
+        swDebug.setChecked(false);
         chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
         chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
