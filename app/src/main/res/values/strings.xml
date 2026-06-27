@@ -187,7 +187,7 @@
     <string name="create_vm_prepare_lend_mthp">Prepare Lend mTHP</string>
     <string name="create_vm_prepare_lend_mthp_disabled">Disabled</string>
     <string name="create_vm_prepare_lend_mthp_single">Single (whole region)</string>
-    <string name="create_vm_prepare_lend_mthp_chunked">Chunked (≤256MiB)</string>
+    <string name="create_vm_prepare_lend_mthp_chunked">Chunked (&#8804;256MiB)</string>
     <string name="create_vm_protected_normal">Normal</string>
     <string name="create_vm_protected_protected">Protected</string>
     <string name="create_vm_protected_without_firmware">Protected without firmware</string>
@@ -842,8 +842,8 @@
     <string name="vnc_display_fullscreen">Fullscreen</string>
 
     <string name="native_display_title">Native Display</string>
-    <string name="native_display_connecting">Connecting…</string>
-    <string name="native_display_waiting">Waiting for VM display…</string>
+    <string name="native_display_connecting">Connecting...</string>
+    <string name="native_display_waiting">Waiting for VM display...</string>
     <string name="native_display_connected">Connected - %1$dx%2$d</string>
     <string name="native_display_failed">Failed to start native display</string>
 
