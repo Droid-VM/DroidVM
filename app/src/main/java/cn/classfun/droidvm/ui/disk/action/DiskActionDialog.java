@@ -228,14 +228,33 @@ public final class DiskActionDialog {
         config.item.set("folder", folder);
         var store = new DiskStore();
         runOnPool(() -> {
-            store.load(context);
-            store.add(config);
-            store.save(context);
+            try {
+                store.load(context);
+                if (store.findByName(fileName) != null) {
+                    mainLooper.post(() -> Toast.makeText(
+                        context,
+                        R.string.disk_create_error_exists,
+                        LENGTH_SHORT
+                    ).show());
+                    return;
+                }
+                store.add(config);
+                store.save(context);
+            } catch (Exception ignored) {
+                mainLooper.post(() -> Toast.makeText(
+                    context,
+                    R.string.disk_create_error_folder_invalid,
+                    LENGTH_SHORT
+                ).show());
+                return;
+            }
+            mainLooper.post(() -> {
+                var str = context.getString(R.string.disk_create_success, fileName);
+                Toast.makeText(context, str, LENGTH_SHORT).show();
+            });
             if (this.onUpdate != null)
                 this.onUpdate.run();
         });
-        var str = context.getString(R.string.disk_create_success, fileName);
-        Toast.makeText(context, str, LENGTH_SHORT).show();
         return config;
     }
 
