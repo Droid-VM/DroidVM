@@ -61,8 +61,22 @@ public final class StringUtils {
         return null;
     }
 
-    public static String resolveUriPath(Context ctx, Uri uri) {
+    @Nullable
+    private static String parseTreePath(@Nullable String content, @Nullable String tag) {
         var extStorage = externalPath();
+        if (content == null) return null;
+        if (tag != null) {
+            if (!content.startsWith(tag)) return null;
+            content = content.substring(tag.length());
+        }
+        if (shellCheckExists(content)) return content;
+        var real = pathJoin(extStorage, content);
+        if (shellCheckExists(real)) return real;
+        return null;
+    }
+
+    public static String resolveUriPath(Context ctx, Uri uri) {
+        String part;
         try {
             var real = getRealPathFromURI(ctx, uri);
             if (real != null && shellCheckExists(real)) return real;
@@ -70,26 +84,23 @@ public final class StringUtils {
         }
         try {
             var docId = DocumentsContract.getDocumentId(uri);
-            if (docId != null && docId.startsWith("primary:"))
-                return pathJoin(extStorage, docId.substring("primary:".length()));
+            if ((part = parseTreePath(docId, "primary:")) != null) return part;
         } catch (Exception ignored) {
         }
         try {
             var treeId = DocumentsContract.getTreeDocumentId(uri);
-            if (treeId != null && treeId.startsWith("primary:"))
-                return pathJoin(extStorage, treeId.substring("primary:".length()));
+            if ((part = parseTreePath(treeId, "primary:")) != null) return part;
         } catch (Exception ignored) {
         }
         var path = uri.getPath();
-        if (path != null && path.startsWith("/document/primary:"))
-            return pathJoin(extStorage, path.substring("/document/primary:".length()));
-        if (path != null && path.startsWith("/external_files/"))
-            return pathJoin(extStorage, path.substring("/external_files/".length()));
+        if ((part = parseTreePath(path, "/document/primary:")) != null) return part;
+        if ((part = parseTreePath(path, "/external_files/")) != null) return part;
+        if ((part = parseTreePath(path, "/tree/primary:")) != null) return part;
         if (path != null && path.startsWith("/tree/primary:")) {
             var sub = path.substring("/tree/primary:".length());
             int slash = sub.indexOf("/document/");
             if (slash >= 0) sub = sub.substring(0, slash);
-            return pathJoin(extStorage, sub);
+            return pathJoin(externalPath(), sub);
         }
         return path;
     }
