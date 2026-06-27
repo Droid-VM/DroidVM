@@ -3,7 +3,6 @@ package cn.classfun.droidvm.ui.main.home;
 import static android.content.Intent.ACTION_VIEW;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.Constants.GITHUB_ISSUE_URL;
-import static cn.classfun.droidvm.lib.Constants.GITHUB_WIKI_URL;
 import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
@@ -113,7 +112,7 @@ public final class MainHomeFragment extends MainBaseFragment
         view.findViewById(R.id.card_network).setOnClickListener(v -> navigateToTab(R.id.nav_network));
         view.findViewById(R.id.card_wizard).setOnClickListener(v -> openWizard());
         view.findViewById(R.id.card_import).setOnClickListener(v -> openImport());
-        view.findViewById(R.id.card_help).setOnClickListener(v -> openLink(GITHUB_WIKI_URL));
+        view.findViewById(R.id.card_help).setOnClickListener(v -> openLink(getString(R.string.home_card_help_url)));
         view.findViewById(R.id.card_feedback).setOnClickListener(v -> openLink(GITHUB_ISSUE_URL));
         cardUpdate.setOnClickListener(v -> showUpdateDialog());
         checkForUpdate();

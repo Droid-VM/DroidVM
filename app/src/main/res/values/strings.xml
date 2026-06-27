@@ -87,6 +87,7 @@
     <string name="home_card_help_title">Help &amp; Documentation</string>
     <string name="home_card_feedback_title">Report Issue</string>
     <string name="home_card_loading">Loading\u2026</string>
+    <string name="home_card_help_url">https://droid-vm.github.io/en/</string>
 
     <string name="vm_empty">No virtual machines yet.</string>
     <string name="disk_empty">No disks yet.</string>

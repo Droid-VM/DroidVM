@@ -86,6 +86,7 @@
     <string name="home_card_help_title">帮助与文档</string>
     <string name="home_card_feedback_title">反馈问题</string>
     <string name="home_card_loading">加载中\u2026</string>
+    <string name="home_card_help_url">https://droid-vm.github.io/</string>
 
     <string name="vm_empty">暂无虚拟机。</string>
     <string name="disk_empty">暂无磁盘。</string>

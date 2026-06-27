@@ -18,7 +18,6 @@ public final class Constants {
     public static final String PATH_BUILTIN_INITRD = pathJoin(DATA_DIR, "/usr/share/droidvm/initramfs.img");
     public static final String PATH_EDK2_FIRMWARE = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-gunyah.fd");
     public static final String PATH_EDK2_QEMU_FIRMWARE = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-qemu.fd");
-    public static final String GITHUB_WIKI_URL = "https://github.com/Droid-VM/DroidVM/wiki";
     public static final String GITHUB_ISSUE_URL = "https://github.com/Droid-VM/DroidVM/issues";
     // droidvm + daemon are CMake-built and shipped as APK assets. The
     // third-party daemons (gvswitch/pbridge/bridgedhcp/netbox) and lbx now
