@@ -2,17 +2,17 @@
 <resources>
     <string name="app_name">DroidVM</string>
 
-    <string name="start_app_desc">基于高通 Gunyah 虚拟机监视器的虚拟机管理器，可在设备上直接创建和管理轻量级 Linux 虚拟机。</string>
+    <string name="start_app_desc">支持高通 Gunyah、联发科 GenieZone 和 Linux KVM 的 Android 虚拟机管理器，可在设备上直接创建和管理轻量级 Linux 或 Windows 虚拟机。</string>
     <string name="start_faq_title">常见问题</string>
 
-    <string name="faq1_title">什么是 Gunyah？</string>
-    <string name="faq1_body">Gunyah 是高通开发的 Type-1 虚拟机监视器，直接运行在 Android 宿主系统的硬件层之下。它可以创建具有接近原生性能和强安全保障的隔离虚拟机，无需依赖内核级虚拟化（KVM）。</string>
+    <string name="faq1_title">什么是虚拟化？</string>
+    <string name="faq1_body">Gunyah：高通开发的 Type-1 虚拟机监视器，提供受保护的虚拟机支持。\nGenieZone：联发科开发的 Type-1 虚拟机监视器，提供硬件辅助虚拟机支持。\nLinux KVM：Linux 内核内置的虚拟化框架，适用于以 EL2 启动且启用虚拟化扩展的 ARM64 设备。</string>
 
     <string name="faq2_title">支持哪些设备？</string>
-    <string name="faq2_body">目前仅支持搭载高通骁龙 8 Elite（SM8750）或更新 SoC 且已启用 Gunyah 支持的设备。旧款骁龙芯片组不包含必要的虚拟机监视器固件。</string>
+    <string name="faq2_body">高通：骁龙 8 Gen 3（SM8650）或更新 SoC 且已启用 Gunyah 的设备，推荐骁龙 8 Elite（SM8750）或更新平台。\n联发科：天玑 9000 或更新 SoC 且已启用 GenieZone 的设备。\nLinux KVM：以 EL2 启动的 ARM64 设备，例如 Google Tensor、瑞芯微等平台。</string>
 
     <string name="faq3_title">有哪些环境要求？</string>
-    <string name="faq3_body">1. Root 权限（如 Magisk 或 KernelSU）。\n2. 必须安装虚拟化 APEX（com.android.virt），其中提供了 crosvm 二进制文件。\n3. 支持的高通 SoC，且固件中已启用 Gunyah 虚拟机监视器。</string>
+    <string name="faq3_body">1. Root 权限（如 Magisk、KernelSU 或 APatch）。\n2. 支持的 ARM64 SoC，且固件和内核已启用 Gunyah、GenieZone 或 Linux KVM。\n3. 可用的虚拟化设备节点：/dev/gunyah、/dev/gzvm 或 /dev/kvm。</string>
 
     <string name="unimplement">功能未实现</string>
 

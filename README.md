@@ -4,7 +4,13 @@
 
 [简体中文](README.zh.md) | [English](README.md)
 
-A virtual machine manager for Android, powered by the **Qualcomm Gunyah Hypervisor**
+An Android virtual machine manager with support for multiple hypervisors, including Qualcomm Gunyah, MediaTek GenieZone, and Linux KVM.
+
+Supported hypervisors:
+
+- Qualcomm Gunyah (`/dev/gunyah`)
+- MediaTek GenieZone (`/dev/gzvm`)
+- Linux KVM (`/dev/kvm`)
 
 Create and manage lightweight VMs directly on your device with near-native performance.
 
@@ -34,8 +40,11 @@ Create and manage lightweight VMs directly on your device with near-native perfo
 
 - **Android 13** (API 33) or newer
 - **Root access** (Magisk, KernelSU, APatch, or similar)
-- **Qualcomm Snapdragon 8 Gen 3** (SM8650) or newer SoC, **Qualcomm Snapdragon 8 Elite** (SM8750) recommended, with Gunyah Hypervisor enabled
-- **Virtualization** enabled (/dev/gunyah or /dev/kvm)
+- A supported ARM64 device with hardware virtualization enabled by firmware and kernel:
+  - Qualcomm: **Snapdragon 8 Gen 3** (SM8650) or newer SoC, **Snapdragon 8 Elite** (SM8750) recommended, with Gunyah enabled
+  - MediaTek: **Dimensity 9000** or newer SoC with GenieZone enabled
+  - Other ARM64 devices: booted with EL2 and Linux KVM enabled
+- An available virtualization device node: `/dev/gunyah`, `/dev/gzvm`, or `/dev/kvm`
 
 ## Building
 

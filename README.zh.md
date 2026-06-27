@@ -4,7 +4,13 @@
 
 [简体中文](README.zh.md) | [English](README.md)
 
-基于 **高通 Gunyah Hypervisor** 的 Android 虚拟机管理器
+支持多种 Hypervisor 的 Android 虚拟机管理器，包括高通 Gunyah、联发科 GenieZone 和 Linux KVM。
+
+支持的虚拟化方案：
+
+- 高通 Gunyah（`/dev/gunyah`）
+- 联发科 GenieZone（`/dev/gzvm`）
+- Linux KVM（`/dev/kvm`）
 
 在安卓设备上直接创建和管理轻量级虚拟机，享受接近原生的性能。
 
@@ -34,8 +40,11 @@
 
 - **Android 13**（API 33）或更高版本
 - **Root 权限**（Magisk、KernelSU、APatch 或类似工具）
-- **高通骁龙 8 Gen 3**（SM8650）或更新的 SoC，推荐 **高通骁龙 8 Elite**（SM8750），需启用 Gunyah Hypervisor
-- 已启用 **虚拟化** 支持（/dev/gunyah 或 /dev/kvm）
+- 固件和内核已启用硬件虚拟化的 ARM64 设备：
+  - 高通：**骁龙 8 Gen 3**（SM8650）或更新 SoC，推荐 **骁龙 8 Elite**（SM8750），需启用 Gunyah
+  - 联发科：**天玑 9000** 或更新 SoC，需启用 GenieZone
+  - 其他 ARM64 设备：以 EL2 启动，并启用 Linux KVM
+- 可用的虚拟化设备节点：`/dev/gunyah`、`/dev/gzvm` 或 `/dev/kvm`
 
 ## 构建
 
@@ -59,4 +68,3 @@ git submodule update --init --recursive
 ## 许可证
 
 本项目基于 **GNU 通用公共许可证 v3.0** 发布。详见 [LICENSE.txt](LICENSE.txt)。
-

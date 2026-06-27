@@ -3,17 +3,17 @@
     <string name="nullptr" translatable="false" />
     <string name="app_name">DroidVM</string>
 
-    <string name="start_app_desc">A virtual machine manager powered by Qualcomm Gunyah Hypervisor. Create and manage lightweight Linux VMs directly on your device.</string>
+    <string name="start_app_desc">A virtual machine manager for Android with support for Qualcomm Gunyah, MediaTek GenieZone, and Linux KVM. Create and manage lightweight Linux or Windows VMs directly on your device.</string>
     <string name="start_faq_title">Frequently Asked Questions</string>
 
-    <string name="faq1_title">What is Gunyah?</string>
-    <string name="faq1_body">Gunyah is a Type-1 hypervisor developed by Qualcomm that runs directly on the hardware beneath the Android host OS. It allows creating isolated virtual machines with near-native performance and strong security guarantees, without relying on kernel-level virtualization (KVM).</string>
+    <string name="faq1_title">What is virtualization?</string>
+    <string name="faq1_body">Gunyah: a Type-1 hypervisor developed by Qualcomm for protected virtual machines.\nGenieZone: a Type-1 hypervisor developed by MediaTek for hardware-assisted virtual machines.\nLinux KVM: the Linux kernel virtualization framework, available on ARM64 devices booted with EL2 and virtualization extensions enabled.</string>
 
     <string name="faq2_title">Which devices are supported?</string>
-    <string name="faq2_body">Currently only devices with Qualcomm Snapdragon 8 Elite (SM8750) or newer SoCs that ship with Gunyah support enabled are supported. Older Snapdragon chipsets do not include the necessary hypervisor firmware.</string>
+    <string name="faq2_body">Qualcomm: Snapdragon 8 Gen 3 (SM8650) or newer SoCs with Gunyah enabled. Snapdragon 8 Elite (SM8750) or newer is recommended.\nMediaTek: Dimensity 9000 or newer SoCs with GenieZone enabled.\nLinux KVM: ARM64 devices booted with EL2, such as Google Tensor and Rockchip devices.</string>
 
     <string name="faq3_title">What are the environment requirements?</string>
-    <string name="faq3_body">1. Root access (e.g. Magisk or KernelSU).\n2. The virtualization APEX (com.android.virt) must be installed, which provides the crosvm binary.\n3. A supported Qualcomm SoC with Gunyah hypervisor enabled in firmware.</string>
+    <string name="faq3_body">1. Root access (for example, Magisk, KernelSU, or APatch).\n2. A supported ARM64 SoC with Gunyah, GenieZone, or Linux KVM enabled by firmware and kernel.\n3. An available virtualization device node: /dev/gunyah, /dev/gzvm, or /dev/kvm.</string>
 
     <string name="unimplement">Function not implement</string>
 
