@@ -67,10 +67,10 @@ public final class VirtualizationStepFragment extends BaseCheckStepFragment {
             if (!isAdded()) return;
             if (finalSuccess) {
                 showSuccess(R.string.setup_virt_title, R.string.setup_virt_success);
-                showDetail(displayString.toString());
             } else {
                 showError(R.string.setup_virt_title, R.string.setup_virt_fail);
             }
+            showDetail(displayString.toString());
         });
     }
 

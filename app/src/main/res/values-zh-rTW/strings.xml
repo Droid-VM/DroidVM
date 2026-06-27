@@ -42,7 +42,7 @@
     <string name="setup_virt_title">檢查虛擬化支援</string>
     <string name="setup_virt_desc">正在檢查虛擬化支援&#8230;</string>
     <string name="setup_virt_success">\u2705 已找到虛擬化支援。</string>
-    <string name="setup_virt_fail">\u274C 未找到虛擬化支援，請確認已安裝 com.android.virt APEX。</string>
+    <string name="setup_virt_fail">\u274C 未找到虛擬化支援。</string>
 
     <string name="setup_storage_title">檔案存取權限</string>
     <string name="setup_storage_desc">正在檢查檔案存取權限&#8230;</string>

@@ -43,7 +43,7 @@
     <string name="setup_virt_title">Check Virtualization</string>
     <string name="setup_virt_desc">Checking virtualization support&#8230;</string>
     <string name="setup_virt_success">\u2705 Virtualization support found.</string>
-    <string name="setup_virt_fail">\u274C Virtualization support not found. Please ensure the com.android.virt APEX is available.</string>
+    <string name="setup_virt_fail">\u274C Virtualization support not found.</string>
 
     <string name="setup_storage_title">File Access</string>
     <string name="setup_storage_desc">Checking file access permission&#8230;</string>
