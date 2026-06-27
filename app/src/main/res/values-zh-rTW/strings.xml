@@ -132,6 +132,7 @@
     <string name="vm_info_console_not_found">找不到任何控制台</string>
     <string name="vm_info_console_text_select">文字控制台 %1$s</string>
     <string name="vm_info_console_vnc_select">VNC 控制台</string>
+    <string name="vm_info_console_native_select">原生顯示</string>
     <string name="vm_info_console_vnc_ext_select">外部顯示器的 VNC</string>
 
     <string name="vm_info_logs">日誌</string>
@@ -182,6 +183,9 @@
     <string name="create_vm_sandbox">沙箱</string>
     <string name="create_vm_hugepages">大頁記憶體</string>
     <string name="create_vm_prepare_lend_mthp">預分配大頁</string>
+    <string name="create_vm_prepare_lend_mthp_disabled">停用</string>
+    <string name="create_vm_prepare_lend_mthp_single">單次 (整塊借出)</string>
+    <string name="create_vm_prepare_lend_mthp_chunked">分塊 (≤256MiB)</string>
     <string name="create_vm_protected_normal">普通</string>
     <string name="create_vm_protected_protected">保護</string>
     <string name="create_vm_protected_without_firmware">無韌體保護</string>
@@ -210,6 +214,7 @@
     <string name="create_vm_display_dpi_v">垂直DPI</string>
     <string name="create_vm_category_vnc">VNC 伺服器</string>
     <string name="create_vm_vnc_enabled">啟用 VNC</string>
+    <string name="create_vm_native_display_enabled">啟用原生顯示 (virtio-gpu)</string>
     <string name="create_vm_vnc_host">主機地址</string>
     <string name="create_vm_vnc_port">埠</string>
     <string name="create_vm_vnc_password_auth">密碼認證</string>
@@ -798,6 +803,12 @@
     <string name="vnc_display_reconnect_failed">重連失敗，已嘗試 %1$d 次</string>
     <string name="vnc_display_connect_failed">無法連線到 VNC 伺服器</string>
     <string name="vnc_display_fullscreen">全屏</string>
+
+    <string name="native_display_title">原生顯示器</string>
+    <string name="native_display_connecting">正在連接…</string>
+    <string name="native_display_waiting">正在等待虛擬機器畫面…</string>
+    <string name="native_display_connected">已連接 - %1$dx%2$d</string>
+    <string name="native_display_failed">原生顯示啟動失敗</string>
 
     <string name="vnc_menu_keyboard">軟鍵盤</string>
     <string name="vnc_menu_extra_keys">額外按鍵</string>
