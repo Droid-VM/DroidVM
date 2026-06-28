@@ -72,6 +72,13 @@ public final class StringUtils {
         if (shellCheckExists(content)) return content;
         var real = pathJoin(extStorage, content);
         if (shellCheckExists(real)) return real;
+        int slash = content.indexOf("/document/");
+        if (slash >= 0) {
+            content = content.substring(0, slash);
+            if (shellCheckExists(content)) return content;
+            real = pathJoin(extStorage, content);
+            if (shellCheckExists(real)) return real;
+        }
         return null;
     }
 
@@ -96,12 +103,6 @@ public final class StringUtils {
         if ((part = parseTreePath(path, "/document/primary:")) != null) return part;
         if ((part = parseTreePath(path, "/external_files/")) != null) return part;
         if ((part = parseTreePath(path, "/tree/primary:")) != null) return part;
-        if (path != null && path.startsWith("/tree/primary:")) {
-            var sub = path.substring("/tree/primary:".length());
-            int slash = sub.indexOf("/document/");
-            if (slash >= 0) sub = sub.substring(0, slash);
-            return pathJoin(externalPath(), sub);
-        }
         return path;
     }
 
