@@ -8,6 +8,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.util.Log;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -22,6 +23,7 @@ import org.json.JSONObject;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
+import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
 import cn.classfun.droidvm.ui.disk.info.DiskInfoActivity;
 import cn.classfun.droidvm.ui.disk.info.base.DiskInfoBaseTab;
@@ -29,6 +31,7 @@ import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
 public final class DiskInfoInfoTab extends DiskInfoBaseTab {
+    private static final String TAG = "DiskInfoInfoTab";
     private CollapsibleContainer sectionDetails;
     private CollapsibleContainer sectionRaw;
     private TextView tvSummary;
@@ -91,29 +94,40 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
     }
 
     private void initialize() {
-        dialog = new DiskActionDialog(activity, null, null);
+        dialog = new DiskActionDialog(activity, this::onDiskUpdated, null);
         bindButton(btnResize, R.id.menu_disk_resize);
         bindButton(btnConvert, R.id.menu_disk_convert);
         bindButton(btnOptimize, R.id.menu_disk_optimize);
         bindButton(btnCreateIncrement, R.id.menu_disk_create_increment);
         bindButton(btnClone, R.id.menu_disk_clone);
         bindButton(btnDelete, R.id.menu_disk_delete);
-    bindCopy(rowFilename);
-    bindCopy(rowFolder);
-    bindCopy(rowFormat);
-    bindCopy(rowVirtualSize);
-    bindCopy(rowActualSize);
-    bindCopy(rowClusterSize);
-    bindCopy(rowBackingFile);
-    bindCopy(rowEncryption);
-    bindCopy(rowCompression);
-    bindCopy(rowDirtyFlag);
+        bindCopy(rowFilename);
+        bindCopy(rowFolder);
+        bindCopy(rowFormat);
+        bindCopy(rowVirtualSize);
+        bindCopy(rowActualSize);
+        bindCopy(rowClusterSize);
+        bindCopy(rowBackingFile);
+        bindCopy(rowEncryption);
+        bindCopy(rowCompression);
+        bindCopy(rowDirtyFlag);
         var rowExtra1 = view.findViewById(R.id.row_extra_1);
         var rowExtra2 = view.findViewById(R.id.row_extra_2);
         var fmt = activity.config.getFormat();
         if (!DiskConfig.supportsExtraOperations(fmt)) {
             rowExtra1.setVisibility(GONE);
             rowExtra2.setVisibility(GONE);
+        }
+    }
+
+    private void onDiskUpdated() {
+        try {
+            var store = new DiskStore();
+            store.load(activity);
+            if (store.findById(activity.config.getId()) == null)
+                activity.runOnUiThread(activity::finish);
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to load disk info", e);
         }
     }
 
