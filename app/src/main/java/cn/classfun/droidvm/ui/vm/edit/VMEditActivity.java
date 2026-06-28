@@ -19,7 +19,9 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.tabs.TabLayout;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -45,6 +47,17 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public Consumer<Uri> currentPicker = null;
     public boolean editMode = false;
     public UUID editVMId = null;
+    private final Map<String, Object> sharedData = new HashMap<>();
+
+
+    public <T> void put(@NonNull String key, T value) {
+        sharedData.put(key, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T get(@NonNull String key, T def) {
+        return (T) sharedData.getOrDefault(key, def);
+    }
 
     private void pickerResult(Uri uri) {
         if (currentPicker != null && uri != null)

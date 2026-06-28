@@ -86,6 +86,10 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
         chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
         choosePrepareLendMthp.configure(LendMthpMode.class, LendMthpMode.CHUNKED);
+        parent.put("backend", VMBackend.DEFAULT);
+        parent.put("hypervisor", VMHypervisor.DEFAULT);
+        chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
+        chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
         try {
             var socModel = QcomChipName.getCurrentSoC();
             var gunyah = new QcomGunyahSupports(parent);

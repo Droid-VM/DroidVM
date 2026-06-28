@@ -173,6 +173,8 @@
     <string name="create_vm_error_invalid_number">无效数字</string>
     <string name="create_vm_error_hypervisor_not_supported">所选后端不支持选中的虚拟化模式</string>
     <string name="create_vm_error_path_invalid">无效的绝对路径</string>
+    <string name="create_vm_error_native_display_only_crosvm">原生显示只在使用CrosVM后端时有效</string>
+    <string name="create_vm_error_native_display_vnc_cannot_enabled">原生显示和VNC不能同时启用</string>
     <string name="create_vm_category_kernel">Linux 内核</string>
     <string name="create_vm_kernel_hint">内核</string>
     <string name="create_vm_initrd_hint">Initrd</string>

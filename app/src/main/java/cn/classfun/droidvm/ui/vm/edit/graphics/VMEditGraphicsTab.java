@@ -17,6 +17,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
@@ -171,6 +172,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etDisplayDpiH, false, 100, 800)) return false;
         if (!checkInputField(etDisplayDpiV, false, 100, 800)) return false;
         if (!checkInputField(etVncPort, true, 1024, 65535)) return false;
+        if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM && swNativeDisplayEnabled.isChecked())
+            return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
+        if (swNativeDisplayEnabled.isChecked() && swVncEnabled.isChecked())
+            return showValidateFailed(R.string.create_vm_error_native_display_vnc_cannot_enabled);
         return true;
     }
 

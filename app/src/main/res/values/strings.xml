@@ -175,6 +175,8 @@
     <string name="create_vm_error_invalid_number">Invalid number</string>
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
+    <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
+    <string name="create_vm_error_native_display_vnc_cannot_enabled">Native display and VNC cannot be enabled at the same time.</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>
     <string name="create_vm_initrd_hint">Initrd</string>
