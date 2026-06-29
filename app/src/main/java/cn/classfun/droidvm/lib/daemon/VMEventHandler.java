@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.data.CrosvmExit;
 import cn.classfun.droidvm.lib.diag.LogHelper;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -92,6 +93,24 @@ public final class VMEventHandler implements
             c.onVMExited(vmId, vmName, exitCode, data);
     }
 
+    /** Maps a crosvm exit code to a user-facing message resource (args: vmName, code). */
+    public static int exitMessageRes(int exitCode) {
+        CrosvmExit exit = CrosvmExit.fromCode(exitCode);
+        if (exit == null) {
+            return R.string.vm_exited_error;
+        }
+        switch (exit) {
+            case CRASH:
+                return R.string.vm_exit_crash;
+            case GUEST_PANIC:
+                return R.string.vm_exit_guest_panic;
+            case WATCHDOG:
+                return R.string.vm_exit_watchdog;
+            default:
+                return R.string.vm_exited_error;
+        }
+    }
+
     private void showExitDialog(Activity act, String vmName, int exitCode, @NonNull JSONObject data) {
         var logText = new StringBuilder();
         var stdio = data.optString("stdio", "");
@@ -140,7 +159,7 @@ public final class VMEventHandler implements
             } else {
                 Toast.makeText(
                     act,
-                    act.getString(R.string.vm_exited_error, vmName, exitCode),
+                    act.getString(exitMessageRes(exitCode), vmName, exitCode),
                     LENGTH_LONG
                 ).show();
                 showExitDialog(act, vmName, exitCode, data);
@@ -169,6 +188,10 @@ public final class VMEventHandler implements
                 if (foregroundCallback.isEmpty() || !isAppInForeground())
                     showExitNotification(vmId, vmName, exitCode);
                 callOnVmExited(vmId, vmName, exitCode, data);
+            } else if (event.equals("rebooting")) {
+                queueActivityTask(act -> Toast.makeText(
+                    act, act.getString(R.string.vm_rebooting, vmName), LENGTH_SHORT
+                ).show(), SplashActivity.class);
             }
         });
     }

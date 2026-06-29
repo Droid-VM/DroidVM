@@ -27,6 +27,10 @@ public enum VMState implements StringEnum, ColorEnum {
     STOPPING(
         R.string.vm_state_stopping,
         android.R.color.holo_orange_dark
+    ),
+    REBOOTING(
+        R.string.vm_state_rebooting,
+        android.R.color.holo_orange_dark
     );
 
     private final @StringRes int stringId;

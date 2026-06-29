@@ -43,6 +43,7 @@ private:
     );
 
     bool running = false;
+    bool rebooting = false;
 };
 
 void ConsoleCommand::console_list(const std::string &vm) {
@@ -94,12 +95,25 @@ void ConsoleCommand::process_event(
                 fflush(stdout);
             }
         }
-    } else if (event == "exited" || event == "state") {
+    } else if (event == "rebooting") {
+        // Guest-initiated reboot: the daemon tears down crosvm and relaunches it
+        // reusing the same console streams. Stay attached so the new boot's output
+        // streams in seamlessly instead of dropping the terminal.
+        rebooting = true;
+        fprintf(stderr, "\n[droidvm] VM rebooting...\n");
+    } else if (event == "exited") {
+        // The only authoritative terminal signal. Every non-reboot end path fires
+        // "exited" (with the real code); a bare "stopped" state during reboot does not.
+        int code = edata.get("exit_code", -1).asInt();
+        fprintf(stderr, "\n[droidvm] VM exited (code %d).\n", code);
+        running = false;
+    } else if (event == "state") {
         auto state = edata.get("state", "").asString();
-        if (state == "stopped") {
-            int code = edata.get("exit_code", -1).asInt();
-            fprintf(stderr, "\n[droidvm] VM exited (code %d).\n", code);
-            running = false;
+        // A "stopped" state event arrives during reboot too, so it is NOT terminal
+        // on its own - we wait for "exited". Just clear the reboot notice once back up.
+        if (state == "running" && rebooting) {
+            rebooting = false;
+            fprintf(stderr, "[droidvm] VM is back up.\n");
         }
     }
 }

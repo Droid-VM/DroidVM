@@ -136,6 +136,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var args = new ArrayList<String>();
         prepareStraceArguments(args);
         args.add(getPrebuiltBinaryPath("crosvm"));
+        // Top-level flag (must precede `run`): makes crosvm surface CommandStatus
+        // exit codes (see CrosvmExit) so runVM() can tell reset/crash/panic apart.
+        args.add("--extended-status");
         args.add("run");
         args.add("--name");
         args.add(config.getName());

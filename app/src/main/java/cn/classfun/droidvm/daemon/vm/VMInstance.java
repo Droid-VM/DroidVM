@@ -23,6 +23,7 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
+import cn.classfun.droidvm.lib.data.CrosvmExit;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -45,6 +46,11 @@ public final class VMInstance extends VMConfig {
     private final VMInstanceStore store;
     private BootPlan bootPlan;
     private String bootEntryOverride;
+    private volatile boolean rebootRequested = false;
+
+    // Delay before relaunching on reboot: lets the kernel settle same-name TAP
+    // teardown/recreate and throttles a guest reboot-loop (no restart cap).
+    private static final long REBOOT_RELAUNCH_DELAY_MS = 500;
 
     public interface VMEventCallback {
         @SuppressWarnings("unused")
@@ -148,7 +154,9 @@ public final class VMInstance extends VMConfig {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean start() {
-        if (state != VMState.STOPPED) {
+        // REBOOTING is accepted too: the reboot relaunch calls start() from that
+        // transient state (process already gone) and goes straight to STARTING.
+        if (state != VMState.STOPPED && state != VMState.REBOOTING) {
             Log.w(TAG, fmt("VM %s is not stopped (state=%s), cannot start", getId(), state.name()));
             return false;
         }
@@ -277,6 +285,26 @@ public final class VMInstance extends VMConfig {
         return true;
     }
 
+    public boolean reboot() {
+        if (state != VMState.RUNNING) {
+            Log.w(TAG, fmt("Cannot reboot VM %s: state=%s", getId(), state.name()));
+            return false;
+        }
+        Log.i(TAG, fmt("Reboot requested for VM %s", getName()));
+        // crosvm has no reset control command, so reboot = ask crosvm to exit and
+        // let runVM() relaunch via the rebootRequested flag (kept set on fallback).
+        rebootRequested = true;
+        if (getBackendInstance().hasControlSocket()) {
+            if (runControlCommand("stop")) return true;
+            Log.w(TAG, fmt("Control stop failed for reboot of VM %s, falling back to destroy", getName()));
+        }
+        if (process != null && process.isAlive()) {
+            process.destroy();
+            shellKillProcess(process.pid());
+        }
+        return true;
+    }
+
     public boolean suspend() {
         if (state != VMState.RUNNING) {
             Log.w(TAG, fmt("Cannot suspend VM %s: state=%s", getId(), state.name()));
@@ -399,6 +427,9 @@ public final class VMInstance extends VMConfig {
             } catch (Exception ignored) {
             }
         }
+        // A guest-requested reset (crosvm exit 32) or a host-issued reboot both
+        // relaunch the VM; an explicit user stop never does and wins over both.
+        boolean wantRestart = !stoppedByUser && (code == CrosvmExit.RESET.getCode() || rebootRequested);
         if (stoppedByUser && code != 0) {
             Log.i(TAG, fmt("VM %s stopped by user", getName()));
             exitCode = 0;
@@ -407,8 +438,44 @@ public final class VMInstance extends VMConfig {
         }
         cleanupTap();
         inst.cleanup();
+        if (wantRestart) {
+            rebootRequested = false;
+            exitCode = -1;
+            // Broadcast REBOOTING (not STOPPED) so clients render "rebooting" for the
+            // whole relaunch window instead of flickering to a stopped row/button.
+            // start() accepts REBOOTING, so the next transition is straight to STARTING.
+            setState(VMState.REBOOTING);
+            fireEvent("rebooting", null);
+            Log.i(TAG, fmt("VM %s rebooting (exit code %d)", getName(), code));
+            scheduleRelaunch();
+            return;
+        }
         setState(VMState.STOPPED);
         fireEvent("exited", null);
+    }
+
+    // Relaunch off the worker thread: start() joins workerThread (this thread),
+    // and the short sleep settles same-name TAP recreation before re-setup.
+    private void scheduleRelaunch() {
+        var t = new Thread(() -> {
+            try {
+                Thread.sleep(REBOOT_RELAUNCH_DELAY_MS);
+            } catch (InterruptedException ignored) {
+                return;
+            }
+            if (state != VMState.REBOOTING) return; // user changed state meanwhile
+            if (!start()) {
+                Log.w(TAG, fmt("VM %s relaunch failed", getName()));
+                // Surface the failure as a real exit so attached consoles / UI stop
+                // waiting for the reboot to come back. start() left us in REBOOTING,
+                // so settle to STOPPED before the exit fires the correct final state.
+                exitCode = -1;
+                setState(VMState.STOPPED);
+                fireEvent("exited", null);
+            }
+        }, fmt("VM-relaunch-%s", getId()));
+        t.setDaemon(true);
+        t.start();
     }
 
     private void cleanupTap() {
