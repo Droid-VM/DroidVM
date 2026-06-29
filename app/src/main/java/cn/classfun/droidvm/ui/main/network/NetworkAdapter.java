@@ -18,7 +18,7 @@ public final class NetworkAdapter extends StatefulAdapter<NetworkConfig, Network
     }
 
     @Override
-    public int getIconResId() {
+    public int getIconResId(@NonNull NetworkConfig network) {
         return R.drawable.ic_switch;
     }
 

@@ -55,7 +55,7 @@ public abstract class DataAdapter<
     public void onBindViewHolder(@NonNull BaseViewHolder h, int position) {
         var d = items.get(position);
         var ctx = h.itemView.getContext();
-        var drawable = AppCompatResources.getDrawable(ctx, getIconResId());
+        var drawable = AppCompatResources.getDrawable(ctx, getIconResId(d));
         h.itemIcon.setImageDrawable(drawable);
         if (d != null)
             h.itemName.setText(d.getName());
@@ -71,7 +71,7 @@ public abstract class DataAdapter<
     }
 
     @DrawableRes
-    public abstract int getIconResId();
+    public abstract int getIconResId(@NonNull D data);
 
     @SuppressLint("NotifyDataSetChanged")
     public void onItemsUpdated() {

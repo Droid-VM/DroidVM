@@ -18,6 +18,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
+import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.main.base.BaseViewHolder;
 import cn.classfun.droidvm.ui.main.base.list.DataAdapter;
 
@@ -36,7 +37,9 @@ public final class DiskAdapter extends DataAdapter<DiskConfig, DiskStore> {
     }
 
     @Override
-    public int getIconResId() {
+    public int getIconResId(@NonNull DiskConfig disk) {
+        if (disk.getFormat() == DiskFormat.ISO)
+            return R.drawable.ic_cdrom;
         return R.drawable.ic_nav_disk;
     }
 
