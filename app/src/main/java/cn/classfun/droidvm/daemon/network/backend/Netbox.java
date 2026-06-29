@@ -103,13 +103,15 @@ final class Netbox {
     }
 
     @SuppressWarnings("UnusedReturnValue")
-    static boolean ruleAdd(@NonNull String iif, @NonNull String table, boolean v6) {
-        return run(v6Args("rule-add", v6, "--iif", iif, "--table", table));
+    static boolean ruleAdd(@NonNull String iif, @NonNull String table, int priority, boolean v6) {
+        return run(v6Args("rule-add", v6, "--iif", iif, "--table", table,
+            "--priority", String.valueOf(priority)));
     }
 
     @SuppressWarnings("UnusedReturnValue")
-    static boolean ruleDel(@NonNull String iif, @NonNull String table, boolean v6) {
-        return run(v6Args("rule-del", v6, "--iif", iif, "--table", table));
+    static boolean ruleDel(@NonNull String iif, @NonNull String table, int priority, boolean v6) {
+        return run(v6Args("rule-del", v6, "--iif", iif, "--table", table,
+            "--priority", String.valueOf(priority)));
     }
 
     static boolean fdbAdd(@NonNull String mac, @NonNull String dev) {

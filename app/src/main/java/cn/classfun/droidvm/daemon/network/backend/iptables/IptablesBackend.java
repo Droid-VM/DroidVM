@@ -60,7 +60,12 @@ public final class IptablesBackend extends FirewallHelper {
         FIL6_OUT,
         FIL6_FWD,
     };
-    private static final String[] EXT_IFACES = {"wlan+", "eth+", "rmnet_data+"};
+    // Uplink interfaces guest traffic may be forwarded out of (and replies in
+    // from); anything else hits the trailing DROP. "tun+" covers the system VPN
+    // so a guest routed to the VPN table (see DefaultRouterWatcher) is actually
+    // forwarded out tun0 instead of dropped -- it mirrors the "tun" prefix in
+    // that watcher's HOST_IFACE_PREFIXES, which this list is meant to track.
+    private static final String[] EXT_IFACES = {"wlan+", "eth+", "rmnet+", "tun+"};
 
     synchronized boolean iptables(@NonNull String... args) {
         int retry = 0;
