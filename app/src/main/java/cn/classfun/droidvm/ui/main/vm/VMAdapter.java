@@ -17,7 +17,7 @@ public final class VMAdapter extends StatefulAdapter<VMConfig, VMStore, VMState>
     }
 
     @Override
-    public int getIconResId() {
+    public int getIconResId(@NonNull VMConfig vm) {
         return R.drawable.ic_nav_vm;
     }
 
