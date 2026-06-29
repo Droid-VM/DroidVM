@@ -104,3 +104,37 @@ license:
     urls:
       - https://android.googlesource.com/platform/hardware/google/gfxstream/
       - https://github.com/google/gfxstream
+
+  - name: netbox
+    description: Network manage utility for DroidVM
+    license: GPL-3.0
+    urls:
+      - https://github.com/Droid-VM/netbox
+
+  - name: gvisor-vswitch
+    description: Virtual Switch based on gVisor
+    license: Apache-2.0
+    urls:
+      - https://github.com/Droid-VM/gvisor-vswitch
+      - https://github.com/HuJK/gvisor-vswitch
+
+  - name: pseudo-bridge-rs
+    description: Pseudo Bridge
+    license: Apache-2.0
+    urls:
+      - https://github.com/Droid-VM/pseudo-bridge-rs
+      - https://github.com/KusakabeShi/pseudo-bridge-rs
+
+  - name: linux-boot-extractor
+    description: Linux Boot Extractor
+    license: GPL-3.0
+    urls:
+      - https://github.com/Droid-VM/linux-boot-extractor
+      - https://github.com/HuJK/linux-boot-extractor
+
+  - name: bridgedhcp
+    description: DHCPv4 / DHCPv6 / SLAAC server for Linux bridge interfaces
+    license: GPL-3.0
+    urls:
+      - https://github.com/Droid-VM/bridgedhcp
+      - https://github.com/HuJK/bridgedhcp
