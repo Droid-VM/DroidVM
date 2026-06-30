@@ -4,7 +4,6 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
-import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGKILL;
@@ -35,15 +34,11 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.size.SizeUtils;
 
 /**
@@ -65,14 +60,19 @@ public final class HugePageProcessActivity extends AppCompatActivity
     private static final long HUGE_PAGE_BYTES = 2L * 1024 * 1024;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final HugePageModel model = new HugePageModel();
     private boolean resumed = false;
+    // scanMode = the user's preference; koPresent = whether the KO attribution
+    // API is available. The effective mode shown is (scanMode || !koPresent) -
+    // forced to scan whenever KO is absent - computed on demand so a menu tap is
+    // reflected immediately instead of after the next background refresh.
     private boolean scanMode = false;
+    private volatile boolean koPresent = true;
+    // Edge-trigger the "KO unavailable" toast on the present->absent transition
+    // only, so a stably-unavailable module doesn't re-toast every refresh.
+    private boolean koWasPresent = true;
     private boolean firstRefresh = true;
     private volatile boolean acquireWatching = false;
-    // The KO-vs-THP fallback is resolved at most once (on entry). After that,
-    // and after any manual menu choice, we never auto-switch again - otherwise a
-    // single flaky root `test -e` under load would permanently bounce KO->THP.
-    private volatile boolean modeResolved = false;
     private MaterialToolbar toolbar;
     private RecyclerView recyclerView;
     private TextView tvEmpty;
@@ -139,37 +139,27 @@ public final class HugePageProcessActivity extends AppCompatActivity
         var menu = toolbar.getMenu();
         var ko = menu.findItem(R.id.menu_mode_ko);
         var scan = menu.findItem(R.id.menu_mode_scan);
-        if (ko != null) ko.setIcon(modeIcon(!scanMode));
-        if (scan != null) scan.setIcon(modeIcon(scanMode));
+        // Effective mode is derived from the user's choice + KO availability, so a
+        // just-tapped mode is reflected instantly (not after the next refresh);
+        // the KO entry is disabled outright when its attribution API is absent.
+        boolean effectiveScan = scanMode || !koPresent;
+        if (ko != null) {
+            ko.setIcon(modeIcon(!effectiveScan));
+            ko.setEnabled(koPresent);
+        }
+        if (scan != null) scan.setIcon(modeIcon(effectiveScan));
     }
 
     private static int modeIcon(boolean active) {
         return active ? R.drawable.ic_circle_filled : R.drawable.ic_circle_outline;
     }
 
-    /** User picked a mode from the menu (session-only; entry always defaults KO). */
+    /** User picked a mode from the menu (session-only preference). */
     private void setMode(boolean scan) {
         scanMode = scan;
-        modeResolved = true;   // explicit choice: never auto-switch again
         updateModeChecked();
         refresh();
     }
-
-    /**
-     * KO was selected but its attribution API is absent (module not loaded, or
-     * an old .ko). Switch the effective mode to scan for this session without
-     * overwriting any saved preference, and tell the user why. A present-but-
-     * empty pool (no VM) never reaches here - that stays in KO.
-     */
-    private void fallbackToScan() {
-        if (!scanMode) {
-            scanMode = true;
-            updateModeChecked();
-            Toast.makeText(this, R.string.hugepage_proc_ko_unavailable,
-                LENGTH_SHORT).show();
-        }
-    }
-
 
     @Override
     protected void onResume() {
@@ -205,22 +195,13 @@ public final class HugePageProcessActivity extends AppCompatActivity
         }
         runOnPool(() -> {
             boolean dark = HugePageColor.isDark(this);
-            boolean useScan = scanMode;
-            boolean autoSwitched = false;
-            // ONE-SHOT: only on the first resolve do we consider falling back to
-            // scan when the KO attribution API is absent (module not loaded, or
-            // an old .ko without served_summary). After that we never re-probe,
-            // so a transient root `test -e` failure can't flip a working KO view
-            // to THP. A present-but-empty pool (no VM) stays in KO ("no VM").
-            if (!modeResolved) {
-                if (!useScan && !koApiPresent() && !koApiPresent()) {
-                    // Probed twice (a single root `test -e` can flake under load);
-                    // only fall back to scan if the KO API is really absent.
-                    useScan = true;
-                    autoSwitched = true;
-                }
-                modeResolved = true;
-            }
+            // KO attribution availability comes from the cached capability probe
+            // (re-probed at most every few seconds, with a retry on a negative),
+            // so a single flaky root `test -e` can't flap the whole view between
+            // KO and scan every tick. Absent -> force scan, disable the KO entry.
+            // A present-but-empty pool (no VM) keeps KO available ("no VM").
+            boolean koNow = model.caps(false).koAttribution;
+            boolean useScan = scanMode || !koNow;
 
             List<HugePageProcess> list = new ArrayList<>();
             String emptyText;
@@ -275,7 +256,7 @@ public final class HugePageProcessActivity extends AppCompatActivity
             long tracedKb = 0;
             for (var r : list) if (r.thpKb > 0) tracedKb += r.thpKb;
             long holdKb, wantKb;
-            var pool = readPoolPages();
+            var pool = model.readPoolPages();
             boolean kernelAcquiring = pool != null && pool.length >= 4 && pool[3] != 0;
             if (pool != null) {
                 holdKb = pool[1] * 2048;   // avail
@@ -293,13 +274,20 @@ public final class HugePageProcessActivity extends AppCompatActivity
 
             var finalList = list;
             var finalEmpty = emptyText;
-            var finalAuto = autoSwitched;
+            var fKoNow = koNow;
             var fTraced = tracedKb;
             var fHold = holdKb;
             var fWant = wantKb;
             var fAcquiring = kernelAcquiring;
             runOnUiThread(() -> {
-                if (finalAuto) fallbackToScan();
+                koPresent = fKoNow;
+                // Toast only on the present->absent edge while the user wants KO,
+                // so a stably-unavailable module doesn't re-toast every refresh.
+                if (koWasPresent && !fKoNow && !scanMode) {
+                    Toast.makeText(this, R.string.hugepage_proc_ko_unavailable,
+                        LENGTH_SHORT).show();
+                }
+                koWasPresent = fKoNow;
                 // Re-sync the menu radio every refresh. Doing it once in onCreate
                 // (right after inflateMenu, before the menu is laid out) doesn't
                 // stick, leaving the radio showing the wrong mode.
@@ -310,65 +298,6 @@ public final class HugePageProcessActivity extends AppCompatActivity
         });
     }
 
-    /** True if the loaded module exposes the KO attribution API (v7+). */
-    private boolean koApiPresent() {
-        return shellCheckExists(SYSFS_BASE)
-            && shellCheckExists(pathJoin(SYSFS_PARAMS, "served_summary"));
-    }
-
-    @Nullable
-    private long[] readPoolPages() {
-        try {
-            if (!shellCheckExists(SYSFS_BASE)) return null;
-            var raw = shellReadFile(pathJoin(SYSFS_PARAMS, "refill_stat"));
-            long total = -1, avail = 0, want = -1, acquiring = 0, served = 0;
-            for (var line : raw.split("\n")) {
-                line = line.trim();
-                if (line.startsWith("pool_total=")) {
-                    total = Long.parseLong(line.substring(11).trim());
-                } else if (line.startsWith("pool_avail=")) {
-                    avail = Long.parseLong(line.substring(11).trim());
-                } else if (line.startsWith("pool_want=")) {
-                    want = Long.parseLong(line.substring(10).trim());
-                } else if (line.startsWith("acquire_active=")) {
-                    acquiring = Long.parseLong(line.substring(15).trim());
-                } else if (line.startsWith("served=")) {
-                    served = Long.parseLong(line.substring(7).trim());
-                }
-            }
-            if (total < 0) return null;
-            // Old modules have no pool_want -> treat want == capacity.
-            if (want < 0) want = total;
-            return new long[]{total, avail, want, acquiring, served};
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * Batch-read live /proc state (R/S/D + liveness) and THP occupancy
-     * (AnonHugePages + ShmemPmdMapped) for the given pids in a single root call.
-     * Shared by KO attribution (buildFromOwners) and THP scan (scanProc).
-     */
-    @NonNull
-    private Map<Integer, ProcInfo> readProcInfo(@NonNull Collection<Integer> pids) {
-        if (pids.isEmpty()) return new HashMap<>();
-        var pidList = new StringBuilder();
-        for (var pid : pids) {
-            if (pidList.length() > 0) pidList.append(' ');
-            pidList.append(pid);
-        }
-        var procRaw = run(
-            "for p in %s; do echo \"@@@ $p\"; " +
-                "grep -E '^State:' /proc/$p/status 2>/dev/null; " +
-                "grep -E '^AnonHugePages:|^ShmemPmdMapped:' " +
-                "/proc/$p/smaps_rollup 2>/dev/null; " +
-                "done",
-            pidList.toString()
-        ).getOutString();
-        return parseProcInfo(procRaw);
-    }
-
     @NonNull
     private List<HugePageProcess> buildFromOwners(
         @NonNull List<Owner> owners, boolean dark,
@@ -376,10 +305,10 @@ public final class HugePageProcessActivity extends AppCompatActivity
     ) {
         var pids = new ArrayList<Integer>();
         for (var o : owners) pids.add(o.pid);
-        var procInfo = readProcInfo(pids);
+        var procInfo = model.readProcInfo(pids);
 
         // Best-effort map pid -> VM name (only running VMs have a live pid).
-        var vmMap = fetchVmMap();
+        var vmMap = model.vmNames(false);
 
         var result = new ArrayList<HugePageProcess>();
         for (var o : owners) {
@@ -409,10 +338,10 @@ public final class HugePageProcessActivity extends AppCompatActivity
     @NonNull
     private List<HugePageProcess> scanProc(boolean dark) {
         // Running VMs (pid -> name) come from the daemon.
-        var vmMap = fetchVmMap();
+        var vmMap = model.vmNames(false);
         if (vmMap.isEmpty()) return new ArrayList<>();
 
-        var procInfo = readProcInfo(vmMap.keySet());
+        var procInfo = model.readProcInfo(vmMap.keySet());
 
         var result = new ArrayList<HugePageProcess>();
         for (var e : vmMap.entrySet()) {
@@ -438,18 +367,6 @@ public final class HugePageProcessActivity extends AppCompatActivity
             this.pid = pid;
             this.comm = comm;
             this.served = served;
-        }
-    }
-
-    private static final class ProcInfo {
-        final char state;
-        final long thpKb;
-        final boolean alive;
-
-        ProcInfo(char state, long thpKb, boolean alive) {
-            this.state = state;
-            this.thpKb = thpKb;
-            this.alive = alive;
         }
     }
 
@@ -483,75 +400,6 @@ public final class HugePageProcessActivity extends AppCompatActivity
         return list;
     }
 
-    @NonNull
-    private Map<Integer, ProcInfo> parseProcInfo(@NonNull String raw) {
-        var map = new HashMap<Integer, ProcInfo>();
-        int curPid = -1;
-        char state = '?';
-        long thp = -1; // -1 = unknown; becomes sum of Anon + Shmem THP
-        boolean alive = false;
-        for (var line : raw.split("\n")) {
-            if (line.startsWith("@@@ ")) {
-                if (curPid > 0)
-                    map.put(curPid, new ProcInfo(state, thp, alive));
-                try {
-                    curPid = Integer.parseInt(line.substring(4).trim());
-                } catch (NumberFormatException e) {
-                    curPid = -1;
-                }
-                state = '?';
-                thp = -1;
-                alive = false;
-            } else if (line.startsWith("State:")) {
-                var v = line.substring(6).trim();
-                if (!v.isEmpty()) state = v.charAt(0);
-                alive = true; // status readable -> process exists
-            } else if (line.startsWith("AnonHugePages:")
-                || line.startsWith("ShmemPmdMapped:")) {
-                var digits = line.replaceAll("[^0-9]", "");
-                if (!digits.isEmpty()) {
-                    try {
-                        thp = (thp < 0 ? 0 : thp) + Long.parseLong(digits);
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            }
-        }
-        if (curPid > 0) map.put(curPid, new ProcInfo(state, thp, alive));
-        return map;
-    }
-
-    @NonNull
-    private Map<Integer, String> fetchVmMap() {
-        var map = new HashMap<Integer, String>();
-        var latch = new CountDownLatch(1);
-        DaemonConnection.getInstance().buildRequest("vm_list")
-            .onResponse(resp -> {
-                try {
-                    var arr = resp.optJSONArray("data");
-                    if (arr != null) {
-                        for (int i = 0; i < arr.length(); i++) {
-                            var obj = arr.optJSONObject(i);
-                            if (obj == null) continue;
-                            int pid = obj.optInt("pid", -1);
-                            var name = obj.optString("name", null);
-                            if (pid > 0 && name != null) map.put(pid, name);
-                        }
-                    }
-                } finally {
-                    latch.countDown();
-                }
-            })
-            .onError(e -> latch.countDown())
-            .invoke();
-        try {
-            //noinspection ResultOfMethodCallIgnored
-            latch.await(2, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {
-        }
-        return map;
-    }
-
     private void showResult(
         @NonNull List<HugePageProcess> list, long usedKb, long availKb,
         long wantKb, @NonNull String emptyText
@@ -560,19 +408,28 @@ public final class HugePageProcessActivity extends AppCompatActivity
         firstRefresh = false;
         adapter.submit(list);
 
-        // Segmented bar: one colored segment per row, including the
-        // "waiting for acquire" (deficit) row. Track = available; total = want.
-        int n = list.size();
-        int[] colors = new int[n];
-        float[] values = new float[n];
-        long seg = 0;
-        for (int i = 0; i < n; i++) {
-            colors[i] = list.get(i).color;
-            values[i] = Math.max(0, list.get(i).thpKb);
-            seg += values[i];
+        // Segmented bar (shared builder): VM segments (used), then the available
+        // portion as a track-coloured gap, then the "waiting for acquire" deficit
+        // pinned flush right. This screen's bar is a plain unlabelled meter.
+        int used = 0;
+        for (var p : list) if (!p.acquire) used++;
+        int[] usedColors = new int[used];
+        float[] usedValues = new float[used];
+        int deficitColor = HugePageColor.pending(this);
+        long deficit = 0;
+        int u = 0;
+        for (var p : list) {
+            if (p.acquire) {                       // deficit rows: colour + value
+                deficitColor = p.color;
+                deficit += Math.max(0, p.thpKb);
+            } else {                               // used: one segment per VM
+                usedColors[u] = p.color;
+                usedValues[u] = Math.max(0, p.thpKb);
+                u++;
+            }
         }
-        float total = Math.max(wantKb, seg + Math.max(0, availKb));
-        segBar.setData(colors, values, total);
+        segBar.setStorage(usedColors, usedValues, null,
+            availKb, null, deficitColor, deficit, null, wantKb);
 
         // 2x2 caption: used / available on top, total / pool-size below.
         // Total = the real held reserve (used + avail = owned + traced), shown
@@ -644,11 +501,13 @@ public final class HugePageProcessActivity extends AppCompatActivity
         // blocked. The kernel 'acquire' write returns immediately; the worker
         // migrates in the background and we watch acquire_active for completion.
         new Thread(() -> {
+            var caps = model.caps(false);
+            boolean v7 = caps.hasAcquire;
             boolean triggered = false;
             try {
-                if (shellCheckExists(pathJoin(SYSFS_PARAMS, "acquire"))) {
+                if (v7) {
                     triggered = run("echo 1 > %s/acquire", SYSFS_PARAMS).isSuccess();
-                } else if (shellCheckExists(pathJoin(SYSFS_PARAMS, "manual_refill"))) {
+                } else if (caps.hasManualRefill) {
                     triggered = run("echo 1 > %s/manual_refill", SYSFS_PARAMS).isSuccess();
                 }
             } catch (Exception e) {
@@ -660,12 +519,24 @@ public final class HugePageProcessActivity extends AppCompatActivity
                     R.string.hugepage_refill_failed, LENGTH_SHORT).show());
                 return;
             }
-            // Poll until the worker clears acquire_active. Each tick nudges the
-            // UI to re-read refill_stat so the count visibly climbs.
+            if (!v7) {
+                // v6 (manual_refill): an async refill with no acquire_active to
+                // poll and no served=/pool_want to report a precise got/want.
+                // Just trigger it and let the periodic refresh animate the bar.
+                acquireWatching = false;
+                runOnUiThread(() -> {
+                    Toast.makeText(this, R.string.hugepage_proc_acquire_done,
+                        LENGTH_SHORT).show();
+                    refresh();
+                });
+                return;
+            }
+            // v7: poll until the worker clears acquire_active. Each tick nudges
+            // the UI to re-read refill_stat so the count visibly climbs.
             long[] pages = null;
             for (int i = 0; i < ACQUIRE_POLL_MAX; i++) {
                 try { Thread.sleep(ACQUIRE_POLL_MS); } catch (InterruptedException ignored) {}
-                pages = readPoolPages();      // {total, avail, want, acquiring, served}
+                pages = model.readPoolPages();  // {total, avail, want, acquiring, served}
                 runOnUiThread(this::refresh); // animate climbing numbers
                 if (pages == null || pages.length < 5 || pages[3] == 0) break;
             }

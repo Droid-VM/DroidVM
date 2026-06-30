@@ -193,7 +193,7 @@
                 <cn.classfun.droidvm.ui.hugepage.SegmentedBar
                     android:id="@+id/seg_pool_bar"
                     android:layout_width="match_parent"
-                    android:layout_height="10dp"
+                    android:layout_height="40dp"
                     android:layout_margin="12dp" />
 
                 <LinearLayout

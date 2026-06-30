@@ -970,7 +970,7 @@
     <string name="hugepage_proc_acquire_userspace">Module short; trying userspace assist…</string>
     <string name="hugepage_pool_size">Pool Size</string>
     <string name="hugepage_pool_size_saved">Pool size saved (effective after reboot)</string>
-    <string name="hugepage_pool_size_applied">Pool size saved &amp; applied (grow needs Acquire)</string>
+    <string name="hugepage_pool_size_applied">Pool size saved &amp; applied</string>
     <string name="hugepage_pool_shrink_busy">Acquiring — can\'t shrink now, wait for it to finish</string>
     <string name="hugepage_pool_below_vms">Pool can\'t be smaller than the running VMs\' total memory (%1$s)</string>
     <string name="hugepage_pool_size_failed">Failed to save pool size</string>
@@ -996,6 +996,8 @@
     <string name="hugepage_proc_unknown">Unattributed</string>
     <string name="hugepage_proc_unknown_breakdown">Unattributed — freed %1$d / reused %2$d pages</string>
     <string name="hugepage_proc_deficit">Waiting for acquire</string>
+    <string name="hugepage_proc_pid">pid %1$d</string>
+    <string name="hugepage_bar_available">Available</string>
     <string name="hugepage_proc_vm">VM: %1$s</string>
     <string name="hugepage_proc_no_vm">Not a tracked VM</string>
     <string name="hugepage_proc_state">State: %1$c (%2$s)</string>

@@ -929,7 +929,7 @@
     <string name="hugepage_refill_failed">觸發獲取失敗</string>
     <string name="hugepage_pool_size">池大小</string>
     <string name="hugepage_pool_size_saved">池大小已儲存（重啟後生效）</string>
-    <string name="hugepage_pool_size_applied">池大小已儲存並套用（放大需按獲取）</string>
+    <string name="hugepage_pool_size_applied">池大小已儲存並套用</string>
     <string name="hugepage_pool_shrink_busy">獲取中，無法縮小，請待獲取完成</string>
     <string name="hugepage_pool_below_vms">池大小不可小於執行中 VM 的記憶體總和（%1$s）</string>
     <string name="hugepage_pool_size_failed">儲存池大小失敗</string>
@@ -955,6 +955,8 @@
     <string name="hugepage_proc_unknown">未歸屬</string>
     <string name="hugepage_proc_unknown_breakdown">未歸屬 — 已釋放 %1$d / 已挪用 %2$d 頁</string>
     <string name="hugepage_proc_deficit">等待獲取</string>
+    <string name="hugepage_proc_pid">pid %1$d</string>
+    <string name="hugepage_bar_available">可用</string>
     <string name="hugepage_proc_vm">虛擬機器:%1$s</string>
     <string name="hugepage_proc_no_vm">非追蹤中的虛擬機器</string>
     <string name="hugepage_proc_state">狀態:%1$c (%2$s)</string>
