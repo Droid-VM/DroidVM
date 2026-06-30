@@ -17,6 +17,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 public class VMConfig extends DataConfig {
     public VMConfig() {
         setId(UUID.randomUUID());
+        item.set("created_at", System.currentTimeMillis());
     }
 
     public VMConfig(@NonNull JSONObject obj) throws JSONException {
