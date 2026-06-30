@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <!-- Plain items; the active mode is shown by a ●/○ prefix set in code.
+         A checkableBehavior="single" radio was unreliable here: setChecked()
+         on overflow items doesn't redraw on some devices, leaving the radio
+         stuck on the wrong mode even though the mode itself was correct. -->
+    <group android:id="@+id/grp_mode">
+        <item
+            android:id="@+id/menu_mode_ko"
+            android:title="@string/hugepage_proc_mode_ko"
+            app:showAsAction="never" />
+        <item
+            android:id="@+id/menu_mode_scan"
+            android:title="@string/hugepage_proc_mode_scan"
+            app:showAsAction="never" />
+    </group>
+
+</menu>

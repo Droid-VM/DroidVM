@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="8dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+
+    <ImageView
+        android:id="@+id/iv_proc_icon"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:contentDescription="@string/hugepage_proc_title_screen"
+        android:src="@drawable/ic_memory"
+        app:tint="?attr/colorPrimary" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tv_proc_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textAppearance="?attr/textAppearanceTitleSmall"
+            android:textColor="?attr/colorOnSurface"
+            tools:text="crosvm (pid 12345)" />
+
+        <TextView
+            android:id="@+id/tv_proc_served"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            tools:text="Served: 512 pages (1.0 GiB)" />
+
+        <TextView
+            android:id="@+id/tv_proc_anon"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/btn_proc_stack"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:contentDescription="@string/hugepage_proc_stack_title"
+        android:src="@drawable/ic_file_tree"
+        app:tint="?attr/colorError"
+        tools:visibility="visible" />
+
+    <TextView
+        android:id="@+id/tv_proc_state"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="18dp"
+        android:gravity="center"
+        android:fontFamily="monospace"
+        android:textAppearance="?attr/textAppearanceTitleMedium"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        tools:text="D" />
+
+    <ImageButton
+        android:id="@+id/btn_proc_kill"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:contentDescription="@string/hugepage_proc_kill"
+        android:src="@drawable/ic_close"
+        app:tint="?attr/colorError" />
+
+    <!-- Acquire-in-progress spinner with a pause glyph in the centre; tapping
+         it stops the acquire (wired in the adapter). -->
+    <FrameLayout
+        android:id="@+id/progress_proc_acquire"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:contentDescription="@string/hugepage_proc_acquire_stop"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <ProgressBar
+            style="?android:attr/progressBarStyleSmall"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="8dp"
+            android:indeterminate="true"
+            android:indeterminateTint="?attr/colorPrimary" />
+
+        <ImageView
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_gravity="center"
+            android:contentDescription="@string/hugepage_proc_acquire_stop"
+            android:src="@drawable/ic_pause"
+            app:tint="?attr/colorPrimary" />
+    </FrameLayout>
+
+</LinearLayout>
