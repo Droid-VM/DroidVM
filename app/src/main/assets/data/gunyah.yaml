@@ -16,6 +16,7 @@ gunyah:
   # Qualcomm Snapdragon 8 Elite
   - socs:
       - SM8735
+      - SM8735P
       - SM8750
       - SM87503AB
       - SM8750AB

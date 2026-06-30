@@ -212,6 +212,7 @@
     <chip id="SM8650QAA"    >Qualcomm Snapdragon 8 Gen 3</chip>
     <chip id="SM8650QAB"    >Qualcomm Snapdragon 8 Gen 3</chip>
     <chip id="SM8735"       >Qualcomm Snapdragon 8s Gen 4</chip>
+    <chip id="SM8735P"      >Qualcomm Snapdragon 8s Gen 4</chip>
     <chip id="SM8750"       >Qualcomm Snapdragon 8 Elite</chip>
     <chip id="SM87503AB"    >Qualcomm Snapdragon 8 Elite</chip>
     <chip id="SM8750AB"     >Qualcomm Snapdragon 8 Elite</chip>
