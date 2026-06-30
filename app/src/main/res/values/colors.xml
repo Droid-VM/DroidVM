@@ -22,4 +22,7 @@
     <color name="daemon_card_background_stopped">#FFFADFE0</color>
 
     <color name="kernel_analysis_title">#FF1976D2</color>
+
+    <color name="hugepage_bar_track">#33808080</color>
+    <color name="hugepage_pending">#807D9CB3</color>
 </resources>
