@@ -32,5 +32,17 @@ public final class VncInfoHandler extends RequestHandler {
         res.put("host", !host.isEmpty() ? host : "127.0.0.1");
         res.put("port", inst.item.optLong("vnc_port", -1));
         res.put("password", inst.item.optString("vnc_password", ""));
+        // When VNC binds to the IPv4 wildcard, resolve the phone's own LAN
+        // address here from the router watcher's filtered host-IP set, which
+        // already drops pbridge offload-proxy addresses parked on the uplink.
+        // The client cannot exclude those itself: the offload tag is a netlink
+        // route metric invisible to java.net.NetworkInterface, so its naive
+        // interface enumeration would pick a guest proxy IP instead.
+        if ("0.0.0.0".equals(host)) {
+            var hostIps = request.getContext().getRouterWatcher().getHostIpv4Addresses();
+            var it = hostIps.iterator();
+            if (it.hasNext())
+                res.put("remote_host", it.next());
+        }
     }
 }

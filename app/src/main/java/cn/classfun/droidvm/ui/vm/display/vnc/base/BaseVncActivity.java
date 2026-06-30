@@ -72,6 +72,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected String vmName = "";
     protected String vmId = "";
     protected String vncHost = "127.0.0.1";
+    // Phone LAN address the daemon resolved for an IPv4-wildcard bind (offload
+    // proxy IPs already excluded); empty when not applicable. Preferred over
+    // local interface enumeration for the external/remote connect address.
+    protected String vncRemoteHost = "";
     protected int vncPort = DEFAULT_PORT;
     protected String vncPassword = null;
     protected volatile boolean running = false;
@@ -223,6 +227,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         };
         DaemonConnection.OnResponse res = resp -> {
             vncHost = resp.optString("host", "127.0.0.1");
+            vncRemoteHost = resp.optString("remote_host", "");
             vncPort = resp.optInt("port", DEFAULT_PORT);
             vncPassword = resp.optString("password", "");
             if (vncPassword.isEmpty()) vncPassword = null;
@@ -594,10 +599,24 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         }
     }
 
+    /**
+     * Resolves the host for a VNC URI. For the external/remote address, prefers
+     * the daemon-resolved phone LAN address ({@link #vncRemoteHost}) when the VM
+     * binds the IPv4 wildcard, since it excludes pbridge offload-proxy IPs that
+     * local interface enumeration cannot tell apart. Falls back to
+     * {@link cn.classfun.droidvm.lib.utils.NetUtils#resolveAddress} otherwise.
+     */
+    @NonNull
+    private String resolveVncHost(boolean local) {
+        if (!local && "0.0.0.0".equals(vncHost) && !vncRemoteHost.isEmpty())
+            return vncRemoteHost;
+        return resolveAddress(vncHost, local);
+    }
+
     @NonNull
     protected String generateVncUri(boolean local) {
         var sb = new StringBuilder();
-        var host = resolveAddress(vncHost, local);
+        var host = resolveVncHost(local);
         var port = vncPort;
         sb.append(fmt("vnc://%s:%d/", host, port));
         var ps = new StringBuilder();
@@ -610,7 +629,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     protected void openWithExternalApp() {
         var url = generateVncUri(false);
-        var host = resolveAddress(vncHost, false);
+        var host = resolveVncHost(false);
         var target = fmt("%s:%d", host, vncPort);
         boolean hasPassword = vncPassword != null && !vncPassword.isEmpty();
         var view = getLayoutInflater().inflate(R.layout.dialog_vnc_external, null);
