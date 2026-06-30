@@ -107,6 +107,7 @@
     <string name="vm_state_starting">啟動中</string>
     <string name="vm_state_running">執行中</string>
     <string name="vm_state_stopping">停止中</string>
+    <string name="vm_state_rebooting">重新啟動中</string>
 
     <string name="vm_exited_success">虛擬機器"%1$s"已停止。</string>
     <string name="vm_exited_error">虛擬機器"%1$s"以退出碼 %2$d 退出。</string>

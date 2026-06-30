@@ -108,9 +108,14 @@
     <string name="vm_state_starting">Starting</string>
     <string name="vm_state_running">Running</string>
     <string name="vm_state_stopping">Stopping</string>
+    <string name="vm_state_rebooting">Rebooting</string>
 
     <string name="vm_exited_success">VM \"%1$s\" has stopped.</string>
     <string name="vm_exited_error">VM \"%1$s\" exited with code %2$d.</string>
+    <string name="vm_exit_crash">VM \"%1$s\" crashed (code %2$d).</string>
+    <string name="vm_exit_guest_panic">VM \"%1$s\" hit a kernel panic in the guest (code %2$d).</string>
+    <string name="vm_exit_watchdog">VM \"%1$s\" stalled and was reset by the watchdog (code %2$d).</string>
+    <string name="vm_rebooting">Rebooting VM \"%1$s\"…</string>
     <string name="vm_exit_dialog_title">VM \"%1$s\" Failed</string>
     <string name="vm_exit_dialog_message">The virtual machine exited with code %1$d.\n\nLogs:</string>
     <string name="vm_exit_no_logs">No logs available.</string>

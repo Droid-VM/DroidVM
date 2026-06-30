@@ -107,9 +107,14 @@
     <string name="vm_state_starting">启动中</string>
     <string name="vm_state_running">运行中</string>
     <string name="vm_state_stopping">停止中</string>
+    <string name="vm_state_rebooting">重启中</string>
 
     <string name="vm_exited_success">虚拟机"%1$s"已停止。</string>
     <string name="vm_exited_error">虚拟机"%1$s"以退出码 %2$d 退出。</string>
+    <string name="vm_exit_crash">虚拟机"%1$s"已崩溃（退出码 %2$d）。</string>
+    <string name="vm_exit_guest_panic">虚拟机"%1$s"guest 内核 panic（退出码 %2$d）。</string>
+    <string name="vm_exit_watchdog">虚拟机"%1$s"卡死，已被看门狗复位（退出码 %2$d）。</string>
+    <string name="vm_rebooting">正在重启虚拟机"%1$s"…</string>
     <string name="vm_exit_dialog_title">虚拟机"%1$s"启动失败</string>
     <string name="vm_exit_dialog_message">虚拟机以退出码 %1$d 退出。\n\n日志：</string>
     <string name="vm_exit_no_logs">无可用日志。</string>
