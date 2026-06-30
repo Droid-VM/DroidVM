@@ -44,6 +44,7 @@ import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
+import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
@@ -204,7 +205,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
                 ).show();
             } else {
                 Toast.makeText(this,
-                    getString(R.string.vm_exited_error, vmName, exitCode),
+                    getString(VMEventHandler.exitMessageRes(exitCode), vmName, exitCode),
                     LENGTH_LONG
                 ).show();
             }
@@ -431,9 +432,10 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     }
 
     private void doRestart() {
+        // crosvm reboot: daemon stops crosvm and relaunches it (no client-side
+        // stop+delay+start); a guest-initiated reboot takes the same daemon path.
         DialogInterface.OnClickListener cb = (d, w) ->
-            sendCommand("vm_stop", vmId, mainHandler, ui,
-                () -> mainHandler.postDelayed(this::doStart, 1500));
+            sendCommand("vm_reboot", vmId, mainHandler, ui);
         new MaterialAlertDialogBuilder(this)
             .setTitle(config.getName())
             .setMessage(R.string.vm_info_restart_confirm)
