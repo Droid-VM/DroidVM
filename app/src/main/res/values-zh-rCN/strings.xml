@@ -961,7 +961,7 @@
     <string name="hugepage_loaded">模块已加载</string>
     <string name="hugepage_pool_below_vms">池大小不可小于运行中 VM 的内存总和（%1$s）</string>
     <string name="hugepage_pool_shrink_busy">获取中，无法缩小，请等待获取完成</string>
-    <string name="hugepage_pool_size_applied">池大小已保存并应用（增大需点获取）</string>
+    <string name="hugepage_pool_size_applied">池大小已保存并应用</string>
     <string name="hugepage_proc_acquire">获取</string>
     <string name="hugepage_proc_acquire_done">获取完成</string>
     <string name="hugepage_proc_acquire_stop">停止获取</string>
@@ -971,6 +971,8 @@
     <string name="hugepage_proc_acquire_userspace">模块不足,尝试 userspace 协助…</string>
     <string name="hugepage_proc_anon">占用:%1$d 页 (%2$s)</string>
     <string name="hugepage_proc_deficit">等待获取</string>
+    <string name="hugepage_proc_pid">pid %1$d</string>
+    <string name="hugepage_bar_available">可用</string>
     <string name="hugepage_proc_empty">目前没有线程占用保留的 hugepage 池。</string>
     <string name="hugepage_proc_kill">终止</string>
     <string name="hugepage_proc_kill_failed">发送信号失败</string>

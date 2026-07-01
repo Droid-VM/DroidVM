@@ -60,6 +60,7 @@ public final class HugePageActivity extends AppCompatActivity {
     private static final String CRASH_FILE = pathJoin(MAGISK_BASE, "crash");
     private static final long PAGE_SIZE = 2L * 1024 * 1024; // 2MiB per page
     private final Handler handler = new Handler(Looper.getMainLooper());
+    private final HugePageModel model = new HugePageModel();
     private boolean resumed = false;
     private MaterialToolbar toolbar;
     private MaterialCardView cardCrashWarning;
@@ -171,28 +172,53 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     private void refreshStatus() {
+        refreshStatus(false);
+    }
+
+    /**
+     * @param forceCaps re-probe module capabilities immediately (bypass the
+     *                  cache) - pass true right after loading/unloading so the UI
+     *                  reflects the new module state without the cache's lag.
+     */
+    private void refreshStatus(boolean forceCaps) {
         runOnPool(() -> {
+            var caps = model.caps(forceCaps);
             var moduleInst = shellCheckExists(MODULE_PROP);
-            var moduleLoaded = shellCheckExists(SYSFS_BASE);
+            var moduleLoaded = caps.loaded;
             var moduleDisabled = shellCheckExists(DISABLE_FILE);
             var crashStamp = shellCheckExists(CRASH_FILE);
             var refillStat = "";
             var servedSummary = "";
+            var koAttribution = false;
             if (moduleLoaded) try {
                 refillStat = shellReadFile(pathJoin(SYSFS_PARAMS, "refill_stat"));
                 // Reconcile + read per-VM served pages so this screen's bar shows
                 // the exact same per-VM breakdown as the usage screen's bar.
-                if (shellCheckExists(pathJoin(SYSFS_PARAMS, "served_summary"))) {
+                if (caps.koAttribution) {
                     run("echo 1 > %s/reconcile", SYSFS_PARAMS);
                     servedSummary = shellReadFile(pathJoin(SYSFS_PARAMS, "served_summary"));
+                    koAttribution = true;
                 }
             } catch (Exception e) {
                 Log.w(TAG, "Failed to read parameters", e);
             }
             var stats = parseProp(refillStat);
-            var owners = parseServedOwners(servedSummary);
+            // pid -> friendly VM name, so each used segment is labelled "w11"
+            // like the usage screen. Old modules without the KO attribution API
+            // (no served_summary) fall back to a system THP scan of running VMs,
+            // mirroring the usage screen's "scan" mode, instead of showing the
+            // unavailable per-VM module-attribution breakdown.
+            List<long[]> owners;
+            Map<Integer, String> vmMap;
+            if (koAttribution) {
+                owners = parseServedOwners(servedSummary);
+                vmMap = owners.isEmpty() ? new LinkedHashMap<>() : model.vmNames(false);
+            } else {
+                vmMap = moduleLoaded ? model.vmNames(false) : new LinkedHashMap<>();
+                owners = model.scanThpPages(vmMap.keySet());
+            }
             runOnUiThread(() -> updateUI(
-                moduleInst, moduleLoaded, moduleDisabled, crashStamp, stats, owners
+                moduleInst, moduleLoaded, moduleDisabled, crashStamp, stats, owners, vmMap
             ));
         });
     }
@@ -242,7 +268,8 @@ public final class HugePageActivity extends AppCompatActivity {
         boolean installed, boolean loaded,
         boolean disabled, boolean crashed,
         @NonNull Map<String, String> stats,
-        @NonNull List<long[]> owners
+        @NonNull List<long[]> owners,
+        @NonNull Map<Integer, String> vmMap
     ) {
         if (isFinishing()) return;
         cardCrashWarning.setVisibility(crashed ? VISIBLE : GONE);
@@ -260,41 +287,50 @@ public final class HugePageActivity extends AppCompatActivity {
                 // modules without pool_want fall back to capacity.
                 var poolWant = getPages(stats, "pool_want");
                 if (poolWant <= 0) poolWant = poolTotal;
-                // Used = pages currently served to VMs (traced). Prefer the live
-                // served counter; pool_total - avail under-counts after a shrink
-                // that left served pages out. Old modules: fall back to that.
-                var used = stats.containsKey("served")
-                    ? getPages(stats, "served")
-                    : Math.clamp(poolTotal - poolAvail, 0, poolTotal);
-                // 2x2 caption (identical to the usage screen): used / available
-                // on top, total / pool-size below. Total = real held reserve
-                // (used + avail = owned + traced), shown raw - no clamp to the
-                // pool size, so a kernel that fails to release on shrink shows up
-                // as total > the size you set.
+                // Apple-storage-bar style: one labelled colored block per VM
+                // (used), then the available portion as a track-coloured gap,
+                // then the waiting-to-acquire (deficit) block pinned flush right.
+                // Each block draws its label inside if wide enough.
+                boolean dark = HugePageColor.isDark(this);
+                int n = owners.size();
+                int[] usedColors = new int[n];
+                float[] usedValues = new float[n];
+                String[] usedLabels = new String[n];
+                long seg = 0;
+                for (int i = 0; i < n; i++) {
+                    int pid = (int) owners.get(i)[0];
+                    long ownerPages = owners.get(i)[1];
+                    usedColors[i] = HugePageColor.forPid(pid, dark);
+                    usedValues[i] = ownerPages;
+                    String name = vmMap.get(pid);
+                    if (name == null) name = getString(R.string.hugepage_proc_pid, pid);
+                    // Two stacked lines: label over capacity.
+                    usedLabels[i] = name + "\n" + SizeUtils.formatSize(ownerPages * PAGE_SIZE);
+                    seg += ownerPages;
+                }
+                // "used" is the sum of the segments the bar draws, so the caption
+                // and the bar always agree (one canonical quantity: the per-VM
+                // served/scanned pages). The kernel 'served' counter can include
+                // orphaned owner-gone pages that have no segment; those surface in
+                // the held/available gap rather than as an invisible caption delta.
+                long used = seg;
+                long deficit = Math.max(0, poolWant - seg - poolAvail);
+                // 2x2 caption: used / available on top, total / pool-size below.
+                // Total = real held reserve (used + avail), shown raw - no clamp
+                // to the pool size, so a kernel that fails to release on shrink
+                // shows up as total > the size you set.
                 var held = used + poolAvail;
                 setPagesString(tvPoolUsed, R.string.hugepage_stat_pool_used, used);
                 setPagesString(tvPoolAvail, R.string.hugepage_stat_pool_available, poolAvail);
                 setPagesString(tvPoolTotal, R.string.hugepage_stat_pool_total, held);
                 setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
-                // Segmented bar: one colored segment per VM (same per-VM colours
-                // and deficit block as the usage screen's bar) + a track for the
-                // available portion; total = want.
-                boolean dark = HugePageColor.isDark(this);
-                int n = owners.size();
-                int[] colors = new int[n + 1];
-                float[] values = new float[n + 1];
-                long seg = 0;
-                for (int i = 0; i < n; i++) {
-                    int pid = (int) owners.get(i)[0];
-                    long ownerPages = owners.get(i)[1];
-                    colors[i] = HugePageColor.forPid(pid, dark);
-                    values[i] = ownerPages;
-                    seg += ownerPages;
-                }
-                colors[n] = HugePageColor.pending(this);
-                values[n] = Math.max(0, poolWant - seg - poolAvail);
-                float total = Math.max(poolWant, seg + poolAvail);
-                segPoolBar.setData(colors, values, total);
+                segPoolBar.setStorage(usedColors, usedValues, usedLabels,
+                    poolAvail, getString(R.string.hugepage_bar_available)
+                        + "\n" + SizeUtils.formatSize(poolAvail * PAGE_SIZE),
+                    HugePageColor.pending(this), deficit,
+                    getString(R.string.hugepage_proc_deficit)
+                        + "\n" + SizeUtils.formatSize(deficit * PAGE_SIZE),
+                    poolWant);
             } catch (NumberFormatException e) {
                 tvPoolUsed.setText("-");
                 tvPoolAvail.setText("-");
@@ -354,7 +390,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Toast.makeText(this, R.string.hugepage_already_loaded,
                         LENGTH_SHORT).show();
-                    refreshStatus();
+                    refreshStatus(true);
                 });
                 return;
             }
@@ -378,7 +414,7 @@ public final class HugePageActivity extends AppCompatActivity {
                         ? R.string.hugepage_loaded
                         : R.string.hugepage_load_failed,
                     LENGTH_SHORT).show();
-                refreshStatus();
+                refreshStatus(true);
             });
         });
     }
@@ -596,7 +632,7 @@ public final class HugePageActivity extends AppCompatActivity {
                     R.string.hugepage_unloaded :
                     R.string.hugepage_unload_failed;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
-                refreshStatus();
+                refreshStatus(true);
             });
         });
     }
