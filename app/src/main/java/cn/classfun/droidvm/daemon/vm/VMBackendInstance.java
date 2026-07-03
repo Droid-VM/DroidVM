@@ -6,6 +6,7 @@ import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
+import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.KEY_OPTIMIZE_SDCARD;
 
 import android.os.Build;
 import android.util.Log;
@@ -114,5 +115,14 @@ public abstract class VMBackendInstance {
         args.add("8192");
         args.add("-o");
         args.add(pathJoin(dir, "strace.log"));
+    }
+
+    protected String patchOptimizedPath(@NonNull String path) {
+        var en = context.appConfig.optBoolean(KEY_OPTIMIZE_SDCARD, true);
+        var prefix = "/storage/emulated/";
+        var newPrefix = "/data/media/";
+        if (en && path.startsWith(prefix))
+            path = newPrefix + path.substring(prefix.length());
+        return path;
     }
 }

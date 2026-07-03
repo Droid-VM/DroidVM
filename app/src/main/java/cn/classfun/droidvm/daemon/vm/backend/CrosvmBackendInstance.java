@@ -243,6 +243,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var disk = iter.getValue();
             var path = disk.optString("path", "");
             if (path.isEmpty()) continue;
+            path = patchOptimizedPath(path);
             var readonly = disk.optBoolean("readonly", false);
             var bus = optEnum(disk, "bus", DiskBus.VIRTIO);
             var arg = new StringBuilder(path);

@@ -71,6 +71,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
     public static final String KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE = "vm_keep_compress_on_optimize";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
+    public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -85,6 +86,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private SwitchRowWidget itemVMAutoConsole;
     private SwitchRowWidget itemVMClearLogsBeforeStart;
     private SwitchRowWidget itemVMKeepCompressOnOptimize;
+    private SwitchRowWidget itemOptimizeSdcard;
     private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
@@ -141,6 +143,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemVMKeepCompressOnOptimize = view.findViewById(R.id.item_vm_keep_compress_on_optimize);
+        itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
         itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
@@ -175,6 +178,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnChecked(itemVMKeepCompressOnOptimize, KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
+        bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);

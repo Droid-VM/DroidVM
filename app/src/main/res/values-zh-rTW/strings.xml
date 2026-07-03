@@ -376,6 +376,8 @@
     <string name="settings_cpu_affinity_tier_little">小核</string>
     <string name="settings_cpu_affinity_tier_big">大核</string>
     <string name="settings_cpu_affinity_tier_prime">超大核</string>
+    <string name="settings_optimize_sdcard_title">直接存取外部存儲</string>
+    <string name="settings_optimize_sdcard_summary">使用 /data/media 取代 /storage/emulated 以提升磁碟效能</string>
     <string name="settings_category_about">關於</string>
     <string name="settings_feedback_title">問題反饋</string>
     <string name="settings_feedback_summary">在 GitHub 上報告問題</string>
