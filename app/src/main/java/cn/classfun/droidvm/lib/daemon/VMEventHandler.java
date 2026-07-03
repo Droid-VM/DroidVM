@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.lib.daemon;
 
+import static android.content.Context.MODE_PRIVATE;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.FileUtils.calcHashForFile;
@@ -41,6 +42,7 @@ import cn.classfun.droidvm.lib.diag.LogHelper;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.lib.utils.ThreadUtils;
 import cn.classfun.droidvm.ui.SplashActivity;
 import cn.classfun.droidvm.ui.main.MainActivity;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
@@ -203,6 +205,7 @@ public final class VMEventHandler implements
         queueActivityTask(act -> Toast.makeText(
             act, R.string.daemon_connected, Toast.LENGTH_SHORT
         ).show());
+        queueActivityTask(VMEventHandler::sendAppConfig);
     }
 
     @Override
@@ -212,6 +215,29 @@ public final class VMEventHandler implements
         queueActivityTask(act -> Toast.makeText(
             act, R.string.daemon_disconnected, Toast.LENGTH_SHORT
         ).show());
+    }
+
+    public static void sendAppConfig(Activity act) {
+        var req = new JSONObject();
+        try {
+            var pref = act.getSharedPreferences("droidvm_prefs", MODE_PRIVATE);
+            req.put("command", "set_app_config");
+            req.put("config", new JSONObject(pref.getAll()));
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to prepare app config", e);
+        }
+        ThreadUtils.runOnPool(() -> {
+            try {
+                var conn = DaemonConnection.getInstance();
+                var resp = conn.request(req);
+                if (!resp.optBoolean("success", false)) {
+                    var msg = resp.optString("message", "unknown error");
+                    Log.w(TAG, fmt("set_app_config failed: %s", msg));
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to send app config to daemon", e);
+            }
+        });
     }
 
     private boolean isOutdatedDaemon(JSONObject resp) {

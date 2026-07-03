@@ -29,6 +29,7 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.LocalSocketConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
+import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
@@ -56,8 +57,11 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private final InputConsoleStream stderrStream;
     private final SimpleConsoleStream stdioStream;
 
-    public QemuBackendInstance(@NonNull VMConfig config) {
-        super(config);
+    public QemuBackendInstance(
+        @NonNull ServerContext context,
+        @NonNull VMConfig config
+    ) {
+        super(context, config);
         uartStream = new LocalSocketConsoleStream(config, "uart", null);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);

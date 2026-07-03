@@ -84,7 +84,7 @@ public final class VMInstance extends VMConfig {
     @NonNull
     synchronized VMBackendInstance getBackendInstance() {
         if (this.backendInstance == null)
-            this.backendInstance = getBackend().create(this);
+            this.backendInstance = getBackend().create(store.context, this);
         return this.backendInstance;
     }
 

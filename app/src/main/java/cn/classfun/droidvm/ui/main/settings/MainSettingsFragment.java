@@ -45,6 +45,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
+import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.data.Language;
 import cn.classfun.droidvm.lib.store.base.DataConfig;
 import cn.classfun.droidvm.lib.store.base.DataStore;
@@ -119,8 +120,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private void bindOnChecked(@NonNull SwitchRowWidget item, String key, boolean def) {
         var prefs = requireContext().getSharedPreferences(PREFS_NAME, 0);
         item.setChecked(prefs.getBoolean(key, def));
-        item.setOnCheckedChangeListener((btn, checked) ->
-            prefs.edit().putBoolean(key, checked).apply());
+        item.setOnCheckedChangeListener((btn, checked) -> {
+            prefs.edit().putBoolean(key, checked).apply();
+            VMEventHandler.sendAppConfig(requireActivity());
+        });
     }
 
     @Override

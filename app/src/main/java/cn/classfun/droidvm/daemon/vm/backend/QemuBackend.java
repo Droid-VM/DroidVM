@@ -4,6 +4,7 @@ import androidx.annotation.NonNull;
 
 import com.google.auto.service.AutoService;
 
+import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
@@ -17,7 +18,10 @@ public final class QemuBackend extends BackendBase {
 
     @NonNull
     @Override
-    public VMBackendInstance create(@NonNull VMConfig config) {
-        return new QemuBackendInstance(config);
+    public VMBackendInstance create(
+        @NonNull ServerContext context,
+        @NonNull VMConfig config
+    ) {
+        return new QemuBackendInstance(context, config);
     }
 }

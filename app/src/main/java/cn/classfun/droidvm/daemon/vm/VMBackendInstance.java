@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
+import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.utils.FileUtils;
@@ -26,9 +27,11 @@ public abstract class VMBackendInstance {
     private static final String TAG = "VMBackendInstance";
     protected final Map<String, ConsoleStream> streams = new LinkedHashMap<>();
     protected final VMConfig config;
+    protected final ServerContext context;
     private boolean stracePrepared = false;
 
-    protected VMBackendInstance(@NonNull VMConfig config) {
+    protected VMBackendInstance(@NonNull ServerContext context, @NonNull VMConfig config) {
+        this.context = context;
         this.config = config;
     }
 

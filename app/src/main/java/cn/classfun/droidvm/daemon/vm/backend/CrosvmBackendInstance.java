@@ -28,6 +28,7 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
+import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
@@ -60,8 +61,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private final InputConsoleStream stderrStream;
     private final SimpleConsoleStream stdioStream;
 
-    public CrosvmBackendInstance(@NonNull VMConfig config) {
-        super(config);
+    public CrosvmBackendInstance(
+        @NonNull ServerContext context,
+        @NonNull VMConfig config
+    ) {
+        super(context, config);
         uartStream = new FDPipeConsoleStream(config, "uart", -1, -1);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);

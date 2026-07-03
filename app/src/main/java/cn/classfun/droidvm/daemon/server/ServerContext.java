@@ -15,12 +15,14 @@ import java.io.File;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public final class ServerContext {
     private static final String TAG = "ServerContext";
     private final VMInstanceStore vms = new VMInstanceStore(this);
     private final NetworkInstanceStore networks = new NetworkInstanceStore(this);
     private final DefaultRouterWatcher routerWatcher = new DefaultRouterWatcher(this);
+    public DataItem appConfig = DataItem.newObject();
 
     public ServerContext() {
         Log.i(TAG, "loading config files...");

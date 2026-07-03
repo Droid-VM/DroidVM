@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.ServiceLoader;
 
+import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
@@ -23,7 +24,10 @@ public abstract class BackendBase {
     public abstract String name();
 
     @NonNull
-    public abstract VMBackendInstance create(@NonNull VMConfig config);
+    public abstract VMBackendInstance create(
+        @NonNull ServerContext context,
+        @NonNull VMConfig config
+    );
 
     public static void loadAll() {
         if (!backends.isEmpty()) return;
