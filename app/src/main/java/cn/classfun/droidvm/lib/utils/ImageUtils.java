@@ -28,4 +28,31 @@ public final class ImageUtils {
         }
         return new JSONObject(result.getOutString());
     }
+
+    /**
+     * Whether {@code path} actually stores compressed clusters, per
+     * {@code qemu-img check}'s {@code compressed-clusters} count. This is the
+     * real signal: the qcow2 header's {@code compression-type} reads "zlib" for
+     * every v3 image (even ones with no compressed data), so it cannot tell an
+     * uncompressed disk from a compressed one. Unlike lbx, qemu-img reads both
+     * zlib and zstd images, so a zstd disk is detected too. Any detection
+     * failure (raw images reject {@code check}, etc.) returns {@code false} --
+     * an undetectable image is treated as uncompressed.
+     */
+    public static boolean hasCompressedClusters(String path) {
+        try {
+            var result = runListQuiet(
+                getPrebuiltBinaryPath("qemu-img"),
+                "check", "--output=json", path);
+            var out = result.getOutString();
+            // qemu-img check still writes its JSON report on non-zero exits
+            // (leaks/corruptions), so parse whatever it produced rather than
+            // gating on isSuccess(); a missing/garbage body throws -> false.
+            if (out == null || out.isEmpty())
+                return false;
+            return new JSONObject(out).optLong("compressed-clusters", 0) > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 }

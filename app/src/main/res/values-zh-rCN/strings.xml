@@ -367,6 +367,8 @@
     <string name="settings_vm_auto_console_summary">启动虚拟机时自动打开控制台</string>
     <string name="settings_vm_clear_logs_before_start_title">启动前清理日志</string>
     <string name="settings_vm_clear_logs_before_start_summary">启动虚拟机前清理该虚拟机的所有控制台日志</string>
+    <string name="settings_vm_keep_compress_on_optimize_title">优化时保持压缩</string>
+    <string name="settings_vm_keep_compress_on_optimize_summary">优化磁盘时保留其原有压缩而非解压；关闭则重写为未压缩</string>
     <string name="settings_category_about">关于</string>
     <string name="settings_feedback_title">问题反馈</string>
     <string name="settings_feedback_summary">在 GitHub 上报告问题</string>

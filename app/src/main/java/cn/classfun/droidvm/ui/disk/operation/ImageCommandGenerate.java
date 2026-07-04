@@ -118,7 +118,6 @@ public final class ImageCommandGenerate {
             task.put("format", format);
         } else throw new RuntimeException("No format specified in task or image info");
         sb.append(" --target-format ").append(format);
-        sb.append(" ").append(eDiskPath).append(" ");
         if (task.has("output")) {
             outputPath = task.getString("output");
         } else {
@@ -129,11 +128,17 @@ public final class ImageCommandGenerate {
         if (!opts.isEmpty())
             sb.append(" --target-format-options ").append(opts);
         if (!task.optString("compress", "none").equals("none"))
-            sb.append(" --compress");
-        sb.append(" ");
+            // -c (short form): the bundled qemu-img rejects the --compress long
+            // option even though it accepts the other long options.
+            sb.append(" -c");
+        // Positional args go last. qemu-img stops parsing options at the first
+        // SRC_FILE (convert accepts multiple source files), so any option after
+        // it -- e.g. --compress -- is misread as an extra source file. All
+        // options must precede SRC_FILE.
         realPath = escapedString(outputPath);
         tmpPath = escapedString(fmt("%s.tmp", diskPath));
-        sb.append(useTempPath ? tmpPath : realPath);
+        sb.append(" ").append(eDiskPath);
+        sb.append(" ").append(useTempPath ? tmpPath : realPath);
     }
 
     @NonNull
