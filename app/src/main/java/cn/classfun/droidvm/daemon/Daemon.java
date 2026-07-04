@@ -1,15 +1,18 @@
 package cn.classfun.droidvm.daemon;
 
+import static android.os.Process.myPid;
 import static cn.classfun.droidvm.BuildConfig.APPLICATION_ID;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.daemon.DaemonHelper.getPidFile;
 import static cn.classfun.droidvm.lib.daemon.DaemonHelper.getPortFile;
 import static cn.classfun.droidvm.lib.daemon.DaemonHelper.getTokenFile;
+import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
+import static cn.classfun.droidvm.lib.utils.FileUtils.writeFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
-import android.os.Process;
+import android.system.Os;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -34,10 +37,12 @@ import cn.classfun.droidvm.lib.utils.ProcessUtils;
 
 public final class Daemon {
     public static final String TAG = "Daemon";
+    public static final String LOG_PATH = pathJoin(DATA_DIR, "cache", "daemon.log");
     private static final String RUN_DIR = pathJoin(DATA_DIR, "run");
     private static final String LOCK_FILE = pathJoin(RUN_DIR, "droidvmd.lock");
     private static final AtomicBoolean cleaned = new AtomicBoolean(false);
     public static String daemonHash = null;
+    private static Process logcatProcess = null;
 
     // Held for the whole process lifetime so the advisory lock stays taken; the
     // kernel drops it automatically when this process dies (including SIGKILL),
@@ -127,7 +132,7 @@ public final class Daemon {
         try {
             lockChannel.truncate(0);
             lockChannel.position(0);
-            lockChannel.write(ByteBuffer.wrap(String.valueOf(Process.myPid()).getBytes()));
+            lockChannel.write(ByteBuffer.wrap(String.valueOf(myPid()).getBytes()));
             lockChannel.force(false);
         } catch (IOException e) {
             Log.w(TAG, "Failed to write lock owner pid", e);
@@ -152,9 +157,9 @@ public final class Daemon {
             Log.w(TAG, fmt("Failed to create run directory: %s", runDir));
         var pidFile = new File(runDir, "droidvmd.pid");
         try (var writer = new FileWriter(pidFile)) {
-            writer.write(String.valueOf(Process.myPid()));
+            writer.write(String.valueOf(myPid()));
             writer.flush();
-            Log.i(TAG, fmt("PID file written: %s (pid=%d)", pidFile, Process.myPid()));
+            Log.i(TAG, fmt("PID file written: %s (pid=%d)", pidFile, myPid()));
         } catch (IOException e) {
             Log.e(TAG, fmt("Failed to write PID file: %s", pidFile), e);
         }
@@ -220,6 +225,35 @@ public final class Daemon {
         }
     }
 
+    @SuppressWarnings("OctalInteger")
+    private static void startLogcat() {
+        try {
+            var builder = new ProcessBuilder();
+            var file = new File(LOG_PATH);
+            if (file.exists() && !file.delete())
+                Log.w(TAG, "failed to remove old log");
+            writeFile(file, "");
+            var uid = Server.getDroidVMUid();
+            Os.chmod(LOG_PATH, 0600);
+            Os.chown(LOG_PATH, uid, uid);
+            builder.command(
+                findExecute("logcat", "/system/bin/logcat"),
+                fmt("--pid=%d", myPid())
+            );
+            builder.redirectOutput(new File(LOG_PATH));
+            logcatProcess = builder.start();
+        } catch (Exception e) {
+            Log.w(TAG, "failed to start logcat", e);
+            logcatProcess = null;
+        }
+    }
+
+    private static void stopLogcat() {
+        if (logcatProcess == null) return;
+        logcatProcess.destroy();
+        logcatProcess = null;
+    }
+
     public static void main(String... args) {
         boolean force = Arrays.asList(args).contains("--force");
         System.out.print("Starting DroidVM Daemon...\n");
@@ -228,7 +262,8 @@ public final class Daemon {
         // broadcast the native-display binder to the UI. Must happen before server.run() blocks here.
         DaemonSystemContext.init();
         setProcTitle();
-        System.out.printf("Current pid: %d\n", Process.myPid());
+        startLogcat();
+        System.out.printf("Current pid: %d\n", myPid());
         Log.d(TAG, "DroidVM Daemon is starting...");
         if (!acquireLock(force)) {
             System.out.print("Another DroidVM Daemon is already running.\n");
@@ -250,8 +285,10 @@ public final class Daemon {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             server.stop();
             cleanup(server);
+            stopLogcat();
         }));
         server.run();
         cleanup(server);
+        stopLogcat();
     }
 }

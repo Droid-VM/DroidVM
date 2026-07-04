@@ -890,6 +890,8 @@
     <string name="logs_share">分享</string>
     <string name="logs_share_title">分享日誌</string>
     <string name="logs_share_failed">分享日誌失敗：%1$s</string>
+    <string name="logs_not_found_title">守護程式日誌不可用</string>
+    <string name="logs_not_found_message">找不到守護程式的日誌文件，守護程式是否正在執行？</string>
 
     <string name="privacy_step_title">隱私政策</string>
     <string name="privacy_step_desc">繼續之前請閱讀並同意隱私政策</string>

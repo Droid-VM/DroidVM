@@ -1,6 +1,7 @@
 package cn.classfun.droidvm.ui.logs;
 
-import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
+import static java.nio.charset.StandardCharsets.UTF_8;
+import static cn.classfun.droidvm.daemon.Daemon.LOG_PATH;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.net.Uri;
@@ -18,11 +19,13 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.InputStreamReader;
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.OutputStreamWriter;
+import java.io.RandomAccessFile;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -31,7 +34,6 @@ import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 
 public final class LogsActivity extends AppCompatActivity {
@@ -40,8 +42,9 @@ public final class LogsActivity extends AppCompatActivity {
 
     private RecyclerView recyclerView;
     private LogAdapter adapter;
-    private Process logcatProcess;
+    private RandomAccessFile logFile;
     private Thread readerThread;
+    private final ByteArrayOutputStream lineBuf = new ByteArrayOutputStream(8192);
     private volatile boolean autoScroll = true;
     private final List<String> pendingLines = new ArrayList<>();
     private final AtomicBoolean updated = new AtomicBoolean(false);
@@ -80,7 +83,13 @@ public final class LogsActivity extends AppCompatActivity {
                 }
             }
         });
-        startLogcat();
+        if (new File(LOG_PATH).exists())
+            startLogcat();
+        else new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.logs_not_found_title)
+            .setMessage(R.string.logs_not_found_message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
     }
 
     private boolean onMenuItemClick(@NonNull MenuItem item) {
@@ -157,13 +166,8 @@ public final class LogsActivity extends AppCompatActivity {
         }
         updated.set(false);
         try {
-            var pid = DaemonHelper.readPid();
-            if (pid < 0) throw new RuntimeException("Daemon is not running");
-            var cmd = fmt("logcat --pid=%d", pid);
-            var shell = findExecute("su", "/system/bin/su");
-            var builder = new ProcessBuilder(shell, "-c", cmd);
-            builder.redirectErrorStream(true);
-            logcatProcess = builder.start();
+            logFile = new RandomAccessFile(LOG_PATH, "r");
+            logFile.seek(0);
         } catch (Exception e) {
             var lines = new ArrayList<String>();
             lines.add(e.toString());
@@ -171,27 +175,48 @@ public final class LogsActivity extends AppCompatActivity {
             return;
         }
         running = true;
-        readerThread = new Thread(this::logcatThread, "LogcatReader");
+        lineBuf.reset();
+        readerThread = new Thread(this::logcatThread, "LogReader");
         readerThread.setDaemon(true);
         readerThread.start();
         uiHandler.postDelayed(flushRunnable, FLUSH_INTERVAL_MS);
     }
 
     private void logcatThread() {
-        try (
-            var input = new InputStreamReader(logcatProcess.getInputStream());
-            var reader = new BufferedReader(input, 16384)
-        ) {
-            String line;
-            while (running && (line = reader.readLine()) != null) {
-                synchronized (pendingLines) {
-                    pendingLines.add(line);
-                    updated.set(true);
+        var buf = new byte[8192];
+        try {
+            while (running) {
+                long len = logFile.length();
+                long pos = logFile.getFilePointer();
+                if (len < pos) {
+                    logFile.seek(0);
+                    pos = 0;
+                }
+                if (len > pos) {
+                    int rl = (int) Math.min(buf.length, len - pos);
+                    int n = logFile.read(buf, 0, rl);
+                    if (n > 0) {
+                        for (int i = 0; i < n; i++) {
+                            byte b = buf[i];
+                            if (b == '\n') {
+                                var line = lineBuf.toString(UTF_8);
+                                lineBuf.reset();
+                                synchronized (pendingLines) {
+                                    pendingLines.add(line);
+                                    updated.set(true);
+                                }
+                            } else if (b != '\r')
+                                lineBuf.write(b);
+                        }
+                        continue;
+                    }
                 }
                 while (running && suspend.get()) {
                     //noinspection BusyWait
                     Thread.sleep(FLUSH_INTERVAL_MS);
                 }
+                //noinspection BusyWait
+                Thread.sleep(FLUSH_INTERVAL_MS);
             }
         } catch (Exception ignored) {
         }
@@ -220,9 +245,12 @@ public final class LogsActivity extends AppCompatActivity {
     private void stopLogcat() {
         running = false;
         uiHandler.removeCallbacks(flushRunnable);
-        if (logcatProcess != null) {
-            logcatProcess.destroy();
-            logcatProcess = null;
+        if (logFile != null) {
+            try {
+                logFile.close();
+            } catch (Exception ignored) {
+            }
+            logFile = null;
         }
         if (readerThread != null) {
             readerThread.interrupt();

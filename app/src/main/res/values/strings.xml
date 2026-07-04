@@ -927,6 +927,8 @@
     <string name="logs_share">Share</string>
     <string name="logs_share_title">Share logs</string>
     <string name="logs_share_failed">Failed to share logs: %1$s</string>
+    <string name="logs_not_found_title">Daemon log unavailable</string>
+    <string name="logs_not_found_message">No daemon log file found, is daemon running?</string>
 
     <string name="privacy_step_title">Privacy Policy</string>
     <string name="privacy_step_desc">Please read and agree to the privacy policy before continuing</string>
