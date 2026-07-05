@@ -25,4 +25,8 @@
 
     <color name="hugepage_bar_track">#33808080</color>
     <color name="hugepage_pending">#807D9CB3</color>
+
+    <!-- Inline supported/unsupported status icons (readable on light and dark). -->
+    <color name="status_supported">#FF4CAF50</color>
+    <color name="status_unsupported">#FFF44336</color>
 </resources>

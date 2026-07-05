@@ -9,9 +9,9 @@ import androidx.annotation.Nullable;
  * accumulates into an ordered {@code List<Try<...>>}; a success stops the ladder,
  * so the caller judges the overall outcome from the <b>last</b> element:
  * <ul>
- *   <li>last {@link #ok()} and alone — success via the primary implementation;</li>
- *   <li>last {@link #ok()} after earlier fails — success, degraded to a fallback;</li>
- *   <li>last not {@link #ok()} — failure, and every rung's reason is in the list.</li>
+ *   <li>last {@link #ok()} and alone -- success via the primary implementation;</li>
+ *   <li>last {@link #ok()} after earlier fails -- success, degraded to a fallback;</li>
+ *   <li>last not {@link #ok()} -- failure, and every rung's reason is in the list.</li>
  * </ul>
  *
  * @param <I> the feature's implementation enum (which way it was done)
