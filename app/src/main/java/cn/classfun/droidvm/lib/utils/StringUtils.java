@@ -3,6 +3,7 @@ package cn.classfun.droidvm.lib.utils;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Base64.getDecoder;
 import static java.util.Base64.getEncoder;
+import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.utils.FileUtils.copyStream;
 import static cn.classfun.droidvm.lib.utils.FileUtils.externalPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
@@ -10,6 +11,7 @@ import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import android.content.Context;
 import android.net.Uri;
 import android.provider.DocumentsContract;
+import android.system.Os;
 import android.widget.EditText;
 
 import androidx.annotation.NonNull;
@@ -82,6 +84,26 @@ public final class StringUtils {
         return null;
     }
 
+    @Nullable
+    private static String tryResolvePathFromFd(
+        @NonNull Context ctx,
+        @NonNull Uri uri,
+        @NonNull String mode
+    ) throws Exception {
+        var resolver = ctx.getContentResolver();
+        try (var pfd = resolver.openFileDescriptor(uri, mode)) {
+            requireNonNull(pfd);
+            var fdp = fmt("/proc/self/fd/%d", pfd.getFd());
+            var path = Os.readlink(fdp);
+            if (
+                shellCheckExists(path) &&
+                path.startsWith("/") &&
+                !path.endsWith(" (deleted)")
+            ) return path;
+        }
+        return null;
+    }
+
     public static String resolveUriPath(Context ctx, Uri uri) {
         String part;
         try {
@@ -103,6 +125,16 @@ public final class StringUtils {
         if ((part = parseTreePath(path, "/document/primary:")) != null) return part;
         if ((part = parseTreePath(path, "/external_files/")) != null) return part;
         if ((part = parseTreePath(path, "/tree/primary:")) != null) return part;
+        try {
+            var real = tryResolvePathFromFd(ctx, uri, "r");
+            if (real != null) return real;
+        } catch (Exception ignored) {
+        }
+        try {
+            var real = tryResolvePathFromFd(ctx, uri, "rw");
+            if (real != null) return real;
+        } catch (Exception ignored) {
+        }
         return path;
     }
 
