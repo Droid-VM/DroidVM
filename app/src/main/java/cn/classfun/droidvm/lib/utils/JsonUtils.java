@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import cn.classfun.droidvm.lib.store.base.JSONSerialize;
+
 public final class JsonUtils {
     @NonNull
     @SuppressWarnings("unused")
@@ -275,6 +277,33 @@ public final class JsonUtils {
         @NonNull ArrayValueMapper<T, V> cb
     ) throws JSONException {
         return arrayToList(obj.getJSONArray(key), cb);
+    }
+
+    @NonNull
+    @SuppressWarnings("unused")
+    public static <T extends JSONSerialize> JSONArray listToJSONArray(
+        @NonNull List<T> list
+    ) throws JSONException {
+        var arr = new JSONArray();
+        for (var item : list)
+            arr.put(item.toJson());
+        return arr;
+    }
+
+    @NonNull
+    @SuppressWarnings("unused")
+    public static <T extends JSONSerialize> JSONObject mapToJSONObject(
+        @NonNull Map<String, T> map
+    ) throws JSONException {
+        var obj = new JSONObject();
+        for (var key : map.keySet()) {
+            var value = JSONObject.NULL;
+            var item = map.get(key);
+            if (item != null)
+                value = item.toJson();
+            obj.put(key, value);
+        }
+        return obj;
     }
 
     public interface ObjectValueMapper<T, R> {
