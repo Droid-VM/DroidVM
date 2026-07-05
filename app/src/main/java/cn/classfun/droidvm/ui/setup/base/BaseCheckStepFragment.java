@@ -33,6 +33,12 @@ public abstract class BaseCheckStepFragment extends BaseStepFragment {
         runCheck();
     }
 
+    @Override
+    public void onResume() {
+        super.onResume();
+        runCheck();
+    }
+
     protected abstract void runCheck();
 
     @SuppressWarnings("SameReturnValue")
