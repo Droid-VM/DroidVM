@@ -85,8 +85,10 @@ public final class TabSwipeHelper {
                     float dx = ev.getX() - touchStartX;
                     int pos = callback.getCurrentTabIndex();
                     int last = callback.getTabCount() - 1;
-                    isDragging = !((dx > 0 && pos == 0) ||
-                        (dx < 0 && pos == last));
+                    int prevSign = prevFingerSign();
+                    int nextSign = nextFingerSign();
+                    isDragging = !((pos == 0 && dx * prevSign > 0) ||
+                        (pos == last && dx * nextSign > 0));
                 }
                 if (isDragging) {
                     prepareDrag();
@@ -161,6 +163,19 @@ public final class TabSwipeHelper {
         return activity.getWindow().getDecorView().getWidth();
     }
 
+    private boolean isRtl() {
+        return activity.getWindow().getDecorView().getLayoutDirection()
+            == View.LAYOUT_DIRECTION_RTL;
+    }
+
+    private int prevFingerSign() {
+        return isRtl() ? -1 : 1;
+    }
+
+    private int nextFingerSign() {
+        return isRtl() ? 1 : -1;
+    }
+
     private void prepareDrag() {
         int pos = callback.getCurrentTabIndex();
         int count = callback.getTabCount();
@@ -169,14 +184,16 @@ public final class TabSwipeHelper {
         dragNextView = pos < count - 1 ? callback.getTabView(pos + 1) : null;
         int width = dragCurrentView.getWidth();
         if (width <= 0) width = getWidth();
+        int prevSign = prevFingerSign();
+        int nextSign = nextFingerSign();
         if (dragPrevView != null) {
             dragPrevView.animate().cancel();
-            dragPrevView.setTranslationX(-width);
+            dragPrevView.setTranslationX(-prevSign * width);
             dragPrevView.setVisibility(View.VISIBLE);
         }
         if (dragNextView != null) {
             dragNextView.animate().cancel();
-            dragNextView.setTranslationX(width);
+            dragNextView.setTranslationX(-nextSign * width);
             dragNextView.setVisibility(View.VISIBLE);
         }
     }
@@ -184,25 +201,32 @@ public final class TabSwipeHelper {
     private void updateDrag(float dx) {
         if (dragCurrentView == null) return;
         int width = dragCurrentView.getWidth();
-        if (dragPrevView == null && dx > 0) dx = 0;
-        if (dragNextView == null && dx < 0) dx = 0;
+        int prevSign = prevFingerSign();
+        int nextSign = nextFingerSign();
+        if (dragPrevView == null && dx * prevSign > 0) dx = 0;
+        if (dragNextView == null && dx * nextSign > 0) dx = 0;
         dragCurrentView.setTranslationX(dx);
-        if (dragPrevView != null) dragPrevView.setTranslationX(dx - width);
-        if (dragNextView != null) dragNextView.setTranslationX(dx + width);
+        if (dragPrevView != null)
+            dragPrevView.setTranslationX(dx - prevSign * width);
+        if (dragNextView != null)
+            dragNextView.setTranslationX(dx - nextSign * width);
     }
 
     private void finishDrag(float dx, float velocityX) {
         if (dragCurrentView == null) return;
         int width = dragCurrentView.getWidth();
-        if (dragPrevView == null && dx > 0) dx = 0;
-        if (dragNextView == null && dx < 0) dx = 0;
+        int prevSign = prevFingerSign();
+        int nextSign = nextFingerSign();
+        if (dragPrevView == null && dx * prevSign > 0) dx = 0;
+        if (dragNextView == null && dx * nextSign > 0) dx = 0;
         boolean goNext = false, goPrev = false;
         if (Math.abs(velocityX) > SNAP_VELOCITY) {
-            if (velocityX > 0 && dragPrevView != null) goPrev = true;
-            else if (velocityX < 0 && dragNextView != null) goNext = true;
+            if (velocityX * prevSign > 0 && dragPrevView != null) goPrev = true;
+            else if (velocityX * nextSign > 0 && dragNextView != null)
+                goNext = true;
         } else if (Math.abs(dx) > width * SNAP_FRACTION) {
-            if (dx > 0 && dragPrevView != null) goPrev = true;
-            else if (dx < 0 && dragNextView != null) goNext = true;
+            if (dx * prevSign > 0 && dragPrevView != null) goPrev = true;
+            else if (dx * nextSign > 0 && dragNextView != null) goNext = true;
         }
         settling = true;
         int current = callback.getCurrentTabIndex();
@@ -217,13 +241,14 @@ public final class TabSwipeHelper {
         boolean toNext = targetIdx > current;
         View targetView = toNext ? dragNextView : dragPrevView;
         View otherView = toNext ? dragPrevView : dragNextView;
+        int sign = toNext ? nextFingerSign() : prevFingerSign();
         if (otherView != null) {
             otherView.animate().cancel();
             otherView.setVisibility(View.GONE);
             otherView.setTranslationX(0);
         }
         dragCurrentView.animate()
-            .translationX(toNext ? -width : width)
+            .translationX(sign * width)
             .setDuration(SETTLE_DURATION)
             .withEndAction(() -> {
                 dragCurrentView.setVisibility(View.GONE);
@@ -242,6 +267,8 @@ public final class TabSwipeHelper {
 
     private void settleBack() {
         int width = dragCurrentView.getWidth();
+        int prevSign = prevFingerSign();
+        int nextSign = nextFingerSign();
         dragCurrentView.animate()
             .translationX(0)
             .setDuration(SETTLE_DURATION)
@@ -249,7 +276,7 @@ public final class TabSwipeHelper {
             .start();
         if (dragPrevView != null) {
             dragPrevView.animate()
-                .translationX(-width)
+                .translationX(-prevSign * width)
                 .setDuration(SETTLE_DURATION)
                 .withEndAction(() -> {
                     dragPrevView.setVisibility(View.GONE);
@@ -259,7 +286,7 @@ public final class TabSwipeHelper {
         }
         if (dragNextView != null) {
             dragNextView.animate()
-                .translationX(width)
+                .translationX(-nextSign * width)
                 .setDuration(SETTLE_DURATION)
                 .withEndAction(() -> {
                     dragNextView.setVisibility(View.GONE);
@@ -334,6 +361,7 @@ public final class TabSwipeHelper {
         View inView = callback.getTabView(inIdx);
         int width = outView.getWidth();
         if (width <= 0) width = getWidth();
+        int sign = direction > 0 ? nextFingerSign() : prevFingerSign();
         Runnable animateEndAction = () -> {
             outView.setVisibility(View.GONE);
             outView.setTranslationX(0);
@@ -347,11 +375,11 @@ public final class TabSwipeHelper {
             }
         };
         outView.animate()
-            .translationX(-direction * width)
+            .translationX(sign * width)
             .setDuration(duration)
             .withEndAction(animateEndAction)
             .start();
-        inView.setTranslationX(direction * width);
+        inView.setTranslationX(-sign * width);
         inView.setVisibility(View.VISIBLE);
         inView.animate()
             .translationX(0)
