@@ -3,7 +3,6 @@ package cn.classfun.droidvm.ui.vm.info;
 import static android.widget.Toast.LENGTH_SHORT;
 
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -23,11 +22,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
-import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
-import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
-import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
-import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncDisplayActivity;
-import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncPresentationActivity;
+import cn.classfun.droidvm.ui.vm.console.VmConsoleRouter;
 
 public final class ConsoleButton {
     private static final String TAG = "VMInfoActivity";
@@ -54,37 +49,11 @@ public final class ConsoleButton {
     }
 
     void openDefaultConsole() {
-        if (parent.config != null
-            && parent.config.item.optBoolean("native_display_enabled", false)) {
-            openNativeDisplay();
-            return;
-        }
-        if (parent.config != null && parent.config.item.optBoolean("vnc_enabled", false)) {
-            openVncDisplay();
-            return;
-        }
-        DaemonConnection.OnResponse res = resp -> {
-            var data = resp.optJSONArray("data");
-            if (data == null) return;
-            var list = new ArrayList<String>();
-            for (int i = 0; i < data.length(); i++) {
-                var name = data.optString(i, "");
-                if (!name.isEmpty()) list.add(name);
-            }
-            String defaultConsole = null;
-            if (list.contains("uart"))
-                defaultConsole = "uart";
-            if (defaultConsole == null && list.contains("stdio"))
-                defaultConsole = "stdio";
-            if (defaultConsole == null) return;
-            final var target = defaultConsole;
-            mainHandler.post(() -> openConsole(target));
-        };
-        DaemonConnection.getInstance().buildRequest("vm_console_list")
-            .put("vm_id", parent.vmId.toString())
-            .onResponse(res)
-            .onUnsuccessful(r -> {})
-            .invoke();
+        if (parent.config == null) return;
+        // Shared with the VM-list auto-open-after-start (VmConsoleRouter), so both
+        // pick the same view: native -> VNC -> serial (uart, then stdio).
+        VmConsoleRouter.openDefault(parent, parent.vmId, parent.config,
+            parent.currentState != VMState.STOPPED);
     }
 
     private void buildConsoleChooserDialog(@Nullable JSONArray streams) {
@@ -144,38 +113,22 @@ public final class ConsoleButton {
     }
 
     private void openConsole(@NonNull String stream) {
-        var intent = new Intent(parent, VMConsoleActivity.class);
-        intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, parent.vmId.toString());
-        intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, parent.config.getName());
-        intent.putExtra(VMConsoleActivity.EXTRA_STREAM, stream);
-        intent.putExtra(VMConsoleActivity.EXTRA_LOGS, parent.currentState == VMState.STOPPED);
-        parent.startActivity(intent);
+        VmConsoleRouter.openConsole(parent, parent.vmId, parent.config, stream,
+            parent.currentState == VMState.STOPPED);
     }
 
     private void openNativeDisplay() {
         if (parent.config == null) return;
-        var item = parent.config.item;
-        var intent = new Intent(parent, VMNativeDisplayActivity.class);
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_ID, parent.vmId.toString());
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, parent.config.getName());
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
-        parent.startActivity(intent);
+        VmConsoleRouter.openNative(parent, parent.vmId, parent.config);
     }
 
     private void openVncDisplay() {
         if (parent.config == null) return;
-        var intent = new Intent(parent, VMVncDisplayActivity.class);
-        intent.putExtra(BaseVncActivity.EXTRA_VM_ID, parent.vmId.toString());
-        intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, parent.config.getName());
-        parent.startActivity(intent);
+        VmConsoleRouter.openVnc(parent, parent.vmId, parent.config);
     }
 
     private void openVncExtDisplay() {
         if (parent.config == null) return;
-        var intent = new Intent(parent, VMVncPresentationActivity.class);
-        intent.putExtra(BaseVncActivity.EXTRA_VM_ID, parent.vmId.toString());
-        intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, parent.config.getName());
-        parent.startActivity(intent);
+        VmConsoleRouter.openVncExt(parent, parent.vmId, parent.config);
     }
 }
