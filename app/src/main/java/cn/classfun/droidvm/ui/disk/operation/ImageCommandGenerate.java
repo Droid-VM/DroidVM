@@ -120,6 +120,11 @@ public final class ImageCommandGenerate {
         sb.append(" --target-format ").append(format);
         if (task.has("output")) {
             outputPath = task.getString("output");
+            // In-place re-compress (output == source): writing straight to the
+            // target collides with the source's own read lock, so route through
+            // the .tmp + rename path even though an output was given.
+            if (outputPath.equals(diskPath))
+                useTempPath = true;
         } else {
             useTempPath = true;
         }

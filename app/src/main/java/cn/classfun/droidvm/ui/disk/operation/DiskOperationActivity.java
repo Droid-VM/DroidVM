@@ -148,13 +148,16 @@ public final class DiskOperationActivity extends AppCompatActivity {
         @NonNull Context context,
         @NonNull UUID diskId,
         @NonNull String format,
-        @NonNull String output
+        @NonNull String output,
+        @NonNull String compress
     ) {
         try {
             var obj = new JSONObject();
             obj.put("action", "convert");
             obj.put("format", format);
             obj.put("output", output);
+            if (!compress.equals("none"))
+                obj.put("compress", compress);
             var intent = createIntent(context, diskId, obj);
             context.startActivity(intent);
         } catch (Exception e) {
