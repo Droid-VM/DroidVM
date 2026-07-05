@@ -73,6 +73,11 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         tools:text="D" />
 
+    <!-- Acquire-mode slots (v1/v2/v3), shown only on the "waiting for acquire"
+         row; each toggles between its button and an in-progress stop spinner
+         (wired in the adapter). -->
+    <include layout="@layout/acquire_buttons" />
+
     <ImageButton
         android:id="@+id/btn_proc_kill"
         style="@style/Widget.Material3.Button.IconButton"
@@ -81,32 +86,5 @@
         android:contentDescription="@string/hugepage_proc_kill"
         android:src="@drawable/ic_close"
         app:tint="?attr/colorError" />
-
-    <!-- Acquire-in-progress spinner with a pause glyph in the centre; tapping
-         it stops the acquire (wired in the adapter). -->
-    <FrameLayout
-        android:id="@+id/progress_proc_acquire"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:contentDescription="@string/hugepage_proc_acquire_stop"
-        android:visibility="gone"
-        tools:visibility="visible">
-
-        <ProgressBar
-            style="?android:attr/progressBarStyleSmall"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:padding="8dp"
-            android:indeterminate="true"
-            android:indeterminateTint="?attr/colorPrimary" />
-
-        <ImageView
-            android:layout_width="14dp"
-            android:layout_height="14dp"
-            android:layout_gravity="center"
-            android:contentDescription="@string/hugepage_proc_acquire_stop"
-            android:src="@drawable/ic_pause"
-            app:tint="?attr/colorPrimary" />
-    </FrameLayout>
 
 </LinearLayout>

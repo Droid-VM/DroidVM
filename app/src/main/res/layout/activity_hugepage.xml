@@ -121,7 +121,7 @@
                 android:icon="@drawable/ic_resize"
                 android:inputType="number"
                 app:ti_max="16GiB"
-                app:ti_min="256MiB"
+                app:ti_min="0MiB"
                 app:ti_mode="size"
                 app:ti_precision="2MiB" />
 
@@ -259,6 +259,37 @@
                 android:layout_marginEnd="12dp"
                 android:text="@string/hugepage_view_processes"
                 app:icon="@drawable/ic_file_tree" />
+
+            <!-- Same row style as the TextRowWidget/SwitchRowWidget rows below:
+                 icon, label, then the interactive controls on the right. -->
+            <LinearLayout
+                android:id="@+id/row_acquire_pages"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:minHeight="72dp"
+                android:orientation="horizontal"
+                android:paddingStart="16dp"
+                android:paddingTop="8dp"
+                android:paddingEnd="16dp"
+                android:paddingBottom="8dp">
+
+                <ImageView
+                    android:layout_width="24dp"
+                    android:layout_height="24dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/ic_memory" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="32dp"
+                    android:layout_weight="1"
+                    android:text="@string/hugepage_acquire_pages_title"
+                    android:textSize="16sp" />
+
+                <include layout="@layout/acquire_buttons" />
+            </LinearLayout>
 
             <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                 android:id="@+id/row_module_enable"
