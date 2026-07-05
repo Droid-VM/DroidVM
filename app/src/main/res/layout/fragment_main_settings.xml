@@ -71,6 +71,14 @@
                     android:subtitle="@string/settings_vm_keep_compress_on_optimize_summary"
                     android:text="@string/settings_vm_keep_compress_on_optimize_title" />
 
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_cpu_affinity"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_cpu"
+                    android:subtitle="@string/settings_cpu_affinity_all_cores"
+                    android:text="@string/settings_cpu_affinity_title" />
+
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer

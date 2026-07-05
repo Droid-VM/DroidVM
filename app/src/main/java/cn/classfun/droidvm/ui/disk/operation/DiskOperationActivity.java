@@ -230,6 +230,8 @@ public final class DiskOperationActivity extends AppCompatActivity {
                 var task = new JSONObject(taskJsonStr);
                 applyKeepCompress(getApplicationContext(), task, diskPath);
                 var gen = new ImageCommandGenerate(diskStore);
+                gen.setCpuAffinity(
+                    MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext()));
                 cmd = gen.buildCommand(task, diskPath);
                 taskAction = task.optString("action", "");
                 outputPath = gen.getOutputPath();

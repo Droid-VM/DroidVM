@@ -135,6 +135,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var item = config.item;
         var args = new ArrayList<String>();
         prepareStraceArguments(args);
+        // TODO(cpu-affinity): to bind the VM to selected host cores, prepend a
+        // system-taskset wrapper here (mirroring prepareStraceArguments):
+        // "taskset -a <hexMask>", with the mask from CpuUtils.coresCsvToHexMask
+        // reading a future MainSettingsFragment.KEY_CROSVM_CPU_AFFINITY setting.
+        // Note toybox taskset takes a hex mask (no "0x"), not a -c core list.
         args.add(getPrebuiltBinaryPath("crosvm"));
         // Top-level flag (must precede `run`): makes crosvm surface CommandStatus
         // exit codes (see CrosvmExit) so runVM() can tell reset/crash/panic apart.

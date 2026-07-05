@@ -369,6 +369,13 @@
     <string name="settings_vm_clear_logs_before_start_summary">启动虚拟机前清理该虚拟机的所有控制台日志</string>
     <string name="settings_vm_keep_compress_on_optimize_title">优化时保持压缩</string>
     <string name="settings_vm_keep_compress_on_optimize_summary">优化磁盘时保留其原有压缩而非解压；关闭则重写为未压缩</string>
+    <string name="settings_cpu_affinity_title">CPU 亲和性</string>
+    <string name="settings_cpu_affinity_summary_fmt">磁盘操作运行于核心 %1$s</string>
+    <string name="settings_cpu_affinity_all_cores">磁盘操作可使用全部核心</string>
+    <string name="settings_cpu_affinity_big_only">仅大核</string>
+    <string name="settings_cpu_affinity_tier_little">小核</string>
+    <string name="settings_cpu_affinity_tier_big">大核</string>
+    <string name="settings_cpu_affinity_tier_prime">超大核</string>
     <string name="settings_category_about">关于</string>
     <string name="settings_feedback_title">问题反馈</string>
     <string name="settings_feedback_summary">在 GitHub 上报告问题</string>

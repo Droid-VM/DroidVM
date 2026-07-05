@@ -371,6 +371,13 @@
     <string name="settings_vm_clear_logs_before_start_summary">Clear all console logs for the VM before it starts</string>
     <string name="settings_vm_keep_compress_on_optimize_title">Keep compression when optimizing</string>
     <string name="settings_vm_keep_compress_on_optimize_summary">Preserve a disk\'s existing compression when optimizing instead of decompressing it; off rewrites the disk uncompressed</string>
+    <string name="settings_cpu_affinity_title">CPU affinity</string>
+    <string name="settings_cpu_affinity_summary_fmt">Disk ops run on cores %1$s</string>
+    <string name="settings_cpu_affinity_all_cores">Disk ops may use all cores</string>
+    <string name="settings_cpu_affinity_big_only">Big cores only</string>
+    <string name="settings_cpu_affinity_tier_little">little</string>
+    <string name="settings_cpu_affinity_tier_big">big</string>
+    <string name="settings_cpu_affinity_tier_prime">prime</string>
     <string name="settings_category_about">About</string>
     <string name="settings_feedback_title">Feedback</string>
     <string name="settings_feedback_summary">Report issues on GitHub</string>

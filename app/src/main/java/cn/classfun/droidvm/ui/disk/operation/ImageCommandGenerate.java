@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 
 public final class ImageCommandGenerate {
@@ -25,6 +26,7 @@ public final class ImageCommandGenerate {
     private String realPath;
     private String tmpPath;
     private String outputPath;
+    private String cpuAffinity = "";
     private final DiskStore diskStore;
 
     public ImageCommandGenerate(@NonNull DiskStore diskStore) {
@@ -33,6 +35,14 @@ public final class ImageCommandGenerate {
 
     public String getOutputPath() {
         return outputPath;
+    }
+
+    /**
+     * Restrict the worker (qemu-img, or pv for clone) to the given host cores.
+     * Value is a taskset -c list such as "4,5,6,7"; empty means no binding.
+     */
+    public void setCpuAffinity(String cpuAffinity) {
+        this.cpuAffinity = cpuAffinity == null ? "" : cpuAffinity;
     }
 
     @NonNull
@@ -50,6 +60,13 @@ public final class ImageCommandGenerate {
         sb.append("set -x; ");
         sb.append(fmt("mkdir -pv %s; ", escapedString(dirname(diskPath))));
         sb.append("if ");
+        // Bind the worker to selected host cores. The prefix goes before both
+        // the qemu-img and the clone/pv binary, so it covers every action.
+        // Uses Android's system taskset (toybox), which takes a hex CPU mask
+        // with no "0x" prefix -- the bundled busybox has no taskset applet.
+        var affinityMask = CpuUtils.coresCsvToHexMask(cpuAffinity);
+        if (!affinityMask.isEmpty())
+            sb.append("taskset ").append(affinityMask).append(" ");
         if (!task.getString("action").equals("clone"))
             sb.append(escapedString(qemuImg));
         appendAction();
