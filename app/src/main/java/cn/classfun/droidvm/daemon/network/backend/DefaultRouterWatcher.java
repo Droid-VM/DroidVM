@@ -24,6 +24,7 @@ import cn.classfun.droidvm.lib.Constants;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
+import cn.classfun.droidvm.lib.utils.RunUtils;
 
 public final class DefaultRouterWatcher {
     private static final String TAG = "DefaultRouterWatcher";
@@ -253,6 +254,63 @@ public final class DefaultRouterWatcher {
         ensureHostIpMonitor();
         updateHostIps();
         updateDefaultRouter();
+        reassertForwarding();
+    }
+
+    /**
+     * Re-asserts the kernel forwarding sysctls that guest L3 routing depends
+     * on. netd owns these globally and clears them whenever it retunes
+     * tethering, which silently black-holes every forwarded guest packet.
+     * {@link cn.classfun.droidvm.daemon.network.backend.iptables.IptablesBackend}
+     * enables them once at init; this keeps them enabled for as long as a
+     * Linux-bridge L3 network is running.
+     *
+     * <p>Gated on {@link #hasL3LinuxBridge()} -- the same "running LINUX + L3"
+     * condition the routing rules use. With no such network there is nothing
+     * to forward, so netd's value is left alone rather than forcing global
+     * forwarding on the phone. Both families are covered because netd flips
+     * v4 and v6 together (as does {@code enableIpForward}). Reads before
+     * writing: an untouched value costs one cheap cat and stays silent; only a
+     * value netd actually reset is corrected and logged (it means netd raced
+     * us). Never throws out of the tick -- a transient shell failure must not
+     * tear down the routing rules.
+     */
+    private void reassertForwarding() {
+        try {
+            if (!hasL3LinuxBridge()) return;
+            ensureSysctlOne("/proc/sys/net/ipv4/ip_forward", "net.ipv4.ip_forward");
+            ensureSysctlOne("/proc/sys/net/ipv6/conf/all/forwarding",
+                "net.ipv6.conf.all.forwarding");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to re-assert forwarding sysctls", e);
+        }
+    }
+
+    /**
+     * Writes 1 to {@code path} only if it is not already 1; logs corrections.
+     * Both the read and the write go through {@code runQuiet} so the 5s poll
+     * stays out of logcat -- {@code RunContext.run} would log a "Running
+     * command: cat ..." line every tick. The only line this ever emits is the
+     * warning below, and only when netd actually reset the value.
+     */
+    private void ensureSysctlOne(@NonNull String path, @NonNull String name) {
+        var cur = RunUtils.runQuiet("cat " + path).getOutString();
+        if ("1".equals(cur)) return;
+        Log.w(TAG, fmt("%s=%s (netd reset it); re-enabling forwarding",
+            name, cur.isEmpty() ? "?" : cur));
+        RunUtils.runQuiet("echo 1 > " + path);
+    }
+
+    /** True while any RUNNING Linux-bridge L3 network needs kernel forwarding. */
+    private boolean hasL3LinuxBridge() {
+        var found = new boolean[]{false};
+        context.getNetworks().forEach((uuid, inst) -> {
+            if (inst.getState() == NetworkState.RUNNING
+                && inst.getBridgeType() == BridgeType.LINUX
+                && inst.getUplinkMode() == UplinkMode.L3)
+                found[0] = true;
+        });
+        return found[0];
     }
 
     private void updateDefaultRouter() {
