@@ -160,8 +160,8 @@ public final class HugePageActivity extends AppCompatActivity {
         btnViewProcesses.setOnClickListener(v -> startActivity(
             new Intent(this, HugePageProcessActivity.class)));
         // Acquire-mode slots: each button starts its mode; each spinner (shown
-        // while a run is in flight) interrupts it. Listeners are static — the
-        // slots aren't recycled — and the idle/running visibility toggle is
+        // while a run is in flight) interrupts it. Listeners are static -- the
+        // slots aren't recycled -- and the idle/running visibility toggle is
         // driven by applyAcquireState().
         // Short-press runs it (gated to the pressable state); long-press opens the
         // what-does-this-do dialog with a Run/Cancel choice (always available, even
@@ -212,7 +212,7 @@ public final class HugePageActivity extends AppCompatActivity {
         int msg = mode == 2 ? R.string.hugepage_acquire_v2_explain
             : mode == 3 ? R.string.hugepage_acquire_v3_explain
             : R.string.hugepage_acquire_v1_explain;
-        // Title = "Acquire huge pages" + the mode badge, e.g. "獲取大頁 v1".
+        // Title = "Acquire huge pages" + the mode badge, e.g. "Acquire huge pages v1".
         String title = ctx.getString(R.string.hugepage_acquire_pages_title)
             + " " + ctx.getString(modeLabel);
         new MaterialAlertDialogBuilder(ctx)

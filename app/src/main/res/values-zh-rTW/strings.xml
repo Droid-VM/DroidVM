@@ -111,6 +111,10 @@
 
     <string name="vm_exited_success">虛擬機器"%1$s"已停止。</string>
     <string name="vm_exited_error">虛擬機器"%1$s"以退出碼 %2$d 退出。</string>
+    <string name="vm_exit_crash">虛擬機器"%1$s"已當機（退出碼 %2$d）。</string>
+    <string name="vm_exit_guest_panic">虛擬機器"%1$s"guest 核心 panic（退出碼 %2$d）。</string>
+    <string name="vm_exit_watchdog">虛擬機器"%1$s"停滯，已被看門狗重置（退出碼 %2$d）。</string>
+    <string name="vm_rebooting">正在重新啟動虛擬機器"%1$s"…</string>
     <string name="vm_exit_dialog_title">虛擬機器"%1$s"啟動失敗</string>
     <string name="vm_exit_dialog_message">虛擬機器以退出碼 %1$d 退出。\n\n日誌：</string>
     <string name="vm_exit_no_logs">無可用日誌。</string>

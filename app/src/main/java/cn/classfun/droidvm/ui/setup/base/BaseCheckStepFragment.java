@@ -83,7 +83,7 @@ public abstract class BaseCheckStepFragment extends BaseStepFragment {
             .show();
     }
 
-    protected void showDetail(String text) {
+    protected void showDetail(CharSequence text) {
         tvStepDetail.setText(text);
         tvStepDetail.setVisibility(VISIBLE);
     }

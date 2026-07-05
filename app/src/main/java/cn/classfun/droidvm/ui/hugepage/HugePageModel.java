@@ -31,17 +31,17 @@ import cn.classfun.droidvm.lib.run.RunResult;
  *
  * <p>It hides the {@code gh_hugepage_reserve} module's <b>v6/v7 differences</b>:
  * callers ask for a high-level operation and never branch on version or poke raw
- * sysfs. Version is never decided ahead of time — each mutation is a
+ * sysfs. Version is never decided ahead of time -- each mutation is a
  * <b>degradation ladder</b> that just tries the best knob and falls back
- * (e.g. the migrating {@code acquire} knob → {@code manual_refill};
- * {@code pool_want=0} soft-disable → {@code rmmod}). The internal {@link Try}
+ * (e.g. the migrating {@code acquire} knob -> {@code manual_refill};
+ * {@code pool_want=0} soft-disable -> {@code rmmod}). The internal {@link Try}
  * ladder is collapsed to a small {@link Result} ({@code OK / UNSUPPORTED /
- * FAILED}) for the GUI — that is the "無法執行就回傳 error" contract.
+ * FAILED}) for the GUI -- that is the "return an error when it can't run" contract.
  *
  * <p>Reads are cached with short TTLs so the per-second refresh loop doesn't
  * block on the daemon or re-read a static knob every tick. Each screen owns its
  * own instance (separate caches); everything here is context-free (pure data) and
- * never holds an Activity reference. Mutations do shell I/O — call them off the UI
+ * never holds an Activity reference. Mutations do shell I/O -- call them off the UI
  * thread.
  */
 final class HugePageModel {
@@ -157,7 +157,7 @@ final class HugePageModel {
      * Version-unified snapshot of module + pool state. {@code targetIdeal} is the
      * one "target" concept across versions: v7's {@code pool_want}, else v6's
      * read-only {@code pool_target}, else current capacity. {@code deficit} is what
-     * is still missing toward it ({@code targetIdeal − free − lent}); the acquire
+     * is still missing toward it ({@code targetIdeal - free - lent}); the acquire
      * buttons are usable exactly when {@code loaded && deficit > 0}.
      */
     static final class Snapshot {
@@ -169,7 +169,7 @@ final class HugePageModel {
         final long built;             // pool_total (capacity assembled)
         final long free;              // pool_avail (in the pool now)
         final long lent;              // served (out to VMs); 0 if the module can't report it (v6)
-        final long deficit;           // max(0, targetIdeal − free − lent)
+        final long deficit;           // max(0, targetIdeal - free - lent)
         final boolean acquiring;      // an acquire worker is running
         final int acquireMode;        // which mode (1/2/3), or -1 if the module can't report it
         final boolean hasPoolWant;    // pool_want knob reported (v7 runtime-resizable)
@@ -275,7 +275,7 @@ final class HugePageModel {
      * Save a new pool target of {@code pages}. Persists it to settings.prop (for
      * the next boot) and applies it to the running pool if the live {@code pool_want}
      * knob exists; on v6 (read-only {@code pool_target}) only the persist takes
-     * effect. Does <b>not</b> fire an acquire — the caller drives that from the
+     * effect. Does <b>not</b> fire an acquire -- the caller drives that from the
      * resulting {@link Snapshot#deficit}.
      */
     @NonNull
@@ -295,10 +295,10 @@ final class HugePageModel {
      * Bring the running pool up (true) or down (false), choosing the deepest action
      * the module supports:
      * <ul>
-     *   <li><b>enable</b>: not loaded → insmod (targeting the saved size); loaded →
+     *   <li><b>enable</b>: not loaded -> insmod (targeting the saved size); loaded ->
      *       restore the target by writing the saved {@code pool_want} (v6 loaded is
      *       already active, so this is a no-op there);</li>
-     *   <li><b>disable</b>: try {@code pool_want=0} (soft — frees the reserve but
+     *   <li><b>disable</b>: try {@code pool_want=0} (soft -- frees the reserve but
      *       keeps per-VM tracking); if that write can't happen (v6 has no such knob)
      *       fall back to {@code rmmod}.</li>
      * </ul>
@@ -310,7 +310,7 @@ final class HugePageModel {
                 return collapse(loadLadder(savedWantPages()));   // insmod
             }
             // Loaded: restore the target. Succeeds on v7; on v6 there's no pool_want
-            // and a loaded module is already active, so treat a failed write as "已啟用".
+            // and a loaded module is already active, so treat a failed write as "already enabled".
             var t = writeKnob("pool_want", Long.toString(savedWantPages()));
             return t.ok() ? Result.ok("soft-enable") : Result.ok("already-active");
         }
@@ -346,7 +346,7 @@ final class HugePageModel {
      * (1 = original scan, 2 = migrate + system reclaim, 3 = migrate + per-block
      * evict). Prefers the migrating {@code acquire} knob; on any failure (v6 has no
      * such knob, or -ENOSYS where this kernel can't run that mode) degrades to
-     * {@code manual_refill}. Fire-and-return — poll {@link #state()} for completion.
+     * {@code manual_refill}. Fire-and-return -- poll {@link #state()} for completion.
      */
     @NonNull
     Result acquire(int mode) {
