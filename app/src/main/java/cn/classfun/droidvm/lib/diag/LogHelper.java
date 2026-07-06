@@ -51,21 +51,23 @@ public final class LogHelper implements DaemonConnection.EventListener {
 
     @Override
     public void onDaemonEvent(@NonNull JSONObject msg) {
-        var type = msg.optString("type", "");
+        var type = msg.optString("type");
         if (!type.equals("event")) return;
         var data = msg.optJSONObject("data");
         if (data == null) return;
-        var vmId = UUID.fromString(data.optString("vm_id", ""));
-        var vmName = data.optString("vm_name", "");
-        var event = data.optString("event", "");
+        var vmIdStr = data.optString("vm_id");
+        if (vmIdStr.isEmpty()) return;
+        var vmId = UUID.fromString(vmIdStr);
+        var vmName = data.optString("vm_name");
+        var event = data.optString("event");
         if (event.equals("exited")) {
             vmLogContexts.remove(vmId);
             return;
         }
         var logs = vmLogContexts.computeIfAbsent(vmId, k -> new LogContext(vmId));
         if (!event.equals("output")) return;
-        var text = URLDecoder.decode(data.optString("data", ""), StandardCharsets.UTF_8);
-        var stream = data.optString("stream", "");
+        var text = URLDecoder.decode(data.optString("data"), StandardCharsets.UTF_8);
+        var stream = data.optString("stream");
         if (stream.isEmpty()) return;
         var buff = logs.log.computeIfAbsent(stream, k -> new RingBuffer(4096));
         buff.adds(text.getBytes(StandardCharsets.UTF_8));
