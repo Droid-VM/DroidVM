@@ -270,6 +270,7 @@ public abstract class DataStore<T extends DataConfig> implements JSONSerialize {
     }
 
     public final boolean isNameUnique(String name, List<UUID> excludes) {
+        if (!shouldNameUnique()) return true;
         if (name == null) return false;
         for (var item : dataMap) {
             if (excludes != null && excludes.contains(item.getId()))
@@ -307,6 +308,10 @@ public abstract class DataStore<T extends DataConfig> implements JSONSerialize {
         if (obj == null || getClass() != obj.getClass()) return false;
         var other = (DataStore<?>) obj;
         return dataMap.equals(other.dataMap);
+    }
+
+    protected boolean shouldNameUnique() {
+        return true;
     }
 
     @NonNull

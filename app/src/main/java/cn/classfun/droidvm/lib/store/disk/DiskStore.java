@@ -32,6 +32,11 @@ public final class DiskStore extends DataStore<DiskConfig> {
         super(context);
     }
 
+    @Override
+    protected boolean shouldNameUnique() {
+        return false;
+    }
+
     @NonNull
     @Override
     protected DiskConfig create() {
