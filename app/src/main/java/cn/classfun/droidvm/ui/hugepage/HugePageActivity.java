@@ -6,6 +6,7 @@ import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
@@ -213,8 +214,9 @@ public final class HugePageActivity extends AppCompatActivity {
             : mode == 3 ? R.string.hugepage_acquire_v3_explain
             : R.string.hugepage_acquire_v1_explain;
         // Title = "Acquire huge pages" + the mode badge, e.g. "Acquire huge pages v1".
-        String title = ctx.getString(R.string.hugepage_acquire_pages_title)
-            + " " + ctx.getString(modeLabel);
+        String title = fmt("%s %s",
+            ctx.getString(R.string.hugepage_acquire_pages_title),
+            ctx.getString(modeLabel));
         new MaterialAlertDialogBuilder(ctx)
             .setTitle(title)
             .setMessage(msg)
@@ -365,7 +367,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 String name = vmMap.get(pid);
                 if (name == null) name = getString(R.string.hugepage_proc_pid, pid);
                 // Two stacked lines: label over capacity.
-                usedLabels[i] = name + "\n" + SizeUtils.formatSize(ownerPages * PAGE_SIZE);
+                usedLabels[i] = fmt("%s\n%s", name, SizeUtils.formatSize(ownerPages * PAGE_SIZE));
                 seg += ownerPages;
             }
             // "used" is the sum of the segments the bar draws, so the caption
@@ -385,11 +387,9 @@ public final class HugePageActivity extends AppCompatActivity {
             setPagesString(tvPoolTotal, R.string.hugepage_stat_pool_total, held);
             setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
             segPoolBar.setStorage(usedColors, usedValues, usedLabels,
-                poolAvail, getString(R.string.hugepage_bar_available)
-                    + "\n" + SizeUtils.formatSize(poolAvail * PAGE_SIZE),
+                poolAvail, fmt("%s\n%s", getString(R.string.hugepage_bar_available), SizeUtils.formatSize(poolAvail * PAGE_SIZE)),
                 HugePageColor.pending(this), deficit,
-                getString(R.string.hugepage_proc_deficit)
-                    + "\n" + SizeUtils.formatSize(deficit * PAGE_SIZE),
+                fmt("%s\n%s", getString(R.string.hugepage_proc_deficit), SizeUtils.formatSize(deficit * PAGE_SIZE)),
                 poolWant);
         } else {
             rowStatState.setValue(getString(R.string.hugepage_stats_unavailable));

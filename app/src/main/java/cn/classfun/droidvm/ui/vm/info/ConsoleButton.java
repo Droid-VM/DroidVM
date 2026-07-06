@@ -22,7 +22,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
-import cn.classfun.droidvm.ui.vm.console.VmConsoleRouter;
+import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 
 public final class ConsoleButton {
     private static final String TAG = "VMInfoActivity";
@@ -50,9 +50,9 @@ public final class ConsoleButton {
 
     void openDefaultConsole() {
         if (parent.config == null) return;
-        // Shared with the VM-list auto-open-after-start (VmConsoleRouter), so both
+        // Shared with the VM-list auto-open-after-start (VMConsoleRouter), so both
         // pick the same view: native -> VNC -> serial (uart, then stdio).
-        VmConsoleRouter.openDefault(parent, parent.vmId, parent.config,
+        VMConsoleRouter.openDefault(parent, parent.vmId, parent.config,
             parent.currentState != VMState.STOPPED);
     }
 
@@ -113,22 +113,22 @@ public final class ConsoleButton {
     }
 
     private void openConsole(@NonNull String stream) {
-        VmConsoleRouter.openConsole(parent, parent.vmId, parent.config, stream,
+        VMConsoleRouter.openConsole(parent, parent.vmId, parent.config, stream,
             parent.currentState == VMState.STOPPED);
     }
 
     private void openNativeDisplay() {
         if (parent.config == null) return;
-        VmConsoleRouter.openNative(parent, parent.vmId, parent.config);
+        VMConsoleRouter.openNative(parent, parent.vmId, parent.config);
     }
 
     private void openVncDisplay() {
         if (parent.config == null) return;
-        VmConsoleRouter.openVnc(parent, parent.vmId, parent.config);
+        VMConsoleRouter.openVnc(parent, parent.vmId, parent.config);
     }
 
     private void openVncExtDisplay() {
         if (parent.config == null) return;
-        VmConsoleRouter.openVncExt(parent, parent.vmId, parent.config);
+        VMConsoleRouter.openVncExt(parent, parent.vmId, parent.config);
     }
 }

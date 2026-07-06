@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.network.backend;
 
+import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.util.Log;
@@ -193,7 +194,7 @@ public final class DefaultRouterWatcher {
         // lowest priority so it is evaluated first.
         var desired = new ArrayList<String>();
         for (int i = 0; i < tables.size(); i++)
-            desired.add((RULE_PRIORITY_BASE + i) + " " + tables.get(i));
+            desired.add(fmt("%d %s", RULE_PRIORITY_BASE + i, tables.get(i)));
 
         // Group our installed rules per device as "priority table" specs. Ours
         // are the plain rules: an iif owned by a bridge, a lookup action, no
@@ -214,7 +215,7 @@ public final class DefaultRouterWatcher {
                 if (dev.startsWith(br)) { ours = true; break; }
             if (!ours) continue;
             installed.computeIfAbsent(dev, k -> new ArrayList<>())
-                .add(r.optInt("priority", 0) + " " + r.optInt("table", 0));
+                .add(fmt("%d %d", r.optInt("priority", 0), r.optInt("table", 0)));
             if (r.optBoolean("detached", false)) detached.add(dev);
         }
         installed.values().forEach(specs -> specs.sort(Comparator.comparingInt(
@@ -288,17 +289,18 @@ public final class DefaultRouterWatcher {
 
     /**
      * Writes 1 to {@code path} only if it is not already 1; logs corrections.
-     * Both the read and the write go through {@code runQuiet} so the 5s poll
-     * stays out of logcat -- {@code RunContext.run} would log a "Running
-     * command: cat ..." line every tick. The only line this ever emits is the
-     * warning below, and only when netd actually reset the value.
+     * The read ({@code shellReadFile}) and the write ({@code runQuiet}) are both
+     * quiet, so the 5s poll stays out of logcat -- {@code RunContext.run} would
+     * otherwise log a "Running command: cat ..." line every tick. The only line
+     * this emits on a normal tick is the warning below, and only when netd
+     * actually reset the value.
      */
     private void ensureSysctlOne(@NonNull String path, @NonNull String name) {
-        var cur = RunUtils.runQuiet("cat " + path).getOutString();
+        var cur = shellReadFile(path);
         if ("1".equals(cur)) return;
         Log.w(TAG, fmt("%s=%s (netd reset it); re-enabling forwarding",
             name, cur.isEmpty() ? "?" : cur));
-        RunUtils.runQuiet("echo 1 > " + path);
+        RunUtils.runQuiet(fmt("echo 1 > %s", path));
     }
 
     /** True while any RUNNING Linux-bridge L3 network needs kernel forwarding. */

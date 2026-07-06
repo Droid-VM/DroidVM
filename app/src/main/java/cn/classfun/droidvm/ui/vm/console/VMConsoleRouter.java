@@ -24,8 +24,8 @@ import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncPresentationActivity;
  * this in one place is why both paths agree instead of the list always opening
  * the UART console regardless of the VM's display.
  */
-public final class VmConsoleRouter {
-    private VmConsoleRouter() {
+public final class VMConsoleRouter {
+    private VMConsoleRouter() {
     }
 
     /**
