@@ -231,7 +231,7 @@ public final class DiskDownloadManager {
         var ctx = context.getApplicationContext();
         var d = JOBS.get(id);
         if (d == null) return;
-        var part = new File(d.folder, d.name + ".part");
+        var part = new File(d.folder, fmt("%s.part", d.name));
         var dest = new File(d.folder, d.name);
         try {
             var parent = dest.getParentFile();
@@ -285,15 +285,15 @@ public final class DiskDownloadManager {
         conn.setInstanceFollowRedirects(true);
         conn.setRequestProperty("User-Agent", d.userAgent);
         conn.setRequestProperty("Accept-Encoding", "identity");
-        if (existing > 0) conn.setRequestProperty("Range", "bytes=" + existing + "-");
+        if (existing > 0) conn.setRequestProperty("Range", fmt("bytes=%d-", existing));
         d.activeConn = conn;
         try {
             int code = conn.getResponseCode();
             boolean resumed = code == HttpURLConnection.HTTP_PARTIAL; // 206
             if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL)
-                throw new IOException("HTTP " + code);
+                throw new IOException(fmt("HTTP %d", code));
             Log.i(TAG, fmt("Download #%d %s from %s (HTTP %d)",
-                d.id, existing > 0 ? "resuming@" + existing : "starting", conn.getURL(), code));
+                d.id, existing > 0 ? fmt("resuming@%d", existing) : "starting", conn.getURL(), code));
             // Server ignored our Range and is sending the whole file again.
             long start = resumed ? existing : 0;
             d.total = resolveTotal(conn, resumed, start);

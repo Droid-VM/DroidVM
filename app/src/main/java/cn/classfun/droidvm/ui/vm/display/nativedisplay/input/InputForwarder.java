@@ -68,11 +68,11 @@ public final class InputForwarder {
                 try {
                     block.run();
                 } catch (Exception e) {
-                    Log.e(TAG, name + " failed", e);
+                    Log.e(TAG, fmt("%s failed", name), e);
                 }
             });
         } catch (Exception e) {
-            Log.d(TAG, name + " dropped: " + e.getMessage());
+            Log.d(TAG, fmt("%s dropped: %s", name, e.getMessage()));
         }
     }
 

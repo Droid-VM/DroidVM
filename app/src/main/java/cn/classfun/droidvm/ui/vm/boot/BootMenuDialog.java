@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm.boot;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
@@ -251,7 +252,7 @@ public final class BootMenuDialog {
             summary.setVisibility(GONE);
             return;
         }
-        var line = entry.kernel + " | " + entry.source;
+        var line = fmt("%s | %s", entry.kernel, entry.source);
         var cmdline = entry.effectiveCmdline(boot.isVdafix());
         if (!cmdline.isEmpty()) line += "\n" + cmdline;
         summary.setVisibility(VISIBLE);

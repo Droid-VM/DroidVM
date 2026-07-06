@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.display;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.BuildConfig.APPLICATION_ID;
 
 import android.content.Intent;
@@ -78,7 +79,7 @@ public final class NativeDisplayBinder {
         intent.setPackage(APPLICATION_ID);
         intent.putExtra(NativeDisplay.EXTRA_BUNDLE, bundle);
         context.sendBroadcast(intent);
-        Log.i(TAG, "broadcast native-display binder (nonce=" + nonce + ")");
+        Log.i(TAG, fmt("broadcast native-display binder (nonce=%s)", nonce));
     }
 
     private static IBinder smCall(@NonNull String method, @NonNull String name) {
@@ -87,14 +88,14 @@ public final class NativeDisplayBinder {
             Method m = sm.getMethod(method, String.class);
             return (IBinder) m.invoke(null, name);
         } catch (Exception e) {
-            Log.w(TAG, method + " reflection failed: " + e.getMessage());
+            Log.w(TAG, fmt("%s reflection failed: %s", method, e.getMessage()));
             return null;
         }
     }
 
     private static IBinder waitForServiceWithTimeout(@NonNull String name, long timeoutMs) {
         var holder = new IBinder[1];
-        var t = new Thread(() -> holder[0] = smCall("waitForService", name), "WaitSvc-" + name);
+        var t = new Thread(() -> holder[0] = smCall("waitForService", name), fmt("WaitSvc-%s", name));
         t.setDaemon(true);
         t.start();
         try {
@@ -105,7 +106,7 @@ public final class NativeDisplayBinder {
     }
 
     private static IBinder doWaitForDisplayBinder(@NonNull String serviceName) {
-        Log.i(TAG, "waitForDisplayBinder('" + serviceName + "')");
+        Log.i(TAG, fmt("waitForDisplayBinder('%s')", serviceName));
         var direct = smCall("checkService", serviceName);
         if (direct != null) {
             Log.i(TAG, "OK: got display binder directly from ServiceManager");
@@ -117,8 +118,8 @@ public final class NativeDisplayBinder {
             Log.i(TAG, "OK: got display binder via waitForService");
             return waited;
         }
-        Log.e(TAG, "'" + serviceName + "' not found - is crosvm running with "
-            + "--android-display-service " + serviceName + "?");
+        Log.e(TAG, fmt("'%s' not found - is crosvm running with "
+            + "--android-display-service %s?", serviceName, serviceName));
         return null;
     }
 }

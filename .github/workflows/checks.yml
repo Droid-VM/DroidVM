@@ -30,3 +30,6 @@ jobs:
 
       - name: Translations complete across all locales
         run: python3 scripts/ci/check_translations.py
+
+      - name: Use fmt() instead of string concatenation
+        run: python3 scripts/ci/check_string_concat.py

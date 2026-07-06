@@ -316,7 +316,7 @@ public final class AssetUtils {
                 if (isZeroBlock(header)) break;
                 var name = cString(header, 0, 100);
                 var prefix = cString(header, 345, 155);
-                var path = prefix.isEmpty() ? name : prefix + "/" + name;
+                var path = prefix.isEmpty() ? name : pathJoin(prefix, name);
                 var size = parseOctal(header, 124, 12);
                 var mode = (int) parseOctal(header, 100, 8);
                 var type = (char) (header[156] & 0xff);

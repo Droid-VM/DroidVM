@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm.boot;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.content.Context;
@@ -176,7 +177,7 @@ public final class BootEntries {
         @NonNull Context ctx, @NonNull String url, int timeoutSecs,
         @NonNull OnProgress onProgress, @NonNull OnScan onScan
     ) {
-        var lbx = ctx.getApplicationInfo().nativeLibraryDir + "/liblbx.so";
+        var lbx = pathJoin(ctx.getApplicationInfo().nativeLibraryDir, "liblbx.so");
         var thread = new Thread(
             () -> runAnalyze(lbx, url, timeoutSecs, onProgress, onScan), "lbx-analyze");
         thread.setDaemon(true);

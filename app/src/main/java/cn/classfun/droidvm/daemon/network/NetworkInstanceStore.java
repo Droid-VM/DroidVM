@@ -52,8 +52,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
             JsonUtils.forEachArray(obj, getTypeName(), (JSONObject entry) -> {
                 var migrated = NetworkConfig.migrate(entry);
                 if (migrated == null) {
-                    Log.w(TAG, "Skipping network config with unsupported schema: "
-                        + entry.optString("name"));
+                    Log.w(TAG, fmt("Skipping network config with unsupported schema: %s", entry.optString("name")));
                     return;
                 }
                 if (migrated != entry) {
@@ -63,8 +62,7 @@ public final class NetworkInstanceStore extends DataStore<NetworkInstance> {
                     try {
                         NetworkConfigValidator.validate(new NetworkConfig(migrated));
                     } catch (Exception e) {
-                        Log.w(TAG, "Skipping legacy network that failed migration/validation: "
-                            + entry.optString("name"), e);
+                        Log.w(TAG, fmt("Skipping legacy network that failed migration/validation: %s", entry.optString("name")), e);
                         return;
                     }
                 }

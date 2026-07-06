@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm.display.nativedisplay.display;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.crosvm.DisplayConfig;
 import android.crosvm.ICrosvmAndroidDisplayService;
 import android.os.DeadObjectException;
@@ -105,7 +106,7 @@ final class DisplayProvider {
             if (got == null) {
                 // Give up rather than poll forever: the daemon broker may have died (the supplier
                 // returns null once rootService is dropped), so the display can't be reached.
-                Log.e(TAG, "display binder unavailable after " + MAX_BINDER_ATTEMPTS + " attempts");
+                Log.e(TAG, fmt("display binder unavailable after %d attempts", MAX_BINDER_ATTEMPTS));
                 mainHandler.post(() -> onConnected.accept(false));
                 return;
             }
@@ -130,7 +131,7 @@ final class DisplayProvider {
                 onDisplayConfig.accept(config);
             }
         } catch (Exception e) {
-            Log.w(TAG, "getDisplayConfig unavailable, using default " + width + "x" + height);
+            Log.w(TAG, fmt("getDisplayConfig unavailable, using default %dx%d", width, height));
         }
         onConnected.accept(true);
         applyPendingSurface();

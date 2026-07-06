@@ -50,7 +50,7 @@ public final class NativeDisplay {
     /** Same as {@link #serviceName(VMConfig)} but from a raw VM id (e.g. an Intent extra). */
     @NonNull
     public static String serviceNameFromId(@NonNull String vmId) {
-        return "droidvm_disp_" + sanitize(vmId);
+        return fmt("droidvm_disp_%s", sanitize(vmId));
     }
 
     /** The socket path crosvm connects to for [vmKey]'s [channel]. Must match across all callers. */

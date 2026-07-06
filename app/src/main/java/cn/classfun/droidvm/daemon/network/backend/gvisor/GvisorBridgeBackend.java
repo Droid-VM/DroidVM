@@ -377,7 +377,7 @@ public final class GvisorBridgeBackend extends BridgeBackend {
                         fmt("/api/v1/gateways/%d/forwards", vlanId), rule);
                     if (resp.isSuccess()) {
                         var id = resp.json().optString("id", "");
-                        if (!id.isEmpty()) ids.add(vlanId + "/" + id);
+                        if (!id.isEmpty()) ids.add(fmt("%d/%s", vlanId, id));
                     } else {
                         failures.add(fmt("%s %s (%s)", proto, bind, briefBody(resp.body)));
                     }
