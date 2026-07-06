@@ -1,5 +1,7 @@
 package cn.classfun.droidvm.lib.utils;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -7,9 +9,10 @@ import androidx.annotation.NonNull;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
+
+import cn.classfun.droidvm.lib.size.SizeUtils;
 
 /**
  * Host CPU topology helper: enumerates cores, reads each core's max frequency
@@ -91,11 +94,18 @@ public final class CpuUtils {
         return sb.toString();
     }
 
-    /** Format a KHz frequency as e.g. "2.60 GHz"; empty string when unknown. */
+    // Hz-family labels indexed by SizeUtils tier (B/KB/MB/GB/... -> Hz/kHz/...).
+    private static final String[] FREQ_UNITS = {"Hz", "kHz", "MHz", "GHz", "THz"};
+
+    /** Format a KHz frequency as e.g. "2.42 GHz"; empty string when unknown. */
     @NonNull
     public static String formatFreq(long khz) {
         if (khz <= 0) return "";
-        return String.format(Locale.US, "%.2f GHz", khz / 1_000_000.0);
+        var pair = SizeUtils.findFloatUnit(khz * 1000L);
+        int tier = pair.getUnit().ordinal();
+        String unit = tier < FREQ_UNITS.length
+            ? FREQ_UNITS[tier] : pair.getUnit().getString();
+        return fmt("%s %s", pair.getNumberFloat(2), unit);
     }
 
     /**
@@ -194,7 +204,7 @@ public final class CpuUtils {
             try {
                 raw = FileUtils.shellReadFile(path);
             } catch (Exception rootFailed) {
-                Log.d(TAG, "freq read failed: " + path);
+                Log.d(TAG, fmt("freq read failed: %s", path));
             }
         }
         if (raw == null) return 0;
@@ -205,10 +215,5 @@ public final class CpuUtils {
         } catch (NumberFormatException e) {
             return 0;
         }
-    }
-
-    @NonNull
-    private static String fmt(@NonNull String f, Object... args) {
-        return String.format(Locale.US, f, args);
     }
 }

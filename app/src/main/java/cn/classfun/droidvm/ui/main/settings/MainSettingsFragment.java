@@ -36,7 +36,9 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
@@ -68,9 +70,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
     public static final String KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE = "vm_keep_compress_on_optimize";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
-    // Reserved for a future crosvm/qemu VM affinity setting; not read or
-    // written yet, and intentionally has no UI in this release.
-    // public static final String KEY_CROSVM_CPU_AFFINITY = "crosvm_cpu_affinity";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -368,8 +367,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
     }
 
     @NonNull
-    private static java.util.Set<Integer> parseCsvToSet(@NonNull String csv) {
-        var set = new java.util.HashSet<Integer>();
+    private static Set<Integer> parseCsvToSet(@NonNull String csv) {
+        var set = new HashSet<Integer>();
         if (csv.isEmpty()) return set;
         for (var part : csv.split(",")) {
             part = part.trim();

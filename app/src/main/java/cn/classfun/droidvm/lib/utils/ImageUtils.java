@@ -29,6 +29,21 @@ public final class ImageUtils {
         return new JSONObject(result.getOutString());
     }
 
+    @NonNull
+    public static JSONObject getImageCheck(String path) throws JSONException {
+        var result = runListQuiet(
+            getPrebuiltBinaryPath("qemu-img"),
+            "check", "--output=json", path
+        );
+        // qemu-img check still writes its JSON report on non-zero exits
+        // (leaks/corruptions), so parse whatever it produced rather than
+        // gating on isSuccess(); a missing/garbage body throws.
+        var out = result.getOutString();
+        if (out == null || out.isEmpty())
+            throw new JSONException("qemu-img check produced no output");
+        return new JSONObject(out);
+    }
+
     /**
      * Whether {@code path} actually stores compressed clusters, per
      * {@code qemu-img check}'s {@code compressed-clusters} count. This is the
@@ -41,16 +56,7 @@ public final class ImageUtils {
      */
     public static boolean hasCompressedClusters(String path) {
         try {
-            var result = runListQuiet(
-                getPrebuiltBinaryPath("qemu-img"),
-                "check", "--output=json", path);
-            var out = result.getOutString();
-            // qemu-img check still writes its JSON report on non-zero exits
-            // (leaks/corruptions), so parse whatever it produced rather than
-            // gating on isSuccess(); a missing/garbage body throws -> false.
-            if (out == null || out.isEmpty())
-                return false;
-            return new JSONObject(out).optLong("compressed-clusters", 0) > 0;
+            return getImageCheck(path).optLong("compressed-clusters", 0) > 0;
         } catch (Exception e) {
             return false;
         }
