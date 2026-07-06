@@ -2,8 +2,10 @@ package cn.classfun.droidvm.ui.hugepage;
 
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
+import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.os.SystemClock;
@@ -24,6 +26,7 @@ import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.run.RunResult;
+import cn.classfun.droidvm.lib.utils.Try;
 
 /**
  * The single huge-page facade both screens ({@link HugePageActivity},
@@ -365,7 +368,7 @@ final class HugePageModel {
             if (writeKnob("acquire", Integer.toString(m)).ok()) {
                 // impl names the actual migrating mode that ran ("v1".."v3");
                 // degraded when it's below what was asked for.
-                return Result.ok("v" + m, m != mode);
+                return Result.ok(fmt("v%d", m), m != mode);
             }
         }
         var refill = writeKnob("manual_refill", "1");
@@ -428,8 +431,8 @@ final class HugePageModel {
     @NonNull
     private List<Try<LoadImpl, Void>> loadLadder(long pages) {
         var log = new ArrayList<Try<LoadImpl, Void>>();
-        var w = "pool_want=\"" + pages + "\"";
-        var t = "pool_target=\"" + pages + "\"";
+        var w = fmt("pool_want=\"%d\"", pages);
+        var t = fmt("pool_target=\"%d\"", pages);
         // Pass BOTH size params first. A lenient kernel silently ignores the param
         // the module doesn't have, so it still gets the right size via the one it
         // does - pool_want (v7) or pool_target (v6). This is essential: on a v6
@@ -438,7 +441,7 @@ final class HugePageModel {
         // Strict kernels reject the unknown param, so fall back to each key alone,
         // then a bare (default-size) load.
         if (rung(null, log, LoadImpl.BOTH,
-            () -> insmod(LoadImpl.BOTH, w + " " + t))) return log;
+            () -> insmod(LoadImpl.BOTH, fmt("%s %s", w, t)))) return log;
         if (rung(null, log, LoadImpl.POOL_WANT,
             () -> insmod(LoadImpl.POOL_WANT, w))) return log;
         if (rung(null, log, LoadImpl.POOL_TARGET,
@@ -449,8 +452,8 @@ final class HugePageModel {
 
     private static Try<LoadImpl, Void> insmod(@NonNull LoadImpl impl, @Nullable String arg) {
         var r = (arg == null)
-            ? run("insmod \"%s\"", KO_PATH)
-            : run("insmod \"%s\" %s", KO_PATH, arg);
+            ? run("insmod %s", escapedString(KO_PATH))
+            : run("insmod %s %s", escapedString(KO_PATH), arg);
         return r.isSuccess() ? Try.ok(impl, null) : Try.fail(impl, reason(r, "insmod"));
     }
 
@@ -511,8 +514,8 @@ final class HugePageModel {
     private static String reason(@NonNull RunResult r, @NonNull String what) {
         var msg = r.getErrString().trim();
         if (msg.isEmpty()) msg = r.getOutString().trim();
-        if (msg.isEmpty()) msg = "exit " + r.getCode();
-        return what + ": " + msg;
+        if (msg.isEmpty()) msg = fmt("exit %d", r.getCode());
+        return fmt("%s: %s", what, msg);
     }
 
     /**
@@ -619,7 +622,7 @@ final class HugePageModel {
             out.sort((a, b) -> Long.compare(b.pages, a.pages));
             return Try.ok(Source.KO, out);
         } catch (Exception e) {
-            return Try.fail(Source.KO, "KO read: " + e.getMessage());
+            return Try.fail(Source.KO, fmt("KO read: %s", e.getMessage()));
         }
     }
 

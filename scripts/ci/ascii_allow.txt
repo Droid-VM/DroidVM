@@ -6,8 +6,9 @@
 # Only genuine natural-language / i18n content belongs here -- source code,
 # build files, layouts, manifests and config must stay ASCII.
 
-# UI strings: translation source (values/) and the translations themselves.
-app/src/main/res/values*/strings.xml
+# Translated UI strings only. The base values/strings.xml (English source) must
+# stay ASCII -- it is deliberately not matched by this locale-qualified glob.
+app/src/main/res/values-*/strings.xml
 
 # Privacy policy, one file per language.
 app/src/main/assets/privacy/*.txt
