@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 
-import cn.classfun.droidvm.lib.size.SizeUtils;
-
 /**
  * Host CPU topology helper: enumerates cores, reads each core's max frequency
  * from sysfs and groups them into frequency tiers so callers can tell the
@@ -94,18 +92,20 @@ public final class CpuUtils {
         return sb.toString();
     }
 
-    // Hz-family labels indexed by SizeUtils tier (B/KB/MB/GB/... -> Hz/kHz/...).
+    // Frequency uses decimal (SI) steps of 1000, unlike SizeUtils' binary units.
     private static final String[] FREQ_UNITS = {"Hz", "kHz", "MHz", "GHz", "THz"};
 
-    /** Format a KHz frequency as e.g. "2.42 GHz"; empty string when unknown. */
+    /** Format a KHz frequency as e.g. "2.60 GHz"; empty string when unknown. */
     @NonNull
     public static String formatFreq(long khz) {
         if (khz <= 0) return "";
-        var pair = SizeUtils.findFloatUnit(khz * 1000L);
-        int tier = pair.getUnit().ordinal();
-        String unit = tier < FREQ_UNITS.length
-            ? FREQ_UNITS[tier] : pair.getUnit().getString();
-        return fmt("%s %s", pair.getNumberFloat(2), unit);
+        double value = khz * 1000.0;
+        int tier = 0;
+        while (value >= 1000.0 && tier < FREQ_UNITS.length - 1) {
+            value /= 1000.0;
+            tier++;
+        }
+        return fmt("%.2f %s", value, FREQ_UNITS[tier]);
     }
 
     /**
