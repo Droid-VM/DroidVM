@@ -926,14 +926,12 @@
     <string name="hugepage_proc_acquire">獲取</string>
     <string name="hugepage_proc_acquire_running">獲取大頁中…</string>
     <string name="hugepage_proc_acquire_done">獲取完成</string>
-    <string name="hugepage_proc_acquire_v1">v1</string>
-    <string name="hugepage_proc_acquire_v2">v2</string>
-    <string name="hugepage_proc_acquire_v3">v3</string>
     <string name="hugepage_proc_acquire_v1_desc">獲取 v1（alloc_contig_pages 掃描）</string>
     <string name="hugepage_proc_acquire_v2_desc">獲取 v2（遷移＋系統回收）</string>
     <string name="hugepage_proc_acquire_v3_desc">獲取 v3（遷移＋逐塊擠到 zram）</string>
     <string name="hugepage_acquire_degraded">已降級，實際使用 %1$s</string>
     <string name="hugepage_acquire_run">執行</string>
+    <string name="hugepage_acquire_dont_ask">以後不再提示</string>
     <string name="hugepage_acquire_v1_explain">用 alloc_contig_pages 蒐集大頁</string>
     <string name="hugepage_acquire_v2_explain">用 try_to_free_mem_cgroup_pages 把其他程式擠到 swap/zram\n再用 alloc_contig_range 蒐集大頁</string>
     <string name="hugepage_acquire_v3_explain">用 folio_isolate_lru + reclaim_pages 精準把頁面擠到 swap/zram\n再用 alloc_contig_range 蒐集大頁</string>

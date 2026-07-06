@@ -962,13 +962,11 @@
     <string name="hugepage_refill_failed">Failed to trigger acquire</string>
     <string name="hugepage_save_pool_size">Save</string>
     <string name="hugepage_proc_acquire">Acquire</string>
-    <string name="hugepage_proc_acquire_v1">v1</string>
-    <string name="hugepage_proc_acquire_v2">v2</string>
-    <string name="hugepage_proc_acquire_v3">v3</string>
     <string name="hugepage_proc_acquire_v1_desc">Acquire v1 (alloc_contig_pages scan)</string>
     <string name="hugepage_proc_acquire_v2_desc">Acquire v2 (migrate + system reclaim)</string>
     <string name="hugepage_proc_acquire_v3_desc">Acquire v3 (migrate + per-block evict to zram)</string>
     <string name="hugepage_acquire_run">Run</string>
+    <string name="hugepage_acquire_dont_ask">Don\'t ask again</string>
     <string name="hugepage_acquire_v1_explain">Uses alloc_contig_pages to collect huge pages</string>
     <string name="hugepage_acquire_v2_explain">Uses try_to_free_mem_cgroup_pages to push other apps into swap/zram\nthen alloc_contig_range to collect huge pages</string>
     <string name="hugepage_acquire_v3_explain">Uses folio_isolate_lru + reclaim_pages to precisely push pages into swap/zram\nthen alloc_contig_range to collect huge pages</string>

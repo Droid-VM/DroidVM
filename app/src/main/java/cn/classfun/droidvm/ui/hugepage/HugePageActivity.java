@@ -21,6 +21,7 @@ import android.os.Looper;
 import android.view.View;
 import android.util.Log;
 import android.view.inputmethod.EditorInfo;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -32,6 +33,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
@@ -57,6 +59,10 @@ public final class HugePageActivity extends AppCompatActivity {
     private static final String DISABLE_FILE = pathJoin(MAGISK_BASE, "disable");
     private static final String CRASH_FILE = pathJoin(MAGISK_BASE, "crash");
     private static final long PAGE_SIZE = 2L * 1024 * 1024; // 2MiB per page
+    // Shared app prefs (same store as Privacy/ApiManager) + the "don't ask again"
+    // flag for the acquire confirm dialog.
+    private static final String PREFS_NAME = "droidvm_prefs";
+    private static final String KEY_SKIP_ACQUIRE_CONFIRM = "hugepage_acquire_skip_confirm";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HugePageModel model = new HugePageModel();
     private boolean resumed = false;
@@ -164,12 +170,13 @@ public final class HugePageActivity extends AppCompatActivity {
         // while a run is in flight) interrupts it. Listeners are static -- the
         // slots aren't recycled -- and the idle/running visibility toggle is
         // driven by applyAcquireState().
-        // Short-press runs it (gated to the pressable state); long-press opens the
-        // what-does-this-do dialog with a Run/Cancel choice (always available, even
-        // when the button is greyed - the buttons stay enabled for that).
-        btnAcquireV1.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) startAcquire(1); });
-        btnAcquireV2.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) startAcquire(2); });
-        btnAcquireV3.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) startAcquire(3); });
+        // Short-press opens the what-does-this-do dialog (or, once the user ticks
+        // "don't ask again", runs straight away) - gated to the pressable state.
+        // Long-press always opens the dialog, even when the button is greyed (the
+        // buttons stay enabled for that), so the prompt can be re-summoned any time.
+        btnAcquireV1.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 1, () -> startAcquire(1)); });
+        btnAcquireV2.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 2, () -> startAcquire(2)); });
+        btnAcquireV3.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 3, () -> startAcquire(3)); });
         btnAcquireV1.setOnLongClickListener(v -> { showAcquireInfo(this, 1, () -> startAcquire(1)); return true; });
         btnAcquireV2.setOnLongClickListener(v -> { showAcquireInfo(this, 2, () -> startAcquire(2)); return true; });
         btnAcquireV3.setOnLongClickListener(v -> { showAcquireInfo(this, 3, () -> startAcquire(3)); return true; });
@@ -205,24 +212,56 @@ public final class HugePageActivity extends AppCompatActivity {
         spinner.setVisibility(spin ? VISIBLE : GONE);
     }
 
-    /** Long-press info: what the acquire mode does, with a Run/Cancel choice. */
+    /**
+     * Short-press an acquire button: run straight away if the user ticked "don't
+     * ask again" in a past prompt, otherwise show the confirm dialog. Long-press
+     * bypasses this and always shows the dialog (see {@link #showAcquireInfo}).
+     */
+    static void confirmAcquire(@NonNull Context ctx, int mode, @NonNull Runnable onRun) {
+        if (skipAcquireConfirm(ctx)) onRun.run();
+        else showAcquireInfo(ctx, mode, onRun);
+    }
+
+    /**
+     * Explain what the acquire mode does, with a Run/Cancel choice and a "don't ask
+     * again" checkbox. The checkbox seeds from and (on any dismiss) writes back the
+     * skip preference, so it doubles as the way to re-enable the prompt after opting
+     * out; Run additionally starts the acquire. Shared by both hugepage screens, for
+     * short-press (via {@link #confirmAcquire}) and long-press alike. The title is
+     * always "Acquire huge pages" - the mode is conveyed by the explanation text.
+     */
     static void showAcquireInfo(@NonNull Context ctx, int mode, @NonNull Runnable onRun) {
-        int modeLabel = mode == 2 ? R.string.hugepage_proc_acquire_v2
-            : mode == 3 ? R.string.hugepage_proc_acquire_v3
-            : R.string.hugepage_proc_acquire_v1;
         int msg = mode == 2 ? R.string.hugepage_acquire_v2_explain
             : mode == 3 ? R.string.hugepage_acquire_v3_explain
             : R.string.hugepage_acquire_v1_explain;
-        // Title = "Acquire huge pages" + the mode badge, e.g. "Acquire huge pages v1".
-        String title = fmt("%s %s",
-            ctx.getString(R.string.hugepage_acquire_pages_title),
-            ctx.getString(modeLabel));
+        // "Don't ask again", indented to line up with the dialog's message text.
+        float density = ctx.getResources().getDisplayMetrics().density;
+        var dontAsk = new MaterialCheckBox(ctx);
+        dontAsk.setText(R.string.hugepage_acquire_dont_ask);
+        dontAsk.setChecked(skipAcquireConfirm(ctx));
+        var holder = new FrameLayout(ctx);
+        int padH = Math.round(24 * density);
+        holder.setPaddingRelative(padH, Math.round(4 * density), padH, 0);
+        holder.addView(dontAsk);
         new MaterialAlertDialogBuilder(ctx)
-            .setTitle(title)
+            .setTitle(R.string.hugepage_acquire_pages_title)   // no v1/v2/v3 suffix
             .setMessage(msg)
+            .setView(holder)
             .setPositiveButton(R.string.hugepage_acquire_run, (d, w) -> onRun.run())
             .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener(d -> setSkipAcquireConfirm(ctx, dontAsk.isChecked()))
             .show();
+    }
+
+    /** True once the user opted out of the acquire prompt (short-press runs directly). */
+    static boolean skipAcquireConfirm(@NonNull Context ctx) {
+        return ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SKIP_ACQUIRE_CONFIRM, false);
+    }
+
+    private static void setSkipAcquireConfirm(@NonNull Context ctx, boolean skip) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SKIP_ACQUIRE_CONFIRM, skip).apply();
     }
 
     /**

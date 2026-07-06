@@ -36,6 +36,9 @@ public final class HugePageProcessAdapter
          *              3 = migrate + per-block evict to zram. */
         void onAcquire(int mode);
 
+        /** Short-press: confirm via the info dialog (unless the user opted out), then run. */
+        void onAcquireConfirm(int mode);
+
         /** Long-press: show the what-does-this-mode-do dialog (with a Run choice). */
         void onAcquireInfo(int mode);
 
@@ -183,7 +186,7 @@ public final class HugePageProcessAdapter
         // Left enabled so long-press always opens the info dialog; short-press is
         // gated on !acquiring and the icon greys via alpha while a run is in flight.
         btn.setAlpha(acquiring ? 0.38f : 1f);
-        btn.setOnClickListener(v -> { if (!acquiring) listener.onAcquire(mode); });
+        btn.setOnClickListener(v -> { if (!acquiring) listener.onAcquireConfirm(mode); });
         btn.setOnLongClickListener(v -> { listener.onAcquireInfo(mode); return true; });
         spinner.setVisibility(spin ? VISIBLE : GONE);
         spinner.setOnClickListener(spin ? v -> listener.onStopAcquire() : null);

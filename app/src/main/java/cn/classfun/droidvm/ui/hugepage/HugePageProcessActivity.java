@@ -439,6 +439,12 @@ public final class HugePageProcessActivity extends AppCompatActivity
         }, "hugepage-acquire").start();
     }
 
+    /** Short-press an acquire button: confirm (unless the user opted out), then run. */
+    @Override
+    public void onAcquireConfirm(int mode) {
+        HugePageActivity.confirmAcquire(this, mode, () -> onAcquire(mode));
+    }
+
     /** Long-press an acquire button: explain the mode, with a Run/Cancel choice. */
     @Override
     public void onAcquireInfo(int mode) {

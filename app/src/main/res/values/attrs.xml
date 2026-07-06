@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <declare-styleable name="AcquireContainerView">
+        <!-- Water level of the tank, 0 (empty) .. 1 (full); encodes v1/v2/v3. -->
+        <attr name="acv_fill" format="float" />
+    </declare-styleable>
+
     <declare-styleable name="SwitchRowWidget">
         <attr name="android:icon" format="reference" />
         <attr name="android:text" format="string|reference" />

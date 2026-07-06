@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Reusable acquire-mode slots: v1 = original scan, v2 = migrate + system
      reclaim, v3 = migrate + per-block evict to zram. Each slot overlays an
-     acquire button (a download icon with the mode number badged bottom-end) with
-     an in-progress stop spinner; idle shows the button, running shows the spinner
+     acquire button (an AcquireContainerView: an open-top tank with a centred
+     download glyph, filled with water to a per-mode level - v1 shallow, v2 mid,
+     v3 near-full - so the fill height is what tells the modes apart) with an
+     in-progress stop spinner; idle shows the button, running shows the spinner
      (tap = stop). Shared by the process-list row and the main status screen; the
      host lays the three slots out horizontally. The btn_acquire_v* views are
      plain clickable FrameLayouts - the code toggles visibility/enabled and greys
@@ -24,26 +26,11 @@
             android:contentDescription="@string/hugepage_proc_acquire_v1_desc"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_download"
-                app:tint="?attr/colorPrimary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom|end"
-                android:layout_marginEnd="1dp"
-                android:layout_marginBottom="1dp"
-                android:importantForAccessibility="no"
-                android:includeFontPadding="false"
-                android:text="@string/hugepage_proc_acquire_v1"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                app:acv_fill="0.30" />
         </FrameLayout>
 
         <FrameLayout
@@ -85,26 +72,11 @@
             android:contentDescription="@string/hugepage_proc_acquire_v2_desc"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_download"
-                app:tint="?attr/colorPrimary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom|end"
-                android:layout_marginEnd="1dp"
-                android:layout_marginBottom="1dp"
-                android:importantForAccessibility="no"
-                android:includeFontPadding="false"
-                android:text="@string/hugepage_proc_acquire_v2"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                app:acv_fill="0.60" />
         </FrameLayout>
 
         <FrameLayout
@@ -146,26 +118,11 @@
             android:contentDescription="@string/hugepage_proc_acquire_v3_desc"
             android:focusable="true">
 
-            <ImageView
-                android:layout_width="24dp"
-                android:layout_height="24dp"
-                android:layout_gravity="center"
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
                 android:importantForAccessibility="no"
-                android:src="@drawable/ic_download"
-                app:tint="?attr/colorPrimary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_gravity="bottom|end"
-                android:layout_marginEnd="1dp"
-                android:layout_marginBottom="1dp"
-                android:importantForAccessibility="no"
-                android:includeFontPadding="false"
-                android:text="@string/hugepage_proc_acquire_v3"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                app:acv_fill="0.90" />
         </FrameLayout>
 
         <FrameLayout
