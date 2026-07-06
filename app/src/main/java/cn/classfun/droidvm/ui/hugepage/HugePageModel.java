@@ -182,12 +182,14 @@ final class HugePageModel {
         @NonNull final String totalServed;
         @NonNull final String totalRefilled;
         @NonNull final String activeVms;
+        @NonNull final String acquireStopReason;   // why the last acquire stopped ("-" if unreported)
 
         private Snapshot(boolean installed, boolean loaded, boolean statsOk, boolean bootEnabled,
                          long targetIdeal, long built, long free, long lent, long deficit,
                          boolean acquiring, int acquireMode, boolean hasPoolWant,
                          boolean softDisabled, @NonNull String state, @NonNull String totalServed,
-                         @NonNull String totalRefilled, @NonNull String activeVms) {
+                         @NonNull String totalRefilled, @NonNull String activeVms,
+                         @NonNull String acquireStopReason) {
             this.installed = installed;
             this.loaded = loaded;
             this.statsOk = statsOk;
@@ -205,6 +207,7 @@ final class HugePageModel {
             this.totalServed = totalServed;
             this.totalRefilled = totalRefilled;
             this.activeVms = activeVms;
+            this.acquireStopReason = acquireStopReason;
         }
     }
 
@@ -223,7 +226,7 @@ final class HugePageModel {
         boolean loaded = existsSticky(SYSFS_BASE);
         if (!loaded) {
             return new Snapshot(installed, false, false, bootEnabled,
-                0, 0, 0, 0, 0, false, -1, false, false, "-", "-", "-", "-");
+                0, 0, 0, 0, 0, false, -1, false, false, "-", "-", "-", "-", "-");
         }
         var s = parseProp(safeRead(pathJoin(SYSFS_PARAMS, "refill_stat")));
         boolean statsOk = !s.isEmpty();   // empty == the read failed transiently
@@ -242,7 +245,8 @@ final class HugePageModel {
         return new Snapshot(installed, true, statsOk, bootEnabled,
             want, built, free, lent, deficit, acquiring, mode, hasWant, softDisabled,
             s.getOrDefault("state", "-"), s.getOrDefault("total_served", "-"),
-            s.getOrDefault("total_refilled", "-"), s.getOrDefault("active_vms", "-"));
+            s.getOrDefault("total_refilled", "-"), s.getOrDefault("active_vms", "-"),
+            s.getOrDefault("acquire_stop_reason", "-"));
     }
 
     /**

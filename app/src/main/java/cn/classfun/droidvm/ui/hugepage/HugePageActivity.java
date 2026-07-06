@@ -459,13 +459,18 @@ public final class HugePageActivity extends AppCompatActivity {
         if (wasAcquiring && !acquiring) {
             long got = snap.free + snap.lent;
             long want = snap.targetIdeal;
-            Toast.makeText(this, got >= want
+            String msg = got >= want
                     ? getString(R.string.hugepage_proc_acquire_full,
                         SizeUtils.formatSize(want * PAGE_SIZE))
                     : getString(R.string.hugepage_proc_acquire_partial,
                         SizeUtils.formatSize(got * PAGE_SIZE),
-                        SizeUtils.formatSize(want * PAGE_SIZE)),
-                Toast.LENGTH_LONG).show();
+                        SizeUtils.formatSize(want * PAGE_SIZE));
+            // Append why the acquire stopped (kernel free text from refill_stat's
+            // acquire_stop_reason), so the user sees the reason in the bubble.
+            String reason = snap.acquireStopReason;
+            if (!reason.isEmpty() && !"-".equals(reason))
+                msg += "\n" + reason;
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
         }
         wasAcquiring = acquiring;
         if (mainAcquiring != acquiring || mainAcquireMode != mode) {
