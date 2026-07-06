@@ -9,34 +9,30 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.webkit.MimeTypeMap;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 
-/** Helpers for exporting in-app text to the system share sheet (ACTION_SEND). */
 public final class ShareUtils {
     private static final String TAG = "ShareUtils";
-    private static final String SHARE_DIR = "shared_logs";
+    private static final String SHARE_DIR = "shared";
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
 
     private ShareUtils() {
     }
 
-    /**
-     * Write {@code content} to a temp file under the cache dir and launch the system
-     * share sheet with it as a {@code text/plain} attachment. File write runs off the
-     * main thread; the chooser is launched back on the main thread. {@code onError} is
-     * invoked on the main thread with a message when sharing fails.
-     */
     public static void shareTextAsFile(
-        Context context,
-        String filename,
-        String content,
-        String chooserTitle,
-        OnError onError
+        @NonNull Context context,
+        @NonNull String filename,
+        @NonNull String content,
+        @NonNull String chooserTitle,
+        @Nullable OnError onError
     ) {
         var appContext = context.getApplicationContext();
         runOnPool(() -> {
@@ -50,9 +46,7 @@ public final class ShareUtils {
                     os.write(content.getBytes(StandardCharsets.UTF_8));
                     os.flush();
                 }
-                var authority = fmt("%s.fileprovider", appContext.getPackageName());
-                var uri = FileProvider.getUriForFile(appContext, authority, file);
-                MAIN.post(() -> launchChooser(context, uri, chooserTitle, onError));
+                shareFile(context, file, null, chooserTitle, onError);
             } catch (Exception e) {
                 Log.e(TAG, "Failed to prepare shared file", e);
                 MAIN.post(() -> {
@@ -62,10 +56,41 @@ public final class ShareUtils {
         });
     }
 
-    private static void launchChooser(Context context, Uri uri, String title, OnError onError) {
+    public static void shareFile(
+        @NonNull Context context,
+        @NonNull File file,
+        @Nullable String mime,
+        @NonNull String chooserTitle,
+        @Nullable OnError onError
+    ) {
+        try {
+            var appContext = context.getApplicationContext();
+            var authority = fmt("%s.fileprovider", appContext.getPackageName());
+            var uri = FileProvider.getUriForFile(appContext, authority, file);
+            MAIN.post(() -> launchChooser(context, uri, chooserTitle, mime, onError));
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create share uri", e);
+            MAIN.post(() -> {
+                if (onError != null) onError.onError(e.getMessage());
+            });
+        }
+    }
+
+    public static void launchChooser(
+        @NonNull Context context,
+        @NonNull Uri uri,
+        @NonNull String title,
+        @Nullable String mime,
+        @Nullable OnError onError
+    ) {
+        if (mime == null) {
+            var ext = MimeTypeMap.getFileExtensionFromUrl(uri.toString());
+            if (ext != null) mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext);
+            if (mime == null) mime = "application/octet-stream";
+        }
         try {
             var send = new Intent(Intent.ACTION_SEND)
-                .setType("text/plain")
+                .setType(mime)
                 .putExtra(Intent.EXTRA_STREAM, uri)
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             var chooser = Intent.createChooser(send, title);
@@ -77,7 +102,6 @@ public final class ShareUtils {
         }
     }
 
-    /** Drop previously exported files so the cache dir does not grow unbounded. */
     private static void pruneOldFiles(File dir) {
         var files = dir.listFiles();
         if (files == null) return;

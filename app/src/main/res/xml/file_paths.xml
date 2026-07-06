@@ -2,6 +2,9 @@
 <paths>
     <!-- Temp files exported for sharing via FileProvider -->
     <cache-path
-        name="shared_logs"
-        path="shared_logs/" />
+        name="shared"
+        path="shared/" />
+    <external-path
+        name="external_files"
+        path="." />
 </paths>
