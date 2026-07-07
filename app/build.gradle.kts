@@ -138,23 +138,6 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
                 dest.parentFile.mkdirs()
                 src.copyTo(dest, overwrite = true)
             }
-        val libraries = setOf(
-            "libsimpledump.so",
-            "libunixhelper.so",
-            "libcompat_a13.so",
-            "libcompat_a14.so",
-            "libcompat_a15.so",
-            "libcompat_a16.so",
-            "libcompat_a17.so",
-        )
-        cmakeDir.walkTopDown()
-            .filter { it.name in libraries && it.isFile }
-            .forEach { src ->
-                val abi = src.parentFile.name
-                val dest = File(outDir, "lib/$abi/${src.name}")
-                dest.parentFile.mkdirs()
-                src.copyTo(dest, overwrite = true)
-            }
     }
 }
 

@@ -23,15 +23,6 @@ public final class Constants {
     // third-party daemons (gvswitch/pbridge/bridgedhcp/netbox) and lbx now
     // arrive via the prebuilt tar.xz, extracted to DATA/bin/<name>.
     public static final String[] BINARIES_BUILT = {"droidvm", "daemon"};
-    public static final String[] LIBRARIES_BUILT = {
-        "libsimpledump.so",
-        "libunixhelper.so",
-        "libcompat_a13.so",
-        "libcompat_a14.so",
-        "libcompat_a15.so",
-        "libcompat_a16.so",
-        "libcompat_a17.so",
-    };
     /**
      * IFA_RT_PRIORITY magic that pbridge tags its ND/ARP-offload proxy
      * addresses with (its --offload-workaround-magic). Host-IP discovery

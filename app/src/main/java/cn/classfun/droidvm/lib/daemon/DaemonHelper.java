@@ -132,9 +132,15 @@ public final class DaemonHelper {
         run("mkdir -p %s", runDir);
         // Best-effort ownership fix; chown may be denied on some contexts (e.g. Android).
         run("chown %d:%d %s || true", uid, uid, runDir);
+        var libPath = fmt(
+            "%s:%s",
+            ctx.getContext().getApplicationInfo().nativeLibraryDir,
+            pathJoin(DATA_DIR, "lib")
+        );
         var cmd = fmt(
-            "env CLASSPATH=%s %s %s / %s%s",
+            "env CLASSPATH=%s LD_LIBRARY_PATH=%s %s %s / %s%s",
             escapedString(zipPath),
+            escapedString(libPath),
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(findExecute("app_process64")),
             escapedString(Daemon.class.getName()),

@@ -20,6 +20,7 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.BufferedInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -204,8 +205,32 @@ public final class AssetUtils {
         extractAsset(context, "bin", BINARIES_BUILT, false);
     }
 
+    @SuppressLint("SetWorldReadable")
     public static void extractLibraries(@NonNull Context context) {
-        extractAsset(context, "lib", LIBRARIES_BUILT, false);
+        var srcDir = new File(context.getApplicationInfo().nativeLibraryDir);
+        var srcFiles = srcDir.listFiles((dir, name) -> name.endsWith(".so"));
+        if (srcFiles == null || srcFiles.length == 0) {
+            Log.w(TAG, fmt("No installed native library in %s", srcDir));
+            return;
+        }
+        var dstDir = new File(context.getDataDir(), "lib");
+        if (!dstDir.exists() && !dstDir.mkdirs())
+            Log.w(TAG, fmt("Failed to create native library dir: %s", dstDir));
+        for (var src : srcFiles) {
+            var dst = new File(dstDir, src.getName());
+            try {
+                if (dst.exists() && !dst.delete())
+                    Log.w(TAG, fmt("Could not unlink old native library: %s", dst));
+                try (var in = new FileInputStream(src); var out = new FileOutputStream(dst)) {
+                    copyStream(in, out);
+                }
+                if (!dst.setReadable(true, false))
+                    Log.w(TAG, "setReadable failed");
+                Log.i(TAG, fmt("Extracted installed native library %s to %s", src, dst));
+            } catch (Exception e) {
+                Log.e(TAG, fmt("Failed to extract installed native library: %s", src), e);
+            }
+        }
     }
 
     public static boolean needsExtractPrebuilt(@NonNull Context context) {
