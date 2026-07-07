@@ -11,10 +11,15 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.io.File;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
+import cn.classfun.droidvm.daemon.vm.pkg.VMExportTask;
+import cn.classfun.droidvm.daemon.vm.pkg.VMImportTask;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public final class ServerContext {
@@ -22,6 +27,8 @@ public final class ServerContext {
     private final VMInstanceStore vms = new VMInstanceStore(this);
     private final NetworkInstanceStore networks = new NetworkInstanceStore(this);
     private final DefaultRouterWatcher routerWatcher = new DefaultRouterWatcher(this);
+    private final Map<UUID, VMExportTask> exportTasks = new ConcurrentHashMap<>();
+    private final Map<UUID, VMImportTask> importTasks = new ConcurrentHashMap<>();
     public DataItem appConfig = DataItem.newObject();
 
     public ServerContext() {
@@ -76,5 +83,15 @@ public final class ServerContext {
     @NonNull
     public DefaultRouterWatcher getRouterWatcher() {
         return routerWatcher;
+    }
+
+    @NonNull
+    public Map<UUID, VMExportTask> getExportTaskStore() {
+        return exportTasks;
+    }
+
+    @NonNull
+    public Map<UUID, VMImportTask> getImportTaskStore() {
+        return importTasks;
     }
 }
