@@ -334,6 +334,11 @@ final class HugePageModel {
         return collapse(unloadLadder());
     }
 
+    @NonNull
+    Result unload() {
+        return collapse(unloadLadder());
+    }
+
     /**
      * Enable (true) or disable (false) the module for the <b>next boot</b> via the
      * Magisk {@code disable} marker file. Independent of the running module.
