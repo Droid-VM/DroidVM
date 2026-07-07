@@ -337,6 +337,8 @@ dependencies {
     implementation(libs.okhttp3)
     implementation(libs.snakeyaml)
     implementation(libs.xz)
+    implementation(libs.zstd) { artifact { type = "aar" } }
+    testImplementation(libs.zstd)
     implementation(libs.termux.emulator)
     implementation(libs.termux.view)
     testImplementation(libs.junit)
