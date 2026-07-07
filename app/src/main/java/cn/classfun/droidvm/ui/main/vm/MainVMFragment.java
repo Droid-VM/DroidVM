@@ -31,6 +31,7 @@ import cn.classfun.droidvm.ui.vm.VMActions;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
+import cn.classfun.droidvm.ui.vm.pkg.exports.VMPkgExportActivity;
 
 public final class MainVMFragment
     extends MainStatefulFragment<VMConfig, VMStore, VMAdapter, VMState>
@@ -102,6 +103,8 @@ public final class MainVMFragment
             startActivity(intent);
         } else if (id == R.id.menu_vm_delete) {
             confirmDeleteVM(config);
+        } else if (id == R.id.menu_vm_export) {
+            startActivity(VMPkgExportActivity.createIntent(ctx, config.getId()));
         }
         return true;
     }

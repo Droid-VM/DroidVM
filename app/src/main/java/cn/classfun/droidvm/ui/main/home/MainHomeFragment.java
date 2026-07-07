@@ -44,6 +44,7 @@ import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 import cn.classfun.droidvm.ui.update.UpdateDialog;
 import cn.classfun.droidvm.ui.update.UpdateInfo;
 import cn.classfun.droidvm.ui.update.VersionCheck;
+import cn.classfun.droidvm.ui.vm.pkg.imports.VMPkgImportActivity;
 
 public final class MainHomeFragment extends MainBaseFragment
     implements DaemonConnection.EventListener {
@@ -342,7 +343,7 @@ public final class MainHomeFragment extends MainBaseFragment
     }
 
     private void openImport() {
-        Toast.makeText(requireContext(), R.string.unimplement, LENGTH_SHORT).show();
+        startActivity(new Intent(requireContext(), VMPkgImportActivity.class));
     }
 
     private void openLink(String url) {

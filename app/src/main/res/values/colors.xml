@@ -29,4 +29,6 @@
     <!-- Inline supported/unsupported status icons (readable on light and dark). -->
     <color name="status_supported">#FF4CAF50</color>
     <color name="status_unsupported">#FFF44336</color>
+
+    <color name="vmpkg_export_disk_selected">#FF888888</color>
 </resources>

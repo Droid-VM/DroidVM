@@ -7,6 +7,11 @@
         android:title="@string/vm_edit" />
 
     <item
+        android:id="@+id/menu_vm_export"
+        android:icon="@drawable/ic_export_to"
+        android:title="@string/vm_export_pkg" />
+
+    <item
         android:id="@+id/menu_vm_delete"
         android:icon="@drawable/ic_delete"
         android:title="@string/vm_delete" />
