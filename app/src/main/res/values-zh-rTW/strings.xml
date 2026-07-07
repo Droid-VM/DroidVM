@@ -973,6 +973,10 @@
     <string name="hugepage_stop_confirm">確定要停止大頁預留模組嗎？這將釋放所有預分配的頁面，可能會影響正在執行的虛擬機器。</string>
     <string name="hugepage_unloaded">模組已解除安裝</string>
     <string name="hugepage_unload_failed">解除安裝模組失敗</string>
+    <string name="hugepage_unload_module">停止內核模組</string>
+    <string name="hugepage_unload_module_title">確定停止內核模組？</string>
+    <string name="hugepage_unload_module_confirm">強制從執行中的內核移除 .ko（rmmod）。這將釋放所有預留頁面，並丟失每虛擬機追蹤，直到下次載入模組。可能會影響正在執行的虛擬機器。</string>
+    <string name="hugepage_unload_module_done">模組已解除安裝</string>
 
     <string name="hugepage_view_processes">顯示占用</string>
     <string name="hugepage_proc_title_screen">Hugepage 集區占用</string>

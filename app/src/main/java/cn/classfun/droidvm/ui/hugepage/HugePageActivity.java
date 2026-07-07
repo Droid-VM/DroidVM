@@ -9,6 +9,7 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
+import static cn.classfun.droidvm.lib.ui.MaterialMenu.setupToolbarMenu;
 
 import android.content.Context;
 import android.content.Intent;
@@ -146,6 +147,7 @@ public final class HugePageActivity extends AppCompatActivity {
     private void initialize() {
         toolbar.setTitle(R.string.hugepage_title);
         toolbar.setNavigationOnClickListener(v -> finish());
+        setupToolbarMenu(toolbar, R.menu.menu_hugepage, this::onMenuItemClicked);
         btnSavePoolSize.setOnClickListener(v -> {
             if (moduleAcquiring) interruptAcquire();
             else savePoolSize();
@@ -701,6 +703,37 @@ public final class HugePageActivity extends AppCompatActivity {
             .setPositiveButton(R.string.hugepage_stop, (d, w) -> doDisable())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    private boolean onMenuItemClicked(@NonNull android.view.MenuItem item) {
+        if (item.getItemId() == R.id.action_unload_module) {
+            confirmUnloadModule();
+            return true;
+        }
+        return false;
+    }
+
+    private void confirmUnloadModule() {
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.hugepage_unload_module_title)
+            .setMessage(R.string.hugepage_unload_module_confirm)
+            .setPositiveButton(R.string.hugepage_unload_module, (d, w) -> doUnloadModule())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void doUnloadModule() {
+        btnModuleToggle.setEnabled(false);
+        runOnPool(() -> {
+            stopAcquireAndWait();
+            var res = model.unload();
+            runOnUiThread(() -> {
+                Toast.makeText(this, res.ok()
+                    ? R.string.hugepage_unload_module_done
+                    : R.string.hugepage_unload_failed, LENGTH_SHORT).show();
+                refreshStatus();
+            });
+        });
     }
 
     private void doDismissCrash() {

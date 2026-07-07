@@ -1010,6 +1010,10 @@
     <string name="hugepage_stop_confirm">Are you sure you want to unload the hugepage reserve module? This will release all pre-allocated pages and may affect running VMs.</string>
     <string name="hugepage_unloaded">Module unloaded</string>
     <string name="hugepage_unload_failed">Failed to unload module</string>
+    <string name="hugepage_unload_module">Unload module</string>
+    <string name="hugepage_unload_module_title">Unload module?</string>
+    <string name="hugepage_unload_module_confirm">Forcibly remove the .ko from the running kernel (rmmod). This releases all reserved pages and loses per-VM tracking until next load. May affect running VMs.</string>
+    <string name="hugepage_unload_module_done">Module unloaded</string>
 
     <string name="hugepage_view_processes">Show Usage</string>
     <string name="hugepage_proc_title_screen">Hugepage Pool Usage</string>
