@@ -36,7 +36,9 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
@@ -50,6 +52,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.base.MainBaseFragment;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
@@ -65,6 +68,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
+    public static final String KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE = "vm_keep_compress_on_optimize";
+    public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -78,6 +83,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemDaemonRestart;
     private SwitchRowWidget itemVMAutoConsole;
     private SwitchRowWidget itemVMClearLogsBeforeStart;
+    private SwitchRowWidget itemVMKeepCompressOnOptimize;
+    private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
     private TextRowWidget itemCheckUpdate;
@@ -130,6 +137,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemDaemonRestart = view.findViewById(R.id.item_daemon_restart);
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
+        itemVMKeepCompressOnOptimize = view.findViewById(R.id.item_vm_keep_compress_on_optimize);
+        itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
         itemCheckUpdate = view.findViewById(R.id.item_check_update);
@@ -160,6 +169,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
         bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
+        bindOnChecked(itemVMKeepCompressOnOptimize, KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+        bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
+        refreshCpuAffinitySummary();
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
@@ -203,9 +215,24 @@ public final class MainSettingsFragment extends MainBaseFragment {
         return prefs.getBoolean(KEY_VM_CLEAR_LOGS_BEFORE_START, false);
     }
 
+    public static boolean isKeepCompressOnOptimizeEnabled(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+    }
+
     public static boolean isAutoCheckUpdateEnabled(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         return prefs.getBoolean(KEY_AUTO_CHECK_UPDATE, true);
+    }
+
+    /**
+     * qemu-img CPU affinity as a taskset -c core list (e.g. "4,5,6,7").
+     * Empty string means no binding (qemu-img may use every core).
+     */
+    @NonNull
+    public static String getQemuImgCpuAffinity(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getString(KEY_QEMU_IMG_CPU_AFFINITY, "");
     }
 
     private void onRefreshDaemonStatus(boolean r) {
@@ -265,6 +292,93 @@ public final class MainSettingsFragment extends MainBaseFragment {
             })
             .setNegativeButton(android.R.string.cancel, null)
             .show();
+    }
+
+    private void refreshCpuAffinitySummary() {
+        if (itemCpuAffinity == null) return;
+        var csv = getQemuImgCpuAffinity(requireContext());
+        if (csv.isEmpty()) {
+            itemCpuAffinity.setSubtitle(R.string.settings_cpu_affinity_all_cores);
+        } else {
+            itemCpuAffinity.setSubtitle(getString(
+                R.string.settings_cpu_affinity_summary_fmt, CpuUtils.compactRanges(csv)));
+        }
+    }
+
+    private void showCpuAffinityDialog() {
+        var ctx = requireContext();
+        var cores = CpuUtils.getCores();
+        int tiers = CpuUtils.tierCount(cores);
+        var labels = new String[cores.size()];
+        for (int i = 0; i < cores.size(); i++)
+            labels[i] = cpuCoreLabel(cores.get(i), tiers);
+
+        // Saved selection, or the "filter out little cores" default when unset.
+        var savedCsv = getQemuImgCpuAffinity(ctx);
+        var selectedIdx = parseCsvToSet(
+            savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv);
+        var checked = new boolean[cores.size()];
+        for (int i = 0; i < cores.size(); i++)
+            checked[i] = selectedIdx.contains(cores.get(i).index);
+
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.settings_cpu_affinity_title)
+            .setMultiChoiceItems(labels, checked, (d, which, isChecked) ->
+                checked[which] = isChecked)
+            .setNeutralButton(R.string.settings_cpu_affinity_big_only, null)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, (d, w) -> {
+                var sb = new StringBuilder();
+                for (int i = 0; i < cores.size(); i++) {
+                    if (!checked[i]) continue;
+                    if (sb.length() > 0) sb.append(',');
+                    sb.append(cores.get(i).index);
+                }
+                ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, sb.toString()).apply();
+                refreshCpuAffinitySummary();
+            })
+            .create();
+        dialog.show();
+        // Re-check only the big cores without dismissing the dialog.
+        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            var bigIdx = parseCsvToSet(CpuUtils.defaultBigCoresCsv());
+            var list = dialog.getListView();
+            for (int i = 0; i < cores.size(); i++) {
+                checked[i] = bigIdx.contains(cores.get(i).index);
+                list.setItemChecked(i, checked[i]);
+            }
+        });
+    }
+
+    @NonNull
+    private String cpuCoreLabel(@NonNull CpuUtils.CpuCore core, int tiers) {
+        var freq = CpuUtils.formatFreq(core.maxFreqKHz);
+        int tierRes;
+        if (tiers <= 1) tierRes = 0;
+        else if (core.tier == 0) tierRes = R.string.settings_cpu_affinity_tier_little;
+        else if (tiers >= 3 && core.tier == tiers - 1)
+            tierRes = R.string.settings_cpu_affinity_tier_prime;
+        else tierRes = R.string.settings_cpu_affinity_tier_big;
+        var sb = new StringBuilder(fmt("CPU%d", core.index));
+        if (!freq.isEmpty()) sb.append("    ").append(freq);
+        if (tierRes != 0) sb.append("    ").append(getString(tierRes));
+        return sb.toString();
+    }
+
+    @NonNull
+    private static Set<Integer> parseCsvToSet(@NonNull String csv) {
+        var set = new HashSet<Integer>();
+        if (csv.isEmpty()) return set;
+        for (var part : csv.split(",")) {
+            part = part.trim();
+            if (part.isEmpty()) continue;
+            try {
+                set.add(Integer.parseInt(part));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return set;
     }
 
     private void showLicenseDialog() {

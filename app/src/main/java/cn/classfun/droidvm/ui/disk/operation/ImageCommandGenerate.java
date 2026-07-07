@@ -14,6 +14,7 @@ import org.json.JSONObject;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 
 public final class ImageCommandGenerate {
@@ -25,6 +26,7 @@ public final class ImageCommandGenerate {
     private String realPath;
     private String tmpPath;
     private String outputPath;
+    private String cpuAffinity = "";
     private final DiskStore diskStore;
 
     public ImageCommandGenerate(@NonNull DiskStore diskStore) {
@@ -33,6 +35,14 @@ public final class ImageCommandGenerate {
 
     public String getOutputPath() {
         return outputPath;
+    }
+
+    /**
+     * Restrict the worker (qemu-img, or pv for clone) to the given host cores.
+     * Value is a taskset -c list such as "4,5,6,7"; empty means no binding.
+     */
+    public void setCpuAffinity(String cpuAffinity) {
+        this.cpuAffinity = cpuAffinity == null ? "" : cpuAffinity;
     }
 
     @NonNull
@@ -50,6 +60,13 @@ public final class ImageCommandGenerate {
         sb.append("set -x; ");
         sb.append(fmt("mkdir -pv %s; ", escapedString(dirname(diskPath))));
         sb.append("if ");
+        // Bind the worker to selected host cores. The prefix goes before both
+        // the qemu-img and the clone/pv binary, so it covers every action.
+        // Uses Android's system taskset (toybox), which takes a hex CPU mask
+        // with no "0x" prefix -- the bundled busybox has no taskset applet.
+        var affinityMask = CpuUtils.coresCsvToHexMask(cpuAffinity);
+        if (!affinityMask.isEmpty())
+            sb.append("taskset ").append(affinityMask).append(" ");
         if (!task.getString("action").equals("clone"))
             sb.append(escapedString(qemuImg));
         appendAction();
@@ -118,9 +135,13 @@ public final class ImageCommandGenerate {
             task.put("format", format);
         } else throw new RuntimeException("No format specified in task or image info");
         sb.append(" --target-format ").append(format);
-        sb.append(" ").append(eDiskPath).append(" ");
         if (task.has("output")) {
             outputPath = task.getString("output");
+            // In-place re-compress (output == source): writing straight to the
+            // target collides with the source's own read lock, so route through
+            // the .tmp + rename path even though an output was given.
+            if (outputPath.equals(diskPath))
+                useTempPath = true;
         } else {
             useTempPath = true;
         }
@@ -129,11 +150,17 @@ public final class ImageCommandGenerate {
         if (!opts.isEmpty())
             sb.append(" --target-format-options ").append(opts);
         if (!task.optString("compress", "none").equals("none"))
-            sb.append(" --compress");
-        sb.append(" ");
+            // -c (short form): the bundled qemu-img rejects the --compress long
+            // option even though it accepts the other long options.
+            sb.append(" -c");
+        // Positional args go last. qemu-img stops parsing options at the first
+        // SRC_FILE (convert accepts multiple source files), so any option after
+        // it -- e.g. --compress -- is misread as an extra source file. All
+        // options must precede SRC_FILE.
         realPath = escapedString(outputPath);
         tmpPath = escapedString(fmt("%s.tmp", diskPath));
-        sb.append(useTempPath ? tmpPath : realPath);
+        sb.append(" ").append(eDiskPath);
+        sb.append(" ").append(useTempPath ? tmpPath : realPath);
     }
 
     @NonNull

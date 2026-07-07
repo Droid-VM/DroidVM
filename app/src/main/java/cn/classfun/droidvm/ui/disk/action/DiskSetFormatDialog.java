@@ -7,6 +7,10 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.stripExtension;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startConvert;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+import static cn.classfun.droidvm.lib.store.disk.DiskConfig.supportsCompress;
+
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
@@ -23,6 +27,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -34,6 +39,7 @@ public final class DiskSetFormatDialog {
     private final DiskConfig config;
     private TextInputRowWidget inputName;
     private ChooseRowWidget chooseFormat;
+    private ChooseRowWidget chooseCompress;
     private TextView tvCurrentFormat;
     private DiskFormat currentFormat = null;
 
@@ -47,14 +53,18 @@ public final class DiskSetFormatDialog {
         tvCurrentFormat = view.findViewById(R.id.tv_current_format);
         inputName = view.findViewById(R.id.input_name);
         chooseFormat = view.findViewById(R.id.choose_format);
+        chooseCompress = view.findViewById(R.id.choose_compress);
         chooseFormat.setItems(DiskFormat.class);
+        chooseCompress.configure(DiskCompress.class, DiskCompress.DEFLATE);
         inputName.setText(config.getName());
         tvCurrentFormat.setText(R.string.disk_set_format_loading);
         runOnPool(this::loadImageInfo);
         chooseFormat.setOnValueChangedListener(() -> {
             DiskFormat fmt = chooseFormat.getSelectedItem();
             updateFileName(inputName, config.getName(), fmt.getExt());
+            updateCompressVisibility(fmt);
         });
+        updateCompressVisibility(chooseFormat.getSelectedItem());
         var dialog = new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.disk_set_format_title)
             .setView(view)
@@ -70,14 +80,23 @@ public final class DiskSetFormatDialog {
             }
             inputName.setError(null);
             DiskFormat format = chooseFormat.getSelectedItem();
-            if (format.equals(currentFormat)) {
+            // Same format is still a valid conversion when it carries a
+            // compression choice (qcow2): the user may only be re-compressing.
+            if (format.equals(currentFormat) && !supportsCompress(format)) {
                 Toast.makeText(context, R.string.disk_set_format_error_same, LENGTH_LONG).show();
                 return;
             }
             dialog.dismiss();
             var output = pathJoin(config.item.optString("folder", ""), name);
-            startConvert(context, config.getId(), format.name().toLowerCase(), output);
+            var compress = supportsCompress(format)
+                ? chooseCompress.<DiskCompress>getSelectedItem().name().toLowerCase()
+                : "none";
+            startConvert(context, config.getId(), format.name().toLowerCase(), output, compress);
         });
+    }
+
+    private void updateCompressVisibility(DiskFormat fmt) {
+        chooseCompress.setVisibility(supportsCompress(fmt) ? VISIBLE : GONE);
     }
 
     private void loadImageInfo() {
@@ -100,6 +119,7 @@ public final class DiskSetFormatDialog {
                 currentFormat = chooseFormat.getSelectedItem();
             }
             updateFileName(inputName, config.getName(), currentFormat.getExt());
+            updateCompressVisibility(chooseFormat.getSelectedItem());
         });
     }
 

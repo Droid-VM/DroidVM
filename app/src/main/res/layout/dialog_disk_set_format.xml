@@ -31,4 +31,12 @@
         android:icon="@drawable/ic_disk_format"
         android:text="@string/disk_set_format_target" />
 
+    <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+        android:id="@+id/choose_compress"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:icon="@drawable/ic_compress"
+        android:text="@string/disk_create_compress"
+        android:visibility="gone" />
+
 </LinearLayout>

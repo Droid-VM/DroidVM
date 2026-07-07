@@ -121,6 +121,7 @@ public final class DiskActionDialog {
             try {
                 var info = ImageUtils.getImageInfo(config.getFullPath());
                 obj.put("action", "convert");
+                obj.put("keep_compress", true); // preserve compression when optimizing
                 obj.put("format", info.getString("format"));
                 if (info.has("backing-filename"))
                     obj.put("backing_path", info.getString("backing-filename"));
