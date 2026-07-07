@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.display;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Looper;
@@ -34,7 +35,7 @@ public final class DaemonSystemContext {
         try {
             if (Looper.myLooper() == null) Looper.prepareMainLooper();
         } catch (Throwable t) {
-            Log.w(TAG, "prepareMainLooper: " + t);
+            Log.w(TAG, fmt("prepareMainLooper: %s", t));
         }
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");

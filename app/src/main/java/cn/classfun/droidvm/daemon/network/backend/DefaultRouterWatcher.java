@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.daemon.network.backend;
 
+import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.util.Log;
@@ -24,6 +25,7 @@ import cn.classfun.droidvm.lib.Constants;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
+import cn.classfun.droidvm.lib.utils.RunUtils;
 
 public final class DefaultRouterWatcher {
     private static final String TAG = "DefaultRouterWatcher";
@@ -192,7 +194,7 @@ public final class DefaultRouterWatcher {
         // lowest priority so it is evaluated first.
         var desired = new ArrayList<String>();
         for (int i = 0; i < tables.size(); i++)
-            desired.add((RULE_PRIORITY_BASE + i) + " " + tables.get(i));
+            desired.add(fmt("%d %s", RULE_PRIORITY_BASE + i, tables.get(i)));
 
         // Group our installed rules per device as "priority table" specs. Ours
         // are the plain rules: an iif owned by a bridge, a lookup action, no
@@ -213,7 +215,7 @@ public final class DefaultRouterWatcher {
                 if (dev.startsWith(br)) { ours = true; break; }
             if (!ours) continue;
             installed.computeIfAbsent(dev, k -> new ArrayList<>())
-                .add(r.optInt("priority", 0) + " " + r.optInt("table", 0));
+                .add(fmt("%d %d", r.optInt("priority", 0), r.optInt("table", 0)));
             if (r.optBoolean("detached", false)) detached.add(dev);
         }
         installed.values().forEach(specs -> specs.sort(Comparator.comparingInt(
@@ -253,6 +255,64 @@ public final class DefaultRouterWatcher {
         ensureHostIpMonitor();
         updateHostIps();
         updateDefaultRouter();
+        reassertForwarding();
+    }
+
+    /**
+     * Re-asserts the kernel forwarding sysctls that guest L3 routing depends
+     * on. netd owns these globally and clears them whenever it retunes
+     * tethering, which silently black-holes every forwarded guest packet.
+     * {@link cn.classfun.droidvm.daemon.network.backend.iptables.IptablesBackend}
+     * enables them once at init; this keeps them enabled for as long as a
+     * Linux-bridge L3 network is running.
+     *
+     * <p>Gated on {@link #hasL3LinuxBridge()} -- the same "running LINUX + L3"
+     * condition the routing rules use. With no such network there is nothing
+     * to forward, so netd's value is left alone rather than forcing global
+     * forwarding on the phone. Both families are covered because netd flips
+     * v4 and v6 together (as does {@code enableIpForward}). Reads before
+     * writing: an untouched value costs one cheap cat and stays silent; only a
+     * value netd actually reset is corrected and logged (it means netd raced
+     * us). Never throws out of the tick -- a transient shell failure must not
+     * tear down the routing rules.
+     */
+    private void reassertForwarding() {
+        try {
+            if (!hasL3LinuxBridge()) return;
+            ensureSysctlOne("/proc/sys/net/ipv4/ip_forward", "net.ipv4.ip_forward");
+            ensureSysctlOne("/proc/sys/net/ipv6/conf/all/forwarding",
+                "net.ipv6.conf.all.forwarding");
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to re-assert forwarding sysctls", e);
+        }
+    }
+
+    /**
+     * Writes 1 to {@code path} only if it is not already 1; logs corrections.
+     * The read ({@code shellReadFile}) and the write ({@code runQuiet}) are both
+     * quiet, so the 5s poll stays out of logcat -- {@code RunContext.run} would
+     * otherwise log a "Running command: cat ..." line every tick. The only line
+     * this emits on a normal tick is the warning below, and only when netd
+     * actually reset the value.
+     */
+    private void ensureSysctlOne(@NonNull String path, @NonNull String name) {
+        var cur = shellReadFile(path);
+        if ("1".equals(cur)) return;
+        Log.w(TAG, fmt("%s=%s (netd reset it); re-enabling forwarding",
+            name, cur.isEmpty() ? "?" : cur));
+        RunUtils.runQuiet(fmt("echo 1 > %s", path));
+    }
+
+    /** True while any RUNNING Linux-bridge L3 network needs kernel forwarding. */
+    private boolean hasL3LinuxBridge() {
+        var found = new boolean[]{false};
+        context.getNetworks().forEach((uuid, inst) -> {
+            if (inst.getState() == NetworkState.RUNNING
+                && inst.getBridgeType() == BridgeType.LINUX
+                && inst.getUplinkMode() == UplinkMode.L3)
+                found[0] = true;
+        });
+        return found[0];
     }
 
     private void updateDefaultRouter() {

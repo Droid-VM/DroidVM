@@ -111,6 +111,10 @@
 
     <string name="vm_exited_success">虛擬機器"%1$s"已停止。</string>
     <string name="vm_exited_error">虛擬機器"%1$s"以退出碼 %2$d 退出。</string>
+    <string name="vm_exit_crash">虛擬機器"%1$s"已當機（退出碼 %2$d）。</string>
+    <string name="vm_exit_guest_panic">虛擬機器"%1$s"guest 核心 panic（退出碼 %2$d）。</string>
+    <string name="vm_exit_watchdog">虛擬機器"%1$s"停滯，已被看門狗重置（退出碼 %2$d）。</string>
+    <string name="vm_rebooting">正在重新啟動虛擬機器"%1$s"…</string>
     <string name="vm_exit_dialog_title">虛擬機器"%1$s"啟動失敗</string>
     <string name="vm_exit_dialog_message">虛擬機器以退出碼 %1$d 退出。\n\n日誌：</string>
     <string name="vm_exit_no_logs">無可用日誌。</string>
@@ -922,11 +926,21 @@
     <string name="hugepage_proc_acquire">獲取</string>
     <string name="hugepage_proc_acquire_running">獲取大頁中…</string>
     <string name="hugepage_proc_acquire_done">獲取完成</string>
+    <string name="hugepage_proc_acquire_v1_desc">獲取 v1（alloc_contig_pages 掃描）</string>
+    <string name="hugepage_proc_acquire_v2_desc">獲取 v2（遷移＋系統回收）</string>
+    <string name="hugepage_proc_acquire_v3_desc">獲取 v3（遷移＋逐塊擠到 zram）</string>
+    <string name="hugepage_acquire_degraded">已降級，實際使用 %1$s</string>
+    <string name="hugepage_acquire_run">執行</string>
+    <string name="hugepage_acquire_dont_ask">以後不再提示</string>
+    <string name="hugepage_acquire_v1_explain">用 alloc_contig_pages 蒐集大頁</string>
+    <string name="hugepage_acquire_v2_explain">用 try_to_free_mem_cgroup_pages 把其他程式擠到 swap/zram\n再用 alloc_contig_range 蒐集大頁</string>
+    <string name="hugepage_acquire_v3_explain">用 folio_isolate_lru + reclaim_pages 精準把頁面擠到 swap/zram\n再用 alloc_contig_range 蒐集大頁</string>
     <string name="hugepage_proc_acquire_stop">停止獲取</string>
     <string name="hugepage_proc_acquire_full">獲取完成:已達成 %1$s</string>
     <string name="hugepage_proc_acquire_partial">獲取結束:達成 %1$s / 目標 %2$s(系統目前無法再湊出更多)</string>
     <string name="hugepage_proc_acquire_userspace">模組不足,嘗試 userspace 協助…</string>
     <string name="hugepage_refill_failed">觸發獲取失敗</string>
+    <string name="hugepage_acquire_pages_title">獲取大頁</string>
     <string name="hugepage_pool_size">池大小</string>
     <string name="hugepage_pool_size_saved">池大小已儲存（重啟後生效）</string>
     <string name="hugepage_pool_size_applied">池大小已儲存並套用</string>

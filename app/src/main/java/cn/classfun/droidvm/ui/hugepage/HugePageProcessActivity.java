@@ -9,8 +9,6 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGKILL;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGTERM;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
-import static cn.classfun.droidvm.lib.utils.RunUtils.run;
-import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.os.Bundle;
@@ -34,9 +32,7 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.size.SizeUtils;
@@ -50,9 +46,6 @@ import cn.classfun.droidvm.lib.size.SizeUtils;
 public final class HugePageProcessActivity extends AppCompatActivity
     implements HugePageProcessAdapter.Listener {
     private static final String TAG = "HugePageProcessActivity";
-    private static final String SYSFS_BASE = "/sys/module/gh_hugepage_reserve";
-    private static final String SYSFS_PARAMS = pathJoin(SYSFS_BASE, "parameters");
-    private static final String SYSFS_OWNERS = pathJoin(SYSFS_PARAMS, "vm_owners");
     private static final long REFRESH_INTERVAL_MS = 2000;
     /** Acquire progress poll: ~500 ms ticks, capped so a wedged run can't poll forever. */
     private static final long ACQUIRE_POLL_MS = 500;
@@ -73,6 +66,7 @@ public final class HugePageProcessActivity extends AppCompatActivity
     private boolean koWasPresent = true;
     private boolean firstRefresh = true;
     private volatile boolean acquireWatching = false;
+    private volatile int acquireWatchMode = -1;   // mode we optimistically started
     private MaterialToolbar toolbar;
     private RecyclerView recyclerView;
     private TextView tvEmpty;
@@ -195,55 +189,19 @@ public final class HugePageProcessActivity extends AppCompatActivity
         }
         runOnPool(() -> {
             boolean dark = HugePageColor.isDark(this);
-            // KO attribution availability comes from the cached capability probe
-            // (re-probed at most every few seconds, with a retry on a negative),
-            // so a single flaky root `test -e` can't flap the whole view between
-            // KO and scan every tick. Absent -> force scan, disable the KO entry.
-            // A present-but-empty pool (no VM) keeps KO available ("no VM").
-            boolean koNow = model.caps(false).koAttribution;
-            boolean useScan = scanMode || !koNow;
+            // Pull the usage list through the degradation ladder: honour the user's
+            // scan preference by pinning SCAN, else auto (KO, degrading to a THP scan
+            // when the module's attribution knobs are absent). The winning impl says
+            // what's actually shown; koAvailable() says whether KO *could* be used,
+            // to keep the mode menu + toast meaningful even while showing a scan.
+            var usage = model.usage(scanMode ? HugePageModel.Source.SCAN : null);
+            boolean koNow = model.koAvailable();
+            boolean useScan = usage.source != HugePageModel.Source.KO;
 
-            List<HugePageProcess> list = new ArrayList<>();
-            String emptyText;
-            if (useScan) {
-                // Scan mode: system-wide THP (Anon + Shmem), no module needed.
-                try {
-                    list = scanProc(dark);
-                } catch (Exception e) {
-                    Log.w(TAG, "Scan failed", e);
-                }
-                emptyText = getString(R.string.hugepage_proc_scan_empty);
-            } else {
-                // Reconcile the served-page table on every query, then read the
-                // reconciled per-owner live page counts.
-                var livePages = new HashMap<Integer, Long>();
-                try {
-                    run("echo 1 > %s/reconcile", SYSFS_PARAMS);
-                    var sum = shellReadFile(pathJoin(SYSFS_PARAMS, "served_summary"));
-                    for (var ln : sum.split("\n")) {
-                        ln = ln.trim();
-                        if (!ln.startsWith("owner ")) continue;
-                        int pid = -1;
-                        long pages = 0;
-                        for (var tok : ln.split("\\s+")) {
-                            if (tok.startsWith("pid=")) pid = Integer.parseInt(tok.substring(4));
-                            else if (tok.startsWith("pages=")) pages = Long.parseLong(tok.substring(6));
-                        }
-                        if (pid > 0) livePages.put(pid, pages);
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "reconcile/served_summary unavailable (old .ko?)", e);
-                }
-                try {
-                    var owners = parseOwners(shellReadFile(SYSFS_OWNERS));
-                    if (!owners.isEmpty()) list = buildFromOwners(owners, dark, livePages);
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed to collect hugepage owners", e);
-                }
-                // Reached only when the KO API is present (else we auto-switched
-                // to scan above), so an empty list genuinely means "no VM".
-                emptyText = getString(R.string.hugepage_proc_owner_empty);
-            }
+            List<HugePageProcess> list = buildFromEntries(usage.entries, dark);
+            String emptyText = getString(useScan
+                ? R.string.hugepage_proc_scan_empty
+                : R.string.hugepage_proc_owner_empty);
 
             // Three-value model: hold (pages in pool) + traced (sum of all
             // applied/served processes) + waiting-to-acquire = want.
@@ -255,16 +213,11 @@ public final class HugePageProcessActivity extends AppCompatActivity
             //             orphaned (served-but-owner-gone) pages alike.
             long tracedKb = 0;
             for (var r : list) if (r.thpKb > 0) tracedKb += r.thpKb;
-            long holdKb, wantKb;
-            var pool = model.readPoolPages();
-            boolean kernelAcquiring = pool != null && pool.length >= 4 && pool[3] != 0;
-            if (pool != null) {
-                holdKb = pool[1] * 2048;   // avail
-                wantKb = pool[2] * 2048;   // want
-            } else {
-                holdKb = 0;
-                wantKb = tracedKb;
-            }
+            var snap = model.state();
+            boolean kernelAcquiring = snap.acquiring;
+            int kernelMode = snap.acquireMode;
+            long holdKb = snap.loaded ? snap.free * 2048 : 0;                // avail
+            long wantKb = snap.loaded ? snap.targetIdeal * 2048 : tracedKb;  // want
             long deficitKb = wantKb - holdKb - tracedKb;
             if (deficitKb > 0) {
                 list.add(new HugePageProcess(
@@ -279,6 +232,7 @@ public final class HugePageProcessActivity extends AppCompatActivity
             var fHold = holdKb;
             var fWant = wantKb;
             var fAcquiring = kernelAcquiring;
+            var fMode = kernelMode;
             runOnUiThread(() -> {
                 koPresent = fKoNow;
                 // Toast only on the present->absent edge while the user wants KO,
@@ -292,112 +246,31 @@ public final class HugePageProcessActivity extends AppCompatActivity
                 // (right after inflateMenu, before the menu is laid out) doesn't
                 // stick, leaving the radio showing the wrong mode.
                 updateModeChecked();
-                adapter.setAcquiring(fAcquiring || acquireWatching);
+                int uiMode = fAcquiring ? fMode
+                    : (acquireWatching ? acquireWatchMode : -1);
+                adapter.setAcquireState(fAcquiring || acquireWatching, uiMode);
                 showResult(finalList, fTraced, fHold, fWant, finalEmpty);
             });
         });
     }
 
+    /** Map ladder usage entries to display rows (color + VM-name enrichment). */
     @NonNull
-    private List<HugePageProcess> buildFromOwners(
-        @NonNull List<Owner> owners, boolean dark,
-        @NonNull Map<Integer, Long> livePages
+    private List<HugePageProcess> buildFromEntries(
+        @NonNull List<HugePageModel.UsageEntry> entries, boolean dark
     ) {
-        var pids = new ArrayList<Integer>();
-        for (var o : owners) pids.add(o.pid);
-        var procInfo = model.readProcInfo(pids);
-
-        // Best-effort map pid -> VM name (only running VMs have a live pid).
+        // Best-effort pid -> VM name (running VMs only); for KO rows this labels
+        // the process, for scan rows it echoes the name the entry already carries.
         var vmMap = model.vmNames(false);
-
         var result = new ArrayList<HugePageProcess>();
-        for (var o : owners) {
-            var info = procInfo.get(o.pid);
-            char state = info != null ? info.state : '?';
-            boolean alive = info != null && info.alive;
-            // Occupancy = traced (reconciled served-page count for this owner),
-            // not the /proc THP scan. /proc is only used for state + liveness.
-            Long served = livePages.get(o.pid);
-            long tracedKb = (served != null ? served : 0L) * 2048;
+        for (var e : entries) {
             result.add(new HugePageProcess(
-                o.pid, o.comm, -1, tracedKb, state,
-                vmMap.get(o.pid), alive, HugePageColor.forPid(o.pid, dark),
-                false, false));
+                e.pid, e.comm, -1, e.pages * 2048, e.state,
+                vmMap.getOrDefault(e.pid, e.comm), e.alive,
+                HugePageColor.forPid(e.pid, dark), false, false));
         }
         result.sort((a, b) -> Long.compare(b.thpKb, a.thpKb));
         return result;
-    }
-
-    /**
-     * VM-only "scan": list the daemon's running VM processes and their actual
-     * THP occupancy (AnonHugePages + ShmemPmdMapped) from smaps. We deliberately
-     * do NOT scan all of /proc - system-wide THP (launchers, etc.) is noise that
-     * has nothing to do with the reserve pool. Works without the kernel module
-     * (ground-truth occupancy straight from each VM's smaps).
-     */
-    @NonNull
-    private List<HugePageProcess> scanProc(boolean dark) {
-        // Running VMs (pid -> name) come from the daemon.
-        var vmMap = model.vmNames(false);
-        if (vmMap.isEmpty()) return new ArrayList<>();
-
-        var procInfo = model.readProcInfo(vmMap.keySet());
-
-        var result = new ArrayList<HugePageProcess>();
-        for (var e : vmMap.entrySet()) {
-            int pid = e.getKey();
-            var info = procInfo.get(pid);
-            char state = info != null ? info.state : '?';
-            long thp = info != null ? info.thpKb : -1;
-            boolean alive = info != null && info.alive;
-            result.add(new HugePageProcess(
-                pid, e.getValue(), -1, thp, state, e.getValue(), alive,
-                HugePageColor.forPid(pid, dark), false, false));
-        }
-        result.sort((a, b) -> Long.compare(b.thpKb, a.thpKb));
-        return result;
-    }
-
-    private static final class Owner {
-        final int pid;
-        final String comm;
-        final long served;
-
-        Owner(int pid, String comm, long served) {
-            this.pid = pid;
-            this.comm = comm;
-            this.served = served;
-        }
-    }
-
-    @NonNull
-    private List<Owner> parseOwners(@NonNull String raw) {
-        var list = new ArrayList<Owner>();
-        for (var line : raw.split("\n")) {
-            line = line.trim();
-            if (line.isEmpty()) continue;
-            // Format: pid=<n> served=<n> comm=<rest>
-            int pid = -1;
-            long served = 0;
-            String comm = "?";
-            int commIdx = line.indexOf("comm=");
-            if (commIdx >= 0) comm = line.substring(commIdx + 5).trim();
-            for (var tok : line.split("\\s+")) {
-                if (tok.startsWith("pid=")) {
-                    try {
-                        pid = Integer.parseInt(tok.substring(4));
-                    } catch (NumberFormatException ignored) {
-                    }
-                } else if (tok.startsWith("served=")) {
-                    try {
-                        served = Long.parseLong(tok.substring(7));
-                    } catch (NumberFormatException ignored) {
-                    }
-                }
-            }
-            if (pid > 0) list.add(new Owner(pid, comm, served));
-        }
-        return list;
     }
 
     private void showResult(
@@ -491,64 +364,62 @@ public final class HugePageProcessActivity extends AppCompatActivity
     }
 
     @Override
-    public void onAcquire() {
+    public void onAcquire(int mode) {
         if (acquireWatching) return;            // already polling a run
         Toast.makeText(this, R.string.hugepage_proc_acquire_running, LENGTH_SHORT).show();
         acquireWatching = true;
-        adapter.setAcquiring(true);             // immediate spinner feedback
+        acquireWatchMode = mode;                // remember which we just started
+        adapter.setAcquireState(true, mode);    // immediate spinner feedback
         // Fire-and-poll on a dedicated thread so the shared pool executor (and
         // thus the periodic refresh that animates the climbing numbers) is never
         // blocked. The kernel 'acquire' write returns immediately; the worker
         // migrates in the background and we watch acquire_active for completion.
         new Thread(() -> {
-            var caps = model.caps(false);
-            boolean v7 = caps.hasAcquire;
-            boolean triggered = false;
-            try {
-                if (v7) {
-                    triggered = run("echo 1 > %s/acquire", SYSFS_PARAMS).isSuccess();
-                } else if (caps.hasManualRefill) {
-                    triggered = run("echo 1 > %s/manual_refill", SYSFS_PARAMS).isSuccess();
-                }
-            } catch (Exception e) {
-                Log.w(TAG, "acquire trigger failed", e);
-            }
+            // Fill the pool via the acquire ladder: the migrating 'acquire' knob,
+            // degrading to 'manual_refill' on any failure (e.g. -ENOSYS on kernels
+            // that can't migrate). The trace's last entry says what actually ran.
+            var res = model.acquire(mode);
+            boolean triggered = res.ok();
+            // Only a migrating acquire mode exposes acquire_active to poll; the
+            // manual_refill fallback is fire-and-forget with no progress to watch.
+            boolean migrating = triggered && !"manual_refill".equals(res.impl);
+            final boolean degraded = res.degraded;      // ran below the requested mode
+            final String actualImpl = res.impl != null ? res.impl : "";
             if (!triggered) {
                 acquireWatching = false;
                 runOnUiThread(() -> Toast.makeText(this,
                     R.string.hugepage_refill_failed, LENGTH_SHORT).show());
                 return;
             }
-            if (!v7) {
-                // v6 (manual_refill): an async refill with no acquire_active to
-                // poll and no served=/pool_want to report a precise got/want.
-                // Just trigger it and let the periodic refresh animate the bar.
+            if (!migrating) {
+                // Fell all the way to manual_refill: async, no acquire_active/served
+                // to poll. Name the fallback (it is itself the degradation).
                 acquireWatching = false;
                 runOnUiThread(() -> {
-                    Toast.makeText(this, R.string.hugepage_proc_acquire_done,
-                        LENGTH_SHORT).show();
+                    Toast.makeText(this,
+                        getString(R.string.hugepage_acquire_degraded, actualImpl),
+                        LENGTH_LONG).show();
                     refresh();
                 });
                 return;
             }
-            // v7: poll until the worker clears acquire_active. Each tick nudges
+            // Migrating: poll until the worker clears acquire_active. Each tick nudges
             // the UI to re-read refill_stat so the count visibly climbs.
-            long[] pages = null;
-            for (int i = 0; i < ACQUIRE_POLL_MAX; i++) {
+            boolean running = true;
+            for (int i = 0; i < ACQUIRE_POLL_MAX && running; i++) {
                 try { Thread.sleep(ACQUIRE_POLL_MS); } catch (InterruptedException ignored) {}
-                pages = model.readPoolPages();  // {total, avail, want, acquiring, served}
-                runOnUiThread(this::refresh); // animate climbing numbers
-                if (pages == null || pages.length < 5 || pages[3] == 0) break;
+                runOnUiThread(this::refresh);   // animate climbing numbers (reads full state)
+                running = model.acquiring();    // cheap acquire_active-only probe
             }
-            var finalPages = pages;
+            var finalSnap = model.state();      // one full read for the final got/want
             acquireWatching = false;
             runOnUiThread(() -> {
-                if (finalPages != null && finalPages.length >= 5) {
+                if (finalSnap != null && finalSnap.loaded) {
                     // Achieved = owned + traced (pool_avail + served), NOT
                     // pool_total: after a shrink that left served pages out,
                     // pool_total under-counts the pages VMs already hold.
-                    long got = finalPages[1] + finalPages[4];
-                    long want = finalPages[2] >= 0 ? finalPages[2] : got;
+                    long got = finalSnap.free + finalSnap.lent;
+                    long want = finalSnap.targetIdeal;
                     String msg = got >= want
                         ? getString(R.string.hugepage_proc_acquire_full,
                             fmtPages(want))
@@ -559,20 +430,32 @@ public final class HugePageProcessActivity extends AppCompatActivity
                     Toast.makeText(this, R.string.hugepage_proc_acquire_done,
                         LENGTH_SHORT).show();
                 }
+                // Requested a higher mode than could run (e.g. v3 -> v2) -> name it.
+                if (degraded) Toast.makeText(this,
+                    getString(R.string.hugepage_acquire_degraded, actualImpl),
+                    LENGTH_LONG).show();
                 refresh();
             });
         }, "hugepage-acquire").start();
+    }
+
+    /** Short-press an acquire button: confirm (unless the user opted out), then run. */
+    @Override
+    public void onAcquireConfirm(int mode) {
+        HugePageActivity.confirmAcquire(this, mode, () -> onAcquire(mode));
+    }
+
+    /** Long-press an acquire button: explain the mode, with a Run/Cancel choice. */
+    @Override
+    public void onAcquireInfo(int mode) {
+        HugePageActivity.showAcquireInfo(this, mode, () -> onAcquire(mode));
     }
 
     /** Tapping the acquire spinner stops the run; the poll loop then finishes. */
     @Override
     public void onStopAcquire() {
         runOnPool(() -> {
-            try {
-                run("echo 0 > %s/acquire", SYSFS_PARAMS);
-            } catch (Exception e) {
-                Log.w(TAG, "stop acquire failed", e);
-            }
+            model.stopAcquire();
             runOnUiThread(this::refresh);
         });
     }

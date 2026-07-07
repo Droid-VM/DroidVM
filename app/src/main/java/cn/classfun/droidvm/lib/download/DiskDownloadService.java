@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.lib.download;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
 import static cn.classfun.droidvm.lib.utils.StringUtils.formatDuration;
 

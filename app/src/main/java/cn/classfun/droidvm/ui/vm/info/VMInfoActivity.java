@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm.info;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.store.enums.Enums.applyText;
@@ -229,7 +230,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
             var pinned = boot.getImageEntry();
             var label = getString(R.string.edit_vm_kernel_source_image);
             if (pinned != null && pinned.title != null)
-                return label + " | " + pinned.title;
+                return fmt("%s | %s", label, pinned.title);
             return label;
         }
         return basename(boot.getKernel());
@@ -368,8 +369,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
                     } catch (Exception e) {
                         guest = "?";
                     }
-                    lines.add(fwd.proto.toUpperCase() + "  *:" + fwd.host
-                        + " -> " + guest + ":" + fwd.guest);
+                    lines.add(fmt("%s  *:%s -> %s:%s", fwd.proto.toUpperCase(), fwd.host, guest, fwd.guest));
                 }
             }
             if (nic.isDhcp6LeaseEnabled() && vlan.isDhcp6Enabled()) {
@@ -383,8 +383,7 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
                     } catch (Exception e) {
                         guest = "?";
                     }
-                    lines.add(fwd.proto.toUpperCase() + "  *:" + fwd.host
-                        + " -> [" + guest + "]:" + fwd.guest);
+                    lines.add(fmt("%s  *:%s -> [%s]:%s", fwd.proto.toUpperCase(), fwd.host, guest, fwd.guest));
                 }
             }
         });

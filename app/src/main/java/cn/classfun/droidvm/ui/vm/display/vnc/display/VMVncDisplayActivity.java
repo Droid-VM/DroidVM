@@ -346,6 +346,15 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 return true;
             case MotionEvent.ACTION_POINTER_DOWN:
                 gestureMaxPointers = max(gestureMaxPointers, pc);
+                // Re-anchor the tap reference to the multi-finger midpoint and
+                // restart the tap window. The ACTION_DOWN anchor was a single
+                // finger position, so the two-finger midpoint sits ~half a
+                // finger-spread away and would instantly trip gestureMoved,
+                // making a still two-finger tap (right click) impossible.
+                gestureStartMidX = midX(event);
+                gestureStartMidY = midY(event);
+                gestureStartTime = System.currentTimeMillis();
+                gestureMoved = false;
                 if (pc == 2) initTwoFinger(event);
                 if (pc >= 3) lastScrollMidY = midY(event);
                 return true;
@@ -626,7 +635,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         var controller = getWindow().getInsetsController();
         if (controller == null) return;
         if (isFullscreen) {
-            hideBars();
+            mainHandler.removeCallbacks(this::hideBars);
+            toolbar.setVisibility(GONE);
+            statusBar.setVisibility(GONE);
             extraKeysPanel.setVisibility(GONE);
             controller.hide(WindowInsets.Type.systemBars());
             controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);

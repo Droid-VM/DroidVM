@@ -5,11 +5,12 @@ import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
-import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
+import android.content.Context;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Color;
@@ -20,6 +21,7 @@ import android.os.Looper;
 import android.view.View;
 import android.util.Log;
 import android.view.inputmethod.EditorInfo;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -31,6 +33,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
@@ -51,14 +54,15 @@ import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
 public final class HugePageActivity extends AppCompatActivity {
     private static final String TAG = "HugePageActivity";
-    private static final String SYSFS_BASE = "/sys/module/gh_hugepage_reserve";
-    private static final String SYSFS_PARAMS = pathJoin(SYSFS_BASE, "parameters");
     private static final String MAGISK_BASE = "/data/adb/modules/gh-hugepage-reserve";
-    private static final String MODULE_PROP = pathJoin(MAGISK_BASE, "module.prop");
     private static final String SETTINGS_PROP = pathJoin(MAGISK_BASE, "settings.prop");
     private static final String DISABLE_FILE = pathJoin(MAGISK_BASE, "disable");
     private static final String CRASH_FILE = pathJoin(MAGISK_BASE, "crash");
     private static final long PAGE_SIZE = 2L * 1024 * 1024; // 2MiB per page
+    // Shared app prefs (same store as Privacy/ApiManager) + the "don't ask again"
+    // flag for the acquire confirm dialog.
+    private static final String PREFS_NAME = "droidvm_prefs";
+    private static final String KEY_SKIP_ACQUIRE_CONFIRM = "hugepage_acquire_skip_confirm";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HugePageModel model = new HugePageModel();
     private boolean resumed = false;
@@ -75,7 +79,22 @@ public final class HugePageActivity extends AppCompatActivity {
     private boolean moduleHasPoolWant = false;
     private boolean moduleSoftDisabled = false;
     private boolean moduleAcquiring = false;
+    // Drives the acquire-mode slots (v1/v2/v3): true while a run is in flight.
+    // Set optimistically on tap, then reconciled from acquire_active
+    // (readPoolPages()[3]) by the periodic status refresh.
+    private boolean mainAcquiring = false;
+    private int mainAcquireMode = -1;   // running v (1/2/3); -1 = unknown (old module)
+    private boolean wasAcquiring = false;   // last-seen acquire_active, for the "done" toast
+    // Acquire buttons usable only when the module is loaded and there is a deficit
+    // to fill (avail+served < want); disabled at target, unloaded, or soft-disabled.
+    private boolean acquireEnabled = false;
     private MaterialButton btnViewProcesses;
+    private View btnAcquireV1;
+    private View btnAcquireV2;
+    private View btnAcquireV3;
+    private View progressAcquireV1;
+    private View progressAcquireV2;
+    private View progressAcquireV3;
     private SegmentedBar segPoolBar;
     private TextView tvPoolUsed;
     private TextView tvPoolAvail;
@@ -105,6 +124,12 @@ public final class HugePageActivity extends AppCompatActivity {
         saveTextColors = btnSavePoolSize.getTextColors();
         btnModuleToggle = findViewById(R.id.btn_module_toggle);
         btnViewProcesses = findViewById(R.id.btn_view_processes);
+        btnAcquireV1 = findViewById(R.id.btn_acquire_v1);
+        btnAcquireV2 = findViewById(R.id.btn_acquire_v2);
+        btnAcquireV3 = findViewById(R.id.btn_acquire_v3);
+        progressAcquireV1 = findViewById(R.id.progress_acquire_v1);
+        progressAcquireV2 = findViewById(R.id.progress_acquire_v2);
+        progressAcquireV3 = findViewById(R.id.progress_acquire_v3);
         segPoolBar = findViewById(R.id.seg_pool_bar);
         tvPoolUsed = findViewById(R.id.tv_pool_used);
         tvPoolAvail = findViewById(R.id.tv_pool_avail);
@@ -135,15 +160,154 @@ public final class HugePageActivity extends AppCompatActivity {
         //   loaded (v6, no knob) -> Disable (rmmod)
         btnModuleToggle.setOnClickListener(v -> {
             if (!moduleInstalled) openModulePage();
-            else if (!moduleLoaded) doLoad();
-            else if (moduleSoftDisabled) doSoftEnable();
-            else if (moduleHasPoolWant) doSoftDisable();
-            else confirmUnload();
+            else if (!moduleLoaded || moduleSoftDisabled) doEnable();
+            else if (moduleHasPoolWant) doDisable();   // v7: soft-disable (pool_want=0)
+            else confirmUnload();                       // v6: no soft knob -> confirm rmmod
         });
         btnViewProcesses.setOnClickListener(v -> startActivity(
             new Intent(this, HugePageProcessActivity.class)));
+        // Acquire-mode slots: each button starts its mode; each spinner (shown
+        // while a run is in flight) interrupts it. Listeners are static -- the
+        // slots aren't recycled -- and the idle/running visibility toggle is
+        // driven by applyAcquireState().
+        // Short-press opens the what-does-this-do dialog (or, once the user ticks
+        // "don't ask again", runs straight away) - gated to the pressable state.
+        // Long-press always opens the dialog, even when the button is greyed (the
+        // buttons stay enabled for that), so the prompt can be re-summoned any time.
+        btnAcquireV1.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 1, () -> startAcquire(1)); });
+        btnAcquireV2.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 2, () -> startAcquire(2)); });
+        btnAcquireV3.setOnClickListener(v -> { if (acquireEnabled && !mainAcquiring) confirmAcquire(this, 3, () -> startAcquire(3)); });
+        btnAcquireV1.setOnLongClickListener(v -> { showAcquireInfo(this, 1, () -> startAcquire(1)); return true; });
+        btnAcquireV2.setOnLongClickListener(v -> { showAcquireInfo(this, 2, () -> startAcquire(2)); return true; });
+        btnAcquireV3.setOnLongClickListener(v -> { showAcquireInfo(this, 3, () -> startAcquire(3)); return true; });
+        View.OnClickListener stopAcquire = v -> stopMainAcquire();
+        progressAcquireV1.setOnClickListener(stopAcquire);
+        progressAcquireV2.setOnClickListener(stopAcquire);
+        progressAcquireV3.setOnClickListener(stopAcquire);
+        applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
         loadPoolSize();
+    }
+
+    /**
+     * Reflect {@link #mainAcquiring}/{@link #mainAcquireMode} on the three slots:
+     *   idle                      -> all enabled buttons, no spinners;
+     *   running, mode unknown(-1) -> all three spin (module can't report the mode);
+     *   running, mode 1/2/3       -> that slot spins, the other two are disabled buttons.
+     * Click listeners are static (set in initialize); a disabled button ignores taps.
+     */
+    private void applyAcquireState() {
+        applyAcquireSlot(btnAcquireV1, progressAcquireV1, 1);
+        applyAcquireSlot(btnAcquireV2, progressAcquireV2, 2);
+        applyAcquireSlot(btnAcquireV3, progressAcquireV3, 3);
+    }
+
+    private void applyAcquireSlot(View btn, View spinner, int mode) {
+        boolean spin = mainAcquiring && (mainAcquireMode < 0 || mainAcquireMode == mode);
+        btn.setVisibility(spin ? GONE : VISIBLE);
+        // Left enabled so a long-press always opens the info dialog; the short-press
+        // is gated in its click handler, and the icon+badge greys via alpha when it
+        // can't run (a run in flight, or no deficit / not loaded).
+        btn.setAlpha((!mainAcquiring && acquireEnabled) ? 1f : 0.38f);
+        spinner.setVisibility(spin ? VISIBLE : GONE);
+    }
+
+    /**
+     * Short-press an acquire button: run straight away if the user ticked "don't
+     * ask again" in a past prompt, otherwise show the confirm dialog. Long-press
+     * bypasses this and always shows the dialog (see {@link #showAcquireInfo}).
+     */
+    static void confirmAcquire(@NonNull Context ctx, int mode, @NonNull Runnable onRun) {
+        if (skipAcquireConfirm(ctx)) onRun.run();
+        else showAcquireInfo(ctx, mode, onRun);
+    }
+
+    /**
+     * Explain what the acquire mode does, with a Run/Cancel choice and a "don't ask
+     * again" checkbox. The checkbox seeds from and (on any dismiss) writes back the
+     * skip preference, so it doubles as the way to re-enable the prompt after opting
+     * out; Run additionally starts the acquire. Shared by both hugepage screens, for
+     * short-press (via {@link #confirmAcquire}) and long-press alike. The title is
+     * always "Acquire huge pages" - the mode is conveyed by the explanation text.
+     */
+    static void showAcquireInfo(@NonNull Context ctx, int mode, @NonNull Runnable onRun) {
+        int msg = mode == 2 ? R.string.hugepage_acquire_v2_explain
+            : mode == 3 ? R.string.hugepage_acquire_v3_explain
+            : R.string.hugepage_acquire_v1_explain;
+        // "Don't ask again", indented to line up with the dialog's message text.
+        float density = ctx.getResources().getDisplayMetrics().density;
+        var dontAsk = new MaterialCheckBox(ctx);
+        dontAsk.setText(R.string.hugepage_acquire_dont_ask);
+        dontAsk.setChecked(skipAcquireConfirm(ctx));
+        var holder = new FrameLayout(ctx);
+        int padH = Math.round(24 * density);
+        holder.setPaddingRelative(padH, Math.round(4 * density), padH, 0);
+        holder.addView(dontAsk);
+        new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.hugepage_acquire_pages_title)   // no v1/v2/v3 suffix
+            .setMessage(msg)
+            .setView(holder)
+            .setPositiveButton(R.string.hugepage_acquire_run, (d, w) -> onRun.run())
+            .setNegativeButton(android.R.string.cancel, null)
+            .setOnDismissListener(d -> setSkipAcquireConfirm(ctx, dontAsk.isChecked()))
+            .show();
+    }
+
+    /** True once the user opted out of the acquire prompt (short-press runs directly). */
+    static boolean skipAcquireConfirm(@NonNull Context ctx) {
+        return ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_SKIP_ACQUIRE_CONFIRM, false);
+    }
+
+    private static void setSkipAcquireConfirm(@NonNull Context ctx, boolean skip) {
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY_SKIP_ACQUIRE_CONFIRM, skip).apply();
+    }
+
+    /**
+     * Start filling the pool with acquire algorithm {@code mode} (see
+     * {@link HugePageModel#acquire}). Optimistically shows the spinners, fires the
+     * knob write on a dedicated thread (so the pool executor and its status poll
+     * stay free), and lets the periodic refresh reconcile the spinner from
+     * acquire_active. A failed trigger reverts immediately.
+     */
+    private void startAcquire(int mode) {
+        if (mainAcquiring) return;              // already running
+        Toast.makeText(this, R.string.hugepage_proc_acquire_running, LENGTH_SHORT).show();
+        mainAcquiring = true;
+        mainAcquireMode = mode;                 // we know which we just started
+        applyAcquireState();                    // immediate spinner feedback
+        new Thread(() -> {
+            var res = model.acquire(mode);
+            if (!res.ok()) {
+                mainAcquiring = false;
+                runOnUiThread(() -> {
+                    Toast.makeText(this, R.string.hugepage_refill_failed,
+                        LENGTH_SHORT).show();
+                    applyAcquireState();
+                });
+                return;
+            }
+            // Triggered: the periodic refresh reads acquire_active and keeps the
+            // spinner up until the worker clears it. This screen doesn't track
+            // completion, so if the mode degraded below what was asked, say so now.
+            final String actualImpl = res.impl != null ? res.impl : "";
+            final boolean degraded = res.degraded;
+            runOnUiThread(() -> {
+                if (degraded) Toast.makeText(this,
+                    getString(R.string.hugepage_acquire_degraded, actualImpl),
+                    Toast.LENGTH_LONG).show();
+                refreshStatus();
+            });
+        }, "hugepage-acquire").start();
+    }
+
+    /** Tapping an acquire spinner interrupts the run; the refresh clears the flag. */
+    private void stopMainAcquire() {
+        runOnPool(() -> {
+            model.stopAcquire();
+            runOnUiThread(this::refreshStatus);
+        });
     }
 
     private void openModulePage() {
@@ -172,75 +336,24 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     private void refreshStatus() {
-        refreshStatus(false);
-    }
-
-    /**
-     * @param forceCaps re-probe module capabilities immediately (bypass the
-     *                  cache) - pass true right after loading/unloading so the UI
-     *                  reflects the new module state without the cache's lag.
-     */
-    private void refreshStatus(boolean forceCaps) {
         runOnPool(() -> {
-            var caps = model.caps(forceCaps);
-            var moduleInst = shellCheckExists(MODULE_PROP);
-            var moduleLoaded = caps.loaded;
-            var moduleDisabled = shellCheckExists(DISABLE_FILE);
+            // One version-unified read of module + pool state.
+            var snap = model.state();
             var crashStamp = shellCheckExists(CRASH_FILE);
-            var refillStat = "";
-            var servedSummary = "";
-            var koAttribution = false;
-            if (moduleLoaded) try {
-                refillStat = shellReadFile(pathJoin(SYSFS_PARAMS, "refill_stat"));
-                // Reconcile + read per-VM served pages so this screen's bar shows
-                // the exact same per-VM breakdown as the usage screen's bar.
-                if (caps.koAttribution) {
-                    run("echo 1 > %s/reconcile", SYSFS_PARAMS);
-                    servedSummary = shellReadFile(pathJoin(SYSFS_PARAMS, "served_summary"));
-                    koAttribution = true;
+            // Per-VM breakdown through the usage ladder (KO attribution, degrading
+            // to a THP scan of running VMs), so this bar matches the usage screen.
+            // Each segment is labelled with the friendly VM name from vmMap.
+            List<long[]> owners = new ArrayList<>();
+            if (snap.loaded) {
+                for (var e : model.usage(null).entries) {
+                    if (e.pages > 0) owners.add(new long[]{e.pid, e.pages});
                 }
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to read parameters", e);
             }
-            var stats = parseProp(refillStat);
-            // pid -> friendly VM name, so each used segment is labelled "w11"
-            // like the usage screen. Old modules without the KO attribution API
-            // (no served_summary) fall back to a system THP scan of running VMs,
-            // mirroring the usage screen's "scan" mode, instead of showing the
-            // unavailable per-VM module-attribution breakdown.
-            List<long[]> owners;
-            Map<Integer, String> vmMap;
-            if (koAttribution) {
-                owners = parseServedOwners(servedSummary);
-                vmMap = owners.isEmpty() ? new LinkedHashMap<>() : model.vmNames(false);
-            } else {
-                vmMap = moduleLoaded ? model.vmNames(false) : new LinkedHashMap<>();
-                owners = model.scanThpPages(vmMap.keySet());
-            }
-            runOnUiThread(() -> updateUI(
-                moduleInst, moduleLoaded, moduleDisabled, crashStamp, stats, owners, vmMap
-            ));
+            // Only fetch VM names when there are rows to label.
+            Map<Integer, String> vmMap = owners.isEmpty()
+                ? new LinkedHashMap<>() : model.vmNames(false);
+            runOnUiThread(() -> updateUI(snap, crashStamp, owners, vmMap));
         });
-    }
-
-    /** Parse served_summary "owner ... pid=N pages=M" lines into {pid, pages}. */
-    @NonNull
-    private List<long[]> parseServedOwners(@NonNull String raw) {
-        var owners = new ArrayList<long[]>();
-        for (var line : raw.split("\n")) {
-            line = line.trim();
-            if (!line.startsWith("owner ")) continue;
-            long pid = -1, pages = 0;
-            for (var tok : line.split("\\s+")) {
-                try {
-                    if (tok.startsWith("pid=")) pid = Long.parseLong(tok.substring(4));
-                    else if (tok.startsWith("pages=")) pages = Long.parseLong(tok.substring(6));
-                } catch (NumberFormatException ignored) {
-                }
-            }
-            if (pid > 0 && pages > 0) owners.add(new long[]{pid, pages});
-        }
-        return owners;
     }
 
     @NonNull
@@ -258,86 +371,65 @@ public final class HugePageActivity extends AppCompatActivity {
         tv.setText(getString(str, pages, SizeUtils.formatSize(pages * PAGE_SIZE)));
     }
 
-    private long getPages(@NonNull Map<String, String> stats, @NonNull String key) {
-        var value = stats.get(key);
-        if (value == null) return 0;
-        return Long.parseLong(value);
-    }
-
     private void updateUI(
-        boolean installed, boolean loaded,
-        boolean disabled, boolean crashed,
-        @NonNull Map<String, String> stats,
+        @NonNull HugePageModel.Snapshot snap, boolean crashed,
         @NonNull List<long[]> owners,
         @NonNull Map<Integer, String> vmMap
     ) {
         if (isFinishing()) return;
         cardCrashWarning.setVisibility(crashed ? VISIBLE : GONE);
-        cardNotLoaded.setVisibility(loaded ? GONE : VISIBLE);
-        if (loaded && !stats.isEmpty()) {
-            rowStatState.setValue(stats.getOrDefault("state", "-"));
-            rowStatTotalServed.setValue(stats.getOrDefault("total_served", "-"));
-            rowStatTotalRefilled.setValue(stats.getOrDefault("total_refilled", "-"));
-            rowStatActiveVms.setValue(stats.getOrDefault("active_vms", "-"));
-            try {
-                var poolAvail = getPages(stats, "pool_avail");
-                var poolTotal = getPages(stats, "pool_total");
-                // "total" shows the desired target (pool_want); grow raises it
-                // while capacity (pool_total) only rises via acquire. Old
-                // modules without pool_want fall back to capacity.
-                var poolWant = getPages(stats, "pool_want");
-                if (poolWant <= 0) poolWant = poolTotal;
-                // Apple-storage-bar style: one labelled colored block per VM
-                // (used), then the available portion as a track-coloured gap,
-                // then the waiting-to-acquire (deficit) block pinned flush right.
-                // Each block draws its label inside if wide enough.
-                boolean dark = HugePageColor.isDark(this);
-                int n = owners.size();
-                int[] usedColors = new int[n];
-                float[] usedValues = new float[n];
-                String[] usedLabels = new String[n];
-                long seg = 0;
-                for (int i = 0; i < n; i++) {
-                    int pid = (int) owners.get(i)[0];
-                    long ownerPages = owners.get(i)[1];
-                    usedColors[i] = HugePageColor.forPid(pid, dark);
-                    usedValues[i] = ownerPages;
-                    String name = vmMap.get(pid);
-                    if (name == null) name = getString(R.string.hugepage_proc_pid, pid);
-                    // Two stacked lines: label over capacity.
-                    usedLabels[i] = name + "\n" + SizeUtils.formatSize(ownerPages * PAGE_SIZE);
-                    seg += ownerPages;
-                }
-                // "used" is the sum of the segments the bar draws, so the caption
-                // and the bar always agree (one canonical quantity: the per-VM
-                // served/scanned pages). The kernel 'served' counter can include
-                // orphaned owner-gone pages that have no segment; those surface in
-                // the held/available gap rather than as an invisible caption delta.
-                long used = seg;
-                long deficit = Math.max(0, poolWant - seg - poolAvail);
-                // 2x2 caption: used / available on top, total / pool-size below.
-                // Total = real held reserve (used + avail), shown raw - no clamp
-                // to the pool size, so a kernel that fails to release on shrink
-                // shows up as total > the size you set.
-                var held = used + poolAvail;
-                setPagesString(tvPoolUsed, R.string.hugepage_stat_pool_used, used);
-                setPagesString(tvPoolAvail, R.string.hugepage_stat_pool_available, poolAvail);
-                setPagesString(tvPoolTotal, R.string.hugepage_stat_pool_total, held);
-                setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
-                segPoolBar.setStorage(usedColors, usedValues, usedLabels,
-                    poolAvail, getString(R.string.hugepage_bar_available)
-                        + "\n" + SizeUtils.formatSize(poolAvail * PAGE_SIZE),
-                    HugePageColor.pending(this), deficit,
-                    getString(R.string.hugepage_proc_deficit)
-                        + "\n" + SizeUtils.formatSize(deficit * PAGE_SIZE),
-                    poolWant);
-            } catch (NumberFormatException e) {
-                tvPoolUsed.setText("-");
-                tvPoolAvail.setText("-");
-                tvPoolTotal.setText("-");
-                tvPoolSize.setText("-");
-                segPoolBar.setData(new int[0], new float[0], 0f);
+        cardNotLoaded.setVisibility(snap.loaded ? GONE : VISIBLE);
+        if (snap.loaded && snap.statsOk) {
+            rowStatState.setValue(snap.state);
+            rowStatTotalServed.setValue(snap.totalServed);
+            rowStatTotalRefilled.setValue(snap.totalRefilled);
+            rowStatActiveVms.setValue(snap.activeVms);
+            var poolAvail = snap.free;
+            // "total" shows the desired target - the model's version-unified
+            // want (pool_want, else v6 pool_target, else current capacity).
+            var poolWant = snap.targetIdeal;
+            // Apple-storage-bar style: one labelled colored block per VM
+            // (used), then the available portion as a track-coloured gap,
+            // then the waiting-to-acquire (deficit) block pinned flush right.
+            // Each block draws its label inside if wide enough.
+            boolean dark = HugePageColor.isDark(this);
+            int n = owners.size();
+            int[] usedColors = new int[n];
+            float[] usedValues = new float[n];
+            String[] usedLabels = new String[n];
+            long seg = 0;
+            for (int i = 0; i < n; i++) {
+                int pid = (int) owners.get(i)[0];
+                long ownerPages = owners.get(i)[1];
+                usedColors[i] = HugePageColor.forPid(pid, dark);
+                usedValues[i] = ownerPages;
+                String name = vmMap.get(pid);
+                if (name == null) name = getString(R.string.hugepage_proc_pid, pid);
+                // Two stacked lines: label over capacity.
+                usedLabels[i] = fmt("%s\n%s", name, SizeUtils.formatSize(ownerPages * PAGE_SIZE));
+                seg += ownerPages;
             }
+            // "used" is the sum of the segments the bar draws, so the caption
+            // and the bar always agree (one canonical quantity: the per-VM
+            // served/scanned pages). The kernel 'served' counter can include
+            // orphaned owner-gone pages that have no segment; those surface in
+            // the held/available gap rather than as an invisible caption delta.
+            long used = seg;
+            long deficit = Math.max(0, poolWant - seg - poolAvail);
+            // 2x2 caption: used / available on top, total / pool-size below.
+            // Total = real held reserve (used + avail), shown raw - no clamp
+            // to the pool size, so a kernel that fails to release on shrink
+            // shows up as total > the size you set.
+            var held = used + poolAvail;
+            setPagesString(tvPoolUsed, R.string.hugepage_stat_pool_used, used);
+            setPagesString(tvPoolAvail, R.string.hugepage_stat_pool_available, poolAvail);
+            setPagesString(tvPoolTotal, R.string.hugepage_stat_pool_total, held);
+            setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
+            segPoolBar.setStorage(usedColors, usedValues, usedLabels,
+                poolAvail, fmt("%s\n%s", getString(R.string.hugepage_bar_available), SizeUtils.formatSize(poolAvail * PAGE_SIZE)),
+                HugePageColor.pending(this), deficit,
+                fmt("%s\n%s", getString(R.string.hugepage_proc_deficit), SizeUtils.formatSize(deficit * PAGE_SIZE)),
+                poolWant);
         } else {
             rowStatState.setValue(getString(R.string.hugepage_stats_unavailable));
             rowStatTotalServed.setValue(null);
@@ -353,85 +445,107 @@ public final class HugePageActivity extends AppCompatActivity {
         // floppy icon kept) but stays pressable: tapping it then interrupts the
         // acquire, keeping the current size (see the click handler). pool_want is
         // settable any time now, so neither button needs to be disabled.
-        boolean acquiring = loaded && "1".equals(stats.get("acquire_active"));
+        boolean acquiring = snap.acquiring;
         moduleAcquiring = acquiring;
+        // Reconcile the acquire slots from acquire_active + acquire_mode so a run
+        // that finishes (or was started elsewhere) toggles spinners<->buttons, and
+        // only the running mode spins. acquire_mode is -1 on old modules -> makes
+        // all three spin.
+        int mode = acquiring ? snap.acquireMode : -1;
+        // A real acquire_active 1 -> 0 edge = the worker finished; announce the
+        // achieved size (this screen is fire-and-forget - unlike the process list,
+        // which polls). Track the kernel flag, not the optimistic mainAcquiring, so
+        // an acquire that never actually started can't fake a "done".
+        if (wasAcquiring && !acquiring) {
+            long got = snap.free + snap.lent;
+            long want = snap.targetIdeal;
+            String msg = got >= want
+                    ? getString(R.string.hugepage_proc_acquire_full,
+                        SizeUtils.formatSize(want * PAGE_SIZE))
+                    : getString(R.string.hugepage_proc_acquire_partial,
+                        SizeUtils.formatSize(got * PAGE_SIZE),
+                        SizeUtils.formatSize(want * PAGE_SIZE));
+            // Append why the acquire stopped (kernel free text from refill_stat's
+            // acquire_stop_reason), so the user sees the reason in the bubble.
+            String reason = snap.acquireStopReason;
+            if (!reason.isEmpty() && !"-".equals(reason))
+                msg += "\n" + reason;
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+        }
+        wasAcquiring = acquiring;
+        if (mainAcquiring != acquiring || mainAcquireMode != mode) {
+            mainAcquiring = acquiring;
+            mainAcquireMode = mode;
+            applyAcquireState();
+        }
         progressSavePoolSize.setVisibility(acquiring ? VISIBLE : GONE);
         if (acquiring) btnSavePoolSize.setTextColor(Color.TRANSPARENT);
         else btnSavePoolSize.setTextColor(saveTextColors);
-        btnSavePoolSize.setEnabled(installed);
+        btnSavePoolSize.setEnabled(snap.installed);
         // Install / Enable / Disable. "Disable" on v7 shrinks the pool to one
         // page (frees memory) but keeps the module loaded so it never loses
         // per-VM tracking; soft-disabled shows "Enable" again. v6 has no
         // pool_want knob, so Disable falls back to rmmod.
-        moduleInstalled = installed;
-        moduleLoaded = loaded;
-        moduleHasPoolWant = stats.containsKey("pool_want");
-        moduleSoftDisabled = loaded && moduleHasPoolWant
-            && getPages(stats, "pool_want") <= 1;
+        moduleInstalled = snap.installed;
+        moduleLoaded = snap.loaded;
+        moduleHasPoolWant = snap.hasPoolWant;
+        moduleSoftDisabled = snap.softDisabled;
         btnModuleToggle.setEnabled(true);
-        if (!installed) {
+        if (!snap.installed) {
             btnModuleToggle.setText(R.string.hugepage_btn_install);
             btnModuleToggle.setIconResource(R.drawable.ic_download);
-        } else if (!loaded || moduleSoftDisabled) {
+        } else if (!snap.loaded || snap.softDisabled) {
             btnModuleToggle.setText(R.string.hugepage_btn_enable);
             btnModuleToggle.setIconResource(R.drawable.ic_start);
         } else {
             btnModuleToggle.setText(R.string.hugepage_btn_disable);
             btnModuleToggle.setIconResource(R.drawable.ic_stop);
         }
-        rowModuleEnable.setEnabled(installed);
-        rowModuleEnable.setChecked(!disabled);
+        rowModuleEnable.setEnabled(snap.installed);
+        rowModuleEnable.setChecked(snap.bootEnabled);
+
+        // Acquire buttons usable exactly when there is a deficit to fill. The
+        // model's version-unified deficit already folds in v6 (no pool_want) and
+        // soft-disable (want 0), so there is no version branching here.
+        acquireEnabled = snap.loaded && snap.deficit > 0;
+        applyAcquireState();
     }
 
-    private void doLoad() {
+    /**
+     * Bring the pool up: load the module (if unloaded) or restore the saved target
+     * (if soft-disabled), then kick one gentle v1 fill toward it. The model picks
+     * the version-appropriate path (insmod / pool_want write) and reads the size
+     * from settings.prop itself.
+     */
+    private void doEnable() {
         btnModuleToggle.setEnabled(false);
         runOnPool(() -> {
-            if (shellCheckExists(SYSFS_BASE)) {
-                runOnUiThread(() -> {
-                    Toast.makeText(this, R.string.hugepage_already_loaded,
-                        LENGTH_SHORT).show();
-                    refreshStatus(true);
-                });
-                return;
-            }
-            // Read the configured size from settings.prop in Java (rather than
-            // sourcing it in shell). v7 reads pool_want, older builds pool_target.
-            var size = "1024";
-            if (shellCheckExists(SETTINGS_PROP)) {
-                var settings = parseProp(shellReadFile(SETTINGS_PROP));
-                size = settings.getOrDefault("pool_want",
-                    settings.getOrDefault("pool_target", "1024"));
-            }
-            // Insmod compatibly across versions: v7 takes pool_want, older builds
-            // take pool_target, anything else loads bare. First success wins.
-            var ko = pathJoin(MAGISK_BASE, "gh_hugepage_reserve.ko");
-            var result =
-                run("insmod \"%s\" pool_want=\"%s\"", ko, size).isSuccess()
-                    || run("insmod \"%s\" pool_target=\"%s\"", ko, size).isSuccess()
-                    || run("insmod \"%s\"", ko).isSuccess();
+            var res = model.setRuntimeEnabled(true);
+            if (res.ok()) model.acquire(1);   // GUI drives the fill (v1 = gentlest)
             runOnUiThread(() -> {
-                Toast.makeText(this, result
-                        ? R.string.hugepage_loaded
-                        : R.string.hugepage_load_failed,
+                Toast.makeText(this, res.ok()
+                    ? R.string.hugepage_loaded : R.string.hugepage_load_failed,
                     LENGTH_SHORT).show();
-                refreshStatus(true);
+                refreshStatus();
             });
         });
     }
 
     /**
-     * Soft-disable (v7): shrink the pool to a single page so the reserved memory
-     * is freed back to the system, but keep the module loaded so it never loses
-     * per-VM tracking (unlike rmmod). settings.prop is left untouched, so the
-     * next boot still allocates the configured capacity.
+     * Take the pool down: soft-disable (shrink pool_want to 0, module stays loaded
+     * so per-VM tracking survives) where supported, else rmmod (v6). The module
+     * refuses a resize mid-acquire, so the running worker is stopped first.
      */
-    private void doSoftDisable() {
+    private void doDisable() {
         btnModuleToggle.setEnabled(false);
         runOnPool(() -> {
-            // The module refuses a resize mid-acquire, so stop the worker first.
             stopAcquireAndWait();
-            run("echo 1 > %s/pool_want", SYSFS_PARAMS);
-            runOnUiThread(this::refreshStatus);
+            var res = model.setRuntimeEnabled(false);
+            runOnUiThread(() -> {
+                if (!res.ok()) Toast.makeText(this,
+                    R.string.hugepage_unload_failed, LENGTH_SHORT).show();
+                refreshStatus();
+            });
         });
     }
 
@@ -442,7 +556,7 @@ public final class HugePageActivity extends AppCompatActivity {
      */
     private void interruptAcquire() {
         runOnPool(() -> {
-            run("echo 0 > %s/acquire", SYSFS_PARAMS);
+            model.stopAcquire();
             runOnUiThread(this::refreshStatus);
         });
     }
@@ -450,39 +564,20 @@ public final class HugePageActivity extends AppCompatActivity {
     /**
      * Interrupt any running acquire and block (on the pool thread) until the
      * worker is quiescent. pool_want can't be set while an acquire runs, so call
-     * this before writing pool_want. The worker can be mid-migration, so this may
-     * take a moment; bounded so a wedged worker can't hang us forever.
+     * this before a soft-disable. The worker can be mid-migration, so this may take
+     * a moment; bounded so a wedged worker can't hang us forever.
      */
     private void stopAcquireAndWait() {
-        if (!shellCheckExists(pathJoin(SYSFS_PARAMS, "acquire"))) return;
-        run("echo 0 > %s/acquire", SYSFS_PARAMS);
+        if (!model.acquiring()) return;   // nothing running (also the v6 case)
+        model.stopAcquire();
         for (int i = 0; i < 60; i++) {
-            var st = parseProp(shellReadFile(pathJoin(SYSFS_PARAMS, "refill_stat")));
-            if (!"1".equals(st.get("acquire_active"))) return;
+            if (!model.acquiring()) return;
             try {
                 Thread.sleep(500);
             } catch (InterruptedException ignored) {
                 return;
             }
         }
-    }
-
-    /** Re-enable a soft-disabled pool: restore the configured size and refill. */
-    private void doSoftEnable() {
-        btnModuleToggle.setEnabled(false);
-        runOnPool(() -> {
-            var size = "1024";
-            if (shellCheckExists(SETTINGS_PROP)) {
-                var s = parseProp(shellReadFile(SETTINGS_PROP));
-                size = s.getOrDefault("pool_want",
-                    s.getOrDefault("pool_target", "1024"));
-            }
-            run("echo %s > %s/pool_want", size, SYSFS_PARAMS);
-            if (shellCheckExists(pathJoin(SYSFS_PARAMS, "acquire"))) {
-                run("echo 1 > %s/acquire", SYSFS_PARAMS);
-            }
-            runOnUiThread(this::refreshStatus);
-        });
     }
 
     private void loadPoolSize() {
@@ -562,32 +657,19 @@ public final class HugePageActivity extends AppCompatActivity {
                     LENGTH_SHORT).show());
                 return;
             }
-            // Persist for the next load. Write BOTH keys so the size survives
-            // whichever module/loader is installed at boot: v7's loader reads
-            // pool_want, an older (v6) package's loader reads pool_target.
-            var wroteWant = run("echo 'pool_want=%s' > %s",
-                pages.toString(), SETTINGS_PROP).isSuccess();
-            var wroteTarget = run("echo 'pool_target=%s' >> %s",
-                pages.toString(), SETTINGS_PROP).isSuccess();
-            var result = wroteWant && wroteTarget;
-            // Apply at runtime via the single pool_want knob: shrink frees excess
-            // now, grow only raises the target (Acquire fills it). Old modules
-            // without pool_want just keep the saved value (effective next reboot).
-            var applied = false;
-            if (shellCheckExists(pathJoin(SYSFS_PARAMS, "pool_want"))) {
-                applied = run("echo %s > %s/pool_want",
-                    pages.toString(), SYSFS_PARAMS).isSuccess();
-                // Saving also kicks off one acquire so a grown target starts
-                // filling immediately (a shrink just makes the worker exit at
-                // once). The 1 s status poll then animates the bar + Save spinner.
-                if (applied && shellCheckExists(pathJoin(SYSFS_PARAMS, "acquire"))) {
-                    run("echo 1 > %s/acquire", SYSFS_PARAMS);
-                }
-            }
-            var finalApplied = applied;
+            // Persist for the next load and apply to the running pool where the
+            // live knob exists (v7); v6's read-only target only lands next boot.
+            var res = model.saveSize(pages.longValue());
+            // A grow leaves a deficit -> kick one v1 fill so the raised target
+            // starts filling at once (a shrink is applied by the write itself).
+            // The GUI drives acquire; the model's saveSize deliberately doesn't.
+            var snap = model.state();
+            if (res.ok() && snap.loaded && snap.deficit > 0) model.acquire(1);
+            boolean okSaved = res.ok();
+            boolean appliedNow = "pool_want".equals(res.impl);   // live write actually landed
             runOnUiThread(() -> {
-                int msg = !result ? R.string.hugepage_pool_size_failed
-                    : finalApplied ? R.string.hugepage_pool_size_applied
+                int msg = !okSaved ? R.string.hugepage_pool_size_failed
+                    : appliedNow ? R.string.hugepage_pool_size_applied
                     : R.string.hugepage_pool_size_saved;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
                 refreshStatus();
@@ -597,13 +679,11 @@ public final class HugePageActivity extends AppCompatActivity {
 
     private void doToggleModule() {
         var enabled = rowModuleEnable.isChecked();
-        if (shellCheckExists(DISABLE_FILE) != enabled) return;
+        if (shellCheckExists(DISABLE_FILE) != enabled) return;   // ignore the programmatic echo
         runOnPool(() -> {
-            var result = enabled ?
-                runList("rm", "-f", DISABLE_FILE) :
-                runList("touch", DISABLE_FILE);
+            var res = model.setBootEnabled(enabled);
             runOnUiThread(() -> {
-                if (result.isSuccess()) {
+                if (res.ok()) {
                     var msg = enabled ?
                         R.string.hugepage_module_now_enabled :
                         R.string.hugepage_module_now_disabled;
@@ -618,23 +698,9 @@ public final class HugePageActivity extends AppCompatActivity {
         new MaterialAlertDialogBuilder(this)
             .setTitle(R.string.hugepage_stop)
             .setMessage(R.string.hugepage_stop_confirm)
-            .setPositiveButton(R.string.hugepage_stop, (d, w) -> doUnload())
+            .setPositiveButton(R.string.hugepage_stop, (d, w) -> doDisable())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
-    }
-
-    private void doUnload() {
-        btnModuleToggle.setEnabled(false);
-        runOnPool(() -> {
-            var result = runList("rmmod", "gh_hugepage_reserve").isSuccess();
-            runOnUiThread(() -> {
-                var msg = result ?
-                    R.string.hugepage_unloaded :
-                    R.string.hugepage_unload_failed;
-                Toast.makeText(this, msg, LENGTH_SHORT).show();
-                refreshStatus(true);
-            });
-        });
     }
 
     private void doDismissCrash() {

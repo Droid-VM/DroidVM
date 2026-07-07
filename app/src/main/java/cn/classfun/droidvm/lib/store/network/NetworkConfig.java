@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.lib.store.network;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -30,7 +31,7 @@ public class NetworkConfig extends DataConfig {
     public NetworkConfig(@NonNull JSONObject obj) throws JSONException {
         item.set(obj);
         if (!isSupportedSchema(obj)) throw new JSONException(
-            "Unsupported network config schema (expected " + SCHEMA_VERSION + ")"
+            fmt("Unsupported network config schema (expected %s)", SCHEMA_VERSION)
         );
     }
 
@@ -57,7 +58,7 @@ public class NetworkConfig extends DataConfig {
         try {
             return migrateLegacyToV2(obj);
         } catch (Exception e) {
-            Log.w(TAG, "Failed to migrate legacy network config: " + obj.optString("name"), e);
+            Log.w(TAG, fmt("Failed to migrate legacy network config: %s", obj.optString("name")), e);
             return null;
         }
     }

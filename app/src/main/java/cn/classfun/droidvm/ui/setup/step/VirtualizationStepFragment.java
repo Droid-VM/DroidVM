@@ -5,14 +5,24 @@ import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
 import static cn.classfun.droidvm.ui.setup.SetupActivity.CHECK_DELAY;
 
+import android.content.Context;
+import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ImageSpan;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.annotation.ColorRes;
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+
+import java.util.Objects;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
@@ -46,15 +56,17 @@ public final class VirtualizationStepFragment extends BaseCheckStepFragment {
         threadSleep(CHECK_DELAY);
         boolean success = false;
         var ctx = requireContext();
-        var displayString = new StringBuilder();
+        // Per-hypervisor line with an inline check/cross icon (not an emoji) for
+        // its supported state; a Spannable carries the ImageSpans into the detail
+        // TextView. Built off the UI thread -- ImageSpan only holds a Drawable, it
+        // touches no view -- then handed to showDetail() on the UI thread.
+        var detail = new SpannableStringBuilder();
         for (var hyp : VMHypervisor.values()) {
             if (hyp.getDevicePath() == null) continue;
             var supported = hyp.isSupported();
-            displayString.append(fmt(
-                "%s: %s\n",
-                hyp.getDisplayString(ctx),
-                supported ? "✅" : "❌"
-            ));
+            if (detail.length() > 0) detail.append('\n');
+            detail.append(hyp.getDisplayString(ctx)).append(": ");
+            appendStatusIcon(detail, ctx, supported);
             Log.i(TAG, fmt(
                 "%s: %s",
                 hyp.name().toLowerCase(),
@@ -70,8 +82,24 @@ public final class VirtualizationStepFragment extends BaseCheckStepFragment {
             } else {
                 showError(R.string.setup_virt_title, R.string.setup_virt_fail);
             }
-            showDetail(displayString.toString());
+            showDetail(detail);
         });
+    }
+
+    /** Appends a tinted check (supported) or cross (unsupported) icon inline. */
+    private static void appendStatusIcon(
+        @NonNull SpannableStringBuilder sb, @NonNull Context ctx, boolean supported
+    ) {
+        @DrawableRes int icon = supported ? R.drawable.ic_check : R.drawable.ic_close;
+        @ColorRes int tint = supported ? R.color.status_supported : R.color.status_unsupported;
+        Drawable d = Objects.requireNonNull(ContextCompat.getDrawable(ctx, icon)).mutate();
+        int size = Math.round(ctx.getResources().getDisplayMetrics().density * 16);
+        d.setBounds(0, 0, size, size);
+        d.setTint(ContextCompat.getColor(ctx, tint));
+        int start = sb.length();
+        sb.append(' '); // placeholder glyph the span draws over
+        sb.setSpan(new ImageSpan(d, ImageSpan.ALIGN_CENTER),
+            start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     @Override

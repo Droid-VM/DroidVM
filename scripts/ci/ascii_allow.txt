@@ -1,0 +1,25 @@
+# Files permitted to contain non-ASCII bytes. Everything else tracked in the
+# repo must be pure 7-bit ASCII (enforced by check_ascii.py). One glob per line;
+# blank lines and '#' comments are ignored. Globs are matched against the
+# repo-relative path (POSIX '/'), and '*' also spans '/'.
+#
+# Only genuine natural-language / i18n content belongs here -- source code,
+# build files, layouts, manifests and config must stay ASCII.
+
+# Translated UI strings only. The base values/strings.xml (English source) must
+# stay ASCII -- it is deliberately not matched by this locale-qualified glob.
+app/src/main/res/values-*/strings.xml
+
+# Privacy policy, one file per language.
+app/src/main/assets/privacy/*.txt
+
+# Localized data: repo-listing display names and language endonyms.
+app/src/main/assets/data/repo.yaml
+app/src/main/assets/data/languages.yaml
+
+# Documentation (prose; may name languages/tools in their own script).
+*.md
+
+# Third-party / tool-generated files we don't hand-edit.
+LICENSE.txt
+gradlew

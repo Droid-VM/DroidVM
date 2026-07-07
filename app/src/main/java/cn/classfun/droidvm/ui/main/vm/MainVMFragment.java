@@ -28,7 +28,7 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.main.base.stateful.MainStatefulFragment;
 import cn.classfun.droidvm.ui.vm.VMActions;
-import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
+import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
 
@@ -133,10 +133,9 @@ public final class MainVMFragment
             if (state == VMState.RUNNING && wantOpenConsole.compareAndSet(true, false)) {
                 var config = adapter.items.findById(vmId);
                 if (config == null) return;
-                var intent = new Intent(requireContext(), VMConsoleActivity.class);
-                intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, vmId.toString());
-                intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, config.getName());
-                startActivity(intent);
+                // Same routing as the VM-info console button (native -> VNC ->
+                // serial), so a VNC/native VM auto-opens its display, not always UART.
+                VMConsoleRouter.openDefault(requireContext(), vmId, config, true);
             }
         });
     }

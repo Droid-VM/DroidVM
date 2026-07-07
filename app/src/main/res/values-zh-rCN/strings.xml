@@ -964,6 +964,16 @@
     <string name="hugepage_pool_size_applied">池大小已保存并应用</string>
     <string name="hugepage_proc_acquire">获取</string>
     <string name="hugepage_proc_acquire_done">获取完成</string>
+    <string name="hugepage_acquire_pages_title">获取大页</string>
+    <string name="hugepage_acquire_run">执行</string>
+    <string name="hugepage_acquire_dont_ask">不再提示</string>
+    <string name="hugepage_acquire_degraded">已降级，实际使用 %1$s</string>
+    <string name="hugepage_proc_acquire_v1_desc">获取 v1（alloc_contig_pages 扫描）</string>
+    <string name="hugepage_proc_acquire_v2_desc">获取 v2（迁移＋系统回收）</string>
+    <string name="hugepage_proc_acquire_v3_desc">获取 v3（迁移＋逐块挤到 zram）</string>
+    <string name="hugepage_acquire_v1_explain">用 alloc_contig_pages 收集大页</string>
+    <string name="hugepage_acquire_v2_explain">用 try_to_free_mem_cgroup_pages 把其他程序挤到 swap/zram\n再用 alloc_contig_range 收集大页</string>
+    <string name="hugepage_acquire_v3_explain">用 folio_isolate_lru + reclaim_pages 精准把页面挤到 swap/zram\n再用 alloc_contig_range 收集大页</string>
     <string name="hugepage_proc_acquire_stop">停止获取</string>
     <string name="hugepage_proc_acquire_full">获取完成:已达成 %1$s</string>
     <string name="hugepage_proc_acquire_partial">获取结束:达成 %1$s / 目标 %2$s(系统目前无法再凑出更多)</string>

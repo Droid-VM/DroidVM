@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.lib.ui.termux;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
 import android.graphics.Typeface;
 import android.util.Log;
@@ -49,7 +50,7 @@ public final class TerminalFonts {
             try {
                 return Typeface.createFromFile(userFont);
             } catch (Exception e) {
-                Log.w(TAG, "Ignoring unreadable user font " + userFont, e);
+                Log.w(TAG, fmt("Ignoring unreadable user font %s", userFont), e);
             }
         }
         if (bundled == null) {

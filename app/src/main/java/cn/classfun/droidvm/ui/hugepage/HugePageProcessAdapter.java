@@ -32,7 +32,15 @@ public final class HugePageProcessAdapter
 
         void onShowStack(@NonNull HugePageProcess proc);
 
-        void onAcquire();
+        /** @param mode acquire algorithm: 2 = migrate + system reclaim,
+         *              3 = migrate + per-block evict to zram. */
+        void onAcquire(int mode);
+
+        /** Short-press: confirm via the info dialog (unless the user opted out), then run. */
+        void onAcquireConfirm(int mode);
+
+        /** Long-press: show the what-does-this-mode-do dialog (with a Run choice). */
+        void onAcquireInfo(int mode);
 
         void onStopAcquire();
     }
@@ -41,16 +49,23 @@ public final class HugePageProcessAdapter
     private final List<HugePageProcess> items = new ArrayList<>();
     private final Listener listener;
     private boolean acquiring = false;
+    private int acquireMode = -1;   // running v (1/2/3); -1 = unknown (old module)
 
     public HugePageProcessAdapter(@NonNull Listener listener) {
         this.listener = listener;
         setHasStableIds(true);
     }
 
-    /** Toggle the spinner on the Acquire row while a run is in flight. */
-    public void setAcquiring(boolean acquiring) {
-        if (this.acquiring == acquiring) return;
+    /**
+     * Reflect the acquire state on the row: idle = three buttons, running with a
+     * known mode = that slot spins + the other two greyed out, running with an
+     * unknown mode (-1, old module) = all three spin.
+     */
+    public void setAcquireState(boolean acquiring, int mode) {
+        if (!acquiring) mode = -1;
+        if (this.acquiring == acquiring && this.acquireMode == mode) return;
         this.acquiring = acquiring;
+        this.acquireMode = mode;
         notifyDataSetChanged();
     }
 
@@ -104,29 +119,19 @@ public final class HugePageProcessAdapter
             holder.btnStack.setVisibility(GONE);
             holder.btnStack.setOnClickListener(null);
             holder.itemView.setAlpha(1f);
+            holder.btnKill.setVisibility(GONE);
+            holder.btnKill.setOnClickListener(null);
             if (p.acquire) {
-                // While a run is in flight show the spinner in place of the
-                // button - same look as before, but tapping it stops the acquire.
-                holder.progressAcquire.setVisibility(acquiring ? VISIBLE : GONE);
-                holder.progressAcquire.setOnClickListener(
-                    acquiring ? v -> listener.onStopAcquire() : null);
-                holder.btnKill.setVisibility(acquiring ? GONE : VISIBLE);
-                holder.btnKill.setImageResource(R.drawable.ic_download);
-                holder.btnKill.setColorFilter(MaterialColors.getColor(
-                    holder.itemView, androidx.appcompat.R.attr.colorPrimary));
-                holder.btnKill.setContentDescription(
-                    ctx.getString(R.string.hugepage_proc_acquire));
-                holder.btnKill.setOnClickListener(v -> listener.onAcquire());
+                bindAcquireSlot(holder.btnAcquireV1, holder.progressAcquireV1, 1);
+                bindAcquireSlot(holder.btnAcquireV2, holder.progressAcquireV2, 2);
+                bindAcquireSlot(holder.btnAcquireV3, holder.progressAcquireV3, 3);
             } else {
-                holder.progressAcquire.setVisibility(GONE);
-                holder.progressAcquire.setOnClickListener(null);
-                holder.btnKill.setVisibility(GONE);
-                holder.btnKill.setOnClickListener(null);
+                hideAcquireSlots(holder);
             }
             return;
         }
 
-        holder.progressAcquire.setVisibility(GONE);
+        hideAcquireSlots(holder);
         holder.btnKill.setVisibility(VISIBLE);
         // Restore the kill affordance (views are recycled from acquire rows).
         holder.btnKill.setImageResource(R.drawable.ic_close);
@@ -173,6 +178,34 @@ public final class HugePageProcessAdapter
         holder.btnKill.setOnClickListener(dead ? null : v -> listener.onKill(p));
     }
 
+    /** One acquire slot: spins iff running AND (mode unknown or this mode); when a
+     *  run is in flight the non-running slots are visible-but-disabled buttons. */
+    private void bindAcquireSlot(View btn, View spinner, int mode) {
+        boolean spin = acquiring && (acquireMode < 0 || acquireMode == mode);
+        btn.setVisibility(spin ? GONE : VISIBLE);
+        // Left enabled so long-press always opens the info dialog; short-press is
+        // gated on !acquiring and the icon greys via alpha while a run is in flight.
+        btn.setAlpha(acquiring ? 0.38f : 1f);
+        btn.setOnClickListener(v -> { if (!acquiring) listener.onAcquireConfirm(mode); });
+        btn.setOnLongClickListener(v -> { listener.onAcquireInfo(mode); return true; });
+        spinner.setVisibility(spin ? VISIBLE : GONE);
+        spinner.setOnClickListener(spin ? v -> listener.onStopAcquire() : null);
+    }
+
+    /** Hide all six acquire views and reset the buttons' enabled state (recycled). */
+    private static void hideAcquireSlots(Holder h) {
+        View[] all = {h.btnAcquireV1, h.btnAcquireV2, h.btnAcquireV3,
+            h.progressAcquireV1, h.progressAcquireV2, h.progressAcquireV3};
+        for (View v : all) {
+            v.setVisibility(GONE);
+            v.setOnClickListener(null);
+        }
+        for (View b : new View[]{h.btnAcquireV1, h.btnAcquireV2, h.btnAcquireV3}) {
+            b.setOnLongClickListener(null);
+            b.setAlpha(1f);
+        }
+    }
+
     static final class Holder extends RecyclerView.ViewHolder {
         final ImageView icon;
         final TextView title;
@@ -181,7 +214,12 @@ public final class HugePageProcessAdapter
         final TextView stateView;
         final ImageButton btnStack;
         final ImageButton btnKill;
-        final View progressAcquire;
+        final View btnAcquireV1;
+        final View btnAcquireV2;
+        final View btnAcquireV3;
+        final View progressAcquireV1;
+        final View progressAcquireV2;
+        final View progressAcquireV3;
 
         Holder(@NonNull View v) {
             super(v);
@@ -192,7 +230,12 @@ public final class HugePageProcessAdapter
             stateView = v.findViewById(R.id.tv_proc_state);
             btnStack = v.findViewById(R.id.btn_proc_stack);
             btnKill = v.findViewById(R.id.btn_proc_kill);
-            progressAcquire = v.findViewById(R.id.progress_proc_acquire);
+            btnAcquireV1 = v.findViewById(R.id.btn_acquire_v1);
+            btnAcquireV2 = v.findViewById(R.id.btn_acquire_v2);
+            btnAcquireV3 = v.findViewById(R.id.btn_acquire_v3);
+            progressAcquireV1 = v.findViewById(R.id.progress_acquire_v1);
+            progressAcquireV2 = v.findViewById(R.id.progress_acquire_v2);
+            progressAcquireV3 = v.findViewById(R.id.progress_acquire_v3);
         }
     }
 }

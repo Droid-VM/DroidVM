@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Reusable acquire-mode slots: v1 = original scan, v2 = migrate + system
+     reclaim, v3 = migrate + per-block evict to zram. Each slot overlays an
+     acquire button (an AcquireContainerView: an open-top tank with a centred
+     download glyph, filled with water to a per-mode level - v1 shallow, v2 mid,
+     v3 near-full - so the fill height is what tells the modes apart) with an
+     in-progress stop spinner; idle shows the button, running shows the spinner
+     (tap = stop). Shared by the process-list row and the main status screen; the
+     host lays the three slots out horizontally. The btn_acquire_v* views are
+     plain clickable FrameLayouts - the code toggles visibility/enabled and greys
+     them via alpha (see applyAcquireSlot / bindAcquireSlot). -->
+<merge xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <FrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <FrameLayout
+            android:id="@+id/btn_acquire_v1"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/hugepage_proc_acquire_v1_desc"
+            android:focusable="true">
+
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                app:acv_fill="0.30" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/progress_acquire_v1"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/hugepage_proc_acquire_stop"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ProgressBar
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:indeterminate="true"
+                android:indeterminateTint="?attr/colorPrimary" />
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/hugepage_proc_acquire_stop"
+                android:src="@drawable/ic_pause"
+                app:tint="?attr/colorPrimary" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <FrameLayout
+            android:id="@+id/btn_acquire_v2"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/hugepage_proc_acquire_v2_desc"
+            android:focusable="true">
+
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                app:acv_fill="0.60" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/progress_acquire_v2"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/hugepage_proc_acquire_stop"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ProgressBar
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:indeterminate="true"
+                android:indeterminateTint="?attr/colorPrimary" />
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/hugepage_proc_acquire_stop"
+                android:src="@drawable/ic_pause"
+                app:tint="?attr/colorPrimary" />
+        </FrameLayout>
+    </FrameLayout>
+
+    <FrameLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content">
+
+        <FrameLayout
+            android:id="@+id/btn_acquire_v3"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:clickable="true"
+            android:contentDescription="@string/hugepage_proc_acquire_v3_desc"
+            android:focusable="true">
+
+            <cn.classfun.droidvm.ui.hugepage.AcquireContainerView
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                app:acv_fill="0.90" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:id="@+id/progress_acquire_v3"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:contentDescription="@string/hugepage_proc_acquire_stop"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <ProgressBar
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:padding="8dp"
+                android:indeterminate="true"
+                android:indeterminateTint="?attr/colorPrimary" />
+
+            <ImageView
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_gravity="center"
+                android:contentDescription="@string/hugepage_proc_acquire_stop"
+                android:src="@drawable/ic_pause"
+                app:tint="?attr/colorPrimary" />
+        </FrameLayout>
+    </FrameLayout>
+
+</merge>

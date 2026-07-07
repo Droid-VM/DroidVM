@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
 import android.util.Log;
 
@@ -60,7 +61,7 @@ public final class NicLeaseAllocator {
                 long offset = firstFree(usedOffsets(vmStore, config, selfId, network, vlan),
                     vlan, net4);
                 if (offset < 0) {
-                    Log.w(TAG, "No free DHCPv4 offset for a NIC on network " + netId);
+                    Log.w(TAG, fmt("No free DHCPv4 offset for a NIC on network %s", netId));
                     return;
                 }
                 nic.setDhcp4Offset(offset);

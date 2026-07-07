@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.lib.store.network;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
 import android.util.Log;
 
@@ -42,8 +43,7 @@ public final class NetworkStore extends DataStore<NetworkConfig> {
             JsonUtils.forEachArray(obj, getTypeName(), (JSONObject entry) -> {
                 var migrated = NetworkConfig.migrate(entry);
                 if (migrated == null) {
-                    Log.w(TAG, "Skipping network config with unsupported schema: "
-                        + entry.optString("name"));
+                    Log.w(TAG, fmt("Skipping network config with unsupported schema: %s", entry.optString("name")));
                     return;
                 }
                 if (migrated == entry) { // already current schema
@@ -58,8 +58,7 @@ public final class NetworkStore extends DataStore<NetworkConfig> {
                     cfg = new NetworkConfig(migrated);
                     NetworkConfigValidator.validate(cfg);
                 } catch (Exception e) {
-                    Log.w(TAG, "Skipping legacy network that failed migration/validation: "
-                        + entry.optString("name"), e);
+                    Log.w(TAG, fmt("Skipping legacy network that failed migration/validation: %s", entry.optString("name")), e);
                     return;
                 }
                 store.add(cfg);

@@ -137,7 +137,7 @@ public final class StringUtils {
     public static String pathJoin(@NonNull String base, @NonNull String child) {
         if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
         if (child.startsWith("/")) child = child.substring(1);
-        return base + "/" + child;
+        return base + "/" + child; // concat-ok: the canonical path join; fmt() would be a hot-path perf hit
     }
 
     @NonNull
