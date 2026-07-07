@@ -24,9 +24,9 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
+import cn.classfun.droidvm.lib.archive.TarReader;
 import cn.classfun.droidvm.lib.crypt.HashFile;
 
 public final class AssetUtils {
@@ -326,120 +326,32 @@ public final class AssetUtils {
         }
     }
 
-    // ---- minimal tar.xz extraction (USTAR; no PAX/GNU records, no symlinks) ----
-    // The packer (auto-build.py) forces USTAR_FORMAT over a short-path,
-    // symlink-free tree, so this reader stays small; corruption is still caught
-    // by the per-file sha256 manifest check in needsExtractPrebuilt().
-
     @SuppressLint("SetWorldReadable")
-    @SuppressWarnings("ResultOfMethodCallIgnored")
+    @SuppressWarnings({"ResultOfMethodCallIgnored", "OctalInteger"})
     private static void extractTarXz(@NonNull InputStream rawIn, @NonNull File destRoot)
         throws IOException {
-        try (var xz = new XZInputStream(new BufferedInputStream(rawIn))) {
-            var header = new byte[512];
-            while (readBlock(xz, header)) {
-                if (isZeroBlock(header)) break;
-                var name = cString(header, 0, 100);
-                var prefix = cString(header, 345, 155);
-                var path = prefix.isEmpty() ? name : pathJoin(prefix, name);
-                var size = parseOctal(header, 124, 12);
-                var mode = (int) parseOctal(header, 100, 8);
-                var type = (char) (header[156] & 0xff);
-                var outFile = new File(destRoot, path);
-                if (type == '5') {                       // directory
-                    if (!outFile.isDirectory() && !outFile.mkdirs())
-                        throw new IOException(fmt("Failed to mkdir %s", outFile));
-                    continue;
-                }
-                if (type != '0' && type != '\0') {       // unexpected (symlink/etc.)
-                    Log.w(TAG, fmt("Skipping unsupported tar entry %s (type %c)", path, type));
-                    skip(xz, size + padding(size));
-                    continue;
-                }
+        try (
+            var xz = new XZInputStream(new BufferedInputStream(rawIn));
+            var tar = new TarReader(xz)
+        ) {
+            tar.forEach((name, mode, size, content) -> {
+                var outFile = new File(destRoot, name);
                 var parent = outFile.getParentFile();
                 if (parent != null && !parent.isDirectory() && !parent.mkdirs())
                     throw new IOException(fmt("Failed to mkdir %s", parent));
-                // Unlink any existing file first. Opening it in place would fail
-                // with ETXTBSY if it's a currently-running executable (e.g. the
-                // gvswitch daemon); unlinking is safe -- a running process keeps
-                // the old inode while the name is rebound to the new file.
                 if (outFile.exists() && !outFile.delete())
                     Log.w(TAG, fmt("Could not unlink existing %s before extract", outFile));
                 try (var os = new FileOutputStream(outFile)) {
-                    copyN(xz, os, size);
+                    copyStream(content, os);
                 }
-                skip(xz, padding(size));
                 outFile.setReadable(true, false);
-                //noinspection OctalInteger
-                if ((mode & 0111) != 0 || path.startsWith("bin/") || path.startsWith("usr/bin/"))
+                if ((mode & 0111) != 0 || name.startsWith("bin/") || name.startsWith("usr/bin/"))
                     outFile.setExecutable(true, false);
-            }
-        }
-    }
-
-    private static long padding(long size) {
-        var rem = size % 512;
-        return rem == 0 ? 0 : 512 - rem;
-    }
-
-    /** Read exactly one 512-byte block; false on a clean EOF between blocks. */
-    private static boolean readBlock(@NonNull InputStream in, @NonNull byte[] buf)
-        throws IOException {
-        var off = 0;
-        while (off < buf.length) {
-            var n = in.read(buf, off, buf.length - off);
-            if (n < 0) {
-                if (off == 0) return false;
-                throw new IOException("Truncated tar stream");
-            }
-            off += n;
-        }
-        return true;
-    }
-
-    private static boolean isZeroBlock(@NonNull byte[] buf) {
-        for (var b : buf) if (b != 0) return false;
-        return true;
-    }
-
-    private static String cString(@NonNull byte[] buf, int off, int len) {
-        var end = off;
-        var max = off + len;
-        while (end < max && buf[end] != 0) end++;
-        return new String(buf, off, end - off, StandardCharsets.UTF_8);
-    }
-
-    private static long parseOctal(@NonNull byte[] buf, int off, int len) {
-        long value = 0;
-        var i = off;
-        var max = off + len;
-        while (i < max && (buf[i] == ' ' || buf[i] == 0)) i++;
-        while (i < max && buf[i] >= '0' && buf[i] <= '7') {
-            value = (value << 3) + (buf[i] - '0');
-            i++;
-        }
-        return value;
-    }
-
-    private static void copyN(@NonNull InputStream in, @NonNull FileOutputStream out, long n)
-        throws IOException {
-        var buf = new byte[8192];
-        var remaining = n;
-        while (remaining > 0) {
-            var got = in.read(buf, 0, (int) Math.min(buf.length, remaining));
-            if (got < 0) throw new IOException("Truncated tar entry");
-            out.write(buf, 0, got);
-            remaining -= got;
-        }
-    }
-
-    private static void skip(@NonNull InputStream in, long n) throws IOException {
-        var remaining = n;
-        var buf = new byte[8192];
-        while (remaining > 0) {
-            var got = in.read(buf, 0, (int) Math.min(buf.length, remaining));
-            if (got < 0) throw new IOException("Truncated tar stream");
-            remaining -= got;
+            });
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Failed to extract tar.xz", e);
         }
     }
 
