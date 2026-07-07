@@ -427,11 +427,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     // resort.
     private void tryShowKeyboard(@NonNull InputMethodManager imm, int attemptsLeft) {
         keyboardInput.requestFocus();
-        if (imm.showSoftInput(keyboardInput, InputMethodManager.SHOW_IMPLICIT)) return;
+        if (imm.showSoftInput(keyboardInput, 0)) return;
         if (attemptsLeft > 0) {
             mainHandler.postDelayed(() -> tryShowKeyboard(imm, attemptsLeft - 1), 60);
-        } else {
-            imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0);
         }
     }
 

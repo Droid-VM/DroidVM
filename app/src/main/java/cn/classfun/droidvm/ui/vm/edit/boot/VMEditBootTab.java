@@ -454,7 +454,7 @@ public final class VMEditBootTab extends VMEditBaseTab {
         etCmdlineOverride.setSelection(Math.max(0, Math.min(caret, etCmdlineOverride.length())));
         var imm = (InputMethodManager) parent.getSystemService(Context.INPUT_METHOD_SERVICE);
         if (imm != null)
-            imm.showSoftInput(etCmdlineOverride, InputMethodManager.SHOW_IMPLICIT);
+            imm.showSoftInput(etCmdlineOverride, 0);
     }
 
     private void updateDetectionCard() {

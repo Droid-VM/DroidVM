@@ -2,7 +2,6 @@ package cn.classfun.droidvm.ui.vm.console;
 
 import static android.view.HapticFeedbackConstants.KEYBOARD_TAP;
 import static android.view.KeyEvent.*;
-import static android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT;
 import static android.widget.Toast.LENGTH_SHORT;
 import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.ui.MaterialMenu.setupToolbarMenu;
@@ -107,7 +106,7 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
             var imm = getSystemService(InputMethodManager.class);
             if (imm != null && terminalView != null) {
                 terminalView.requestFocus();
-                imm.showSoftInput(terminalView, SHOW_IMPLICIT);
+                imm.showSoftInput(terminalView, 0);
             }
         }
 

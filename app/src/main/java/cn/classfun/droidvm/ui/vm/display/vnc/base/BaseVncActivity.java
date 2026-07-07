@@ -5,7 +5,6 @@ import static android.graphics.drawable.GradientDrawable.OVAL;
 import static android.view.KeyEvent.*;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT;
 import static org.yaml.snakeyaml.util.UriEncoder.encode;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -540,7 +539,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         var imm = getSystemService(InputMethodManager.class);
         if (imm != null && ivDisplay != null) {
             ivDisplay.requestFocus();
-            imm.showSoftInput(ivDisplay, SHOW_IMPLICIT);
+            imm.showSoftInput(ivDisplay, 0);
         }
     }
 

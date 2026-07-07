@@ -33,9 +33,9 @@ public final class DaemonSystemContext {
     public static synchronized void init() {
         if (context != null) return;
         try {
-            if (Looper.myLooper() == null) Looper.prepareMainLooper();
+            if (Looper.myLooper() == null) Looper.prepare();
         } catch (Throwable t) {
-            Log.w(TAG, fmt("prepareMainLooper: %s", t));
+            Log.w(TAG, fmt("prepare looper: %s", t));
         }
         try {
             Class<?> at = Class.forName("android.app.ActivityThread");
