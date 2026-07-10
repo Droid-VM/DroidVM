@@ -1,5 +1,4 @@
 #include "a15.cpp"
-#include <cstdint>
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
@@ -10,11 +9,6 @@
 #include <sys/epoll.h>
 
 static std::ofstream ofs;
-
-__attribute__((weak))
-extern "C" void AIBinder_Class_setTransactionCodeToFunctionNameMap(void*, const char* const*, size_t) {
-
-}
 
 __attribute__((weak))
 void __libcpp_verbose_abort(char const* format, ...) __asm("_ZNSt3__122__libcpp_verbose_abortEPKcz");
