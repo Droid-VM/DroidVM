@@ -25,6 +25,11 @@
 
     <color name="hugepage_bar_track">#33808080</color>
     <color name="hugepage_pending">#807D9CB3</color>
+    <!-- v10 CMA reservoir: the part apps currently occupy vs the free part. -->
+    <color name="hugepage_cma_used">#80C98B5E</color>
+    <color name="hugepage_cma_free">#805FA79E</color>
+    <!-- Avail sub-split: pages NOT flippable to CMA as whole pageblocks. -->
+    <color name="hugepage_avail_non_cma">#59708090</color>
 
     <!-- Inline supported/unsupported status icons (readable on light and dark). -->
     <color name="status_supported">#FF4CAF50</color>

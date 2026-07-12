@@ -189,6 +189,18 @@ public final class StringUtils {
         return pathJoin(base.getAbsolutePath(), children);
     }
 
+    /** Join the non-empty parts with {@code sep}; empty parts are skipped. */
+    @NonNull
+    public static String joinNonEmpty(@NonNull String sep, @NonNull String... parts) {
+        var sb = new StringBuilder();
+        for (var p : parts) {
+            if (p.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(sep);
+            sb.append(p);
+        }
+        return sb.toString();
+    }
+
     @NonNull
     public static String fmt(String fmt, Object... args) {
         return new Formatter(Locale.ROOT).format(fmt, args).toString();

@@ -35,13 +35,36 @@ public final class HugePageProcess {
     public final int color;
     /** True for the synthetic "unattributed" pool usage row (no actions). */
     public final boolean unknown;
-    /** True for the synthetic "waiting for acquire" deficit row (acquire btn). */
+    /** True for the synthetic "waiting for acquire" deficit row. */
     public final boolean acquire;
+    /**
+     * Free-text detail line for synthetic rows (e.g. the available row's
+     * cma-able/non-cma-able breakdown); null hides the line.
+     */
+    @Nullable
+    public final String detail;
+    /**
+     * Draw the three acquire buttons on this row. Normally the deficit row owns
+     * them, but that row is hidden once nothing is waiting to be acquired - and
+     * acquire can still have work (staging reservoir pages into a grown pool),
+     * so the CMA row picks them up then.
+     */
+    public final boolean acquireSlots;
 
     public HugePageProcess(
         int pid, @NonNull String comm, long servedPages,
         long thpKb, char state, @Nullable String vmName, boolean alive,
         int color, boolean unknown, boolean acquire
+    ) {
+        this(pid, comm, servedPages, thpKb, state, vmName, alive,
+            color, unknown, acquire, null, acquire);
+    }
+
+    public HugePageProcess(
+        int pid, @NonNull String comm, long servedPages,
+        long thpKb, char state, @Nullable String vmName, boolean alive,
+        int color, boolean unknown, boolean acquire, @Nullable String detail,
+        boolean acquireSlots
     ) {
         this.pid = pid;
         this.comm = comm;
@@ -53,6 +76,8 @@ public final class HugePageProcess {
         this.color = color;
         this.unknown = unknown;
         this.acquire = acquire;
+        this.detail = detail;
+        this.acquireSlots = acquireSlots;
     }
 
     /** THP occupancy expressed in 2MiB pages (-1 if unknown). */

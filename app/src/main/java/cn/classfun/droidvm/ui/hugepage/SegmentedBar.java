@@ -30,6 +30,13 @@ import cn.classfun.droidvm.R;
 public final class SegmentedBar extends View {
     private int[] colors = new int[0];
     private float[] values = new float[0];
+    // Optional per-segment sub-split: the LEFT subLeftValues[i] share of segment
+    // i is drawn in subLeftColors[i], the rest in colors[i]. Pure color detail -
+    // the segment stays ONE logical block with ONE (centred) label.
+    @Nullable
+    private float[] subLeftValues = null;
+    @Nullable
+    private int[] subLeftColors = null;
     @Nullable
     private String[] labels = null;
     // Per-segment label data pre-split, pre-measured and pre-coloured in setData,
@@ -78,9 +85,19 @@ public final class SegmentedBar extends View {
     /** Apple-style: each wide-enough segment draws {@code labels[i]} inside it. */
     public void setData(@NonNull int[] colors, @NonNull float[] values,
                         @Nullable String[] labels, float total) {
+        setData(colors, values, labels, null, null, total);
+    }
+
+    /** Full form: labels plus optional per-segment left sub-splits (see fields). */
+    public void setData(@NonNull int[] colors, @NonNull float[] values,
+                        @Nullable String[] labels,
+                        @Nullable float[] subLeftValues, @Nullable int[] subLeftColors,
+                        float total) {
         this.colors = colors;
         this.values = values;
         this.labels = labels;
+        this.subLeftValues = subLeftValues;
+        this.subLeftColors = subLeftColors;
         this.total = total;
         prepareLabels();
         invalidate();
@@ -117,6 +134,36 @@ public final class SegmentedBar extends View {
     }
 
     /**
+     * Parameters for the storage-style bar - one holder instead of the long
+     * positional argument list. Only {@code usedColors}/{@code usedValues}/
+     * {@code want} are always meaningful; the CMA and {@code availNonCma} fields
+     * stay 0 for the classic [used][available][waiting] bar.
+     */
+    public static final class StorageSpec {
+        /** one colour per used segment */
+        @NonNull public int[] usedColors = new int[0];
+        /** one value per used segment (same length as usedColors) */
+        @NonNull public float[] usedValues = new float[0];
+        /** per-segment labels, or {@code null} for the plain (unlabelled) meter */
+        @Nullable public String[] usedLabels;
+        public float avail;
+        @Nullable public String availLabel;
+        /** left sub-split of the available block (non-cma-able share) */
+        public float availNonCma;
+        public int availNonCmaColor;
+        public float cmaFree;
+        @Nullable public String cmaFreeLabel;
+        public int cmaFreeColor;
+        public float cmaOther;
+        @Nullable public String cmaOtherLabel;
+        public int cmaOtherColor;
+        public int deficitColor;
+        public float deficit;
+        @Nullable public String deficitLabel;
+        public float want;
+    }
+
+    /**
      * Assemble and set a storage-style bar shared by both hugepage screens:
      * the {@code used} segments, then the available portion as a track-coloured
      * gap, then the deficit ("waiting for acquire") pinned flush against the
@@ -135,26 +182,59 @@ public final class SegmentedBar extends View {
         int deficitColor, float deficit, @Nullable String deficitLabel,
         float want
     ) {
-        int n = usedValues.length;
-        boolean withLabels = usedLabels != null;
-        int[] c = new int[n + 2];
-        float[] v = new float[n + 2];
-        String[] l = withLabels ? new String[n + 2] : null;
+        var s = new StorageSpec();
+        s.usedColors = usedColors;
+        s.usedValues = usedValues;
+        s.usedLabels = usedLabels;
+        s.avail = avail;
+        s.availLabel = availLabel;
+        s.deficitColor = deficitColor;
+        s.deficit = deficit;
+        s.deficitLabel = deficitLabel;
+        s.want = want;
+        setStorage(s);
+    }
+
+    /**
+     * v10 variant of {@link #setStorage}: the bar reads
+     * [VMs][available][CMA free][CMA lent][waiting]. The two CMA parts are
+     * ordinary labelled segments; only <b>available</b> carries the pure-color
+     * left sub-split [non-cma-able | normal] (its left {@code availNonCma}
+     * share draws in {@code availNonCmaColor}) under a single label. Leave the
+     * CMA values and {@code availNonCma} at 0 for the classic bar (the plain
+     * overload does exactly that).
+     */
+    public void setStorage(@NonNull StorageSpec s) {
+        int n = s.usedValues.length;
+        boolean withLabels = s.usedLabels != null;
+        int[] c = new int[n + 4];
+        float[] v = new float[n + 4];
+        String[] l = withLabels ? new String[n + 4] : null;
+        float[] sv = new float[n + 4];
+        int[] sc = new int[n + 4];
         float seg = 0;
         for (int i = 0; i < n; i++) {
-            c[i] = usedColors[i];
-            v[i] = Math.max(0, usedValues[i]);
-            if (withLabels) l[i] = usedLabels[i];
+            c[i] = s.usedColors[i];
+            v[i] = Math.max(0, s.usedValues[i]);
+            if (withLabels) l[i] = s.usedLabels[i];
             seg += v[i];
         }
-        float a = Math.max(0, avail);
-        c[n] = trackColor;                       // available gap
+        float a = Math.max(0, s.avail);
+        c[n] = trackColor;                       // available: [non-cma-able|normal]
         v[n] = a;
-        if (withLabels) l[n] = availLabel;
-        c[n + 1] = deficitColor;                 // deficit, flush right
-        v[n + 1] = Math.max(0, deficit);
-        if (withLabels) l[n + 1] = deficitLabel;
-        setData(c, v, l, Math.max(want, seg + a));
+        sv[n] = Math.min(a, Math.max(0, s.availNonCma));
+        sc[n] = s.availNonCmaColor;
+        if (withLabels) l[n] = s.availLabel;
+        c[n + 1] = s.cmaFreeColor;               // CMA free in buddy
+        v[n + 1] = Math.max(0, s.cmaFree);
+        if (withLabels) l[n + 1] = s.cmaFreeLabel;
+        c[n + 2] = s.cmaOtherColor;              // CMA lent to other apps
+        v[n + 2] = Math.max(0, s.cmaOther);
+        if (withLabels) l[n + 2] = s.cmaOtherLabel;
+        c[n + 3] = s.deficitColor;               // deficit, flush right
+        v[n + 3] = Math.max(0, s.deficit);
+        if (withLabels) l[n + 3] = s.deficitLabel;
+        setData(c, v, l, sv, sc, Math.max(s.want, seg + a + v[n + 1] + v[n + 2]));
     }
 
     @Override
@@ -181,8 +261,19 @@ public final class SegmentedBar extends View {
             float segW = w * (values[i] / total);
             if (segW <= 0f) continue;
             float segRight = Math.min(x + segW, w);
+            // Optional left sub-split: same logical segment, two fill colors.
+            float subW = 0f;
+            if (subLeftValues != null && subLeftColors != null
+                && i < subLeftValues.length && i < subLeftColors.length
+                && subLeftValues[i] > 0f && values[i] > 0f) {
+                subW = Math.min(segW, segW * (subLeftValues[i] / values[i]));
+            }
+            if (subW > 0f) {
+                paint.setColor(subLeftColors[i]);
+                canvas.drawRect(x, 0, Math.min(x + subW, segRight), h, paint);
+            }
             paint.setColor(colors[i]);
-            canvas.drawRect(x, 0, segRight, h, paint);
+            canvas.drawRect(Math.min(x + subW, segRight), 0, segRight, h, paint);
             drawLabel(canvas, i, x, segRight, h);
             x += segW;
         }
