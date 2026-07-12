@@ -113,18 +113,18 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- Pool size (left) + CMA pool size (right, only while CMA is on).
-                 Both are GiB-only inputs (ti_unit): no MB/KB/B stops. -->
+            <!-- Pool size and (below) the with-CMA total, stacked so neither is
+                 cramped. Both are GiB-only inputs (ti_unit): no MB/KB/B stops.
+                 The with-CMA row is enabled only while the reservoir is on. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="vertical">
 
                 <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
                     android:id="@+id/input_pool_size"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:hint="@string/hugepage_pool_size"
                     android:icon="@drawable/ic_resize"
                     android:inputType="number"
@@ -136,18 +136,16 @@
 
                 <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
                     android:id="@+id/input_cma_size"
-                    android:layout_width="0dp"
+                    android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
                     android:hint="@string/hugepage_cma_pool_size"
+                    android:icon="@drawable/ic_resize"
                     android:inputType="number"
-                    android:visibility="gone"
                     app:ti_max="24GiB"
                     app:ti_min="0MiB"
                     app:ti_mode="size"
                     app:ti_precision="2MiB"
-                    app:ti_unit="GiB"
-                    tools:visibility="visible" />
+                    app:ti_unit="GiB" />
             </LinearLayout>
 
             <LinearLayout

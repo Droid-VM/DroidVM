@@ -440,51 +440,120 @@ final class HugePageModel {
     }
 
     /* ================================================================== */
-    /*  v10 CMA reservoir + consumability probe                           */
+    /*  v11 movable->CMA levers + CMA reservoir persistence               */
     /* ================================================================== */
 
+    /** settings.prop values recording which movable->CMA lever the user saved. */
+    static final String LEVER_HOOK = "hook";
+    static final String LEVER_FLAG = "flag";
+    private static final String CMA_LEVER_KEY = "cma_movable_lever";
+
+    private static final String MTC_VENDER = "moveable_to_cma_vender_already_allowed";
+    private static final String MTC_RESTRICT = "moveable_to_cma_restrict_cma_redirect_disabled";
+    private static final String MTC_GFP_HOOK = "moveable_to_cma_gfp_cma_hook";
+
     /**
-     * The app-side probe verdict recorded in settings.prop as
-     * {@code cma_probe_result}: {@code 1} = apps can consume the reservoir,
-     * {@code 0} = they can't (the boot script then keeps the whole CMA side
-     * cold), {@code null} = the probe never ran.
+     * Whether the running kernel is 6.1. On 6.1 the {@code restrict_cma_redirect}
+     * static key is side-effect-free, so the enable flow prefers flipping it (a
+     * clean global switch); on 6.6/6.12 the same key also backs
+     * {@code cma_has_pcplist()}, so the narrower gfp hook is used instead. Fails
+     * safe to {@code false} (the hook path) when {@code uname} is unreadable.
      */
-    @Nullable
-    Integer cmaProbeResult() {
-        var v = parseProp(safeRead(SETTINGS_PROP)).get("cma_probe_result");
-        if (v == null) return null;
+    boolean kernelIs61() {
         try {
-            return Integer.parseInt(v.trim());
-        } catch (NumberFormatException e) {
-            return null;
+            var r = runList("uname", "-r").getOutString().trim();
+            return r.equals("6.1") || r.startsWith("6.1.");
+        } catch (Exception e) {
+            return false;
         }
     }
 
     /**
-     * Record a <b>passed</b> probe (see {@link #cmaProbeResult}). Only success
-     * is ever persisted: a failed or inconclusive probe leaves no verdict, so
-     * the next app launch can simply probe again.
+     * Read {@code moveable_to_cma_vender_already_allowed}: {@code 1} = the
+     * vendor kernel already redirects every movable allocation into CMA, so the
+     * reservoir is consumable without touching either lever; {@code 0} = it does
+     * not; {@code -1} = the param is absent (pre-v11 module, no lever support).
+     */
+    int mtcVenderAllowed() {
+        return readIntParam(MTC_VENDER, -1);
+    }
+
+    /**
+     * The "flag" lever: flip the kernel {@code restrict_cma_redirect} static key
+     * (write 1 = open movable->CMA globally). Live only - not persisted here.
      */
     @NonNull
-    Result setCmaProbeAllowed() {
+    Result setRestrictFlip(boolean on) {
+        var t = writeKnob(MTC_RESTRICT, on ? "1" : "0");
+        return t.ok() ? Result.ok(MTC_RESTRICT) : Result.failed(MTC_RESTRICT, t.error);
+    }
+
+    /** Read the flag state: 1 = redirect open, 0 = blocked, -1 = unresolvable. */
+    int readRestrictState() {
+        return readIntParam(MTC_RESTRICT, -1);
+    }
+
+    /**
+     * The "hook" lever: arm the {@code __GFP_CMA} bypass hook (write 1 = let page
+     * cache / mTHP anon consume the reservoir). Live only - not persisted here.
+     */
+    @NonNull
+    Result setGfpHook(boolean on) {
+        var t = writeKnob(MTC_GFP_HOOK, on ? "1" : "0");
+        return t.ok() ? Result.ok(MTC_GFP_HOOK) : Result.failed(MTC_GFP_HOOK, t.error);
+    }
+
+    /** Read the gfp hook arm state: 1 = armed, 0 = disarmed, -1 = absent. */
+    int readGfpHook() {
+        return readIntParam(MTC_GFP_HOOK, -1);
+    }
+
+    /**
+     * Persist the chosen movable->CMA lever ({@link #LEVER_HOOK} /
+     * {@link #LEVER_FLAG}) under an app-owned settings.prop key, so a future
+     * boot script can re-apply it as an insmod param. The shipped load.sh does
+     * not read it yet, so this only records intent - deliberate: the lever is
+     * applied live and only saved once it has proven it doesn't crash the boot.
+     */
+    @NonNull
+    Result saveCmaLever(@NonNull String lever) {
         var changes = new LinkedHashMap<String, String>();
-        changes.put("cma_probe_result", "1");
+        changes.put(CMA_LEVER_KEY, lever);
+        var t = updateSettings(changes);
+        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+    }
+
+    /** Forget the persisted lever (CMA switched off, or the user declined save). */
+    @NonNull
+    Result clearCmaLever() {
+        var changes = new LinkedHashMap<String, String>();
+        changes.put(CMA_LEVER_KEY, null);   // null value = remove the key
         var t = updateSettings(changes);
         return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
     }
 
     /**
-     * Drop any recorded verdict. Beyond "forget a failure", this un-sticks a
-     * legacy {@code cma_probe_result=0}: the boot script hands the module -1
-     * preflight values while that key is 0, which kills the CMA side for the
-     * whole boot and makes a re-probe impossible until it is gone.
+     * Drop a stale {@code cma_probe_result} left by an older app version. The
+     * shipped boot script still cold-starts the whole CMA side on
+     * {@code cma_probe_result=0}, so a leftover denial from the removed probe
+     * would keep v11's reservoir off; remove it on sight. No-op when absent.
      */
-    @NonNull
-    Result clearCmaProbeResult() {
+    void clearLegacyProbeKey() {
+        if (!parseProp(safeRead(SETTINGS_PROP)).containsKey("cma_probe_result")) return;
         var changes = new LinkedHashMap<String, String>();
-        changes.put("cma_probe_result", null);   // null value = remove the key
-        var t = updateSettings(changes);
-        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+        changes.put("cma_probe_result", null);
+        updateSettings(changes);
+    }
+
+    /** Read an integer sysfs param, or {@code def} when absent/unparseable. */
+    private int readIntParam(@NonNull String name, int def) {
+        var v = safeRead(pathJoin(SYSFS_PARAMS, name)).trim();
+        if (v.isEmpty()) return def;
+        try {
+            return Integer.parseInt(v);
+        } catch (NumberFormatException e) {
+            return def;
+        }
     }
 
     /**
@@ -553,79 +622,17 @@ final class HugePageModel {
         return changes;
     }
 
-    /** Live {@code pool_want_with_cma} write only - the probe's first step. */
+    /**
+     * Live {@code pool_want_with_cma} write only (no settings.prop persist), so
+     * the reservoir target set here is undone by a reboot. The enable flow uses
+     * it to build the reservoir at runtime before the user decides whether to
+     * save the movable->CMA lever.
+     */
     @NonNull
     Result writeWantWithCma(long pages) {
         var t = writeKnob("pool_want_with_cma", Long.toString(pages));
         return t.ok() ? Result.ok("pool_want_with_cma")
             : Result.failed("pool_want_with_cma", t.error);
-    }
-
-    /**
-     * Live {@code pool_want} write only (no settings.prop persist), so a value
-     * written here is undone by a reboot. The probe uses it to empty the pool
-     * into the reservoir and to put it back afterwards.
-     */
-    @NonNull
-    Result writeWant(long pages) {
-        var t = writeKnob("pool_want", Long.toString(pages));
-        return t.ok() ? Result.ok("pool_want") : Result.failed("pool_want", t.error);
-    }
-
-    /** MemTotal from /proc/meminfo in KiB, or -1 if unreadable. */
-    long memTotalKb() {
-        return meminfoKb("MemTotal");
-    }
-
-    /**
-     * The module's RAM-derived cap on the targets (pages), read-only:
-     * {@code min(ram - min(ram/2, 6G), 24G)}. Both {@code pool_want} and
-     * {@code pool_want_with_cma} are clamped to it, so it bounds how much
-     * reservoir can sit on top of a given pool. -1 when unreadable (pre-v7).
-     */
-    long poolSizeMax() {
-        try {
-            var v = shellReadFile(pathJoin(SYSFS_PARAMS, "pool_size_max")).trim();
-            if (!v.isEmpty()) return Long.parseLong(v);
-        } catch (Exception ignored) {
-        }
-        return -1;
-    }
-
-    private long meminfoKb(@NonNull String key) {
-        var prefix = fmt("%s:", key);
-        for (var line : safeRead("/proc/meminfo").split("\n")) {
-            if (!line.startsWith(prefix)) continue;
-            var digits = NON_DIGITS.matcher(line).replaceAll("");
-            if (!digits.isEmpty()) try {
-                return Long.parseLong(digits);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return -1;
-    }
-
-    /**
-     * Run the module-shipped {@code balloon} pressure tool (see tools/balloon.c):
-     * it anon-balloons until MemAvailable drops under {@code floorMb} and prints
-     * {@code cma_before_kb / cma_after_kb / cma_diff_kb / held_mb / stop_reason}.
-     * Supervised with {@code timeout} (falling back to unsupervised where the
-     * command is missing) because on a kernel that does NOT let anon consume CMA
-     * the floor can fire very late or never. Returns the parsed key=value output,
-     * or {@code null} when the tool is absent, was killed, or printed nothing
-     * usable - the caller treats that as an unreadable verdict.
-     */
-    @Nullable
-    Map<String, String> runBalloon(long floorMb, long timeoutSec) {
-        var bin = pathJoin(MAGISK_BASE, "balloon");
-        if (!existsSticky(bin)) return null;
-        var r = run("chmod 755 %s && timeout %d %s %d",
-            escapedString(bin), timeoutSec, escapedString(bin), floorMb);
-        if (r.getCode() == 127)   // no timeout applet on this ROM
-            r = run("%s %d", escapedString(bin), floorMb);
-        if (!r.isSuccess()) return null;
-        var map = parseProp(r.getOutString());
-        return map.containsKey("cma_diff_kb") ? map : null;
     }
 
     /* ================================================================== */
@@ -816,10 +823,10 @@ final class HugePageModel {
     /**
      * Read-modify-write settings.prop: apply {@code changes} (a null value
      * <b>removes</b> that key) and keep every other key (the file also carries
-     * app-owned CMA state - {@code pool_want_with_cma}, {@code cma_probe_result}
+     * app-owned CMA state - {@code pool_want_with_cma}, {@code cma_movable_lever}
      * - that a blind rewrite would wipe). The boot script {@code source}s the
      * file, so lines stay plain {@code key=value}. Locked so concurrent writers
-     * (the probe worker vs a pool-size save) can't interleave their read/write
+     * (a lever/CMA save vs a pool-size save) can't interleave their read/write
      * pairs and drop each other's keys.
      */
     private static Try<Only, Void> updateSettings(@NonNull Map<String, String> changes) {
@@ -830,7 +837,7 @@ final class HugePageModel {
             } catch (Exception e) {
                 // A missing file legitimately starts empty; an EXISTING file that
                 // failed to read must abort - rewriting from an empty map would
-                // silently drop every other persisted key (probe verdict, CMA
+                // silently drop every other persisted key (lever choice, CMA
                 // targets) on a transient root hiccup.
                 if (existsSticky(SETTINGS_PROP))
                     return Try.fail(Only.DEFAULT, "settings.prop: read failed");
