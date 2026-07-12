@@ -39,8 +39,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
 import android.text.Editable;
-import android.widget.LinearLayout;
-import android.widget.ProgressBar;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
@@ -49,8 +47,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
@@ -115,37 +111,13 @@ public final class HugePageActivity extends AppCompatActivity {
     private SwitchRowWidget rowCmaEnable;
     private boolean cmaSwitchSyncing = false;   // programmatic setChecked guard
     private boolean cmaInputLoaded = false;     // seed the CMA size input once per show
-    private boolean cmaBusy = false;            // a probe / toggle flow is in flight
-    // A reservoir target persisted with no verdict recorded = a probe that asked
-    // for a reboot and is now waiting to be finished. Offer it once per screen.
-    private boolean probePromptShown = false;
+    private boolean cmaBusy = false;            // an enable/disable flow is in flight
     // Two-way size link (pool_want <= pool_want_with_cma): which input the
     // user touched last decides who yields when they cross.
     private static final int SIZE_EDIT_POOL = 1;
     private static final int SIZE_EDIT_CMA = 2;
     private int lastSizeEdit = SIZE_EDIT_POOL;
     private boolean sizeLinkSyncing = false;    // programmatic setBigValue guard
-    /** Balloon floor (MB) for the consumability probe - `balloon 1536`. */
-    private static final long BALLOON_FLOOR_MB = 1536;
-    private static final long BALLOON_TIMEOUT_S = 600;
-    /**
-     * How much reservoir the probe wants to measure against:
-     * {@code max(RAM - 8G, RAM * 0.4)}. RAM here is MemTotal - physical pages
-     * only, so zram/swap capacity (SwapTotal) never inflates it. Advisory, not
-     * a precondition: a smaller reservoir still probes, it just makes the
-     * verdict less reliable, and the user is warned before continuing.
-     */
-    private static final long PROBE_KEEP_BYTES = 8L << 30;   // 8 GiB
-    private static final double PROBE_MIN_RAM_FRACTION = 0.4;
-    /**
-     * Pool size a passing probe leaves behind. The probe has just proved apps
-     * can consume the reservoir, so holding a large pool would waste memory the
-     * reservoir would otherwise lend out: pin the pool small and let
-     * pool_want_with_cma (kept at the size the probe assembled) carry the rest
-     * as reservoir. A VM start stages pages back in on demand.
-     */
-    private static final long PROBE_POOL_BYTES = 512L << 20;   // 512 MiB
-    private static final long PROBE_POOL_PAGES = PROBE_POOL_BYTES / PAGE_SIZE;
     private TextRowWidget rowStatState;
     private TextRowWidget rowStatTotalServed;
     private TextRowWidget rowStatTotalRefilled;
@@ -253,6 +225,10 @@ public final class HugePageActivity extends AppCompatActivity {
         applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
         loadPoolSize();
+        // One-time migration: drop a stale cma_probe_result from the removed
+        // probe, which the shipped boot script would otherwise treat as a denial
+        // and keep the module's CMA side cold.
+        runOnPool(model::clearLegacyProbeKey);
     }
 
     /**
@@ -460,14 +436,8 @@ public final class HugePageActivity extends AppCompatActivity {
                 ? new LinkedHashMap<>() : model.vmNames(false);
             // Reservoir occupancy for the two-tone CMA block (module caches ~1s).
             var cmaUsage = snap.cmaActive() ? model.cmaUsage() : null;
-            // A reservoir built (or being built) toward a target nobody ever
-            // judged: the "save and reboot" branch of the probe left it here.
-            boolean probePending = !probePromptShown && !cmaBusy
-                && snap.cmaActive() && model.cmaProbeResult() == null;
-            runOnUiThread(() -> {
-                updateUI(snap, crashStamp, owners, allPids, vmMap, cmaUsage);
-                if (probePending) promptPendingProbe();
-            });
+            runOnUiThread(() ->
+                updateUI(snap, crashStamp, owners, allPids, vmMap, cmaUsage));
         });
     }
 
@@ -673,9 +643,9 @@ public final class HugePageActivity extends AppCompatActivity {
         acquireEnabled = snap.loaded && snap.deficit > 0;
         applyAcquireState();
 
-        // CMA switch: only meaningful on a loaded v10 module. While a probe /
-        // toggle flow runs, leave the switch and the size input alone - the flow
-        // owns them (the reservoir flips around mid-probe and would flicker).
+        // CMA switch: only meaningful on a loaded v10+ module. While an enable/
+        // disable flow runs, leave the switch and the size inputs alone - the
+        // flow owns them (the reservoir flips around mid-flow and would flicker).
         rowCmaEnable.setEnabled(snap.loaded && snap.hasCma);
         if (!cmaBusy) {
             boolean cmaActive = snap.cmaActive();
@@ -684,14 +654,12 @@ public final class HugePageActivity extends AppCompatActivity {
                 rowCmaEnable.setChecked(cmaActive);
                 cmaSwitchSyncing = false;
             }
-            // The size row shows exactly one GiB tag: on the right field while
-            // CMA is on (two fields, tight width), on the pool field otherwise.
-            inputPoolSize.setUnitButtonVisible(!cmaActive);
+            // Two stacked size rows: the with-CMA total is editable only while
+            // the reservoir is on, greyed and non-editable otherwise. Seed it
+            // from pool_want_with_cma once each time CMA turns on.
+            inputCmaSize.setEnabled(cmaActive);
             if (cmaActive) {
-                // Seed the with-CMA total input once per show (it maps 1:1 to
-                // pool_want_with_cma), then leave the user's typing be.
-                if (inputCmaSize.getVisibility() != VISIBLE || !cmaInputLoaded) {
-                    inputCmaSize.setVisibility(VISIBLE);
+                if (!cmaInputLoaded) {
                     sizeLinkSyncing = true;
                     try {
                         inputCmaSize.setBigValue(
@@ -702,7 +670,6 @@ public final class HugePageActivity extends AppCompatActivity {
                     cmaInputLoaded = true;
                 }
             } else {
-                inputCmaSize.setVisibility(GONE);
                 cmaInputLoaded = false;
             }
         }
@@ -854,7 +821,7 @@ public final class HugePageActivity extends AppCompatActivity {
      * shrinks the pool. Runs on focus-loss of either field and again at save.
      */
     private void reconcileSizeLink() {
-        if (inputCmaSize.getVisibility() != VISIBLE) return;
+        if (!inputCmaSize.isEnabled()) return;   // only linked while CMA is on
         if (!inputPoolSize.isInputValid() || !inputCmaSize.isInputValid()) return;
         var pool = inputPoolSize.getBigValue();
         var withCma = inputCmaSize.getBigValue();
@@ -873,10 +840,10 @@ public final class HugePageActivity extends AppCompatActivity {
         if (!inputPoolSize.isInputValid()) return;
         var bytes = inputPoolSize.getBigValue();
         var pages = bytes.divide(BigInteger.valueOf(PAGE_SIZE));
-        // While the reservoir is on, the right field IS the with-CMA total
+        // While the reservoir is on, the with-CMA row IS the with-CMA total
         // (pool_want_with_cma); the link above already keeps it >= the pool.
         final long cmaPages;
-        if (inputCmaSize.getVisibility() == VISIBLE) {
+        if (inputCmaSize.isEnabled()) {
             if (!inputCmaSize.isInputValid()) return;
             cmaPages = inputCmaSize.getBigValue()
                 .divide(BigInteger.valueOf(PAGE_SIZE)).longValue();
@@ -938,7 +905,7 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     /* ================================================================== */
-    /*  v10 CMA reservoir: switch + consumability probe                   */
+    /*  v11 CMA reservoir: switch + movable->CMA levers                   */
     /* ================================================================== */
 
     private void onCmaSwitchChanged(boolean checked) {
@@ -965,10 +932,18 @@ public final class HugePageActivity extends AppCompatActivity {
         refreshStatus();
     }
 
-    /** Switch off: demolish the reservoir now and persist off for next boot. */
+    /**
+     * Switch off: revert whichever movable->CMA lever we armed (the module
+     * no-ops these writes when the vendor kernel already redirects, so this is
+     * safe in every case), demolish the reservoir now, and forget the saved
+     * lever so a future boot doesn't re-apply it.
+     */
     private void doCmaDisable() {
         cmaBusy = true;
         runOnPool(() -> {
+            model.setGfpHook(false);
+            model.setRestrictFlip(false);
+            model.clearCmaLever();
             var res = model.saveCmaTarget(0);
             runOnUiThread(() -> {
                 cmaBusy = false;
@@ -981,12 +956,15 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     /**
-     * Switch on. The magisk-side {@code cma_probe_result} (settings.prop) says
-     * whether the consumability probe ever ran:
+     * Switch on. Plain movable allocations only reach the reservoir if the
+     * kernel redirects movable->CMA:
      * <ul>
-     *   <li>{@code 1} - apps can consume CMA: enable directly, no probe;</li>
-     *   <li>{@code 0} - probed unusable: offer a re-probe;</li>
-     *   <li>absent - never probed: explain and offer to run it.</li>
+     *   <li>the vendor kernel already redirects - enable directly, no risk;</li>
+     *   <li>otherwise a lever must be armed, which can destabilise the kernel -
+     *       warn, then arm it <b>live only</b> ({@link #tryCmaLever}); on success
+     *       offer to save it ({@link #promptSaveLever}). Splitting arm from save
+     *       is the safety net: if arming crashes the phone, nothing was saved and
+     *       the next boot comes up clean.</li>
      * </ul>
      */
     private void doCmaEnable() {
@@ -1002,83 +980,57 @@ public final class HugePageActivity extends AppCompatActivity {
                 });
                 return;
             }
-            var verdict = model.cmaProbeResult();
             if (snap.cmaPbOrder < 0) {
-                // The module disabled its whole CMA side this boot (preflight /
-                // symbols / first-block verification) - no write can help now.
-                // A recorded denial is one of the causes (the boot script then
-                // hands the module -1 preflight values): drop it, so the next
-                // boot comes up CMA-capable and the probe can run again.
-                boolean stale = verdict != null && verdict == VERDICT_DENIED;
-                if (stale) model.clearCmaProbeResult();
+                // The module turned its whole CMA side off this boot (preflight /
+                // symbols / first-block verification) - no lever can help now.
                 runOnUiThread(() -> {
                     cmaBusy = false;
                     setCmaSwitch(false);
                     if (isFinishing()) return;
                     new MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.hugepage_cma_unavailable_title)
-                        .setMessage(stale ? R.string.hugepage_cma_unavailable_denied
-                            : R.string.hugepage_cma_unavailable_boot)
+                        .setMessage(R.string.hugepage_cma_unavailable_boot)
                         .setPositiveButton(android.R.string.ok, null)
                         .show();
                 });
                 return;
             }
-            // The threshold only feeds the two dialog branches - don't pay the
-            // meminfo shell read when the verdict lets us enable directly.
-            var needBytes = (verdict != null && verdict == VERDICT_ALLOWED)
-                ? 0 : probeNeedBytes(model.memTotalKb());
+            if (model.mtcVenderAllowed() == 1) {
+                // Vendor already redirects movable->CMA: nothing to arm, no risk.
+                enableCmaDirect(snap);
+                return;
+            }
+            // A lever is required, and arming it can crash the device: warn first.
             runOnUiThread(() -> {
                 if (isFinishing()) {
                     cmaBusy = false;
                     return;
                 }
-                if (verdict != null && verdict == VERDICT_ALLOWED) {
-                    enableCmaDirect(snap);
-                } else if (verdict != null && verdict == VERDICT_DENIED) {
-                    new MaterialAlertDialogBuilder(this)
-                        .setTitle(R.string.hugepage_cma_probe_denied_title)
-                        .setMessage(R.string.hugepage_cma_probe_denied_msg)
-                        .setPositiveButton(R.string.hugepage_cma_probe_rerun,
-                            (d, w) -> startCmaProbe())
-                        .setNegativeButton(android.R.string.cancel,
-                            (d, w) -> cancelCmaEnable())
-                        .setOnCancelListener(d -> cancelCmaEnable())
-                        .show();
-                } else {
-                    new MaterialAlertDialogBuilder(this)
-                        .setTitle(R.string.hugepage_cma_probe_needed_title)
-                        .setMessage(getString(R.string.hugepage_cma_probe_needed_msg,
-                            SizeUtils.formatSize(Math.max(0, needBytes)),
-                            SizeUtils.formatSize(PROBE_POOL_BYTES)))
-                        .setPositiveButton(R.string.hugepage_cma_probe_start,
-                            (d, w) -> startCmaProbe())
-                        .setNegativeButton(android.R.string.cancel,
-                            (d, w) -> cancelCmaEnable())
-                        .setOnCancelListener(d -> cancelCmaEnable())
-                        .show();
-                }
+                new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.hugepage_cma_warn_title)
+                    .setMessage(R.string.hugepage_cma_warn_msg)
+                    .setPositiveButton(R.string.hugepage_cma_remove_restriction,
+                        (d, w) -> tryCmaLever(snap))
+                    .setNeutralButton(R.string.hugepage_cma_module_cma,
+                        (d, w) -> enableCmaReservoirOnly(snap))
+                    .setNegativeButton(android.R.string.cancel,
+                        (d, w) -> cancelCmaEnable())
+                    .setOnCancelListener(d -> cancelCmaEnable())
+                    .show();
             });
         });
     }
 
     /**
-     * Probe already passed: restore the remembered with-CMA total and let a v3
-     * acquire build the reservoir (only the mode-2/3 sweep runs Phase R; mode 1
-     * is pool-only legacy).
-     *
-     * <p>The target is clamped to the module's {@code pool_want <=
-     * pool_want_with_cma} invariant, so a remembered total at or below the pool
-     * size enables with an empty reservoir - that is a real state (the probe
-     * itself produces it when the pool already holds everything), and the user
-     * then raises the now-visible with-CMA field. Only {@code 0} is impossible:
-     * it is the off sentinel.
+     * Vendor already redirects movable->CMA (or a saved lever is already live):
+     * just set the with-CMA total and let a v3 acquire build the reservoir (only
+     * the mode-2/3 sweep runs Phase R; mode 1 is pool-only legacy). This path
+     * carries no crash risk, so the target is persisted and there is no separate
+     * save step.
      */
     private void enableCmaDirect(@NonNull HugePageModel.Snapshot snap) {
         runOnPool(() -> {
-            long target = Math.max(model.lastCmaTargetPages(), snap.targetIdeal);
-            if (target <= 0)   // pool soft-disabled: fall back to the probe floor
-                target = pagesFor(Math.max(0, probeNeedBytes(model.memTotalKb())));
+            long target = reservoirTarget(snap);
             boolean ok = target > 0 && model.saveCmaTarget(target).ok();
             if (ok) {
                 var s2 = model.state();
@@ -1096,541 +1048,123 @@ public final class HugePageActivity extends AppCompatActivity {
         });
     }
 
-    /* ---- probe orchestration ---- */
-
-    /** Progress dialog handle for the probe worker thread. */
-    private static final class ProbeUi {
-        @NonNull final androidx.appcompat.app.AlertDialog dialog;
-        @NonNull final TextView text;
-
-        ProbeUi(@NonNull androidx.appcompat.app.AlertDialog dialog, @NonNull TextView text) {
-            this.dialog = dialog;
-            this.text = text;
-        }
-    }
-
-    private static final int VERDICT_DENIED = 0;
-    private static final int VERDICT_ALLOWED = 1;
-    private static final int VERDICT_ABNORMAL = -1;
-
-    /** max(RAM - 8 GiB, RAM x 0.4) in bytes; -1 when meminfo is unreadable. */
-    private long probeNeedBytes(long memTotalKb) {
-        if (memTotalKb <= 0) return -1;
-        long total = memTotalKb * 1024;
-        return Math.max(total - PROBE_KEEP_BYTES, (long) (total * PROBE_MIN_RAM_FRACTION));
-    }
-
-    private static long pagesFor(long bytes) {
-        return (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
-    }
-
-    /** Kick off the probe worker; the switch stays under the flow's control. */
-    private void startCmaProbe() {
-        new Thread(this::runCmaProbe, "hugepage-cma-probe").start();
+    /**
+     * Arm a movable->CMA lever <b>live only</b> - nothing is persisted yet. On
+     * 6.1 the {@code restrict_cma_redirect} flag is side-effect-free, so try it
+     * first and fall back to the gfp hook; on 6.6/6.12 that same key also backs
+     * {@code cma_has_pcplist()}, so arm the narrower hook directly (and only try
+     * the flag as a last resort). Then build the reservoir toward a target so the
+     * user can watch it fill, and offer to save the lever for next boot.
+     */
+    private void tryCmaLever(@NonNull HugePageModel.Snapshot snap) {
+        cmaBusy = true;
+        runOnPool(() -> {
+            boolean is61 = model.kernelIs61();
+            String lever = null;
+            if (is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
+            else if (model.setGfpHook(true).ok()) lever = HugePageModel.LEVER_HOOK;
+            else if (!is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
+            if (lever == null) {
+                runOnUiThread(() -> {
+                    cmaBusy = false;
+                    setCmaSwitch(false);
+                    Toast.makeText(this, R.string.hugepage_cma_lever_failed,
+                        LENGTH_SHORT).show();
+                    refreshStatus();
+                });
+                return;
+            }
+            buildReservoirAndPromptSave(snap, lever);
+        });
     }
 
     /**
-     * The consumability probe (worker thread). Steps, per the module docs:
-     * precondition {@code avail >= max(RAM-7G, 40% RAM)} (guided acquire, else
-     * save-and-reboot); then {@code echo avail > pool_want_with_cma},
-     * {@code echo 0 > pool_want} (the freed blocks flip to the reservoir), run
-     * {@code balloon 1536} and judge from how much CmaFree the pressure consumed
-     * whether this vendor lets user apps allocate from CMA. {@code pool_want} is
-     * restored on every path.
-     *
-     * <p>Only a pass is written to settings.prop ({@code cma_probe_result=1}) -
-     * an unreadable result asks the user, and enabling counts as a pass. A
-     * failure (or a decline) records nothing and clears any stale verdict, so
-     * the next launch can simply probe again.
+     * Reservoir-only: build the reservoir <b>without</b> arming any lever, so
+     * there is no crash risk. Useful on a device where the vendor kernel already
+     * lets apps consume CMA even though it reads as not-allowed; elsewhere the
+     * reserve still serves VMs via stage-in. Offers the same save step (which
+     * persists the target but no lever).
      */
-    private void runCmaProbe() {
-        var cancelled = new AtomicBoolean(false);
-        ProbeUi ui = null;
-        boolean raised = false;    // pool_want_with_cma raised by us
-        boolean zeroed = false;    // pool_want emptied by us
-        long prevWant = -1;
-        try {
-            // Balloon pressure would squeeze (or LMK-kill) running VMs.
-            if (runningVmMemMib() > 0) {
-                probeFail(null, getString(R.string.hugepage_cma_vms_running));
-                return;
-            }
-            var snap = model.state();
-            prevWant = snap.targetIdeal;
-            long needBytes = probeNeedBytes(model.memTotalKb());
-            if (needBytes <= 0) {
-                probeFail(null, getString(R.string.hugepage_cma_probe_failed_generic));
-                return;
-            }
-            long needPages = pagesFor(needBytes);
-            // 1. How big a reservoir to measure against. It is NOT bounded by
-            //    the configured pool: the probe empties the pool into the
-            //    reservoir (pool_want=0 -> the module's shrink flips every avail
-            //    block to CMA, instantly), so the only ceiling is the module's
-            //    RAM-derived pool_size_max. A cap below what we want makes the
-            //    verdict shakier, not impossible: warn and let the user go on.
-            long cap = model.poolSizeMax();
-            long target = Math.max(needPages, Math.max(prevWant, snap.wantWithCma));
-            if (cap > 0) target = Math.min(target, cap);
-            long goal = Math.min(needPages, target);
-            if (goal < needPages && !probeAsk(
-                getString(R.string.hugepage_cma_small_reservoir_title),
-                getString(R.string.hugepage_cma_small_reservoir_msg,
-                    SizeUtils.formatSize(goal * PAGE_SIZE),
-                    SizeUtils.formatSize(needPages * PAGE_SIZE)),
-                getString(R.string.hugepage_cma_probe_anyway))) {
-                probeCancelled(null, false);
-                return;
-            }
-            ui = probeProgressShow(reservoirStage(snap.cmaPool, goal), cancelled);
-            if (ui == null) {
-                probeCancelled(null, false);
-                return;
-            }
-            // 2. Build the reservoir. Already there (a previous run persisted the
-            //    target and the module assembled it at boot) -> measure directly,
-            //    touching nothing.
-            boolean built = snap.cmaPool >= goal;
-            if (!built) {
-                // Raise the total first: pool_want=0 would otherwise soft-disable
-                // the pool and hand its pages back to the buddy allocator instead
-                // of flipping them into the reservoir. Never lower an existing
-                // bigger total - that demolishes reservoir the device is lending
-                // out right now.
-                if (snap.wantWithCma < target) {
-                    var w = model.writeWantWithCma(target);
-                    if (!w.ok()) {
-                        probeDismiss(ui);
-                        probeUnavailable(getString(R.string.hugepage_cma_unavailable_write,
-                            w.detail != null ? w.detail : "?"));
-                        return;
-                    }
-                }
-                raised = true;
-                // Empty the pool: its avail blocks flip to CMA at once (the fast
-                // path - a from-scratch sweep would hit the fragmentation wall).
-                // Only the live knob is written, so a reboot restores pool_want
-                // even if this app dies before the restore below.
-                var shrink = model.writeWant(0);
-                if (!shrink.ok()) {
-                    probeRollback();
-                    probeDismiss(ui);
-                    probeFail(null, getString(R.string.hugepage_cma_probe_failed_generic));
-                    return;
-                }
-                zeroed = true;
-                Thread.sleep(3000);          // let the flips land
-                model.acquire(3);            // best-effort top-up toward the target
-                built = waitReservoir(ui, goal, cancelled);
-            }
-            if (cancelled.get()) {
-                model.stopAcquire();
-                probeRestore(prevWant, zeroed);
-                probeRollback();
-                probeCancelled(ui, true);
-                return;
-            }
-            // Whatever actually assembled is what the balloon is judged against.
-            long reservoirPages = model.state().cmaPool;
-            if (reservoirPages <= 0) {
-                probeRestore(prevWant, zeroed);
-                probeRollback();
-                probeDismiss(ui);
-                probeUnavailable(getString(R.string.hugepage_cma_unavailable_reservoir));
-                return;
-            }
-            if (!built) {
-                // The runtime sweep hit the fragmentation wall. This is not a
-                // different failure from "it can't be built" - the module builds
-                // the reservoir first at init, on the cleanest memory there is,
-                // so the very same target simply works after a reboot. Persist
-                // it and pick the probe back up then (see the pending prompt) -
-                // or measure right now against the smaller reservoir that did
-                // get built, accepting a shakier verdict.
-                probeDismiss(ui);
-                ui = null;
-                int choice = probeAskChoice(
-                    getString(R.string.hugepage_cma_reservoir_short_title),
-                    getString(R.string.hugepage_cma_reservoir_short_msg,
-                        SizeUtils.formatSize(reservoirPages * PAGE_SIZE),
-                        SizeUtils.formatSize(goal * PAGE_SIZE)),
-                    getString(R.string.hugepage_cma_save_reboot),
-                    getString(R.string.hugepage_cma_probe_anyway));
-                if (choice != CHOICE_NEGATIVE) {
-                    // "I'll reboot, then probe", or dismissed. Nothing is saved:
-                    // the probe assembles the reservoir out of the pool itself,
-                    // so a fresh boot - where memory is unfragmented - simply
-                    // lets the same run succeed. Undo our live writes and go.
-                    probeRestore(prevWant, zeroed);
-                    probeRollback();
-                    if (choice == CHOICE_POSITIVE)
-                        probeToast(getString(R.string.hugepage_cma_reboot_hint));
-                    probeEndUi(false);
-                    return;
-                }
-                // Probe anyway: a fresh progress dialog for the pressure stage.
-                ui = probeProgressShow(
-                    getString(R.string.hugepage_cma_probe_running_balloon), cancelled);
-                if (ui == null) {
-                    probeRestore(prevWant, zeroed);
-                    probeRollback();
-                    probeCancelled(null, false);
-                    return;
-                }
-            }
-            // 3. Pressure + judgment, measured against the reservoir that exists.
-            probeStage(ui, getString(R.string.hugepage_cma_probe_running_balloon));
-            var out = model.runBalloon(BALLOON_FLOOR_MB, BALLOON_TIMEOUT_S);
-            if (cancelled.get()) {
-                probeRestore(prevWant, zeroed);
-                probeRollback();
-                probeCancelled(ui, true);
-                return;
-            }
-            int verdict = judgeBalloon(out, reservoirPages);
-            probeDismiss(ui);
-            ui = null;
-            // A pass enables straight away. Anything else - a denial, or numbers
-            // that match neither verdict - is put to the user, because a probe
-            // can be wrong (a small reservoir, a vendor that only lets some
-            // allocation classes in). Enabling either way counts as a pass and
-            // is recorded, so the switch stops probing from now on; declining
-            // records nothing and clears any stale verdict, leaving the probe
-            // available next launch.
-            if (verdict == VERDICT_ALLOWED) {
-                model.setCmaProbeAllowed();
-                probeEnableWithSmallPool(target);
-                probeToast(getString(R.string.hugepage_cma_probe_ok,
-                    SizeUtils.formatSize(PROBE_POOL_BYTES)));
-                probeEndUi(true);
-                return;
-            }
-            boolean enable = verdict == VERDICT_DENIED
-                ? probeAsk(getString(R.string.hugepage_cma_probe_denied_title),
-                    getString(R.string.hugepage_cma_probe_denied_result),
-                    getString(R.string.hugepage_cma_probe_enable))
-                : probeAskAbnormal(out, reservoirPages);
-            if (enable) {
-                model.setCmaProbeAllowed();
-                probeEnableWithSmallPool(target);   // also restores pool_want
-                probeToast(getString(R.string.hugepage_cma_enabled_pool,
-                    SizeUtils.formatSize(PROBE_POOL_BYTES)));
-                probeEndUi(true);
-            } else {
-                probeRestore(prevWant, zeroed);
-                model.clearCmaProbeResult();
-                model.saveCmaTarget(0);   // demolishes the reservoir
-                if (zeroed) model.acquire(1);   // refill the restored pool
-                probeEndUi(false);
-            }
-        } catch (InterruptedException e) {
-            probeRestore(prevWant, zeroed);
-            if (raised) probeRollback();
-            probeCancelled(ui, ui != null);
-        } catch (Exception e) {
-            // Never leave the flow lock stuck: undo our writes and surface the
-            // error instead of a wedged switch.
-            Log.w(TAG, "CMA probe failed", e);
-            probeRestore(prevWant, zeroed);
-            if (raised) probeRollback();
-            probeDismiss(ui);
-            probeFail(null, getString(R.string.hugepage_cma_probe_failed_generic));
-        }
-    }
-
-    /** Put {@code pool_want} back if the probe emptied it (live knob only). */
-    private void probeRestore(long prevWant, boolean zeroed) {
-        if (zeroed && prevWant >= 0) model.writeWant(prevWant);
+    private void enableCmaReservoirOnly(@NonNull HugePageModel.Snapshot snap) {
+        cmaBusy = true;
+        runOnPool(() -> buildReservoirAndPromptSave(snap, null));
     }
 
     /**
-     * The reboot half of the probe: the reservoir target survived a reboot with
-     * no verdict recorded, so the module has now built it on clean memory and
-     * the measurement can finally run. Asked once per visit; declining leaves
-     * the reservoir in place (it is still lent to apps) and the switch on.
+     * Build the reservoir toward a target with a live (non-persisted) write so
+     * the user can watch it fill, then offer to save. {@code lever} is the lever
+     * the caller armed, or {@code null} for the reservoir-only path. Runs on the
+     * pool thread.
      */
-    private void promptPendingProbe() {
-        if (probePromptShown || cmaBusy || isFinishing() || isDestroyed()) return;
-        probePromptShown = true;
+    private void buildReservoirAndPromptSave(@NonNull HugePageModel.Snapshot snap,
+                                             @Nullable String lever) {
+        long target = reservoirTarget(snap);
+        if (target > 0) {
+            model.writeWantWithCma(target);
+            var s2 = model.state();
+            if (s2.loaded && s2.deficit > 0) model.acquire(3);
+        }
+        runOnUiThread(() -> {
+            cmaInputLoaded = false;
+            refreshStatus();
+            if (isFinishing()) {
+                cmaBusy = false;
+                return;
+            }
+            promptSaveLever(lever, target);
+        });
+    }
+
+    /** Flip the restrict flag on and confirm the kernel actually opened it. */
+    private boolean flipFlagWorks() {
+        return model.setRestrictFlip(true).ok() && model.readRestrictState() == 1;
+    }
+
+    /** With-CMA target to build: the last saved total, else the pool size. */
+    private long reservoirTarget(@NonNull HugePageModel.Snapshot snap) {
+        return Math.max(model.lastCmaTargetPages(),
+            Math.max(snap.targetIdeal, snap.built));
+    }
+
+    /**
+     * Step 2: the live setting didn't crash the phone. Offer to persist it so it
+     * re-applies at the next boot (written into Magisk's settings.prop).
+     * Declining keeps it running now but leaves the next boot clean - the safety
+     * net, in case it destabilises the device after all. {@code lever} is null on
+     * the reservoir-only path (only the target is persisted).
+     */
+    private void promptSaveLever(@Nullable String lever, long target) {
         new MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.hugepage_cma_probe_pending_title)
-            .setMessage(R.string.hugepage_cma_probe_pending_msg)
-            .setPositiveButton(R.string.hugepage_cma_probe_continue, (d, w) -> {
-                cmaBusy = true;
-                startCmaProbe();
-            })
-            .setNegativeButton(android.R.string.cancel, null)
+            .setTitle(R.string.hugepage_cma_save_title)
+            .setMessage(R.string.hugepage_cma_save_msg)
+            .setPositiveButton(R.string.hugepage_cma_save_yes,
+                (d, w) -> finishCmaEnable(lever, target, true))
+            .setNegativeButton(R.string.hugepage_cma_save_no,
+                (d, w) -> finishCmaEnable(lever, target, false))
+            .setOnCancelListener(d -> finishCmaEnable(lever, target, false))
             .show();
     }
 
-    /** Undo the probe's only write: the raised total demolishes its reservoir. */
-    private void probeRollback() {
-        model.writeWantWithCma(0);
-    }
-
-    @NonNull
-    private String reservoirStage(long got, long goal) {
-        return getString(R.string.hugepage_cma_building,
-            SizeUtils.formatSize(got * PAGE_SIZE), SizeUtils.formatSize(goal * PAGE_SIZE));
-    }
-
     /**
-     * The end state of an enabled probe: a {@value #PROBE_POOL_BYTES}-byte pool
-     * and the with-CMA total the probe assembled, persisted in one settings.prop
-     * rewrite so the next boot comes up the same way. This is the probe's first
-     * and only {@code pool_want} write: shrinking the pool hands its pages to
-     * the reservoir (the module's shrink path), and the v3 acquire then stages
-     * 512 MB back in and tops the reservoir up toward the total.
+     * Settle an enabled reservoir: switch on and reseed the size input. When
+     * {@code save}, persist the with-CMA target and the lever choice so the next
+     * boot comes up the same way (a null lever clears the key = reservoir-only);
+     * otherwise everything stays live-only.
      */
-    private void probeEnableWithSmallPool(long total) {
-        model.saveTargets(PROBE_POOL_PAGES, total);
-        // v3: only the mode-2/3 sweep runs the reservoir-building Phase R.
-        model.acquire(3);
-    }
-
-    /**
-     * Poll the reservoir toward {@code goal} pages, narrating progress. Returns
-     * true once {@code pool_cma} reaches it; false on stop/timeout/cancel.
-     */
-    private boolean waitReservoir(@NonNull ProbeUi ui, long goal,
-                                  @NonNull AtomicBoolean cancelled)
-        throws InterruptedException {
-        for (int i = 0; i < 1800; i++) {   // 30 min hard bound
-            if (cancelled.get()) return false;
-            var s = model.state();
-            probeStage(ui, reservoirStage(s.cmaPool, goal));
-            if (s.cmaPool >= goal) return true;
-            // Give the worker a few seconds to raise acquire_active before
-            // treating "not acquiring" as done-short.
-            if (!s.acquiring && i > 5) return false;
-            Thread.sleep(1000);
-        }
-        return false;
-    }
-
-    /**
-     * Judge the balloon output against the reservoir that was built: pressure
-     * that consumed at least half of it means apps allocate from CMA; a tenth
-     * or less means they can't; anything between (or unparsable output) is
-     * unreadable and goes to the user.
-     */
-    private int judgeBalloon(@Nullable Map<String, String> out, long reservoirPages) {
-        if (out == null) return VERDICT_ABNORMAL;
-        long diffKb;
-        long heldMb;
-        try {
-            diffKb = Long.parseLong(out.getOrDefault("cma_diff_kb", "").trim());
-            heldMb = Long.parseLong(out.getOrDefault("held_mb", "").trim());
-        } catch (NumberFormatException e) {
-            return VERDICT_ABNORMAL;
-        }
-        long reservoirKb = reservoirPages * (PAGE_SIZE / 1024);
-        if (reservoirKb <= 0 || heldMb <= 0) return VERDICT_ABNORMAL;
-        if (diffKb >= reservoirKb / 2) return VERDICT_ALLOWED;
-        if (diffKb <= reservoirKb / 10) return VERDICT_DENIED;
-        return VERDICT_ABNORMAL;
-    }
-
-    /* ---- probe worker <-> UI plumbing (all blocking helpers) ---- */
-
-    /** Blocking two-choice dialog; false on cancel/back/finish. */
-    private boolean probeAsk(@NonNull String title, @NonNull String message,
-                             @NonNull String positive) throws InterruptedException {
-        return probeAskChoice(title, message, positive,
-            getString(android.R.string.cancel)) == CHOICE_POSITIVE;
-    }
-
-    /** {@link #probeAskChoice} outcomes; {@code CHOICE_NONE} = back/dismiss/gone. */
-    private static final int CHOICE_NONE = 0;
-    private static final int CHOICE_POSITIVE = 1;
-    private static final int CHOICE_NEGATIVE = 2;
-
-    /**
-     * Blocking dialog offering two named actions, with back/outside-tap as a
-     * third "neither" outcome. Both buttons are real choices - which is why
-     * neither is labelled Cancel by callers that need three ways out.
-     */
-    private int probeAskChoice(@NonNull String title, @NonNull String message,
-                               @NonNull String positive, @NonNull String negative)
-        throws InterruptedException {
-        var choice = new AtomicInteger(CHOICE_NONE);
-        var latch = new CountDownLatch(1);
-        runOnUiThread(() -> {
-            // isDestroyed covers rotation teardown (isFinishing stays false);
-            // the catch covers a window torn down mid-post - either way the
-            // latch MUST be counted or the worker blocks forever.
-            if (isFinishing() || isDestroyed()) {
-                latch.countDown();
-                return;
+    private void finishCmaEnable(@Nullable String lever, long target, boolean save) {
+        runOnPool(() -> {
+            if (save) {
+                if (lever != null) model.saveCmaLever(lever);
+                else model.clearCmaLever();
+                if (target > 0) model.saveCmaTarget(target);
             }
-            try {
-                new MaterialAlertDialogBuilder(this)
-                    .setTitle(title)
-                    .setMessage(message)
-                    .setPositiveButton(positive, (d, w) -> choice.set(CHOICE_POSITIVE))
-                    .setNegativeButton(negative, (d, w) -> choice.set(CHOICE_NEGATIVE))
-                    .setOnDismissListener(d -> latch.countDown())
-                    .show();
-            } catch (Exception e) {
-                latch.countDown();
-            }
-        });
-        latch.await();
-        return choice.get();
-    }
-
-    /** The "result unreadable - enable anyway?" dialog, with the raw numbers. */
-    private boolean probeAskAbnormal(@Nullable Map<String, String> out, long reservoirPages)
-        throws InterruptedException {
-        long diffKb = 0;
-        long heldMb = 0;
-        String stop = "?";
-        if (out != null) {
-            try {
-                diffKb = Long.parseLong(out.getOrDefault("cma_diff_kb", "0").trim());
-            } catch (NumberFormatException ignored) {
-            }
-            try {
-                heldMb = Long.parseLong(out.getOrDefault("held_mb", "0").trim());
-            } catch (NumberFormatException ignored) {
-            }
-            stop = out.getOrDefault("stop_reason", "?");
-        }
-        var choice = new AtomicInteger(0);
-        var latch = new CountDownLatch(1);
-        long fDiffKb = diffKb;
-        long fHeldMb = heldMb;
-        String fStop = stop;
-        runOnUiThread(() -> {
-            if (isFinishing() || isDestroyed()) {
-                latch.countDown();
-                return;
-            }
-            try {
-                new MaterialAlertDialogBuilder(this)
-                    .setTitle(R.string.hugepage_cma_probe_abnormal_title)
-                    .setMessage(getString(R.string.hugepage_cma_probe_abnormal_msg,
-                        SizeUtils.formatSize(fDiffKb * 1024),
-                        SizeUtils.formatSize(reservoirPages * PAGE_SIZE),
-                        SizeUtils.formatSize(fHeldMb * 1024 * 1024),
-                        fStop))
-                    .setPositiveButton(R.string.hugepage_cma_probe_enable,
-                        (d, w) -> choice.set(1))
-                    .setNegativeButton(R.string.hugepage_cma_probe_keep_off, null)
-                    .setOnDismissListener(d -> latch.countDown())
-                    .show();
-            } catch (Exception e) {
-                latch.countDown();
-            }
-        });
-        latch.await();
-        return choice.get() == 1;
-    }
-
-    /** Show the cancellable progress dialog; null when the activity is gone. */
-    @Nullable
-    private ProbeUi probeProgressShow(@NonNull String initial,
-                                      @NonNull AtomicBoolean cancelled)
-        throws InterruptedException {
-        var holder = new java.util.concurrent.atomic.AtomicReference<ProbeUi>();
-        var latch = new CountDownLatch(1);
-        runOnUiThread(() -> {
-            try {
-                if (isFinishing() || isDestroyed()) return;
-                float density = getResources().getDisplayMetrics().density;
-                var text = new TextView(this);
-                text.setText(initial);
-                var box = new LinearLayout(this);
-                box.setOrientation(LinearLayout.HORIZONTAL);
-                box.setGravity(android.view.Gravity.CENTER_VERTICAL);
-                int pad = Math.round(24 * density);
-                box.setPaddingRelative(pad, Math.round(16 * density), pad, 0);
-                var spinner = new ProgressBar(this);
-                box.addView(spinner, Math.round(32 * density), Math.round(32 * density));
-                var lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
-                lp.setMarginStart(Math.round(16 * density));
-                box.addView(text, lp);
-                var dialog = new MaterialAlertDialogBuilder(this)
-                    .setTitle(R.string.hugepage_enable_cma)
-                    .setView(box)
-                    .setCancelable(false)
-                    .setNegativeButton(android.R.string.cancel, null)
-                    .create();
-                dialog.show();
-                // Cancel requests cooperative interruption; the worker decides
-                // when it is safe to stop, so the button must not dismiss the
-                // dialog. A running balloon ignores flags, so also kill it -
-                // its run() then returns quickly and the worker sees the flag.
-                var btn = dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE);
-                if (btn != null) btn.setOnClickListener(v -> {
-                    cancelled.set(true);
-                    v.setEnabled(false);
-                    runOnPool(() -> runList("pkill", "-f",
-                        "gh-hugepage-reserve/balloon"));
-                });
-                holder.set(new ProbeUi(dialog, text));
-            } catch (Exception ignored) {
-                // window torn down mid-post: holder stays null = "activity gone"
-            } finally {
-                latch.countDown();
-            }
-        });
-        latch.await();
-        return holder.get();
-    }
-
-    private void probeStage(@NonNull ProbeUi ui, @NonNull String msg) {
-        runOnUiThread(() -> ui.text.setText(msg));
-    }
-
-    private void probeDismiss(@Nullable ProbeUi ui) {
-        if (ui != null) runOnUiThread(ui.dialog::dismiss);
-    }
-
-    private void probeToast(@NonNull String msg) {
-        runOnUiThread(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
-    }
-
-    /** Wind the flow down: dismiss, switch off. Callers own the rollback. */
-    private void probeCancelled(@Nullable ProbeUi ui, boolean toast) {
-        probeDismiss(ui);
-        if (toast) probeToast(getString(R.string.hugepage_cma_probe_cancelled));
-        probeEndUi(false);
-    }
-
-    /** Failure with a message dialog (or toast when {@code title} is null). */
-    private void probeFail(@Nullable String title, @NonNull String message) {
-        runOnUiThread(() -> {
-            cmaBusy = false;
-            setCmaSwitch(false);
-            if (isFinishing()) return;
-            if (title == null) {
-                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-            } else {
-                new MaterialAlertDialogBuilder(this)
-                    .setTitle(title)
-                    .setMessage(message)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
-            }
-            refreshStatus();
-        });
-    }
-
-    private void probeUnavailable(@NonNull String detail) {
-        probeFail(getString(R.string.hugepage_cma_unavailable_title), detail);
-    }
-
-    /** Release the flow lock and settle the switch to the final state. */
-    private void probeEndUi(boolean enabled) {
-        runOnUiThread(() -> {
-            cmaBusy = false;
-            setCmaSwitch(enabled);
-            cmaInputLoaded = false;   // reseed the with-CMA total field
-            loadPoolSize();           // a passing probe pins pool_want to 512 MB
-            refreshStatus();
+            runOnUiThread(() -> {
+                cmaBusy = false;
+                setCmaSwitch(true);
+                Toast.makeText(this, R.string.hugepage_cma_enabled, LENGTH_SHORT).show();
+                cmaInputLoaded = false;
+                refreshStatus();
+            });
         });
     }
 
