@@ -6,6 +6,7 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.joinNonEmpty;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.os.SystemClock;
@@ -21,6 +22,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -56,6 +58,12 @@ final class HugePageModel {
     private static final String DISABLE_FILE = pathJoin(MAGISK_BASE, "disable");
     private static final String SETTINGS_PROP = pathJoin(MAGISK_BASE, "settings.prop");
     private static final String KO_PATH = pathJoin(MAGISK_BASE, "gh_hugepage_reserve.ko");
+    /** The module's own preflight+insmod script (v10.1+); preferred load path. */
+    private static final String LOAD_SCRIPT = pathJoin(MAGISK_BASE, "load.sh");
+    /** ABI/BTF preflight helper the boot script feeds into insmod. */
+    private static final String KAPI_CHECK = pathJoin(MAGISK_BASE, "kapi_check");
+    /** insmod params are pasted into a shell line: allow only inert characters. */
+    private static final Pattern SAFE_PARAM = Pattern.compile("[A-Za-z0-9_,.-]+");
     /** A THP huge page is 2 MiB = 2048 KiB. */
     private static final long KB_PER_PAGE = 2048;
     /** Default target if settings.prop has none (pages): 1024 x 2 MB = 2 GB. */
@@ -159,55 +167,117 @@ final class HugePageModel {
     /**
      * Version-unified snapshot of module + pool state. {@code targetIdeal} is the
      * one "target" concept across versions: v7's {@code pool_want}, else v6's
-     * read-only {@code pool_target}, else current capacity. {@code deficit} is what
-     * is still missing toward it ({@code targetIdeal - free - lent}); the acquire
-     * buttons are usable exactly when {@code loaded && deficit > 0}.
+     * read-only {@code pool_target}, else current capacity. {@code deficit} is the
+     * work acquire still has - the larger of the pool shortfall and the reservoir
+     * shortfall (see {@link #state()}); the acquire buttons are usable exactly when
+     * {@code loaded && deficit > 0}. It is <b>not</b> the bar's waiting-to-acquire
+     * block, which each screen derives from its own segments.
      */
     static final class Snapshot {
-        final boolean installed;      // Magisk module files present
-        final boolean loaded;         // insmod'd (sysfs node exists)
-        final boolean statsOk;        // refill_stat was readable (false on a transient failure)
-        final boolean bootEnabled;    // will load next boot (no Magisk disable file)
-        final long targetIdeal;       // unified target (want): pool_want ?? pool_target ?? built
-        final long built;             // pool_total (capacity assembled)
-        final long free;              // pool_avail (in the pool now)
-        final long lent;              // served (out to VMs); 0 if the module can't report it (v6)
-        final long deficit;           // max(0, targetIdeal - free - lent)
-        final boolean acquiring;      // an acquire worker is running
-        final int acquireMode;        // which mode (1/2/3), or -1 if the module can't report it
-        final boolean hasPoolWant;    // pool_want knob reported (v7 runtime-resizable)
-        final boolean softDisabled;   // v7 pool_want <= 1 (reserve released, module stays loaded)
+        // Field defaults double as the not-loaded snapshot (the short ctor
+        // touches only installed/bootEnabled and leaves the rest as declared).
+        boolean installed = false;    // Magisk module files present
+        boolean loaded = false;       // insmod'd (sysfs node exists)
+        boolean statsOk = false;      // refill_stat was readable (false on a transient failure)
+        boolean bootEnabled = false;  // will load next boot (no Magisk disable file)
+        long targetIdeal = 0;         // unified target (want): pool_want ?? pool_target ?? built
+        long built = 0;               // pool_total (capacity assembled)
+        long free = 0;                // pool_avail (in the pool now)
+        long lent = 0;                // served (out to VMs); 0 if the module can't report it (v6)
+        long deficit = 0;             // toward want-with-cma (v10 on) or targetIdeal
+        boolean acquiring = false;    // an acquire worker is running
+        int acquireMode = -1;         // which mode (1/2/3), or -1 if the module can't report it
+        boolean hasPoolWant = false;  // pool_want knob reported (v7 runtime-resizable)
+        boolean softDisabled = false; // v7 pool_want <= 1 (reserve released, module stays loaded)
+        // v10 CMA reservoir (refill_stat additions); all -1 / 0 on pre-v10 modules.
+        boolean hasCma = false;       // refill_stat reports pool_want_with_cma (v10 module)
+        long wantWithCma = 0;         // total target incl. reservoir (pages); 0 = CMA off
+        long cmaPool = 0;             // reservoir size (2 MB-page equivalents)
+        long availCmaAble = -1;       // avail pages flippable as whole pageblocks; -1 unreported
+        int cmaPbOrder = -1;          // pageblock order; -1 = CMA side off this boot
         // Raw display strings from refill_stat (pass-through, "-" when absent).
-        @NonNull final String state;
-        @NonNull final String totalServed;
-        @NonNull final String totalRefilled;
-        @NonNull final String activeVms;
-        @NonNull final String acquireStopReason;   // why the last acquire stopped ("-" if unreported)
+        @NonNull String state = "-";
+        @NonNull String totalServed = "-";
+        @NonNull String totalRefilled = "-";
+        @NonNull String activeVms = "-";
+        @NonNull String acquireStopReason = "-";   // why the last acquire stopped ("-" if unreported)
 
-        private Snapshot(boolean installed, boolean loaded, boolean statsOk, boolean bootEnabled,
-                         long targetIdeal, long built, long free, long lent, long deficit,
-                         boolean acquiring, int acquireMode, boolean hasPoolWant,
-                         boolean softDisabled, @NonNull String state, @NonNull String totalServed,
-                         @NonNull String totalRefilled, @NonNull String activeVms,
-                         @NonNull String acquireStopReason) {
+        /**
+         * Not-loaded snapshot: only the install + next-boot flags are known;
+         * every pool field keeps its default (the {@code loaded == false} view).
+         */
+        Snapshot(boolean installed, boolean bootEnabled) {
             this.installed = installed;
-            this.loaded = loaded;
-            this.statsOk = statsOk;
             this.bootEnabled = bootEnabled;
-            this.targetIdeal = targetIdeal;
-            this.built = built;
-            this.free = free;
-            this.lent = lent;
-            this.deficit = deficit;
-            this.acquiring = acquiring;
-            this.acquireMode = acquireMode;
-            this.hasPoolWant = hasPoolWant;
-            this.softDisabled = softDisabled;
-            this.state = state;
-            this.totalServed = totalServed;
-            this.totalRefilled = totalRefilled;
-            this.activeVms = activeVms;
-            this.acquireStopReason = acquireStopReason;
+        }
+
+        /**
+         * Loaded snapshot parsed straight from a {@code refill_stat} key=value
+         * map. {@code poolTargetFn} supplies v6's read-only {@code pool_target}
+         * lazily - it is only consulted when {@code pool_want} is absent.
+         */
+        Snapshot(@NonNull Map<String, String> s, boolean installed, boolean bootEnabled,
+                 @NonNull LongSupplier poolTargetFn) {
+            this.installed = installed;
+            this.bootEnabled = bootEnabled;
+            this.loaded = true;
+            this.statsOk = !s.isEmpty();   // empty == the read failed transiently
+            this.hasPoolWant = s.containsKey("pool_want");
+            this.built = getLong(s, "pool_total", 0);
+            this.free = getLong(s, "pool_avail", 0);
+            this.lent = getLong(s, "served", 0);
+            long rawWant = getLong(s, "pool_want", -1);
+            long want = rawWant;
+            if (want < 0) want = poolTargetFn.getAsLong();   // v6: separate read-only knob
+            if (want < 0) want = built;                       // last resort: current capacity
+            this.targetIdeal = want;
+            // v10 reservoir state; pre-v10 modules report none of these keys.
+            this.hasCma = s.containsKey("pool_want_with_cma");
+            this.wantWithCma = getLong(s, "pool_want_with_cma", 0);
+            this.cmaPool = getLong(s, "pool_cma", 0);
+            this.availCmaAble = getLong(s, "pool_avail_cma_able", -1);
+            this.cmaPbOrder = (int) getLong(s, "cma_pb_order", -1);
+            // What acquire still has to do, mirroring the module's own "already at
+            // target" test (acquire_set): it runs when the POOL is short
+            // (avail + served < pool_want) OR the RESERVOIR is short
+            // (avail + served + pool_cma < pool_want_with_cma). Those are separate
+            // shortfalls: raising pool_want while the reservoir already covers the
+            // total leaves no total deficit, yet acquire must still stage pages in
+            // from the reservoir to fill the pool. Reporting only the total would
+            // grey out the acquire buttons exactly then.
+            long poolDeficit = Math.max(0, want - free - lent);
+            long reservoirDeficit = wantWithCma > 0
+                ? Math.max(0, wantWithCma - free - lent - cmaPool) : 0;
+            this.deficit = Math.max(poolDeficit, reservoirDeficit);
+            this.acquiring = "1".equals(s.get("acquire_active"));
+            this.acquireMode = (int) getLong(s, "acquire_mode", -1);
+            this.softDisabled = hasPoolWant && rawWant <= 1;
+            this.state = s.getOrDefault("state", "-");
+            this.totalServed = s.getOrDefault("total_served", "-");
+            this.totalRefilled = s.getOrDefault("total_refilled", "-");
+            this.activeVms = s.getOrDefault("active_vms", "-");
+            this.acquireStopReason = s.getOrDefault("acquire_stop_reason", "-");
+        }
+
+        /** The v10 reservoir is on right now (module tracks a with-CMA total). */
+        boolean cmaActive() {
+            return hasCma && wantWithCma > 0;
+        }
+    }
+
+    /**
+     * Reservoir occupancy snapshot from the {@code cma_usage} knob (~1 s cache in
+     * the module). {@code ok == false} when the knob is absent/unreadable - the
+     * caller then shows the reservoir as one undivided block. Only the occupied
+     * amount is carried: the free part is derived from {@code pool_cma}.
+     */
+    static final class CmaUsage {
+        final boolean ok;
+        final long usedMb;
+
+        private CmaUsage(boolean ok, long usedMb) {
+            this.ok = ok;
+            this.usedMb = usedMb;
         }
     }
 
@@ -224,29 +294,25 @@ final class HugePageModel {
         boolean installed = existsSticky(MODULE_PROP);
         boolean bootEnabled = !shellCheckExists(DISABLE_FILE);
         boolean loaded = existsSticky(SYSFS_BASE);
-        if (!loaded) {
-            return new Snapshot(installed, false, false, bootEnabled,
-                0, 0, 0, 0, 0, false, -1, false, false, "-", "-", "-", "-", "-");
-        }
+        if (!loaded) return new Snapshot(installed, bootEnabled);
         var s = parseProp(safeRead(pathJoin(SYSFS_PARAMS, "refill_stat")));
-        boolean statsOk = !s.isEmpty();   // empty == the read failed transiently
-        boolean hasWant = s.containsKey("pool_want");
-        long built = getLong(s, "pool_total", 0);
-        long free = getLong(s, "pool_avail", 0);
-        long lent = getLong(s, "served", 0);
-        long rawWant = getLong(s, "pool_want", -1);
-        long want = rawWant;
-        if (want < 0) want = poolTarget();   // v6: separate read-only knob
-        if (want < 0) want = built;           // last resort: current capacity
-        long deficit = Math.max(0, want - free - lent);
-        boolean acquiring = "1".equals(s.get("acquire_active"));
-        int mode = (int) getLong(s, "acquire_mode", -1);
-        boolean softDisabled = hasWant && rawWant <= 1;
-        return new Snapshot(installed, true, statsOk, bootEnabled,
-            want, built, free, lent, deficit, acquiring, mode, hasWant, softDisabled,
-            s.getOrDefault("state", "-"), s.getOrDefault("total_served", "-"),
-            s.getOrDefault("total_refilled", "-"), s.getOrDefault("active_vms", "-"),
-            s.getOrDefault("acquire_stop_reason", "-"));
+        return new Snapshot(s, installed, bootEnabled, this::poolTarget);
+    }
+
+    /** Reservoir occupancy from {@code cma_usage}; {@code ok=false} when absent. */
+    @NonNull
+    CmaUsage cmaUsage() {
+        var raw = safeRead(pathJoin(SYSFS_PARAMS, "cma_usage"));
+        if (raw.trim().isEmpty()) return new CmaUsage(false, 0);
+        // Tokens are key=value but not strictly one per line (blocks_* share a
+        // line), so scan word-wise instead of reusing the line parser.
+        var map = new LinkedHashMap<String, String>();
+        for (var tok : raw.split("[\\s\\n]+")) {
+            var parts = tok.split("=", 2);
+            if (parts.length == 2) map.put(parts[0].trim(), parts[1].trim());
+        }
+        if (!map.containsKey("reservoir_mb")) return new CmaUsage(false, 0);
+        return new CmaUsage(true, getLong(map, "used_mb", 0));
     }
 
     /**
@@ -276,26 +342,6 @@ final class HugePageModel {
     /** Whether KO attribution is currently available (the {@code served_summary} knob exists). */
     boolean koAvailable() {
         return existsSticky(pathJoin(SYSFS_PARAMS, "served_summary"));
-    }
-
-    /**
-     * Save a new pool target of {@code pages}. Persists it to settings.prop (for
-     * the next boot) and applies it to the running pool if the live {@code pool_want}
-     * knob exists; on v6 (read-only {@code pool_target}) only the persist takes
-     * effect. Does <b>not</b> fire an acquire -- the caller drives that from the
-     * resulting {@link Snapshot#deficit}.
-     */
-    @NonNull
-    Result saveSize(long pages) {
-        var persisted = writeSettings(pages);
-        if (!persisted.ok()) return Result.failed("settings", persisted.error);
-        // Best-effort live apply; the impl reports whether it actually took effect
-        // on the running pool ("pool_want") or only persisted for next boot
-        // ("settings" - v6's read-only target, or a rejected write).
-        var live = writeKnob("pool_want", Long.toString(pages));
-        // Degraded when the live write didn't land (v6 read-only target, or a
-        // rejected write): only the next-boot persist took effect.
-        return Result.ok(live.ok() ? "pool_want" : "settings", !live.ok());
     }
 
     /**
@@ -394,11 +440,210 @@ final class HugePageModel {
     }
 
     /* ================================================================== */
+    /*  v10 CMA reservoir + consumability probe                           */
+    /* ================================================================== */
+
+    /**
+     * The app-side probe verdict recorded in settings.prop as
+     * {@code cma_probe_result}: {@code 1} = apps can consume the reservoir,
+     * {@code 0} = they can't (the boot script then keeps the whole CMA side
+     * cold), {@code null} = the probe never ran.
+     */
+    @Nullable
+    Integer cmaProbeResult() {
+        var v = parseProp(safeRead(SETTINGS_PROP)).get("cma_probe_result");
+        if (v == null) return null;
+        try {
+            return Integer.parseInt(v.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Record a <b>passed</b> probe (see {@link #cmaProbeResult}). Only success
+     * is ever persisted: a failed or inconclusive probe leaves no verdict, so
+     * the next app launch can simply probe again.
+     */
+    @NonNull
+    Result setCmaProbeAllowed() {
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("cma_probe_result", "1");
+        var t = updateSettings(changes);
+        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+    }
+
+    /**
+     * Drop any recorded verdict. Beyond "forget a failure", this un-sticks a
+     * legacy {@code cma_probe_result=0}: the boot script hands the module -1
+     * preflight values while that key is 0, which kills the CMA side for the
+     * whole boot and makes a re-probe impossible until it is gone.
+     */
+    @NonNull
+    Result clearCmaProbeResult() {
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("cma_probe_result", null);   // null value = remove the key
+        var t = updateSettings(changes);
+        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+    }
+
+    /**
+     * The last non-zero with-CMA total (pages) the user ran with, kept under an
+     * app-owned settings.prop key so switching CMA off (which must persist
+     * {@code pool_want_with_cma=0} for the boot script) doesn't forget the size.
+     */
+    long lastCmaTargetPages() {
+        var s = parseProp(safeRead(SETTINGS_PROP));
+        var v = s.get("pool_want_with_cma_last");
+        if (v != null) try {
+            return Long.parseLong(v.trim());
+        } catch (NumberFormatException ignored) {
+        }
+        return 0;
+    }
+
+    /**
+     * Persist the with-CMA total for the next boot and best-effort apply it to
+     * the running module. A non-zero target is also remembered under the
+     * {@code _last} key for the next re-enable. Like {@link #saveTargets}, the
+     * result reports whether the live write landed ({@code degraded} when only
+     * the persist took effect).
+     */
+    @NonNull
+    Result saveCmaTarget(long pages) {
+        var persisted = updateSettings(cmaTargetChanges(pages));
+        if (!persisted.ok()) return Result.failed("settings", persisted.error);
+        var live = writeKnob("pool_want_with_cma", Long.toString(pages));
+        return Result.ok(live.ok() ? "pool_want_with_cma" : "settings", !live.ok());
+    }
+
+    /**
+     * Persist pool target and with-CMA total in ONE settings.prop rewrite, then
+     * apply both live knobs ({@code pool_want} first - a value above the old
+     * with-CMA total drags it up, and the second write then pins it exact).
+     * {@code withCma < 0} leaves the CMA keys untouched and only sets the pool
+     * target (persisted under both {@code pool_want} and legacy
+     * {@code pool_target}; on v6 only the persist takes effect). Does <b>not</b>
+     * fire an acquire -- the caller drives that from {@link Snapshot#deficit}.
+     */
+    @NonNull
+    Result saveTargets(long pages, long withCma) {
+        // Invariant (module plan.md sec.1): pool_want <= pool_want_with_cma. The kernel
+        // clamps a low live write itself, but the persisted pair must agree
+        // too or the next boot would insmod inconsistent targets.
+        if (withCma >= 0) withCma = Math.max(withCma, pages);
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("pool_want", Long.toString(pages));
+        changes.put("pool_target", Long.toString(pages));
+        if (withCma >= 0) changes.putAll(cmaTargetChanges(withCma));
+        var persisted = updateSettings(changes);
+        if (!persisted.ok()) return Result.failed("settings", persisted.error);
+        var live = writeKnob("pool_want", Long.toString(pages));
+        boolean liveOk = live.ok();
+        if (withCma >= 0)
+            liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
+        return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
+    }
+
+    @NonNull
+    private static Map<String, String> cmaTargetChanges(long pages) {
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("pool_want_with_cma", Long.toString(pages));
+        if (pages > 0) changes.put("pool_want_with_cma_last", Long.toString(pages));
+        return changes;
+    }
+
+    /** Live {@code pool_want_with_cma} write only - the probe's first step. */
+    @NonNull
+    Result writeWantWithCma(long pages) {
+        var t = writeKnob("pool_want_with_cma", Long.toString(pages));
+        return t.ok() ? Result.ok("pool_want_with_cma")
+            : Result.failed("pool_want_with_cma", t.error);
+    }
+
+    /**
+     * Live {@code pool_want} write only (no settings.prop persist), so a value
+     * written here is undone by a reboot. The probe uses it to empty the pool
+     * into the reservoir and to put it back afterwards.
+     */
+    @NonNull
+    Result writeWant(long pages) {
+        var t = writeKnob("pool_want", Long.toString(pages));
+        return t.ok() ? Result.ok("pool_want") : Result.failed("pool_want", t.error);
+    }
+
+    /** MemTotal from /proc/meminfo in KiB, or -1 if unreadable. */
+    long memTotalKb() {
+        return meminfoKb("MemTotal");
+    }
+
+    /**
+     * The module's RAM-derived cap on the targets (pages), read-only:
+     * {@code min(ram - min(ram/2, 6G), 24G)}. Both {@code pool_want} and
+     * {@code pool_want_with_cma} are clamped to it, so it bounds how much
+     * reservoir can sit on top of a given pool. -1 when unreadable (pre-v7).
+     */
+    long poolSizeMax() {
+        try {
+            var v = shellReadFile(pathJoin(SYSFS_PARAMS, "pool_size_max")).trim();
+            if (!v.isEmpty()) return Long.parseLong(v);
+        } catch (Exception ignored) {
+        }
+        return -1;
+    }
+
+    private long meminfoKb(@NonNull String key) {
+        var prefix = fmt("%s:", key);
+        for (var line : safeRead("/proc/meminfo").split("\n")) {
+            if (!line.startsWith(prefix)) continue;
+            var digits = NON_DIGITS.matcher(line).replaceAll("");
+            if (!digits.isEmpty()) try {
+                return Long.parseLong(digits);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Run the module-shipped {@code balloon} pressure tool (see tools/balloon.c):
+     * it anon-balloons until MemAvailable drops under {@code floorMb} and prints
+     * {@code cma_before_kb / cma_after_kb / cma_diff_kb / held_mb / stop_reason}.
+     * Supervised with {@code timeout} (falling back to unsupervised where the
+     * command is missing) because on a kernel that does NOT let anon consume CMA
+     * the floor can fire very late or never. Returns the parsed key=value output,
+     * or {@code null} when the tool is absent, was killed, or printed nothing
+     * usable - the caller treats that as an unreadable verdict.
+     */
+    @Nullable
+    Map<String, String> runBalloon(long floorMb, long timeoutSec) {
+        var bin = pathJoin(MAGISK_BASE, "balloon");
+        if (!existsSticky(bin)) return null;
+        var r = run("chmod 755 %s && timeout %d %s %d",
+            escapedString(bin), timeoutSec, escapedString(bin), floorMb);
+        if (r.getCode() == 127)   // no timeout applet on this ROM
+            r = run("%s %d", escapedString(bin), floorMb);
+        if (!r.isSuccess()) return null;
+        var map = parseProp(r.getOutString());
+        return map.containsKey("cma_diff_kb") ? map : null;
+    }
+
+    /* ================================================================== */
     /*  Ladder plumbing (internal)                                        */
     /* ================================================================== */
 
-    /** insmod ladder: both keys, then {@code pool_want=} (v7), {@code pool_target=} (v6), bare. */
-    private enum LoadImpl { BOTH, POOL_WANT, POOL_TARGET, BARE }
+    /**
+     * insmod ladder, richest first. {@code load.sh} is the module's own
+     * preflight+insmod (v10+) and needs nothing from us. The remaining rungs
+     * exist only for the released modules that predate it: v9 wants its ABI
+     * guard, v6..v8 take size keys alone. Each rung drops the parameter group an
+     * older module wouldn't recognise.
+     */
+    private enum LoadImpl {
+        SCRIPT,
+        GUARD_BOTH, GUARD_WANT, GUARD_TARGET,   // ABI guard (v9)
+        BOTH, POOL_WANT, POOL_TARGET, BARE      // no guard (v6/v7/v8)
+    }
 
     /** Marker for single-implementation actions. */
     private enum Only { DEFAULT }
@@ -440,8 +685,32 @@ final class HugePageModel {
     @NonNull
     private List<Try<LoadImpl, Void>> loadLadder(long pages) {
         var log = new ArrayList<Try<LoadImpl, Void>>();
+        // Best rung: the module's own load.sh - the exact preflight+insmod the
+        // boot script performs, so a runtime enable reproduces the boot-time
+        // configuration and future preflight changes need no app change. It
+        // reads the size from settings.prop, which is where `pages` came from.
+        if (existsSticky(LOAD_SCRIPT) && rung(null, log, LoadImpl.SCRIPT, () -> {
+            var r = run("sh %s", escapedString(LOAD_SCRIPT));
+            return (r.isSuccess() && existsSticky(SYSFS_BASE))
+                ? Try.<LoadImpl, Void>ok(LoadImpl.SCRIPT, null)
+                : Try.<LoadImpl, Void>fail(LoadImpl.SCRIPT, reason(r, "load.sh"));
+        })) return log;
         var w = fmt("pool_want=\"%d\"", pages);
         var t = fmt("pool_target=\"%d\"", pages);
+        // No load.sh: a released module that predates it (v6..v9). Those have no
+        // CMA parameters at all, so there is nothing to reconstruct here - only
+        // v9's ABI guard, without which an ABI-drifted symbol can kCFI-panic on
+        // first call. Every v10+ preflight lives in load.sh alone, so it can
+        // never drift from what this app passes.
+        var guard = kapiGuardArg();
+        if (!guard.isEmpty()) {
+            if (rung(null, log, LoadImpl.GUARD_BOTH,
+                () -> insmod(LoadImpl.GUARD_BOTH, joinNonEmpty(" ", guard, w, t)))) return log;
+            if (rung(null, log, LoadImpl.GUARD_WANT,
+                () -> insmod(LoadImpl.GUARD_WANT, joinNonEmpty(" ", guard, w)))) return log;
+            if (rung(null, log, LoadImpl.GUARD_TARGET,
+                () -> insmod(LoadImpl.GUARD_TARGET, joinNonEmpty(" ", guard, t)))) return log;
+        }
         // Pass BOTH size params first. A lenient kernel silently ignores the param
         // the module doesn't have, so it still gets the right size via the one it
         // does - pool_want (v7) or pool_target (v6). This is essential: on a v6
@@ -450,13 +719,36 @@ final class HugePageModel {
         // Strict kernels reject the unknown param, so fall back to each key alone,
         // then a bare (default-size) load.
         if (rung(null, log, LoadImpl.BOTH,
-            () -> insmod(LoadImpl.BOTH, fmt("%s %s", w, t)))) return log;
+            () -> insmod(LoadImpl.BOTH, joinNonEmpty(" ", w, t)))) return log;
         if (rung(null, log, LoadImpl.POOL_WANT,
             () -> insmod(LoadImpl.POOL_WANT, w))) return log;
         if (rung(null, log, LoadImpl.POOL_TARGET,
             () -> insmod(LoadImpl.POOL_TARGET, t))) return log;
         rung(null, log, LoadImpl.BARE, () -> insmod(LoadImpl.BARE, null));
         return log;
+    }
+
+    /**
+     * v9's ABI guard, read from the module's {@code kapi_check} helper: it
+     * compares the running kernel's real symbol signatures (from vmlinux BTF)
+     * against what this .ko expects and names the drifted ones, which insmod
+     * then leaves unresolved (their feature returns -ENOSYS) instead of
+     * kCFI-panicking on first call. "" when the helper is absent (v6..v8) or
+     * nothing drifted - fail-open, exactly like the v9 boot script.
+     */
+    @NonNull
+    private String kapiGuardArg() {
+        if (!existsSticky(KAPI_CHECK)) return "";
+        var out = run("%s /sys/kernel/btf/vmlinux", escapedString(KAPI_CHECK));
+        for (var line : out.getOutString().split("\n")) {
+            line = line.trim();
+            if (!line.startsWith("disable=")) continue;
+            var v = line.substring("disable=".length()).trim();
+            // A symbol-name list, pasted into a shell line: refuse anything else.
+            if (!v.isEmpty() && SAFE_PARAM.matcher(v).matches())
+                return fmt("disable_kapi=%s", v);
+        }
+        return "";
     }
 
     private static Try<LoadImpl, Void> insmod(@NonNull LoadImpl impl, @Nullable String arg) {
@@ -512,11 +804,52 @@ final class HugePageModel {
 
     /** Persist the target to settings.prop under both keys (whichever loader reads). */
     private static Try<Only, Void> writeSettings(long pages) {
-        var a = run("echo 'pool_want=%s' > %s", pages, SETTINGS_PROP);
-        var b = run("echo 'pool_target=%s' >> %s", pages, SETTINGS_PROP);
-        return (a.isSuccess() && b.isSuccess())
-            ? Try.<Only, Void>ok(Only.DEFAULT, null)
-            : Try.<Only, Void>fail(Only.DEFAULT, reason(a.isSuccess() ? b : a, "settings.prop"));
+        var changes = new LinkedHashMap<String, String>();
+        changes.put("pool_want", Long.toString(pages));
+        changes.put("pool_target", Long.toString(pages));
+        return updateSettings(changes);
+    }
+
+    /** Serializes settings.prop read-modify-write cycles within this process. */
+    private static final Object SETTINGS_LOCK = new Object();
+
+    /**
+     * Read-modify-write settings.prop: apply {@code changes} (a null value
+     * <b>removes</b> that key) and keep every other key (the file also carries
+     * app-owned CMA state - {@code pool_want_with_cma}, {@code cma_probe_result}
+     * - that a blind rewrite would wipe). The boot script {@code source}s the
+     * file, so lines stay plain {@code key=value}. Locked so concurrent writers
+     * (the probe worker vs a pool-size save) can't interleave their read/write
+     * pairs and drop each other's keys.
+     */
+    private static Try<Only, Void> updateSettings(@NonNull Map<String, String> changes) {
+        synchronized (SETTINGS_LOCK) {
+            String raw;
+            try {
+                raw = shellReadFile(SETTINGS_PROP);
+            } catch (Exception e) {
+                // A missing file legitimately starts empty; an EXISTING file that
+                // failed to read must abort - rewriting from an empty map would
+                // silently drop every other persisted key (probe verdict, CMA
+                // targets) on a transient root hiccup.
+                if (existsSticky(SETTINGS_PROP))
+                    return Try.fail(Only.DEFAULT, "settings.prop: read failed");
+                raw = "";
+            }
+            var s = parseProp(raw);
+            for (var e : changes.entrySet()) {
+                if (e.getValue() == null) s.remove(e.getKey());
+                else s.put(e.getKey(), e.getValue());
+            }
+            var content = new StringBuilder();
+            for (var e : s.entrySet())
+                content.append(e.getKey()).append('=').append(e.getValue()).append('\n');
+            var r = run("printf '%%s' %s > %s",
+                escapedString(content.toString()), SETTINGS_PROP);
+            return r.isSuccess()
+                ? Try.<Only, Void>ok(Only.DEFAULT, null)
+                : Try.<Only, Void>fail(Only.DEFAULT, reason(r, "settings.prop"));
+        }
     }
 
     @NonNull
