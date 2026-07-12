@@ -34,6 +34,7 @@ import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
@@ -111,6 +112,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         try {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
             prepareProcess(builder);
+            applyGfxstreamEnv(builder);
             if (uart != null) {
                 builder.preserveFd(uart.getOutputRemoteFd());
                 builder.preserveFd(uart.getInputRemoteFd());
@@ -162,7 +164,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 args.add("kvm");
                 break;
             case GUNYAH:
-                args.add("gunyah");
+                // gfxstream host-visible blobs on Gunyah use the GuestAccept path
+                // (host SHARE + guest mem_accept), selected via blob_mode.
+                if (item.optBoolean("gpu_enabled", false)
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM) {
+                    args.add("gunyah[blob_mode=guest-accept]");
+                } else {
+                    args.add("gunyah");
+                }
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
                 break;
             case GENIEZONE:
@@ -205,6 +214,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 break;
             default:
                 break;
+        }
+        var swiotlbMb = item.optLong("swiotlb_mb", 0);
+        if (swiotlbMb > 0) {
+            args.add("--swiotlb");
+            args.add(String.valueOf(swiotlbMb));
         }
         var boot = BootPlan.of(config);
         if (!boot.initrd.isEmpty()) {
@@ -416,6 +430,25 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     /** True iff the per-VM crosvm command will reference native-display input sockets. */
+    /**
+     * gfxstream needs its host-visible folio/blob env and a raised udmabuf import
+     * cap. No-op unless the GPU backend is gfxstream.
+     */
+    private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
+        var item = config.item;
+        if (!item.optBoolean("gpu_enabled", false)) return;
+        if (optEnum(item, "gpu_backend", GpuBackend.NONE) != GpuBackend.GPU_GFXSTREAM) return;
+        // Folio-backed host-visible memory + clean per-blob lifecycle on Gunyah.
+        builder.environment("GFXSTREAM_GUNYAH_PIN_RINGBLOB", "1");
+        builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
+        builder.environment("GFXSTREAM_ARENA_MB",
+            String.valueOf(item.optLong("gpu_arena_mb", 2048)));
+        // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
+        // whole host-visible allocation can be wrapped as one dma-buf.
+        RunUtils.run("echo %d > /sys/module/udmabuf/parameters/size_limit_mb 2>/dev/null || true",
+            item.optLong("gpu_udmabuf_limit_mb", 4096));
+    }
+
     private boolean isNativeDisplayEnabled() {
         var item = config.item;
         if (!item.optBoolean("gpu_enabled", false)) return false;
