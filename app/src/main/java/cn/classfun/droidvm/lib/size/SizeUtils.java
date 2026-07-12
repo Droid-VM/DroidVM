@@ -20,7 +20,12 @@ public final class SizeUtils {
         for (int i = units.length - 1; i >= 0; i--)
             if (units[i].fitsExactly(bytes))
                 return units[i].calcPair(bytes);
-        return SizeUnit.B.calcPair(bytes);
+        // Nothing fits exactly: fall back to the smallest *allowed* unit so a
+        // restricted list (e.g. a GiB-only picker) never yields a unit outside
+        // it. For the full list units[0] is B - identical to the old fallback.
+        return units.length > 0
+            ? units[0].calcPair(new BigDecimal(bytes))
+            : SizeUnit.B.calcPair(bytes);
     }
 
     @NonNull
@@ -31,7 +36,10 @@ public final class SizeUtils {
         for (int i = units.length - 1; i >= 0; i--)
             if (units[i].isAtLeast(bytes))
                 return units[i].calcPair(bytes);
-        return SizeUnit.B.calcPair(bytes);
+        // See findUnit: keep the fallback inside the allowed list.
+        return units.length > 0
+            ? units[0].calcPair(bytes)
+            : SizeUnit.B.calcPair(bytes);
     }
 
     @NonNull
