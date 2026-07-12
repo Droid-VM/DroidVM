@@ -331,8 +331,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (!useGpu && !useDisplay) return;
         if (useGpu) {
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
+            var isGfxstream = gpuBackend == GpuBackend.GPU_GFXSTREAM;
             var gpuArg = new StringBuilder();
             gpuArg.append(gpuBackend.getName());
+            // gfxstream host-visible Vulkan: the guest turnip (VK) + zink (GL-on-VK)
+            // stack needs the gfxstream-vulkan context type.
+            if (isGfxstream) {
+                gpuArg.append(",context-types=gfxstream-vulkan");
+            }
             if (useDisplay && backend == VIRTIO_GPU) {
                 gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
                     item.optLong("display_width", 1280),
@@ -344,17 +350,27 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     item.optLong("display_dpi_v", 160)));
             }
 
-            gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
-            switch (api) {
-                case EGL:
-                    gpuArg.append(",egl=true");
-                    break;
-                case OPENGLES:
-                    gpuArg.append(",gles=true");
-                    break;
-                case ANGLE:
-                    gpuArg.append(",angle=true");
-                    break;
+            if (isGfxstream) {
+                // gfxstream serves both VK (turnip) and GL (zink) clients, so both
+                // capsets are on. pci-bar-size is the host-visible BAR window and
+                // doubles as the GPU memory ceiling (the guest has no
+                // device-local-only memory type); default 4 GiB.
+                gpuArg.append(",vulkan=true,gles=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
+            } else {
+                gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
+                switch (api) {
+                    case EGL:
+                        gpuArg.append(",egl=true");
+                        break;
+                    case OPENGLES:
+                        gpuArg.append(",gles=true");
+                        break;
+                    case ANGLE:
+                        gpuArg.append(",angle=true");
+                        break;
+                }
             }
             args.add("--gpu");
             args.add(gpuArg.toString());
