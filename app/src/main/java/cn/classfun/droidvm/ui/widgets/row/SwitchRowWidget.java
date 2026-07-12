@@ -57,7 +57,9 @@ public final class SwitchRowWidget extends FrameLayout {
         switchView = findViewById(R.id.sw_switch);
         initAttrs(attrs);
         if (isInEditMode()) return;
-        setOnClickListener(v -> switchView.toggle());
+        setOnClickListener(v -> {
+            if (switchView.isEnabled()) switchView.toggle();
+        });
     }
 
     private void initAttrs(@Nullable AttributeSet attrs) {
@@ -94,8 +96,21 @@ public final class SwitchRowWidget extends FrameLayout {
     @SuppressLint("ClickableViewAccessibility")
     public void setSwitchEnabled(boolean enabled) {
         switchView.setOnTouchListener(enabled ? null : (v, e) -> true);
-        setOnClickListener(enabled ? v -> switchView.toggle() : null);
+        setOnClickListener(!enabled ? null : v -> {
+            if (switchView.isEnabled()) switchView.toggle();
+        });
         setClickable(enabled);
+    }
+
+    /**
+     * FrameLayout.setEnabled alone leaves the child MaterialSwitch enabled and
+     * directly draggable, so a "disabled" row could still fire its change
+     * listener. Propagate to the switch so disabling actually greys and locks it.
+     */
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        switchView.setEnabled(enabled);
     }
 
     public void setChecked(boolean checked) {
