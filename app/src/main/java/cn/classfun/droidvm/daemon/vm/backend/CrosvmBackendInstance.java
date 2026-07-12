@@ -443,6 +443,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
         builder.environment("GFXSTREAM_ARENA_MB",
             String.valueOf(item.optLong("gpu_arena_mb", 2048)));
+        // Point gfxstream at the bundled turnip ICD (the host Adreno Vulkan driver it
+        // renders through). Falls back to the system Vulkan HAL if the file is absent.
+        var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
+        if (new File(turnip).exists()) {
+            builder.environment("ANDROID_EMU_VK_LOADER_PATH", turnip);
+        }
         // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
         // whole host-visible allocation can be wrapped as one dma-buf.
         RunUtils.run("echo %d > /sys/module/udmabuf/parameters/size_limit_mb 2>/dev/null || true",
@@ -474,6 +480,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (!password.isEmpty()) {
             vncArg.append(",password=");
             vncArg.append(password);
+        }
+        // Pointer input mode for the VNC server: tablet (absolute, 1:1 cursor +
+        // hover/wheel), mouse (absolute alias), or touch (multi-touch). Default
+        // tablet. "" / "default" leaves it to crosvm's built-in default.
+        var vncInput = item.optString("vnc_input_mode", "tablet");
+        if (!vncInput.isEmpty() && !"default".equals(vncInput)) {
+            vncArg.append(",input=");
+            vncArg.append(vncInput);
         }
         args.add("--vnc-server");
         args.add(vncArg.toString());
