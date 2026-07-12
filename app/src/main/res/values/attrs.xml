@@ -72,6 +72,12 @@
             <enum name="number" value="1" />
             <enum name="size" value="2" />
         </attr>
+        <!-- Pin the size-mode unit picker to exactly this unit (e.g. "GiB"):
+             values always display/enter in it, no other unit is offered. -->
+        <attr name="ti_unit" format="string" />
+        <!-- Hide the unit picker button in size mode (narrow layouts); the
+             fixed/derived unit still applies to typed values. -->
+        <attr name="ti_showUnit" format="boolean" />
         <attr name="ti_min" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->
         <attr name="ti_max" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->
         <attr name="ti_precision" format="string" /> <!-- parse as long(number) or SizeUnit(size) -->

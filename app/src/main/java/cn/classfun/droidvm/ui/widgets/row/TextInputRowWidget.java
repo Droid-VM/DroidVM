@@ -1,5 +1,7 @@
 package cn.classfun.droidvm.ui.widgets.row;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.content.Context;
 import android.text.Editable;
 import android.text.InputFilter;
@@ -48,6 +50,9 @@ public final class TextInputRowWidget extends FrameLayout {
     private BigInteger minValue = BigInteger.ZERO;
     private BigInteger maxValue = BigInteger.valueOf(Long.MAX_VALUE);
     private BigInteger precision = BigInteger.ONE;
+    @Nullable
+    private SizeUnit fixedUnit = null;   // ti_unit: pin size mode to this one unit
+    private boolean showUnitButton = true;   // ti_showUnit: hide the picker button
     private final AtomicBoolean updatingValue = new AtomicBoolean(false);
     private Runnable onFocusLostListener;
 
@@ -134,6 +139,14 @@ public final class TextInputRowWidget extends FrameLayout {
                 iconButtonView.setVisibility(GONE);
             }
             var tiMode = a.getInt(R.styleable.TextInputRowWidget_ti_mode, MODE_NORMAL);
+            var unit = a.getString(R.styleable.TextInputRowWidget_ti_unit);
+            if (unit != null) {
+                fixedUnit = SizeUnit.fromString(unit);
+                if (fixedUnit == null)
+                    throw new IllegalArgumentException(fmt("Unknown ti_unit: %s", unit));
+            }
+            showUnitButton = a.getBoolean(
+                R.styleable.TextInputRowWidget_ti_showUnit, true);
             var min = a.getString(R.styleable.TextInputRowWidget_ti_min);
             var max = a.getString(R.styleable.TextInputRowWidget_ti_max);
             if (!isInEditMode()) {
@@ -148,6 +161,33 @@ public final class TextInputRowWidget extends FrameLayout {
                 this.precision = parsed;
             }
         }
+    }
+
+    /**
+     * Fixed-unit variant of {@link #setPickerByMinMax}: min/max still bound the
+     * byte value, but the picker offers exactly {@code fixedUnit} - the button
+     * degrades to a unit tag (ROTATE over one item is a no-op).
+     */
+    private void setPickerFixedUnit(
+        @NonNull SizeUnit unit,
+        @Nullable String min,
+        @Nullable String max
+    ) {
+        if (min != null) {
+            var parsed = SizeUtils.parseBigSize(min);
+            if (parsed.compareTo(BigInteger.ZERO) < 0)
+                throw new IllegalArgumentException("Min value must be non-negative");
+            minValue = parsed;
+        }
+        if (max != null) {
+            var parsed = SizeUtils.parseBigSize(max);
+            if (parsed.compareTo(BigInteger.ZERO) < 0)
+                throw new IllegalArgumentException("Max value must be non-negative");
+            maxValue = parsed;
+        }
+        if (minValue.compareTo(maxValue) > 0)
+            throw new IllegalArgumentException("Min value cannot be greater than max value");
+        buttonView.setItems(unit);
     }
 
     private void setPickerByMinMax(
@@ -196,10 +236,13 @@ public final class TextInputRowWidget extends FrameLayout {
         } else if (mode == MODE_SIZE) {
             var flags = InputType.TYPE_CLASS_NUMBER;
             flags |= InputType.TYPE_NUMBER_FLAG_DECIMAL;
-            buttonView.setVisibility(VISIBLE);
+            // The picker is still configured when hidden - the (fixed) unit
+            // keeps applying to typed values; only the button goes away.
+            buttonView.setVisibility(showUnitButton ? VISIBLE : GONE);
             if (!isInEditMode()) {
                 buttonView.setMode(PickerButtonWidget.Mode.ROTATE);
-                setPickerByMinMax(min, max);
+                if (fixedUnit != null) setPickerFixedUnit(fixedUnit, min, max);
+                else setPickerByMinMax(min, max);
             }
             editText.setInputType(flags);
         }
@@ -318,6 +361,17 @@ public final class TextInputRowWidget extends FrameLayout {
 
     public void setSelection(int index) {
         editText.setSelection(index);
+    }
+
+    /**
+     * Show/hide the size-mode unit button at runtime (see {@code ti_showUnit}).
+     * The picker stays configured either way - the unit keeps applying to
+     * typed values; only the button's width comes and goes.
+     */
+    public void setUnitButtonVisible(boolean visible) {
+        showUnitButton = visible;
+        if (mode == MODE_SIZE)
+            buttonView.setVisibility(visible ? VISIBLE : GONE);
     }
 
     public void setError(@Nullable CharSequence error) {
