@@ -1120,4 +1120,16 @@
     <string name="vmpkg_import_done">匯入完成</string>
     <string name="vmpkg_import_failed">匯入失敗：%1$s</string>
     <string name="vmpkg_import_invalid">不是有效的 vmpkg：%1$s</string>
+    <string name="kernel_module_title">內核模組</string>
+    <string name="kernel_module_subtitle">載入主機內核模組、設定開機自動載入</string>
+    <string name="kernel_module_loading">載入中…</string>
+    <string name="kernel_module_none">沒有可用模組</string>
+    <string name="kernel_module_loaded">已載入</string>
+    <string name="kernel_module_unloaded">未載入</string>
+    <string name="kernel_module_load">載入</string>
+    <string name="kernel_module_unload">卸載</string>
+    <string name="kernel_module_autostart">開機自動載入</string>
+    <string name="kernel_module_working">執行中…</string>
+    <string name="kernel_module_ok">完成</string>
+    <string name="kernel_module_fail">失敗</string>
 </resources>

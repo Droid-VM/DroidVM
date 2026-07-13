@@ -1157,4 +1157,16 @@
     <string name="vmpkg_import_done">Import complete</string>
     <string name="vmpkg_import_failed">Import failed: %1$s</string>
     <string name="vmpkg_import_invalid">Not a valid vmpkg: %1$s</string>
+    <string name="kernel_module_title">Kernel Modules</string>
+    <string name="kernel_module_subtitle">Load host kernel modules and set auto-load</string>
+    <string name="kernel_module_loading">Loading…</string>
+    <string name="kernel_module_none">No modules available</string>
+    <string name="kernel_module_loaded">Loaded</string>
+    <string name="kernel_module_unloaded">Not loaded</string>
+    <string name="kernel_module_load">Load</string>
+    <string name="kernel_module_unload">Unload</string>
+    <string name="kernel_module_autostart">Auto-load</string>
+    <string name="kernel_module_working">Working…</string>
+    <string name="kernel_module_ok">Done</string>
+    <string name="kernel_module_fail">Failed</string>
 </resources>
