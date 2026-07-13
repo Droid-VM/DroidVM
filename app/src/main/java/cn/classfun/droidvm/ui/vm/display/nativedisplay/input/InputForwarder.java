@@ -1,10 +1,13 @@
 package cn.classfun.droidvm.ui.vm.display.nativedisplay.input;
 
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.KEYBOARD;
+import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MOUSE;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MULTITOUCH;
+import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.TABLET;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
-import android.os.SystemClock;
+import cn.classfun.droidvm.ui.vm.display.base.InputMode;
+
 import android.util.Log;
 import android.view.MotionEvent;
 
@@ -37,6 +40,16 @@ public final class InputForwarder {
     private final InputSink sink;
     // Stateful touch encoder (pointer-id -> slot, contact count); single-threaded on the worker.
     private final EvdevEncoder encoder = new EvdevEncoder();
+
+    // Current pointer mode; set from the UI thread, read on the worker. Volatile suffices: a change
+    // just takes effect on the next event. TOUCH -> multi-touch, MOUSE -> relative, TABLET -> single.
+    private volatile InputMode inputMode = InputMode.TOUCH;
+    // Mouse-mode gesture state (InputMode.MOUSE); touched only on the worker thread.
+    private float mouseLastX, mouseLastY, mouseDownX, mouseDownY;
+    private long mouseDownTime;
+    private boolean mouseDragging;
+    private static final float MOUSE_TAP_SLOP = 16f;   // guest px of travel before a press is a drag
+    private static final long MOUSE_TAP_MS = 250;      // max press duration still treated as a tap
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
         var t = new Thread(r, "InputForwarder");
         t.setDaemon(true);
@@ -60,6 +73,77 @@ public final class InputForwarder {
 
     public InputForwarder(@NonNull InputSink sink) {
         this.sink = sink;
+    }
+
+    /** Switches pointer mode at runtime; takes effect on the next touch event. */
+    public void setInputMode(@NonNull InputMode mode) {
+        this.inputMode = mode;
+    }
+
+    /** The guest pointer device the current mode routes host mouse/stylus events to. */
+    private int pointerChannel() {
+        return inputMode == InputMode.TABLET ? TABLET : MOUSE;
+    }
+
+    /**
+     * A pointer button ({@link EvdevEncoder#BTN_RIGHT}/{@link EvdevEncoder#BTN_MIDDLE}) press/release
+     * from a host mouse or stylus. Left-click still rides the touch/tap path. Routed to the tablet
+     * (absolute mouse) in TABLET mode, otherwise the relative mouse.
+     */
+    public void sendPointerButton(short button, boolean down) {
+        submit("pointerButton", () -> sink.write(pointerChannel(),
+            EvdevEncoder.encodeMouseButton(button, down)));
+    }
+
+    /** Relative cursor motion (guest px) on the relative-mouse device; the guest renders the cursor. */
+    public void sendMouseMove(int dxGuest, int dyGuest) {
+        submit("mouseMove", () -> {
+            byte[] data = EvdevEncoder.encodeMouseMove(dxGuest, dyGuest);
+            if (data != null) sink.write(MOUSE, data);
+        });
+    }
+
+    /** Absolute pointer position (guest px, no button change) on the tablet device. */
+    public void sendAbsMove(int xGuest, int yGuest) {
+        submit("absMove", () -> sink.write(TABLET, EvdevEncoder.encodeAbsMove(xGuest, yGuest)));
+    }
+
+    /** Left button on the tablet device, positioned first so the press lands at (x, y) guest px. */
+    public void sendAbsLeftButton(boolean down, int xGuest, int yGuest) {
+        submit("absLeft", () -> {
+            sink.write(TABLET, EvdevEncoder.encodeAbsMove(xGuest, yGuest));
+            sink.write(TABLET, EvdevEncoder.encodeMouseButton(EvdevEncoder.BTN_LEFT, down));
+        });
+    }
+
+    /** Host scroll wheel (vertical, horizontal notches) routed to the active pointer device. */
+    public void sendScroll(int vNotches, int hNotches) {
+        submit("scroll", () -> {
+            byte[] data = EvdevEncoder.encodeMouseWheel(vNotches, hNotches);
+            if (data != null) sink.write(pointerChannel(), data);
+        });
+    }
+
+    /**
+     * Host pointer hover (no button held). In TABLET mode it becomes an absolute position on the
+     * guest tablet (native hover); otherwise a relative delta so the guest mouse cursor follows.
+     * Coordinates are view pixels; scale maps them to guest space.
+     */
+    public void sendHover(float viewX, float viewY, float scaleX, float scaleY) {
+        int gx = (int) (viewX * scaleX);
+        int gy = (int) (viewY * scaleY);
+        submit("hover", () -> {
+            if (inputMode == InputMode.TABLET) {
+                sink.write(TABLET, EvdevEncoder.encodeAbsMove(gx, gy));
+            } else {
+                int dx = Math.round(gx - mouseLastX);
+                int dy = Math.round(gy - mouseLastY);
+                mouseLastX = gx;
+                mouseLastY = gy;
+                byte[] data = EvdevEncoder.encodeMouseMove(dx, dy);
+                if (data != null) sink.write(MOUSE, data);
+            }
+        });
     }
 
     private void submit(@NonNull String name, @NonNull Runnable block) {
@@ -104,29 +188,73 @@ public final class InputForwarder {
     }
 
     private void sendTouchNow(@NonNull MotionEvent event, float scaleX, float scaleY) {
-        // eventTime is on the SystemClock.uptimeMillis() timebase, so the diff below is the full
-        // finger-to-sink latency (kernel input -> framework dispatch -> our worker -> sink). Read it
-        // before recycle() since the framework reuses the MotionEvent afterwards.
-        long eventTimeMs = event.getEventTime();
-        byte[] data;
         try {
-            data = encoder.encodeTouch(event, scaleX, scaleY);
+            switch (inputMode) {
+                case MOUSE:
+                    sendMouseNow(event, scaleX, scaleY);
+                    break;
+                case TABLET: {
+                    byte[] data = encoder.encodeTablet(event, scaleX, scaleY);
+                    if (data != null) sink.write(TABLET, data);
+                    break;
+                }
+                case TOUCH:
+                default: {
+                    byte[] data = encoder.encodeTouch(event, scaleX, scaleY);
+                    if (data != null) sink.write(MULTITOUCH, data);
+                    break;
+                }
+            }
         } catch (Exception e) {
-            Log.e(TAG, "encode touch failed", e);
-            return;
+            Log.e(TAG, "encode/send pointer failed", e);
         } finally {
             event.recycle();
         }
-        if (data == null) return; // nothing to send for this event
-        long sinkStartNs = System.nanoTime();
-        boolean ok = sink.write(MULTITOUCH, data);
-        double sinkMs = (System.nanoTime() - sinkStartNs) / 1_000_000.0;
-        long e2eMs = SystemClock.uptimeMillis() - eventTimeMs;
-        // direct=false means the write fell back to the vm_input JSON-RPC IPC path (~40ms) instead
-        // of the direct unix socket (<1ms) - i.e. the UI couldn't reach the daemon's UI input socket.
-        boolean direct = sink instanceof DirectInputSink && ((DirectInputSink) sink).wasLastWriteDirect();
-        Log.d(TAG, fmt("touch latency: sink=%.2fms e2e=%dms direct=%b delivered=%b",
-            sinkMs, e2eMs, direct, ok));
+    }
+
+    // Relative-mouse translation (InputMode.MOUSE): a drag becomes REL_X/REL_Y motion, a quick tap
+    // without travel becomes a left click. Runs on the worker thread, so the mouse state needs no
+    // locking. Move coalescing upstream is fine here: the delta is measured from the last position
+    // we actually sent, so dropped intermediate samples just fold into one larger (correct) delta.
+    private void sendMouseNow(@NonNull MotionEvent event, float scaleX, float scaleY) {
+        float gx = event.getX() * scaleX;
+        float gy = event.getY() * scaleY;
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                mouseLastX = gx;
+                mouseLastY = gy;
+                mouseDownX = gx;
+                mouseDownY = gy;
+                mouseDownTime = event.getEventTime();
+                mouseDragging = false;
+                break;
+            case MotionEvent.ACTION_MOVE: {
+                int dx = Math.round(gx - mouseLastX);
+                int dy = Math.round(gy - mouseLastY);
+                if (dx == 0 && dy == 0) break;
+                mouseLastX = gx;
+                mouseLastY = gy;
+                if (!mouseDragging
+                    && (Math.abs(gx - mouseDownX) > MOUSE_TAP_SLOP
+                        || Math.abs(gy - mouseDownY) > MOUSE_TAP_SLOP)) {
+                    mouseDragging = true;
+                }
+                byte[] data = EvdevEncoder.encodeMouseMove(dx, dy);
+                if (data != null) sink.write(MOUSE, data);
+                break;
+            }
+            case MotionEvent.ACTION_UP: {
+                boolean tap = !mouseDragging
+                    && (event.getEventTime() - mouseDownTime) <= MOUSE_TAP_MS;
+                if (tap) {
+                    sink.write(MOUSE, EvdevEncoder.encodeMouseButton(EvdevEncoder.BTN_LEFT, true));
+                    sink.write(MOUSE, EvdevEncoder.encodeMouseButton(EvdevEncoder.BTN_LEFT, false));
+                }
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     /**
@@ -151,6 +279,25 @@ public final class InputForwarder {
         int scanCode = KeyCodeMapper.androidToEvdev(keyCode);
         if (scanCode == -1) return false;
         sendRawKeyEvent(scanCode, pressed);
+        return true;
+    }
+
+    /**
+     * Sends a printable character as a US-layout evdev key tap, wrapping it in LEFTSHIFT down/up
+     * when the character requires Shift (uppercase letters, {@code !@#...}). This is the path for
+     * soft keyboards that commit text rather than emitting key events, so uppercase and symbols
+     * reach the guest correctly instead of being lost or arriving lowercase.
+     *
+     * @return true if the character is mapped to a US-layout key; false if the caller should fall
+     * back to the framework key character map.
+     */
+    public boolean sendChar(char c) {
+        KeyCodeMapper.CharKey key = KeyCodeMapper.charToKey(c);
+        if (key == null) return false;
+        if (key.shift) sendRawKeyEvent(KeyCodeMapper.KEY_LEFTSHIFT, true);
+        sendRawKeyEvent(key.scanCode, true);
+        sendRawKeyEvent(key.scanCode, false);
+        if (key.shift) sendRawKeyEvent(KeyCodeMapper.KEY_LEFTSHIFT, false);
         return true;
     }
 
