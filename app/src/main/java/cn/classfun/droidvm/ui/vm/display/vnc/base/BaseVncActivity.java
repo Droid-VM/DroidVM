@@ -418,6 +418,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
         int keyCode = event.getKeyCode();
+        // A hardware-mouse right-click the framework (or OEM ROM) failed to see consumed gets
+        // synthesized as a mouse-sourced BACK key. Inside the VM display that must never navigate
+        // back - the right-click itself is delivered to the guest by the pointer handlers.
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK
+            && (event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0)
+            return true;
         if (keyCode == KEYCODE_VOLUME_UP || keyCode == KEYCODE_VOLUME_DOWN)
             return super.dispatchKeyEvent(event);
         int keysym = androidKeyToXKeysym(keyCode);

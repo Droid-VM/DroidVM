@@ -102,9 +102,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // the VM is up - so the daemon is the only process that can both bind the socket before
         // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
         // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
-        if (isNativeDisplayEnabled()) {
+        // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
+        // args in buildCommand(), so the sockets and devices never diverge.
+        if (isInputBridgeNeeded()) {
             if (!inputBridge.startListening(NativeDisplay.serviceName(config))) {
-                Log.e(TAG, "Native display input sockets unavailable; crosvm will likely fail");
+                Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
             }
         }
         var args = buildCommand();
@@ -238,6 +240,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildSharedDirCommand(args);
         buildGpuCommand(args);
         buildVncCommand(args);
+        // The evdev --input devices ride along whenever any app display path is active: the native
+        // display routes everything through them; the VNC display routes its MOUSE (relative) and
+        // TOUCH (multi-touch) modes here while the tablet pointer + keyboard stay on RFB.
+        if (isInputBridgeNeeded()) {
+            buildInputDevicesCommand(args);
+        }
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
@@ -409,12 +417,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     private void buildNativeDisplayCommand(@NonNull List<String> args) {
+        args.add("--android-display-service");
+        args.add(NativeDisplay.serviceName(config));
+    }
+
+    // One virtio-input device per NativeDisplay channel; the daemon pre-binds the matching sockets
+    // (see start()) and the UI ships evdev records to them via vm_input / the direct sink.
+    private void buildInputDevicesCommand(@NonNull List<String> args) {
         var item = config.item;
         var serviceName = NativeDisplay.serviceName(config);
         var width = item.optLong("display_width", 1280);
         var height = item.optLong("display_height", 720);
-        args.add("--android-display-service");
-        args.add(serviceName);
         // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
         // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
         args.add("--input");
@@ -426,6 +439,21 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         args.add(fmt(
             "keyboard[path=%s]",
             NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
+        ));
+        // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
+        // the cursor, which is what relative-motion consumers (FPS games) need.
+        args.add("--input");
+        args.add(fmt(
+            "mouse[path=%s]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MOUSE)
+        ));
+        // Tablet = crosvm's absolute-pointing mouse (qemu usb-tablet): ABS position + buttons +
+        // wheel, so it gives the guest pointer hover, right-click and scroll -- which single-touch
+        // (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto it in TABLET mode.
+        args.add("--input");
+        args.add(fmt(
+            "absolute-mouse[path=%s,width=%d,height=%d]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.TABLET), width, height
         ));
     }
 
@@ -464,6 +492,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return item.optBoolean("native_display_enabled", false);
     }
 
+    /**
+     * The evdev input bridge (and matching --input devices) is needed by both app display paths:
+     * native uses it for every input; the VNC display uses it for MOUSE/TOUCH modes (tablet
+     * pointer + keyboard ride the RFB channel instead).
+     */
+    private boolean isInputBridgeNeeded() {
+        return isNativeDisplayEnabled() || config.item.optBoolean("vnc_enabled", false);
+    }
+
     private void buildVncCommand(@NonNull List<String> args) {
         var item = config.item;
         if (!item.optBoolean("vnc_enabled", false)) return;
@@ -481,14 +518,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             vncArg.append(",password=");
             vncArg.append(password);
         }
-        // Pointer input mode for the VNC server: tablet (absolute, 1:1 cursor +
-        // hover/wheel), mouse (absolute alias), or touch (multi-touch). Default
-        // tablet. "" / "default" leaves it to crosvm's built-in default.
-        var vncInput = item.optString("vnc_input_mode", "tablet");
-        if (!vncInput.isEmpty() && !"default".equals(vncInput)) {
-            vncArg.append(",input=");
-            vncArg.append(vncInput);
-        }
+        // VNC server pointer is FIXED to tablet (absolute, 1:1 cursor + hover/right-click/wheel):
+        // every third-party VNC client gets absolute-tablet semantics. The app's own VNC display
+        // routes MOUSE/TOUCH modes around RFB via the crosvm --input devices instead, so nothing
+        // needs a different server-side mode.
+        vncArg.append(",input=tablet");
         args.add("--vnc-server");
         args.add(vncArg.toString());
     }

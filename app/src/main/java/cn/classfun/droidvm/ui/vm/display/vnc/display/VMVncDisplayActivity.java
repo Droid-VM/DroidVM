@@ -38,9 +38,15 @@ import androidx.core.view.WindowInsetsCompat;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
+import org.json.JSONObject;
+
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 
 public final class VMVncDisplayActivity extends BaseVncActivity {
@@ -48,22 +54,18 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private static final long OP_LABEL_HIDE_DELAY_MS = 2000;
     private static final String PREFS_NAME = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
-    private static final float TAP_SLOP = 20f;
-    private static final long TAP_TIMEOUT = 250;
-    private static final long DOUBLE_TAP_TIMEOUT = 300;
-    private static final float DEFAULT_ZOOM = 1f;
-    private static final float MIN_ZOOM = 0.5f;
-    private static final float MAX_ZOOM = 5f;
-    private static final float SNAP_THRESHOLD = 15f;
-    private static final float MIN_SCALE_DIST = 24f;
-    private static final float SCROLL_THRESHOLD = 8f;
+    // RFB pointer button-mask bits (the crosvm VNC server is fixed to tablet mode: an absolute
+    // pointer with these buttons plus scroll pulses).
     private static final int MASK_LEFT = 1;
     private static final int MASK_MIDDLE = 2;
     private static final int MASK_RIGHT = 4;
     private static final int MASK_SCROLL_UP = 8;
     private static final int MASK_SCROLL_DOWN = 16;
 
-    private enum InputMode {TOUCH, MOUSE}
+    // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
+    // absolute pointer + the keyboard); the rest goes to the crosvm --input evdev devices via the
+    // daemon (MOUSE = relative motion the guest renders a cursor for, TOUCH = raw multi-touch).
+    private enum InputMode {TOUCH, MOUSE, TABLET}
     private LinearLayout statusBar;
     private MaterialButton btnFullscreen;
     private FrameLayout displayContainer;
@@ -73,27 +75,146 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private boolean extraKeysVisible = true;
     private InputMode inputMode = InputMode.TOUCH;
     private SharedPreferences prefs;
-    private float cursorX, cursorY;
     private int baseViewW, baseViewH;
-    private float zoom = DEFAULT_ZOOM;
-    private float panX, panY;
-    private int gestureMaxPointers;
-    private boolean gestureMoved;
-    private long gestureStartTime;
-    private float gestureStartMidX, gestureStartMidY;
-    private long lastTapTime;
-    private int lastTapFingerCount;
-    private float lastTouchX, lastTouchY;
-    private float lastMidX, lastMidY;
-    private float initialAngle;
-    private float rotationBase;
-    private float initialDist;
-    private float initialZoom;
-    private float lastScrollMidY;
+
+    private InputForwarder inputForwarder;
+    private PointerGestureTranslator gestureTranslator;
+    private int rfbMask;                 // current RFB button mask (tablet mode)
+    private int rfbLastX, rfbLastY;      // last absolute pointer position sent, fb px
+    private float mouseRemX, mouseRemY;  // fractional remainders of relative mouse motion
+    private float displayScale = 1f;     // three-finger local zoom of the display view
+    // Last mouse right/middle-button activity: any BACK key arriving shortly after is the
+    // framework's (or OEM's) right-click fallback and must not navigate away from the VM.
+    private long lastMouseButtonMs;
+    private static final long MOUSE_BACK_SUPPRESS_MS = 800;
 
     private final Runnable hideOperationLabel = () -> {
         if (operationLabel != null) operationLabel.setVisibility(GONE);
     };
+
+    // Unified MOUSE/TABLET gestures. TABLET lands on the RFB channel (the VNC server's fixed
+    // absolute-tablet pointer); MOUSE lands on the crosvm relative-mouse device via vm_input.
+    private final PointerGestureTranslator.Listener gestureListener =
+        new PointerGestureTranslator.Listener() {
+            @Override
+            public void onRelativeMove(float dxGuest, float dyGuest) {
+                if (inputForwarder == null) return;
+                mouseRemX += dxGuest;
+                mouseRemY += dyGuest;
+                int dx = (int) mouseRemX, dy = (int) mouseRemY;
+                if (dx == 0 && dy == 0) return;
+                mouseRemX -= dx;
+                mouseRemY -= dy;
+                inputForwarder.sendMouseMove(dx, dy);
+            }
+
+            @Override
+            public void onAbsoluteMove(float xGuest, float yGuest) {
+                rfbMove(Math.round(xGuest), Math.round(yGuest));
+            }
+
+            @Override
+            public void onLeftButton(boolean down, float xGuest, float yGuest) {
+                if (inputMode == InputMode.TABLET) {
+                    rfbButton(MASK_LEFT, down, Math.round(xGuest), Math.round(yGuest));
+                } else if (inputForwarder != null) {
+                    inputForwarder.sendPointerButton(EvdevEncoder.BTN_LEFT, down);
+                }
+            }
+
+            @Override
+            public void onLeftTap(float xGuest, float yGuest) {
+                onLeftButton(true, xGuest, yGuest);
+                onLeftButton(false, xGuest, yGuest);
+            }
+
+            @Override
+            public void onRightClick(float xGuest, float yGuest) {
+                if (inputMode == InputMode.TABLET) {
+                    int x = Math.round(xGuest), y = Math.round(yGuest);
+                    rfbButton(MASK_RIGHT, true, x, y);
+                    rfbButton(MASK_RIGHT, false, x, y);
+                } else if (inputForwarder != null) {
+                    inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, true);
+                    inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, false);
+                }
+            }
+
+            @Override
+            public void onScroll(int vNotches, int hNotches) {
+                if (inputMode == InputMode.TABLET) {
+                    rfbScroll(vNotches);
+                } else if (inputForwarder != null) {
+                    inputForwarder.sendScroll(vNotches, hNotches);
+                }
+            }
+
+            @Override
+            public void onZoomPan(float scaleFactor, float dxView, float dyView,
+                                  float focusX, float focusY) {
+                applyDisplayZoomPan(scaleFactor, dxView, dyView);
+            }
+        };
+
+    // ---- RFB tablet-pointer helpers (absolute position + button mask) ----
+
+    private void rfbMove(int x, int y) {
+        if (vncClient == null || !vncClient.isConnected() || fbWidth <= 0) return;
+        rfbLastX = max(0, min(x, fbWidth - 1));
+        rfbLastY = max(0, min(y, fbHeight - 1));
+        vncClient.sendPointer(rfbLastX, rfbLastY, rfbMask);
+    }
+
+    private void rfbButton(int maskBit, boolean down, int x, int y) {
+        if (vncClient == null || !vncClient.isConnected() || fbWidth <= 0) return;
+        rfbLastX = max(0, min(x, fbWidth - 1));
+        rfbLastY = max(0, min(y, fbHeight - 1));
+        rfbMask = down ? (rfbMask | maskBit) : (rfbMask & ~maskBit);
+        vncClient.sendPointer(rfbLastX, rfbLastY, rfbMask);
+    }
+
+    /** RFB has no wheel axis; each notch is a scroll-button press/release pulse. */
+    private void rfbScroll(int vNotches) {
+        if (vncClient == null || !vncClient.isConnected() || vNotches == 0) return;
+        int bit = vNotches > 0 ? MASK_SCROLL_UP : MASK_SCROLL_DOWN;
+        for (int i = 0; i < Math.abs(vNotches); i++) {
+            vncClient.sendPointer(rfbLastX, rfbLastY, rfbMask | bit);
+            vncClient.sendPointer(rfbLastX, rfbLastY, rfbMask);
+        }
+    }
+
+    // Ships evdev records for MOUSE/TOUCH modes to the daemon, which owns the crosvm --input
+    // sockets. Runs on the InputForwarder worker thread (synchronous request keeps ordering).
+    private boolean sendInputToDaemon(int channel, @NonNull byte[] data) {
+        try {
+            var req = new JSONObject();
+            req.put("command", "vm_input");
+            req.put("vm_id", vmId);
+            req.put("channel", channel);
+            req.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
+            var resp = DaemonConnection.getInstance().request(req);
+            return resp.optBoolean("delivered", false);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    // Three-finger local zoom/pan of the display view; snaps back to identity at 1x.
+    private void applyDisplayZoomPan(float scaleFactor, float dxView, float dyView) {
+        displayScale = max(1f, min(displayScale * scaleFactor, 5f));
+        if (displayScale <= 1.001f) {
+            resetDisplayTransform();
+            return;
+        }
+        ivDisplay.setScaleX(displayScale);
+        ivDisplay.setScaleY(displayScale);
+        float maxPanX = ivDisplay.getWidth() * (displayScale - 1f) / 2f;
+        float maxPanY = ivDisplay.getHeight() * (displayScale - 1f) / 2f;
+        ivDisplay.setTranslationX(
+            max(-maxPanX, min(ivDisplay.getTranslationX() + dxView, maxPanX)));
+        ivDisplay.setTranslationY(
+            max(-maxPanY, min(ivDisplay.getTranslationY() + dyView, maxPanY)));
+    }
 
 
     @Override
@@ -131,7 +252,90 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         setupOperationLabel();
         setupDisplayTouch();
         setupFab();
+        inputForwarder = new InputForwarder(this::sendInputToDaemon);
+        gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
+        // Hardware mouse/stylus: hover is TABLET-only (RFB absolute move); wheel and right/middle
+        // buttons route per mode (tablet -> RFB mask, mouse -> crosvm mouse device).
+        ivDisplay.setOnHoverListener(this::onDisplayHover);
+        ivDisplay.setOnGenericMotionListener(this::onDisplayGenericMotion);
+        // Also on the container: a right-click over the letterbox area (outside the image) must
+        // still be consumed or the framework synthesizes BACK from it.
+        displayContainer.setOnGenericMotionListener(this::onDisplayGenericMotion);
+        // Keep the display area out of the system-gesture zones so multi-finger gestures
+        // (two-finger right-click/scroll, three-finger zoom) don't trip OEM gestures.
+        displayContainer.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) ->
+            v.setSystemGestureExclusionRects(java.util.Collections.singletonList(
+                new android.graphics.Rect(0, 0, r - l, b - t))));
         applyInputMode();
+    }
+
+    private boolean onDisplayHover(View v, MotionEvent event) {
+        if (inputMode != InputMode.TABLET) return false;
+        if (fbWidth <= 0 || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
+            rfbMove(Math.round(event.getX() * fbWidth / v.getWidth()),
+                Math.round(event.getY() * fbHeight / v.getHeight()));
+            return true;
+        }
+        return false;
+    }
+
+    // Button presses are ALWAYS consumed (every mode, letterbox included) - an unhandled
+    // BUTTON_SECONDARY press is what makes the framework synthesize a BACK key.
+    private boolean onDisplayGenericMotion(View v, MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_SCROLL: {
+                int vN = Math.round(event.getAxisValue(MotionEvent.AXIS_VSCROLL));
+                int hN = Math.round(event.getAxisValue(MotionEvent.AXIS_HSCROLL));
+                if (inputMode == InputMode.TABLET) rfbScroll(vN);
+                else if (inputForwarder != null) inputForwarder.sendScroll(vN, hN);
+                return true;
+            }
+            case MotionEvent.ACTION_BUTTON_PRESS:
+            case MotionEvent.ACTION_BUTTON_RELEASE: {
+                lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
+                boolean down = event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS;
+                // Map view coords to fb px; events from the container carry the letterbox offset.
+                float lx = event.getX(), ly = event.getY();
+                if (v == displayContainer) {
+                    lx -= ivDisplay.getLeft();
+                    ly -= ivDisplay.getTop();
+                }
+                int ivW = ivDisplay.getWidth(), ivH = ivDisplay.getHeight();
+                int x = ivW > 0 && fbWidth > 0 ? Math.round(lx * fbWidth / ivW) : rfbLastX;
+                int y = ivH > 0 && fbHeight > 0 ? Math.round(ly * fbHeight / ivH) : rfbLastY;
+                switch (event.getActionButton()) {
+                    case MotionEvent.BUTTON_SECONDARY:
+                    case MotionEvent.BUTTON_STYLUS_PRIMARY:
+                        if (inputMode == InputMode.TABLET) rfbButton(MASK_RIGHT, down, x, y);
+                        else if (inputForwarder != null)
+                            inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, down);
+                        break;
+                    case MotionEvent.BUTTON_TERTIARY:
+                        if (inputMode == InputMode.TABLET) rfbButton(MASK_MIDDLE, down, x, y);
+                        else if (inputForwarder != null)
+                            inputForwarder.sendPointerButton(EvdevEncoder.BTN_MIDDLE, down);
+                        break;
+                    default:
+                        break;
+                }
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(@NonNull android.view.KeyEvent event) {
+        // OEM-injected right-click fallback BACK may claim a keyboard/virtual source, which the
+        // base class's mouse-source check misses; the timestamp catches it regardless.
+        if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK
+            && android.os.SystemClock.uptimeMillis() - lastMouseButtonMs
+                < MOUSE_BACK_SUPPRESS_MS)
+            return true;
+        return super.dispatchKeyEvent(event);
     }
 
     private void setupCutoutMode() {
@@ -170,11 +374,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     @Override
     protected void onFramebufferReady(int width, int height) {
         updateAspectRatio(displayContainer.getWidth(), displayContainer.getHeight());
-        if (inputMode == InputMode.MOUSE) {
-            if (cursorX < 0 || cursorX >= width) cursorX = width / 2f;
-            if (cursorY < 0 || cursorY >= height) cursorY = height / 2f;
-            ensureCursorVisible();
-        }
     }
 
     @Override
@@ -192,46 +391,39 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     protected void onDestroyExtra() {
         mainHandler.removeCallbacks(this::hideBars);
         mainHandler.removeCallbacks(hideOperationLabel);
+        if (inputForwarder != null) inputForwarder.close();
     }
 
+    // Routes on-screen touches by input mode. ivDisplay is laid out to the framebuffer's aspect
+    // (updateAspectRatio), so view coords map to fb coords with a plain per-axis scale; touch
+    // coords stay in view-local space even under the three-finger zoom transform.
     private boolean onDisplayTouch(View v, MotionEvent event) {
-        if (vncClient == null || !vncClient.isConnected()) return false;
         if (fbWidth <= 0 || fbHeight <= 0) return false;
-        float viewX = event.getX(), viewY = event.getY();
-        float ivW = v.getWidth(), ivH = v.getHeight();
-        float imgAspect = (float) fbWidth / fbHeight;
-        float viewAspect = ivW / max(ivH, 1);
-        float drawnW, drawnH, offsetX, offsetY;
-        if (imgAspect > viewAspect) {
-            drawnW = ivW;
-            drawnH = ivW / imgAspect;
-            offsetX = 0;
-            offsetY = (ivH - drawnH) / 2;
-        } else {
-            drawnH = ivH;
-            drawnW = ivH * imgAspect;
-            offsetX = (ivW - drawnW) / 2;
-            offsetY = 0;
+        int ivW = ivDisplay.getWidth(), ivH = ivDisplay.getHeight();
+        if (ivW <= 0 || ivH <= 0) return false;
+        // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with
+        // the button in buttonState). Those are delivered by the generic-motion handler; keep them
+        // out of the tap/gesture path (else right-click doubles as a left tap) but consume them so
+        // the framework doesn't synthesize a BACK key from an unhandled right-click.
+        if ((event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0
+            && (event.getButtonState() & (MotionEvent.BUTTON_SECONDARY
+                | MotionEvent.BUTTON_TERTIARY | MotionEvent.BUTTON_STYLUS_PRIMARY)) != 0) {
+            lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
+            return true;
         }
-        int vncX = (int) ((viewX - offsetX) / drawnW * fbWidth);
-        int vncY = (int) ((viewY - offsetY) / drawnH * fbHeight);
-        vncX = max(0, min(vncX, fbWidth - 1));
-        vncY = max(0, min(vncY, fbHeight - 1));
-        int mask;
-        switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_MOVE:
-                mask = 1;
-                break;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_CANCEL:
-                mask = 0;
-                break;
+        float scaleX = (float) fbWidth / ivW;
+        float scaleY = (float) fbHeight / ivH;
+        switch (inputMode) {
+            case TABLET:
+            case MOUSE:
+                return gestureTranslator != null
+                    && gestureTranslator.onTouchEvent(event, scaleX, scaleY);
+            case TOUCH:
             default:
-                return false;
+                if (inputForwarder == null) return false;
+                inputForwarder.sendTouchEvent(event, scaleX, scaleY);
+                return true;
         }
-        vncClient.sendPointer(vncX, vncY, mask);
-        return true;
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -241,19 +433,16 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     @SuppressLint("ClickableViewAccessibility")
     private void applyInputMode() {
+        ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        if (operationLabel != null) operationLabel.setVisibility(GONE);
         if (inputMode == InputMode.MOUSE) {
-            ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            // Whole-screen touchpad: relative motion doesn't need to land on the image itself.
             ivDisplay.setClickable(false);
             ivDisplay.setOnTouchListener(null);
             displayContainer.setClickable(true);
             displayContainer.setOnClickListener(null);
-            displayContainer.setOnTouchListener(this::onMouseTouch);
-            if (operationLabel != null) operationLabel.setVisibility(GONE);
-            applyViewSize();
-            applyViewTransform();
-            ensureCursorVisible();
+            displayContainer.setOnTouchListener(this::onDisplayTouch);
         } else {
-            ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
             ivDisplay.setClickable(true);
             ivDisplay.setOnTouchListener(this::onDisplayTouch);
             displayContainer.setOnTouchListener(null);
@@ -262,336 +451,55 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 showBars();
                 toggleSoftKeyboard();
             });
-            if (operationLabel != null) operationLabel.setVisibility(GONE);
         }
+        if (gestureTranslator != null) {
+            gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
+            gestureTranslator.reset();
+        }
+        if (inputForwarder != null)
+            inputForwarder.setInputMode(toSharedMode(inputMode));
     }
 
     private void setInputMode(InputMode mode) {
         if (inputMode == mode) return;
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
-        resetViewTransform();
-        if (mode == InputMode.MOUSE) {
-            if (fbWidth > 0) cursorX = fbWidth / 2f;
-            if (fbHeight > 0) cursorY = fbHeight / 2f;
-        }
-        applyViewSize();
+        resetDisplayTransform();
         applyInputMode();
     }
 
-    private void resetViewTransform() {
-        zoom = DEFAULT_ZOOM;
-        panX = 0;
-        panY = 0;
+    /** This activity's private mode enum mapped onto the shared one InputForwarder understands. */
+    private static cn.classfun.droidvm.ui.vm.display.base.InputMode toSharedMode(InputMode m) {
+        switch (m) {
+            case MOUSE:
+                return cn.classfun.droidvm.ui.vm.display.base.InputMode.MOUSE;
+            case TABLET:
+                return cn.classfun.droidvm.ui.vm.display.base.InputMode.TABLET;
+            default:
+                return cn.classfun.droidvm.ui.vm.display.base.InputMode.TOUCH;
+        }
+    }
+
+    private void resetDisplayTransform() {
+        displayScale = 1f;
+        ivDisplay.setScaleX(1f);
+        ivDisplay.setScaleY(1f);
         ivDisplay.setTranslationX(0);
         ivDisplay.setTranslationY(0);
         ivDisplay.setRotation(0);
     }
 
-    private int currentViewW() {
-        return inputMode == InputMode.MOUSE
-            ? Math.round(baseViewW * zoom) : baseViewW;
-    }
-
-    private int currentViewH() {
-        return inputMode == InputMode.MOUSE
-            ? Math.round(baseViewH * zoom) : baseViewH;
-    }
-
     private void applyViewSize() {
         if (baseViewW <= 0 || baseViewH <= 0) return;
-        int w = currentViewW(), h = currentViewH();
         var lp = ivDisplay.getLayoutParams();
         if (lp instanceof FrameLayout.LayoutParams) {
             ((FrameLayout.LayoutParams) lp).gravity = CENTER;
-            lp.width = w;
-            lp.height = h;
+            lp.width = baseViewW;
+            lp.height = baseViewH;
         } else {
-            lp = new FrameLayout.LayoutParams(w, h, CENTER);
+            lp = new FrameLayout.LayoutParams(baseViewW, baseViewH, CENTER);
         }
         ivDisplay.setLayoutParams(lp);
-    }
-
-    private void applyViewTransform() {
-        ivDisplay.setTranslationX(panX);
-        ivDisplay.setTranslationY(panY);
-    }
-
-    private float midX(@NonNull MotionEvent e) {
-        float s = 0;
-        for (int i = 0; i < e.getPointerCount(); i++) s += e.getX(i);
-        return s / e.getPointerCount();
-    }
-
-    private float midY(@NonNull MotionEvent e) {
-        float s = 0;
-        for (int i = 0; i < e.getPointerCount(); i++) s += e.getY(i);
-        return s / e.getPointerCount();
-    }
-
-    @SuppressLint("ClickableViewAccessibility")
-    private boolean onMouseTouch(View v, MotionEvent event) {
-        if (vncClient == null || !vncClient.isConnected()) return false;
-        if (fbWidth <= 0 || fbHeight <= 0) return false;
-        int pc = event.getPointerCount();
-        switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
-                gestureMaxPointers = 1;
-                gestureMoved = false;
-                gestureStartTime = System.currentTimeMillis();
-                gestureStartMidX = event.getX();
-                gestureStartMidY = event.getY();
-                lastTouchX = event.getX();
-                lastTouchY = event.getY();
-                return true;
-            case MotionEvent.ACTION_POINTER_DOWN:
-                gestureMaxPointers = max(gestureMaxPointers, pc);
-                // Re-anchor the tap reference to the multi-finger midpoint and
-                // restart the tap window. The ACTION_DOWN anchor was a single
-                // finger position, so the two-finger midpoint sits ~half a
-                // finger-spread away and would instantly trip gestureMoved,
-                // making a still two-finger tap (right click) impossible.
-                gestureStartMidX = midX(event);
-                gestureStartMidY = midY(event);
-                gestureStartTime = System.currentTimeMillis();
-                gestureMoved = false;
-                if (pc == 2) initTwoFinger(event);
-                if (pc >= 3) lastScrollMidY = midY(event);
-                return true;
-            case MotionEvent.ACTION_MOVE: {
-                float mx = midX(event), my = midY(event);
-                float dist = (float) Math.hypot(
-                    mx - gestureStartMidX, my - gestureStartMidY);
-                if (dist > TAP_SLOP) gestureMoved = true;
-                if (gestureMaxPointers >= 3 && pc >= 3) {
-                    float dy = my - lastScrollMidY;
-                    if (Math.abs(dy) > SCROLL_THRESHOLD) {
-                        boolean up = dy < 0;
-                        vncClient.sendPointer((int) cursorX, (int) cursorY,
-                            up ? MASK_SCROLL_UP : MASK_SCROLL_DOWN);
-                        vncClient.sendPointer((int) cursorX, (int) cursorY, 0);
-                        showOperation(up
-                            ? R.string.vnc_op_scroll_up
-                            : R.string.vnc_op_scroll_down);
-                        lastScrollMidY = my;
-                    }
-                } else if (gestureMaxPointers >= 2 && pc >= 2) {
-                    handleTwoFinger(event);
-                } else if (gestureMaxPointers <= 1 && pc == 1) {
-                    float dx = event.getX() - lastTouchX;
-                    float dy = event.getY() - lastTouchY;
-                    lastTouchX = event.getX();
-                    lastTouchY = event.getY();
-                    if (dx != 0 || dy != 0) {
-                        moveCursor(dx, dy);
-                        showOperation(R.string.vnc_op_mouse_move);
-                    }
-                }
-                return true;
-            }
-            case MotionEvent.ACTION_UP:
-                if (gestureMaxPointers >= 2) {
-                    ivDisplay.setRotation(snapRotation(ivDisplay.getRotation()));
-                    clampPan();
-                    ivDisplay.setTranslationX(panX);
-                    ivDisplay.setTranslationY(panY);
-                    updateOperationLabelPosition();
-                } else {
-                    ensureCursorVisible();
-                }
-                if (!gestureMoved
-                    && System.currentTimeMillis() - gestureStartTime < TAP_TIMEOUT) {
-                    boolean dbl = lastTapFingerCount == gestureMaxPointers
-                        && System.currentTimeMillis() - lastTapTime < DOUBLE_TAP_TIMEOUT;
-                    handleTap(gestureMaxPointers, dbl);
-                    lastTapTime = System.currentTimeMillis();
-                    lastTapFingerCount = gestureMaxPointers;
-                } else {
-                    lastTapFingerCount = 0;
-                }
-                gestureMaxPointers = 0;
-                return true;
-            case MotionEvent.ACTION_CANCEL:
-                gestureMaxPointers = 0;
-                lastTapFingerCount = 0;
-                return true;
-            case MotionEvent.ACTION_POINTER_UP:
-                if (gestureMaxPointers == 2 && pc <= 2)
-                    ivDisplay.setRotation(snapRotation(ivDisplay.getRotation()));
-                return true;
-        }
-        return false;
-    }
-
-    private void handleTap(int fingerCount, boolean dbl) {
-        switch (fingerCount) {
-            case 1:
-                sendClick(MASK_LEFT);
-                if (dbl) sendClick(MASK_LEFT);
-                showOperation(dbl
-                    ? R.string.vnc_op_left_double_click
-                    : R.string.vnc_op_left_click);
-                break;
-            case 2:
-                sendClick(MASK_RIGHT);
-                if (dbl) sendClick(MASK_RIGHT);
-                showOperation(dbl
-                    ? R.string.vnc_op_right_double_click
-                    : R.string.vnc_op_right_click);
-                break;
-            default:
-                sendClick(MASK_MIDDLE);
-                if (dbl) sendClick(MASK_MIDDLE);
-                showOperation(dbl
-                    ? R.string.vnc_op_middle_double_click
-                    : R.string.vnc_op_middle_click);
-                break;
-        }
-    }
-
-    private void sendClick(int mask) {
-        vncClient.sendPointer((int) cursorX, (int) cursorY, mask);
-        vncClient.sendPointer((int) cursorX, (int) cursorY, 0);
-    }
-
-    private void initTwoFinger(@NonNull MotionEvent event) {
-        lastMidX = (event.getX(0) + event.getX(1)) / 2f;
-        lastMidY = (event.getY(0) + event.getY(1)) / 2f;
-        initialAngle = twoFingerAngle(event);
-        rotationBase = ivDisplay.getRotation();
-        initialDist = twoFingerDistance(event);
-        initialZoom = zoom;
-    }
-
-    private void handleTwoFinger(@NonNull MotionEvent event) {
-        float mx = (event.getX(0) + event.getX(1)) / 2f;
-        float my = (event.getY(0) + event.getY(1)) / 2f;
-        panX += mx - lastMidX;
-        panY += my - lastMidY;
-        lastMidX = mx;
-        lastMidY = my;
-        clampPan();
-        ivDisplay.setTranslationX(panX);
-        ivDisplay.setTranslationY(panY);
-        float angle = twoFingerAngle(event);
-        float dAngle = normalizeAngle(angle - initialAngle);
-        ivDisplay.setRotation(snapNear(rotationBase + dAngle));
-        float dist = twoFingerDistance(event);
-        if (initialDist > MIN_SCALE_DIST) {
-            float nz = max(MIN_ZOOM, min(initialZoom * dist / initialDist, MAX_ZOOM));
-            if (nz != zoom) {
-                zoom = nz;
-                applyViewSize();
-            }
-        }
-        updateOperationLabelPosition();
-    }
-
-    private void clampPan() {
-        int cW = displayContainer.getWidth();
-        int cH = displayContainer.getHeight();
-        int vW = currentViewW();
-        int vH = currentViewH();
-        panX = max(-(cW + vW) / 2f, min(panX, (cW + vW) / 2f));
-        panY = max(-(cH + vH) / 2f, min(panY, (cH + vH) / 2f));
-    }
-
-    private float twoFingerAngle(@NonNull MotionEvent e) {
-        float dx = e.getX(1) - e.getX(0);
-        float dy = e.getY(1) - e.getY(0);
-        return (float) Math.toDegrees(Math.atan2(dy, dx));
-    }
-
-    private float twoFingerDistance(@NonNull MotionEvent e) {
-        float dx = e.getX(1) - e.getX(0);
-        float dy = e.getY(1) - e.getY(0);
-        return (float) Math.hypot(dx, dy);
-    }
-
-    private float normalizeAngle(float a) {
-        while (a > 180) a -= 360;
-        while (a < -180) a += 360;
-        return a;
-    }
-
-    private float snapNear(float deg) {
-        float snapped = Math.round(deg / 90f) * 90f;
-        if (Math.abs(deg - snapped) <= SNAP_THRESHOLD) return snapped;
-        return deg;
-    }
-
-    private float snapRotation(float deg) {
-        return Math.round(deg / 90f) * 90f;
-    }
-
-    private void moveCursor(float dx, float dy) {
-        if (fbWidth <= 0 || fbHeight <= 0) return;
-        double rad = Math.toRadians(ivDisplay.getRotation());
-        float cos = (float) Math.cos(rad), sin = (float) Math.sin(rad);
-        float vncDx = dx * cos + dy * sin;
-        float vncDy = -dx * sin + dy * cos;
-        cursorX = max(0, min(cursorX + vncDx, fbWidth - 1));
-        cursorY = max(0, min(cursorY + vncDy, fbHeight - 1));
-        vncClient.sendPointer((int) cursorX, (int) cursorY, 0);
-        ensureCursorVisible();
-    }
-
-    private void ensureCursorVisible() {
-        if (fbWidth <= 0 || fbHeight <= 0) return;
-        int cW = displayContainer.getWidth();
-        int cH = displayContainer.getHeight();
-        int viewW = currentViewW();
-        int viewH = currentViewH();
-        if (cW <= 0 || cH <= 0 || viewW <= 0 || viewH <= 0) return;
-        double rad = Math.toRadians(ivDisplay.getRotation());
-        float cos = (float) Math.cos(rad), sin = (float) Math.sin(rad);
-        float localX = cursorX * viewW / (float) fbWidth;
-        float localY = cursorY * viewH / (float) fbHeight;
-        float relX = localX - viewW / 2f;
-        float relY = localY - viewH / 2f;
-        float rotX = relX * cos - relY * sin;
-        float rotY = relX * sin + relY * cos;
-        float screenX = cW / 2f + panX + rotX;
-        float screenY = cH / 2f + panY + rotY;
-        if (screenX < 0) panX -= screenX;
-        else if (screenX > cW) panX -= (screenX - cW);
-        if (screenY < 0) panY -= screenY;
-        else if (screenY > cH) panY -= (screenY - cH);
-        clampPan();
-        ivDisplay.setTranslationX(panX);
-        ivDisplay.setTranslationY(panY);
-        updateOperationLabelPosition();
-    }
-
-    private void updateOperationLabelPosition() {
-        if (operationLabel == null) return;
-        int cW = displayContainer.getWidth();
-        int cH = displayContainer.getHeight();
-        if (cW <= 0 || cH <= 0) return;
-        float r = ivDisplay.getRotation();
-        operationLabel.setRotation(r);
-        int deg = ((Math.round(r / 90f) % 4) + 4) % 4;
-        var lp = (FrameLayout.LayoutParams) operationLabel.getLayoutParams();
-        int m = (int) dp(8);
-        switch (deg) {
-            case 0:
-                lp.gravity = TOP | CENTER_HORIZONTAL;
-                lp.setMargins(0, m, 0, 0);
-                break;
-            case 1:
-                lp.gravity = END | CENTER_VERTICAL;
-                lp.setMargins(0, 0, m, 0);
-                break;
-            case 2:
-                lp.gravity = BOTTOM | CENTER_HORIZONTAL;
-                lp.setMargins(0, 0, 0, m);
-                break;
-            default:
-                lp.gravity = START | CENTER_VERTICAL;
-                lp.setMargins(m, 0, 0, 0);
-                break;
-        }
-        operationLabel.setLayoutParams(lp);
     }
 
     private void showOperation(int resId) {
@@ -614,7 +522,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             baseViewW = Math.round(containerH * vmAspect);
         }
         applyViewSize();
-        if (inputMode == InputMode.MOUSE) ensureCursorVisible();
     }
 
     private void showBars() {
@@ -663,18 +570,24 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_vnc_display_menu);
-        var item = popup.getMenu().findItem(R.id.menu_input_mode);
-        if (item != null) {
-            if (inputMode == InputMode.TOUCH) {
-                item.setTitle(R.string.vnc_menu_input_mode_mouse);
-                item.setIcon(R.drawable.ic_mouse);
-            } else {
-                item.setTitle(R.string.vnc_menu_input_mode_touch);
-                item.setIcon(R.drawable.ic_touchpad);
-            }
-        }
+        popup.setHeaderView(buildInputModeHeader(popup));
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
+    }
+
+    // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
+    private View buildInputModeHeader(MaterialMenu popup) {
+        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
+            getLayoutInflater().inflate(R.layout.view_input_mode_toggle, null);
+        group.check(inputMode == InputMode.MOUSE ? R.id.mode_mouse
+            : inputMode == InputMode.TABLET ? R.id.mode_tablet : R.id.mode_touch);
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            setInputMode(checkedId == R.id.mode_mouse ? InputMode.MOUSE
+                : checkedId == R.id.mode_tablet ? InputMode.TABLET : InputMode.TOUCH);
+            popup.dismiss();
+        });
+        return group;
     }
 
     @Override
@@ -685,10 +598,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             return true;
         } else if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
-            return true;
-        } else if (id == R.id.menu_input_mode) {
-            setInputMode(inputMode == InputMode.TOUCH
-                ? InputMode.MOUSE : InputMode.TOUCH);
             return true;
         }
         return super.onMenuItemClicked(item);

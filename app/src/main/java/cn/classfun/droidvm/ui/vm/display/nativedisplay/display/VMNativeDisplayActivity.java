@@ -51,6 +51,9 @@ import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
+import cn.classfun.droidvm.ui.vm.display.base.InputMode;
+import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeExtraKeysPanel;
@@ -108,6 +111,105 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     private NativeExtraKeysPanel nativeExtraKeys;
     private boolean isFullscreen = false;
     private boolean connected = false;
+    // Pointer input mode, shared with the VNC path via the "display_input_mode" pref; applied to the
+    // InputForwarder so on-screen touches route to the multi-touch / mouse / tablet virtio device.
+    private InputMode inputMode = InputMode.TOUCH;
+    private static final String INPUT_PREFS = "droidvm_prefs";
+    private static final String KEY_INPUT_MODE = "display_input_mode";
+    // Unified MOUSE/TABLET gesture layer (two-finger tap = right click, two-finger pan = scroll,
+    // three-finger = local zoom/pan). TOUCH mode bypasses it and stays raw multi-touch.
+    private PointerGestureTranslator gestureTranslator;
+    // Fractional remainders of relative mouse motion so slow drags aren't rounded away.
+    private float mouseRemX, mouseRemY;
+    // Last mouse right/middle-button activity: any BACK arriving shortly after is the framework's
+    // (or OEM's) right-click fallback, regardless of what source it claims - swallow it.
+    private long lastMouseButtonMs;
+    private static final long MOUSE_BACK_SUPPRESS_MS = 800;
+    // Local display transform from the three-finger gesture.
+    private float displayScale = 1f;
+
+    // Maps the unified gestures onto the crosvm --input evdev channels via InputForwarder.
+    private final PointerGestureTranslator.Listener gestureListener =
+        new PointerGestureTranslator.Listener() {
+            @Override
+            public void onRelativeMove(float dxGuest, float dyGuest) {
+                if (inputForwarder == null) return;
+                mouseRemX += dxGuest;
+                mouseRemY += dyGuest;
+                int dx = (int) mouseRemX, dy = (int) mouseRemY;
+                if (dx == 0 && dy == 0) return;
+                mouseRemX -= dx;
+                mouseRemY -= dy;
+                inputForwarder.sendMouseMove(dx, dy);
+            }
+
+            @Override
+            public void onAbsoluteMove(float xGuest, float yGuest) {
+                if (inputForwarder != null)
+                    inputForwarder.sendAbsMove(Math.round(xGuest), Math.round(yGuest));
+            }
+
+            @Override
+            public void onLeftButton(boolean down, float xGuest, float yGuest) {
+                if (inputForwarder == null) return;
+                if (inputMode == InputMode.TABLET) {
+                    inputForwarder.sendAbsLeftButton(down, Math.round(xGuest), Math.round(yGuest));
+                } else {
+                    inputForwarder.sendPointerButton(EvdevEncoder.BTN_LEFT, down);
+                }
+            }
+
+            @Override
+            public void onLeftTap(float xGuest, float yGuest) {
+                onLeftButton(true, xGuest, yGuest);
+                onLeftButton(false, xGuest, yGuest);
+            }
+
+            @Override
+            public void onRightClick(float xGuest, float yGuest) {
+                if (inputForwarder == null) return;
+                if (inputMode == InputMode.TABLET)
+                    inputForwarder.sendAbsMove(Math.round(xGuest), Math.round(yGuest));
+                inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, true);
+                inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, false);
+            }
+
+            @Override
+            public void onScroll(int vNotches, int hNotches) {
+                if (inputForwarder != null) inputForwarder.sendScroll(vNotches, hNotches);
+            }
+
+            @Override
+            public void onZoomPan(float scaleFactor, float dxView, float dyView,
+                                  float focusX, float focusY) {
+                applyDisplayZoomPan(scaleFactor, dxView, dyView);
+            }
+        };
+
+    // Three-finger local zoom/pan: transform the surface view only; snaps back to identity at 1x.
+    private void applyDisplayZoomPan(float scaleFactor, float dxView, float dyView) {
+        displayScale = Math.max(1f, Math.min(displayScale * scaleFactor, 5f));
+        if (displayScale <= 1.001f) {
+            displayScale = 1f;
+            surfaceView.setScaleX(1f);
+            surfaceView.setScaleY(1f);
+            surfaceView.setTranslationX(0);
+            surfaceView.setTranslationY(0);
+            return;
+        }
+        surfaceView.setScaleX(displayScale);
+        surfaceView.setScaleY(displayScale);
+        float maxPanX = surfaceView.getWidth() * (displayScale - 1f) / 2f;
+        float maxPanY = surfaceView.getHeight() * (displayScale - 1f) / 2f;
+        surfaceView.setTranslationX(
+            clamp(surfaceView.getTranslationX() + dxView, -maxPanX, maxPanX));
+        surfaceView.setTranslationY(
+            clamp(surfaceView.getTranslationY() + dyView, -maxPanY, maxPanY));
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return Math.max(lo, Math.min(v, hi));
+    }
 
     // Per-attach random token: we only accept the binder broadcast carrying the nonce we requested,
     // so another app spoofing the (exported) action can't slip us a fake broker binder.
@@ -204,6 +306,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
         directSink = new DirectInputSink(vmId, rootService, this::sendInputToDaemon);
         inputForwarder = new InputForwarder(directSink);
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
+        inputMode = InputMode.fromOrdinal(
+            getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(KEY_INPUT_MODE, 0));
+        inputForwarder.setInputMode(inputMode);
 
         // Start the VM now that listeners are up (no-op if already running).
         DaemonConnection.getInstance().buildRequest("vm_start")
@@ -273,6 +378,22 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             if (cw > 0 && ch > 0) v.post(() -> updateAspectRatio(cw, ch));
         });
         surfaceView.setOnTouchListener(this::onSurfaceTouch);
+        // Host mouse/stylus: scroll wheel + right/middle buttons come as generic-motion events,
+        // hover comes as hover events; both feed the pointer device so right-click/scroll/hover
+        // pass through to the guest (tablet mode gives absolute hover).
+        surfaceView.setOnGenericMotionListener(this::onSurfaceGenericMotion);
+        // Also on the container: a right-click over the letterbox area (outside the surface) must
+        // still be consumed or the framework synthesizes BACK from it.
+        displayContainer.setOnGenericMotionListener(this::onSurfaceGenericMotion);
+        surfaceView.setOnHoverListener(this::onSurfaceHover);
+        gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
+        gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
+        // Keep the display area out of the system-gesture zones so multi-finger gestures
+        // (two-finger right-click/scroll, three-finger zoom) don't trip OEM gestures like
+        // three-finger screenshot or edge-back.
+        displayContainer.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) ->
+            v.setSystemGestureExclusionRects(
+                java.util.Collections.singletonList(new android.graphics.Rect(0, 0, r - l, b - t))));
         keyboardInput.setTextInputListener(new NativeKeyboardEditText.TextInputListener() {
             @Override
             public void onCommitText(@NonNull CharSequence text) {
@@ -290,18 +411,26 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     }
 
     // Soft keyboards that commit text (instead of sending key events) land here; translate each
-    // character to its key event sequence and forward as evdev.
+    // character to its evdev key sequence and forward it. Each char is resolved on its own so one
+    // unrepresentable character can't drop the whole commit. Uppercase letters and shifted symbols
+    // go through the deterministic US-layout table (Shift synthesized around the key); anything it
+    // doesn't cover falls back to the framework key character map.
     private void forwardText(@NonNull CharSequence text) {
         if (inputForwarder == null || !connected) return;
-        KeyEvent[] events = keyCharacterMap.getEvents(text.toString().toCharArray());
-        if (events == null) return;
         // Wrap with the extra-keys panel modifiers so e.g. Ctrl+(typed key) reaches the guest.
         nativeExtraKeys.applyModifiers(true);
-        for (KeyEvent e : events) {
-            if (e.getAction() == KeyEvent.ACTION_DOWN) {
-                inputForwarder.sendKeyEvent(e.getKeyCode(), true);
-            } else if (e.getAction() == KeyEvent.ACTION_UP) {
-                inputForwarder.sendKeyEvent(e.getKeyCode(), false);
+        String s = text.toString();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (inputForwarder.sendChar(c)) continue;
+            KeyEvent[] events = keyCharacterMap.getEvents(new char[]{c});
+            if (events == null) continue;
+            for (KeyEvent e : events) {
+                if (e.getAction() == KeyEvent.ACTION_DOWN) {
+                    inputForwarder.sendKeyEvent(e.getKeyCode(), true);
+                } else if (e.getAction() == KeyEvent.ACTION_UP) {
+                    inputForwarder.sendKeyEvent(e.getKeyCode(), false);
+                }
             }
         }
         nativeExtraKeys.applyModifiers(false);
@@ -317,11 +446,77 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
 
     private boolean onSurfaceTouch(View v, MotionEvent event) {
         if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with
+        // the button in buttonState). Those are delivered by the generic-motion handler; keep them
+        // out of the tap/gesture path (else right-click doubles as a left tap) but consume them so
+        // the framework doesn't synthesize a BACK key from an unhandled right-click.
+        if ((event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0
+            && (event.getButtonState() & (MotionEvent.BUTTON_SECONDARY
+                | MotionEvent.BUTTON_TERTIARY | MotionEvent.BUTTON_STYLUS_PRIMARY)) != 0) {
+            lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
+            return true;
+        }
         // The SurfaceView is sized to the guest aspect ratio, so offsets are zero and scale is
-        // simply guest/view per axis.
+        // simply guest/view per axis. (Touch coords stay in view-local space even when the
+        // three-finger zoom transform is applied - Android inverse-maps them.)
         var tf = TouchScaleCalculator.compute(guestWidth, guestHeight, v.getWidth(), v.getHeight());
+        if (inputMode != InputMode.TOUCH)
+            return gestureTranslator.onTouchEvent(event, tf.scaleX, tf.scaleY);
         inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
         return true;
+    }
+
+    // Host mouse/stylus scroll wheel and right/middle buttons (left stays on the touch/tap path).
+    // Button presses are ALWAYS consumed - an unhandled BUTTON_SECONDARY press is what makes the
+    // framework synthesize a BACK key, which must never fire inside the VM display.
+    private boolean onSurfaceGenericMotion(View v, MotionEvent event) {
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_SCROLL:
+                if (inputForwarder != null) {
+                    inputForwarder.sendScroll(
+                        Math.round(event.getAxisValue(MotionEvent.AXIS_VSCROLL)),
+                        Math.round(event.getAxisValue(MotionEvent.AXIS_HSCROLL)));
+                }
+                return true;
+            case MotionEvent.ACTION_BUTTON_PRESS:
+            case MotionEvent.ACTION_BUTTON_RELEASE: {
+                lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
+                short btn = mapActionButton(event.getActionButton());
+                if (btn != 0 && inputForwarder != null) {
+                    inputForwarder.sendPointerButton(btn,
+                        event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS);
+                }
+                return true;
+            }
+            default:
+                return false;
+        }
+    }
+
+    // Host pointer hover (no button): TABLET mode only - absolute hover on the guest tablet.
+    // MOUSE/TOUCH modes deliberately ignore Android-side hover.
+    private boolean onSurfaceHover(View v, MotionEvent event) {
+        if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        if (inputMode != InputMode.TABLET) return false;
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
+            var tf = TouchScaleCalculator.compute(guestWidth, guestHeight, v.getWidth(), v.getHeight());
+            inputForwarder.sendHover(event.getX(), event.getY(), tf.scaleX, tf.scaleY);
+            return true;
+        }
+        return false;
+    }
+
+    private static short mapActionButton(int actionButton) {
+        switch (actionButton) {
+            case MotionEvent.BUTTON_SECONDARY:
+            case MotionEvent.BUTTON_STYLUS_PRIMARY:
+                return EvdevEncoder.BTN_RIGHT;
+            case MotionEvent.BUTTON_TERTIARY:
+                return EvdevEncoder.BTN_MIDDLE;
+            default:
+                return 0;
+        }
     }
 
     // Sink for InputForwarder: ships encoded evdev to the daemon, which owns the crosvm input
@@ -344,6 +539,15 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
         int keyCode = event.getKeyCode();
+        // A hardware-mouse right-click the framework (or OEM ROM) failed to see consumed gets
+        // synthesized as a BACK key - sometimes mouse-sourced, sometimes (OEM injection) claiming
+        // a keyboard/virtual source. Swallow BACK when it's mouse-sourced OR arrives right after
+        // any mouse right/middle-button activity; the click itself already went to the guest.
+        if (keyCode == KeyEvent.KEYCODE_BACK
+            && ((event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0
+                || android.os.SystemClock.uptimeMillis() - lastMouseButtonMs
+                    < MOUSE_BACK_SUPPRESS_MS))
+            return true;
         if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN)
             return super.dispatchKeyEvent(event);
         if (inputForwarder != null && connected) {
@@ -454,8 +658,24 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
+        popup.setHeaderView(buildInputModeHeader(popup));
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
+    }
+
+    // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
+    private View buildInputModeHeader(MaterialMenu popup) {
+        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
+            getLayoutInflater().inflate(R.layout.view_input_mode_toggle, null);
+        group.check(inputMode == InputMode.MOUSE ? R.id.mode_mouse
+            : inputMode == InputMode.TABLET ? R.id.mode_tablet : R.id.mode_touch);
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            setInputModeTo(checkedId == R.id.mode_mouse ? InputMode.MOUSE
+                : checkedId == R.id.mode_tablet ? InputMode.TABLET : InputMode.TOUCH);
+            popup.dismiss();
+        });
+        return group;
     }
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {
@@ -469,8 +689,33 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
         } else if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
+        } else if (id == R.id.menu_rotate) {
+            toggleOrientation();
+            return true;
         }
         return false;
+    }
+
+    // Select TOUCH/MOUSE/TABLET: persist (shared with VNC) and route the InputForwarder + gesture
+    // translator to the matching virtio-input device. The segmented header shows the active mode.
+    private void setInputModeTo(@NonNull InputMode mode) {
+        if (inputMode == mode) return;
+        inputMode = mode;
+        getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
+            .putInt(KEY_INPUT_MODE, inputMode.ordinal()).apply();
+        if (inputForwarder != null) inputForwarder.setInputMode(inputMode);
+        if (gestureTranslator != null) {
+            gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
+            gestureTranslator.reset();
+        }
+    }
+
+    private void toggleOrientation() {
+        boolean landscape = getResources().getConfiguration().orientation
+            == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        setRequestedOrientation(landscape
+            ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
     }
 
     @Override

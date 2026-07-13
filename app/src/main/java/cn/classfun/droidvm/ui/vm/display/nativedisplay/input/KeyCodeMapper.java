@@ -149,4 +149,61 @@ public final class KeyCodeMapper {
                 return -1;
         }
     }
+
+    /**
+     * A printable character resolved to a US-QWERTY evdev key plus whether Shift must be held.
+     * The guest keymap is assumed US; the caller wraps {@link #scanCode} with LEFTSHIFT when
+     * {@link #shift} is set (see InputForwarder.sendChar), which is the "insert shift up/down"
+     * behaviour needed for uppercase letters and shifted symbols the soft keyboard commits as text.
+     */
+    public static final class CharKey {
+        public final short scanCode;
+        public final boolean shift;
+
+        CharKey(int scanCode, boolean shift) {
+            this.scanCode = (short) scanCode;
+            this.shift = shift;
+        }
+    }
+
+    private static final Map<Character, CharKey> CHAR_MAP = new HashMap<>();
+
+    private static void ch(char c, int scanCode, boolean shift) {
+        CHAR_MAP.put(c, new CharKey(scanCode, shift));
+    }
+
+    static {
+        // Letters: lowercase unshifted, uppercase shifted.
+        for (char c = 'a'; c <= 'z'; c++) ch(c, KEY_A + (c - 'a'), false);
+        for (char c = 'A'; c <= 'Z'; c++) ch(c, KEY_A + (c - 'A'), true);
+        // Digit row, unshifted.
+        int[] digitKeys = {KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9};
+        for (int d = 0; d <= 9; d++) ch((char) ('0' + d), digitKeys[d], false);
+        // Digit row, shifted symbols (US layout).
+        ch(')', KEY_0, true); ch('!', KEY_1, true); ch('@', KEY_2, true); ch('#', KEY_3, true);
+        ch('$', KEY_4, true); ch('%', KEY_5, true); ch('^', KEY_6, true); ch('&', KEY_7, true);
+        ch('*', KEY_8, true); ch('(', KEY_9, true);
+        // Punctuation pairs (unshifted / shifted).
+        ch('-', KEY_MINUS, false); ch('_', KEY_MINUS, true);
+        ch('=', KEY_EQUAL, false); ch('+', KEY_EQUAL, true);
+        ch('[', KEY_LEFTBRACE, false); ch('{', KEY_LEFTBRACE, true);
+        ch(']', KEY_RIGHTBRACE, false); ch('}', KEY_RIGHTBRACE, true);
+        ch('\\', KEY_BACKSLASH, false); ch('|', KEY_BACKSLASH, true);
+        ch(';', KEY_SEMICOLON, false); ch(':', KEY_SEMICOLON, true);
+        ch('\'', KEY_APOSTROPHE, false); ch('"', KEY_APOSTROPHE, true);
+        ch('`', KEY_GRAVE, false); ch('~', KEY_GRAVE, true);
+        ch(',', KEY_COMMA, false); ch('<', KEY_COMMA, true);
+        ch('.', KEY_DOT, false); ch('>', KEY_DOT, true);
+        ch('/', KEY_SLASH, false); ch('?', KEY_SLASH, true);
+        // Whitespace.
+        ch(' ', KEY_SPACE, false); ch('\t', KEY_TAB, false); ch('\n', KEY_ENTER, false);
+    }
+
+    /**
+     * Resolves a printable character to a US-QWERTY evdev key (+ Shift flag), or null if the
+     * character has no direct US-layout key (caller should fall back to the framework keymap).
+     */
+    public static CharKey charToKey(char c) {
+        return CHAR_MAP.get(c);
+    }
 }

@@ -16,4 +16,9 @@
         android:icon="@drawable/ic_fullscreen"
         android:title="@string/vnc_menu_fullscreen" />
 
+    <item
+        android:id="@+id/menu_rotate"
+        android:icon="@drawable/ic_rotate"
+        android:title="@string/vnc_menu_rotate" />
+
 </menu>
