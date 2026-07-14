@@ -14,10 +14,16 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.drawable.GradientDrawable;
+import android.os.IBinder;
+import android.os.RemoteException;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -40,16 +46,22 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.json.JSONObject;
 
+import java.util.UUID;
+
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 
 public final class VMVncDisplayActivity extends BaseVncActivity {
+    private static final String TAG = "VMVncDisplayActivity";
     private static final long AUTO_HIDE_DELAY_MS = 3000;
     private static final long OP_LABEL_HIDE_DELAY_MS = 2000;
     private static final String PREFS_NAME = "droidvm_prefs";
@@ -87,6 +99,38 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // framework's (or OEM's) right-click fallback and must not navigate away from the VM.
     private long lastMouseButtonMs;
     private static final long MOUSE_BACK_SUPPRESS_MS = 800;
+
+    // Daemon broker binder plumbing, same flow as VMNativeDisplayActivity: display_attach ->
+    // nonce-matched broadcast -> DirectInputSink, so each evdev frame is one binder call instead
+    // of the (much slower) vm_input JSON-RPC round-trip. Input works immediately on the RPC
+    // fallback and upgrades in place once the binder arrives; written on the main thread, read
+    // on the InputForwarder worker (hence volatile).
+    private INativeDisplayRootService rootService;
+    private volatile DirectInputSink directSink;
+    // Per-attach random token: we only accept the binder broadcast carrying the nonce we
+    // requested, so another app spoofing the (exported) action can't slip us a fake broker binder.
+    private final String attachNonce = UUID.randomUUID().toString();
+    private boolean binderReceiverRegistered = false;
+    private boolean rootConnected = false;
+
+    // The daemon broadcasts its broker binder here in response to our display_attach request.
+    private final BroadcastReceiver binderReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            var bundle = intent.getBundleExtra(NativeDisplay.EXTRA_BUNDLE);
+            if (bundle == null || !attachNonce.equals(bundle.getString(NativeDisplay.EXTRA_NONCE)))
+                return;
+            var binder = bundle.getBinder(NativeDisplay.EXTRA_BINDER);
+            if (binder != null) onBinderReceived(binder);
+        }
+    };
+
+    // Daemon died (e.g. restart): drop the direct sink so writes go back to the vm_input IPC.
+    private final IBinder.DeathRecipient deathRecipient = () -> mainHandler.post(() -> {
+        Log.w(TAG, "daemon broker binder died; input falls back to vm_input RPC");
+        directSink = null;
+        rootService = null;
+    });
 
     private final Runnable hideOperationLabel = () -> {
         if (operationLabel != null) operationLabel.setVisibility(GONE);
@@ -252,7 +296,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         setupOperationLabel();
         setupDisplayTouch();
         setupFab();
-        inputForwarder = new InputForwarder(this::sendInputToDaemon);
+        // Delegating sink: the direct daemon-binder path once attached, the vm_input JSON-RPC
+        // until then (and again if the binder dies). DirectInputSink falls back internally on
+        // any per-write failure, so input never drops during the upgrade.
+        inputForwarder = new InputForwarder((channel, data) -> {
+            var sink = directSink;
+            return sink != null ? sink.write(channel, data) : sendInputToDaemon(channel, data);
+        });
         gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
         // Hardware mouse/stylus: hover is TABLET-only (RFB absolute move); wheel and right/middle
         // buttons route per mode (tablet -> RFB mask, mouse -> crosvm mouse device).
@@ -267,6 +317,47 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             v.setSystemGestureExclusionRects(java.util.Collections.singletonList(
                 new android.graphics.Rect(0, 0, r - l, b - t))));
         applyInputMode();
+
+        if (!vmId.isEmpty()) {
+            // Ask the daemon (uid=0) for its broker binder. It can't ride the JSON-RPC channel,
+            // so the daemon broadcasts it back to binderReceiver (matched by attachNonce).
+            registerReceiver(binderReceiver,
+                new IntentFilter(NativeDisplay.BINDER_BROADCAST_ACTION), Context.RECEIVER_EXPORTED);
+            binderReceiverRegistered = true;
+            requestDisplayBinder(10);
+        }
+    }
+
+    // Sends display_attach; the daemon answers with a broadcast. Retries while the daemon
+    // connection is still coming up, since the Activity can open just before DaemonConnection
+    // authenticates.
+    private void requestDisplayBinder(int attemptsLeft) {
+        if (rootConnected || isFinishing()) return;
+        DaemonConnection.getInstance().buildRequest("display_attach")
+            .put("nonce", attachNonce)
+            .onError(e -> retryDisplayBinder(attemptsLeft))
+            .onUnsuccessful(r -> retryDisplayBinder(attemptsLeft))
+            .invoke();
+    }
+
+    private void retryDisplayBinder(int attemptsLeft) {
+        if (attemptsLeft <= 0) {
+            Log.w(TAG, "display_attach exhausted retries; input stays on vm_input RPC");
+            return;
+        }
+        mainHandler.postDelayed(() -> requestDisplayBinder(attemptsLeft - 1), 500);
+    }
+
+    private void onBinderReceived(@NonNull IBinder binder) {
+        if (rootConnected) return; // ignore duplicate broadcasts
+        rootConnected = true;
+        rootService = INativeDisplayRootService.Stub.asInterface(binder);
+        try {
+            binder.linkToDeath(deathRecipient, 0);
+        } catch (RemoteException e) {
+            Log.w(TAG, "linkToDeath failed", e);
+        }
+        directSink = new DirectInputSink(vmId, rootService, this::sendInputToDaemon);
     }
 
     private boolean onDisplayHover(View v, MotionEvent event) {
@@ -392,6 +483,23 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         mainHandler.removeCallbacks(this::hideBars);
         mainHandler.removeCallbacks(hideOperationLabel);
         if (inputForwarder != null) inputForwarder.close();
+        var sink = directSink;
+        directSink = null;
+        if (sink != null) sink.close();
+        if (binderReceiverRegistered) {
+            try {
+                unregisterReceiver(binderReceiver);
+            } catch (Exception ignored) {
+            }
+            binderReceiverRegistered = false;
+        }
+        if (rootService != null) {
+            try {
+                rootService.asBinder().unlinkToDeath(deathRecipient, 0);
+            } catch (Exception ignored) {
+            }
+        }
+        rootService = null;
     }
 
     // Routes on-screen touches by input mode. ivDisplay is laid out to the framebuffer's aspect
