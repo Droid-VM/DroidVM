@@ -24,10 +24,14 @@ import java.util.concurrent.atomic.AtomicReference;
  * serialized on one background thread; MotionEvents are copied first because the framework recycles
  * the originals.
  *
- * ACTION_MOVE is coalesced: the synchronous per-event IPC round-trip is far slower than the touch
- * sample rate, so unbounded moves would pile up in the worker queue and the on-screen pointer would
- * fall seconds behind the finger. Only the newest pending move is kept; discrete DOWN/UP/POINTER_*
- * events are never dropped and stay ordered. MVP scope: touch + keyboard.
+ * Pointer motion is coalesced: the synchronous per-event IPC round-trip is far slower than the
+ * touch sample rate, so unbounded moves would pile up in the worker queue and the on-screen pointer
+ * would fall seconds behind the finger. Each motion stream keeps one pending slot with at most one
+ * drain task in the queue: touch ACTION_MOVE keeps the newest frame, relative mouse deltas sum up
+ * (a sum of deltas is one correct larger delta), tablet/hover positions keep the newest position.
+ * Discrete events (buttons, wheel, DOWN/UP) are never dropped. FIFO keeps a discrete event behind
+ * all motion submitted before it; motion submitted after it may fold into an older pending slot
+ * and arrive up to one frame early, the same tradeoff the touch path already makes.
  */
 public final class InputForwarder {
     private static final String TAG = "InputForwarder";
@@ -58,6 +62,17 @@ public final class InputForwarder {
 
     // Newest pending ACTION_MOVE, coalesced so a fast finger can't outrun the synchronous IPC.
     private final AtomicReference<TouchFrame> pendingMove = new AtomicReference<>();
+
+    // Pending-motion slots for the MOUSE/TABLET gesture paths, guarded by motionLock. Each slot
+    // has at most one drain task in the worker queue (the *Pending flag); producers on the UI
+    // thread fold into the slot while a drain is queued instead of submitting more tasks.
+    private final Object motionLock = new Object();
+    private int pendMouseDx, pendMouseDy;   // relative mouse motion, summed (guest px)
+    private boolean mouseMovePending;
+    private int pendAbsX, pendAbsY;         // tablet absolute position, newest wins (guest px)
+    private boolean absMovePending;
+    private int pendHoverX, pendHoverY;     // hover position, newest wins (guest px)
+    private boolean hoverPending;
 
     private static final class TouchFrame {
         final MotionEvent event;
@@ -95,17 +110,33 @@ public final class InputForwarder {
             EvdevEncoder.encodeMouseButton(button, down)));
     }
 
-    /** Relative cursor motion (guest px) on the relative-mouse device; the guest renders the cursor. */
+    /**
+     * Relative cursor motion (guest px) on the relative-mouse device; the guest renders the cursor.
+     * Deltas are summed into the pending slot, so any number of calls between two worker turns
+     * still costs one IPC round-trip and the pointer can't fall behind the finger.
+     */
     public void sendMouseMove(int dxGuest, int dyGuest) {
-        submit("mouseMove", () -> {
-            byte[] data = EvdevEncoder.encodeMouseMove(dxGuest, dyGuest);
-            if (data != null) sink.write(MOUSE, data);
-        });
+        if (dxGuest == 0 && dyGuest == 0) return;
+        boolean schedule;
+        synchronized (motionLock) {
+            pendMouseDx += dxGuest;
+            pendMouseDy += dyGuest;
+            schedule = !mouseMovePending;
+            mouseMovePending = true;
+        }
+        if (schedule) submit("mouseMove", this::drainMouseMove);
     }
 
-    /** Absolute pointer position (guest px, no button change) on the tablet device. */
+    /** Absolute pointer position (guest px, no button change) on the tablet device; newest wins. */
     public void sendAbsMove(int xGuest, int yGuest) {
-        submit("absMove", () -> sink.write(TABLET, EvdevEncoder.encodeAbsMove(xGuest, yGuest)));
+        boolean schedule;
+        synchronized (motionLock) {
+            pendAbsX = xGuest;
+            pendAbsY = yGuest;
+            schedule = !absMovePending;
+            absMovePending = true;
+        }
+        if (schedule) submit("absMove", this::drainAbsMove);
     }
 
     /** Left button on the tablet device, positioned first so the press lands at (x, y) guest px. */
@@ -132,18 +163,67 @@ public final class InputForwarder {
     public void sendHover(float viewX, float viewY, float scaleX, float scaleY) {
         int gx = (int) (viewX * scaleX);
         int gy = (int) (viewY * scaleY);
-        submit("hover", () -> {
-            if (inputMode == InputMode.TABLET) {
-                sink.write(TABLET, EvdevEncoder.encodeAbsMove(gx, gy));
-            } else {
-                int dx = Math.round(gx - mouseLastX);
-                int dy = Math.round(gy - mouseLastY);
-                mouseLastX = gx;
-                mouseLastY = gy;
-                byte[] data = EvdevEncoder.encodeMouseMove(dx, dy);
-                if (data != null) sink.write(MOUSE, data);
-            }
-        });
+        boolean schedule;
+        synchronized (motionLock) {
+            pendHoverX = gx;
+            pendHoverY = gy;
+            schedule = !hoverPending;
+            hoverPending = true;
+        }
+        if (schedule) submit("hover", this::drainHover);
+    }
+
+    // The drains below run on the worker thread only. Between a drain's read-and-clear and its
+    // sink.write, a producer may refill the slot and queue the next drain task; nothing is lost
+    // and the queue still holds at most one task per stream.
+
+    private void drainMouseMove() {
+        int dx, dy;
+        synchronized (motionLock) {
+            dx = pendMouseDx;
+            dy = pendMouseDy;
+            pendMouseDx = 0;
+            pendMouseDy = 0;
+            mouseMovePending = false;
+        }
+        // dx/dy may legitimately sum to zero (back-and-forth motion); encode returns null then.
+        byte[] data = EvdevEncoder.encodeMouseMove(dx, dy);
+        if (data != null) sink.write(MOUSE, data);
+    }
+
+    private void drainAbsMove() {
+        int x, y;
+        boolean had;
+        synchronized (motionLock) {
+            had = absMovePending;
+            x = pendAbsX;
+            y = pendAbsY;
+            absMovePending = false;
+        }
+        if (!had) return;
+        sink.write(TABLET, EvdevEncoder.encodeAbsMove(x, y));
+    }
+
+    private void drainHover() {
+        int gx, gy;
+        boolean had;
+        synchronized (motionLock) {
+            had = hoverPending;
+            gx = pendHoverX;
+            gy = pendHoverY;
+            hoverPending = false;
+        }
+        if (!had) return;
+        if (inputMode == InputMode.TABLET) {
+            sink.write(TABLET, EvdevEncoder.encodeAbsMove(gx, gy));
+        } else {
+            int dx = Math.round(gx - mouseLastX);
+            int dy = Math.round(gy - mouseLastY);
+            mouseLastX = gx;
+            mouseLastY = gy;
+            byte[] data = EvdevEncoder.encodeMouseMove(dx, dy);
+            if (data != null) sink.write(MOUSE, data);
+        }
     }
 
     private void submit(@NonNull String name, @NonNull Runnable block) {
