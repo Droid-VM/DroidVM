@@ -10,7 +10,12 @@ public enum GpuApi implements StringEnum {
     VULKAN(1, "vulkan", R.string.create_vm_gpu_api_vulkan),
     EGL(2, "egl", R.string.create_vm_gpu_api_egl),
     OPENGLES(3, "gles", R.string.create_vm_gpu_api_opengles),
-    ANGLE(4, "angle", R.string.create_vm_gpu_api_angle);
+    ANGLE(4, "angle", R.string.create_vm_gpu_api_angle),
+    // gfxstream host Vulkan driver (ANDROID_EMU_VK_LOADER_PATH). SYSTEM = the SoC's stock
+    // Vulkan HAL; TURNIP = bundled Mesa turnip (Adreno); PANVK = Mesa PanVK (Mali) — not yet wired.
+    VULKAN_SYSTEM(5, "vulkan-system", R.string.create_vm_gpu_api_vulkan_system),
+    VULKAN_TURNIP(6, "vulkan-turnip", R.string.create_vm_gpu_api_vulkan_turnip),
+    VULKAN_PANVK(7, "vulkan-panvk", R.string.create_vm_gpu_api_vulkan_panvk);
 
     private final int value;
     private final String name;

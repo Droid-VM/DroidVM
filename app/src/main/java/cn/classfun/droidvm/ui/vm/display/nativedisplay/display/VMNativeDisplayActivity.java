@@ -8,6 +8,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -245,6 +246,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         inputMode = InputMode.fromOrdinal(
             getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(KEY_INPUT_MODE, 0));
         inputForwarder.setInputMode(inputMode);
+        // setupViews() configured the translator before the persisted mode was read; sync it or
+        // a session opening in TABLET runs the gesture machine with relative (mouse) semantics
+        // until the user toggles the mode away and back.
+        if (gestureTranslator != null)
+            gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
 
         // Start the VM now that listeners are up (no-op if already running).
         DaemonConnection.getInstance().buildRequest("vm_start")
@@ -273,6 +279,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                     guestWidth = width;
                     guestHeight = height;
                     viewport.setContentSize(width, height);
+                    // Keep the status-bar resolution label in step with a live resize.
+                    if (connected)
+                        setStatus(fmt(getString(R.string.native_display_connected),
+                            guestWidth, guestHeight), R.color.vnc_status_connected);
                 }
 
                 @Override
@@ -323,6 +333,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             v.post(() -> viewport.setArea(cw, ch));
         });
         surfaceView.setOnTouchListener(this::onSurfaceTouch);
+        // MOUSE/TABLET gestures live on the container: the whole display area (letterbox included)
+        // is gesture surface; the translator pins coordinate ops to the rendered surface rect.
+        // In TOUCH mode this listener declines and raw multi-touch stays on the surface view.
+        displayContainer.setOnTouchListener(this::onContainerTouch);
         // Host mouse/stylus: scroll wheel + right/middle buttons come as generic-motion events,
         // hover comes as hover events; both feed the pointer device so right-click/scroll/hover
         // pass through to the guest (tablet mode gives absolute hover).
@@ -389,26 +403,57 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         nativeExtraKeys.applyModifiers(false);
     }
 
+    // TOUCH mode only: raw multi-touch stays on the surface view, which is sized to the guest
+    // aspect ratio, so offsets are zero and view coords normalize straight to the multi-touch
+    // device's fixed ABS range. (Touch coords stay in view-local space even when the three-finger
+    // zoom transform is applied - Android inverse-maps them.) MOUSE/TABLET decline here so the
+    // event bubbles up to the container.
     private boolean onSurfaceTouch(View v, MotionEvent event) {
+        if (inputMode != InputMode.TOUCH) return false;
         if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
-        // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with
-        // the button in buttonState). Those are delivered by the generic-motion handler; keep them
-        // out of the tap/gesture path (else right-click doubles as a left tap) but consume them so
-        // the framework doesn't synthesize a BACK key from an unhandled right-click.
+        if (isMouseButtonTouch(event)) return true;
+        var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
+        inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
+        return true;
+    }
+
+    // MOUSE/TABLET gesture surface: the whole container is active; the translator pins gestures
+    // that carry guest coordinates to the rendered surface rect.
+    private boolean onContainerTouch(View v, MotionEvent event) {
+        if (inputMode == InputMode.TOUCH) return false;
+        if (inputForwarder == null || gestureTranslator == null) return false;
+        if (isMouseButtonTouch(event)) return true;
+        // TABLET absolute coords go to the normalized-range evdev absolute-mouse device; MOUSE
+        // REL deltas are guest px, so they scale against the guest resolution instead.
+        float unitW = inputMode == InputMode.TABLET
+            ? EvdevEncoder.NORMALIZED_ABS_MAX : guestWidth;
+        float unitH = inputMode == InputMode.TABLET
+            ? EvdevEncoder.NORMALIZED_ABS_MAX : guestHeight;
+        return gestureTranslator.onTouchEvent(event, displayRectInContainer(), unitW, unitH);
+    }
+
+    // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with the
+    // button in buttonState). Those are delivered by the generic-motion handler; keep them out of
+    // the tap/gesture path (else right-click doubles as a left tap) but consume them so the
+    // framework doesn't synthesize a BACK key from an unhandled right-click.
+    private boolean isMouseButtonTouch(@NonNull MotionEvent event) {
         if ((event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0
             && (event.getButtonState() & (MotionEvent.BUTTON_SECONDARY
                 | MotionEvent.BUTTON_TERTIARY | MotionEvent.BUTTON_STYLUS_PRIMARY)) != 0) {
             lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
             return true;
         }
-        // The SurfaceView is sized to the guest aspect ratio, so offsets are zero and scale is
-        // simply guest/view per axis. (Touch coords stay in view-local space even when the
-        // three-finger zoom transform is applied - Android inverse-maps them.)
-        var tf = TouchScaleCalculator.compute(guestWidth, guestHeight, v.getWidth(), v.getHeight());
-        if (inputMode != InputMode.TOUCH)
-            return gestureTranslator.onTouchEvent(event, tf.scaleX, tf.scaleY);
-        inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
-        return true;
+        return false;
+    }
+
+    // Where the guest frame is rendered, in container coordinates: the letterbox-fitted surface
+    // bounds mapped through the viewport's current zoom/pan transform.
+    @NonNull
+    private RectF displayRectInContainer() {
+        var rect = new RectF(0, 0, surfaceView.getWidth(), surfaceView.getHeight());
+        surfaceView.getMatrix().mapRect(rect);
+        rect.offset(surfaceView.getLeft(), surfaceView.getTop());
+        return rect;
     }
 
     // Host mouse/stylus scroll wheel and right/middle buttons (left stays on the touch/tap path).
@@ -445,7 +490,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         if (inputMode != InputMode.TABLET) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
-            var tf = TouchScaleCalculator.compute(guestWidth, guestHeight, v.getWidth(), v.getHeight());
+            var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
             inputForwarder.sendHover(event.getX(), event.getY(), tf.scaleX, tf.scaleY);
             return true;
         }
@@ -607,20 +652,26 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
 
     private void toggleSoftKeyboard() {
         var imm = getSystemService(InputMethodManager.class);
-        if (imm != null) tryShowKeyboard(imm, 10);
+        if (imm == null) return;
+        // Post so the fab-menu popup has finished tearing down: it still owns the touch-driven
+        // focus transition synchronously after the item click, so requesting focus + showing the
+        // IME inline lands before our editor is the served view and does nothing.
+        mainHandler.post(() -> tryShowKeyboard(imm, 15));
     }
 
     // Drive a real (invisible) EditText: a SurfaceView is an unreliable IME target on some ROMs.
-    // The popup menu relinquishes window focus right before this runs, so the editor isn't yet
-    // "served" by the IMM and showSoftInput() is silently ignored (no ResultReceiver callback
-    // either). Retry on a short delay until the input connection is established; force as a last
-    // resort.
+    // showSoftInput() can return true for a view the IMM isn't serving yet and show nothing, so the
+    // success test is imm.isActive(editor), retried on a short delay until the input connection is
+    // live. The last few rounds force the IME (some ROMs ignore the implicit request).
     private void tryShowKeyboard(@NonNull InputMethodManager imm, int attemptsLeft) {
+        if (attemptsLeft <= 0 || isFinishing()) return;
+        keyboardInput.requestFocusFromTouch();
         keyboardInput.requestFocus();
-        if (imm.showSoftInput(keyboardInput, 0)) return;
-        if (attemptsLeft > 0) {
-            mainHandler.postDelayed(() -> tryShowKeyboard(imm, attemptsLeft - 1), 60);
-        }
+        int flag = attemptsLeft <= 3
+            ? InputMethodManager.SHOW_FORCED : InputMethodManager.SHOW_IMPLICIT;
+        imm.showSoftInput(keyboardInput, flag);
+        if (keyboardInput.isFocused() && imm.isActive(keyboardInput)) return;
+        mainHandler.postDelayed(() -> tryShowKeyboard(imm, attemptsLeft - 1), 60);
     }
 
     private void toggleFullscreen() {

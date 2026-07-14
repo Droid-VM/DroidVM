@@ -38,6 +38,16 @@ public final class EvdevEncoder {
     private static final short ABS_MT_POSITION_Y = 0x36;
     private static final short ABS_MT_TRACKING_ID = 0x39;
 
+    /**
+     * Fixed ABS_X/ABS_Y (and ABS_MT_POSITION_X/Y) maximum the guest absolute-mouse / multi-touch
+     * devices advertise when the daemon omits an explicit resolution ({@code --input
+     * absolute-mouse}/{@code multi-touch} with no width/height). View coordinates are scaled to this
+     * range against the on-screen view size, so the guest maps them 1:1 to its screen at any
+     * resolution -- resolution-independent and auto-resize-proof. MUST equal crosvm's
+     * {@code NORMALIZED_ABS_MAX} (config.rs) and {@code VNC_ABS_MAX} (gpu_display_vnc.rs).
+     */
+    public static final int NORMALIZED_ABS_MAX = 0x7FFF;
+
     private static final short BTN_TOUCH = 0x14a;
 
     // Relative mouse (InputMode.MOUSE).

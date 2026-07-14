@@ -210,6 +210,10 @@
     <string name="create_vm_gpu_api_egl">EGL</string>
     <string name="create_vm_gpu_api_opengles">OpenGL ES</string>
     <string name="create_vm_gpu_api_angle">ANGLE</string>
+    <string name="create_vm_gpu_api_vulkan_system">Vulkan(系統原生)</string>
+    <string name="create_vm_gpu_api_vulkan_turnip">Vulkan(Turnip)</string>
+    <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>
+    <string name="create_vm_gpu_api_not_implemented">此 GPU 驅動尚未實現</string>
     <string name="create_vm_category_display">顯示</string>
     <string name="create_vm_display_enabled">啟用顯示器</string>
     <string name="create_vm_display_backend">顯示後端</string>

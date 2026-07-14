@@ -35,6 +35,13 @@ final class DisplayProvider {
     // Stop polling for the display binder after this many 1s rounds (the daemon-side
     // waitForService already blocks up to 5s each), so a dead broker doesn't spin forever.
     private static final int MAX_BINDER_ATTEMPTS = 30;
+    // Interval for re-reading the guest display size. crosvm's binder is pull-only (no resize
+    // push callback, and SELinux blocks crosvm from calling back into an untrusted_app), so the
+    // receiver polls the single source of truth -- getDisplayConfig() reflects the current scanout
+    // size, updated by C++ configure() on EVERY resolution change (UEFI modeset, Linux boot, and
+    // Linux runtime xrandr all flow through it). This is what lets the aspect ratio follow a guest
+    // resolution change mid-session. A resize is rare and user-driven, so 1s lag is fine.
+    private static final long CONFIG_POLL_MS = 1000;
 
     private final SurfaceView mainView;
     private int width;
@@ -135,6 +142,44 @@ final class DisplayProvider {
         }
         onConnected.accept(true);
         applyPendingSurface();
+        startConfigPoll(displayService);
+    }
+
+    // Watches for guest resolution changes: crosvm has no push channel, so re-read the current
+    // scanout size on the bg thread and, when it changes, re-lay-out the surface. Runs on the
+    // single background executor; a getDisplayConfig() failure (dead service) ends the loop.
+    private void startConfigPoll(@NonNull ICrosvmAndroidDisplayService svc) {
+        executor.submit(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(CONFIG_POLL_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                DisplayConfig config;
+                try {
+                    config = svc.getDisplayConfig();
+                } catch (Exception e) {
+                    return; // service gone; deathRecipient handles teardown
+                }
+                if (config == null || config.width <= 0 || config.height <= 0) continue;
+                mainHandler.post(() -> applyConfigIfChanged(config));
+            }
+        });
+    }
+
+    // Main thread: apply a newly observed guest size. width/height stay main-thread-only.
+    private void applyConfigIfChanged(@NonNull DisplayConfig config) {
+        if (config.width == width && config.height == height) return;
+        Log.i(TAG, fmt("guest display size changed %dx%d -> %dx%d",
+            width, height, config.width, config.height));
+        width = config.width;
+        height = config.height;
+        // Keep the app-side buffer size in step with crosvm's setBuffersGeometry; guarded by
+        // needsSend, so the layout-driven surfaceChanged this triggers won't re-send the surface.
+        mainView.getHolder().setFixedSize(width, height);
+        onDisplayConfig.accept(config);
     }
 
     private void applyPendingSurface() {
