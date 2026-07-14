@@ -14,16 +14,10 @@ import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import android.annotation.SuppressLint;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.drawable.GradientDrawable;
-import android.os.IBinder;
-import android.os.RemoteException;
-import android.util.Log;
 import android.util.TypedValue;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -46,14 +40,15 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.json.JSONObject;
 
-import java.util.UUID;
-
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
+import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
@@ -61,8 +56,6 @@ import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 
 public final class VMVncDisplayActivity extends BaseVncActivity {
-    private static final String TAG = "VMVncDisplayActivity";
-    private static final long AUTO_HIDE_DELAY_MS = 3000;
     private static final long OP_LABEL_HIDE_DELAY_MS = 2000;
     private static final String PREFS_NAME = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
@@ -83,54 +76,34 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private FrameLayout displayContainer;
     private FloatingActionButton fabMenu;
     private TextView operationLabel;
-    private boolean isFullscreen = false;
-    private boolean extraKeysVisible = true;
     private InputMode inputMode = InputMode.TOUCH;
     private SharedPreferences prefs;
-    private int baseViewW, baseViewH;
 
     private InputForwarder inputForwarder;
     private PointerGestureTranslator gestureTranslator;
     private int rfbMask;                 // current RFB button mask (tablet mode)
     private int rfbLastX, rfbLastY;      // last absolute pointer position sent, fb px
     private float mouseRemX, mouseRemY;  // fractional remainders of relative mouse motion
-    private float displayScale = 1f;     // three-finger local zoom of the display view
+    // Single sources of truth for viewport geometry (fit/zoom/pan across display-area changes)
+    // and chrome visibility (fullscreen / extra keys). See the controller classes for the rules.
+    private DisplayViewportController viewport;
+    private DisplayChromeController chrome;
+    // Display areas smaller than this (e.g. landscape with a tall IME) freeze the viewport
+    // instead of re-laying it out; see DisplayViewportController.
+    private static final int MIN_AREA_DP = 96;
     // Last mouse right/middle-button activity: any BACK key arriving shortly after is the
     // framework's (or OEM's) right-click fallback and must not navigate away from the VM.
     private long lastMouseButtonMs;
     private static final long MOUSE_BACK_SUPPRESS_MS = 800;
 
-    // Daemon broker binder plumbing, same flow as VMNativeDisplayActivity: display_attach ->
-    // nonce-matched broadcast -> DirectInputSink, so each evdev frame is one binder call instead
-    // of the (much slower) vm_input JSON-RPC round-trip. Input works immediately on the RPC
-    // fallback and upgrades in place once the binder arrives; written on the main thread, read
-    // on the InputForwarder worker (hence volatile).
-    private INativeDisplayRootService rootService;
+    // Daemon broker binder plumbing (shared DaemonDisplayAttach): the direct sink turns each
+    // evdev frame into one binder call instead of the (much slower) vm_input JSON-RPC round-trip.
+    // Input works immediately on the RPC fallback and upgrades in place once the binder arrives;
+    // written on the main thread, read on the InputForwarder worker (hence volatile).
     private volatile DirectInputSink directSink;
-    // Per-attach random token: we only accept the binder broadcast carrying the nonce we
-    // requested, so another app spoofing the (exported) action can't slip us a fake broker binder.
-    private final String attachNonce = UUID.randomUUID().toString();
-    private boolean binderReceiverRegistered = false;
-    private boolean rootConnected = false;
-
-    // The daemon broadcasts its broker binder here in response to our display_attach request.
-    private final BroadcastReceiver binderReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            var bundle = intent.getBundleExtra(NativeDisplay.EXTRA_BUNDLE);
-            if (bundle == null || !attachNonce.equals(bundle.getString(NativeDisplay.EXTRA_NONCE)))
-                return;
-            var binder = bundle.getBinder(NativeDisplay.EXTRA_BINDER);
-            if (binder != null) onBinderReceived(binder);
-        }
-    };
-
-    // Daemon died (e.g. restart): drop the direct sink so writes go back to the vm_input IPC.
-    private final IBinder.DeathRecipient deathRecipient = () -> mainHandler.post(() -> {
-        Log.w(TAG, "daemon broker binder died; input falls back to vm_input RPC");
-        directSink = null;
-        rootService = null;
-    });
+    private DaemonDisplayAttach displayAttach;
+    // Display-source adapter: framebuffer events flow through the shared DisplaySource interface.
+    private VncBitmapSource displaySource;
 
     private final Runnable hideOperationLabel = () -> {
         if (operationLabel != null) operationLabel.setVisibility(GONE);
@@ -196,7 +169,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             @Override
             public void onZoomPan(float scaleFactor, float dxView, float dyView,
                                   float focusX, float focusY) {
-                applyDisplayZoomPan(scaleFactor, dxView, dyView);
+                if (viewport != null) viewport.onZoomPan(scaleFactor, dxView, dyView);
             }
         };
 
@@ -243,24 +216,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         }
     }
 
-    // Three-finger local zoom/pan of the display view; snaps back to identity at 1x.
-    private void applyDisplayZoomPan(float scaleFactor, float dxView, float dyView) {
-        displayScale = max(1f, min(displayScale * scaleFactor, 5f));
-        if (displayScale <= 1.001f) {
-            resetDisplayTransform();
-            return;
-        }
-        ivDisplay.setScaleX(displayScale);
-        ivDisplay.setScaleY(displayScale);
-        float maxPanX = ivDisplay.getWidth() * (displayScale - 1f) / 2f;
-        float maxPanY = ivDisplay.getHeight() * (displayScale - 1f) / 2f;
-        ivDisplay.setTranslationX(
-            max(-maxPanX, min(ivDisplay.getTranslationX() + dxView, maxPanX)));
-        ivDisplay.setTranslationY(
-            max(-maxPanY, min(ivDisplay.getTranslationY() + dyView, maxPanY)));
-    }
-
-
     @Override
     protected int getContentLayoutId() {
         return R.layout.activity_vm_vnc_display;
@@ -285,13 +240,15 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         inputMode = InputMode.values()[prefs.getInt(KEY_INPUT_MODE, 0)];
         setupCutoutMode();
-        setupWindowInsets();
+        setupLayoutControllers();
         btnFullscreen.setOnClickListener(v -> toggleFullscreen());
+        // The container's layout size IS the display area: chrome visibility, IME and rotation
+        // all funnel into it through normal layout. The viewport handles degenerate sizes itself.
         displayContainer.addOnLayoutChangeListener((
             v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom
         ) -> {
             int cw = right - left, ch = bottom - top;
-            if (cw > 0 && ch > 0) v.post(() -> updateAspectRatio(cw, ch));
+            v.post(() -> viewport.setArea(cw, ch));
         });
         setupOperationLabel();
         setupDisplayTouch();
@@ -319,45 +276,21 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         applyInputMode();
 
         if (!vmId.isEmpty()) {
-            // Ask the daemon (uid=0) for its broker binder. It can't ride the JSON-RPC channel,
-            // so the daemon broadcasts it back to binderReceiver (matched by attachNonce).
-            registerReceiver(binderReceiver,
-                new IntentFilter(NativeDisplay.BINDER_BROADCAST_ACTION), Context.RECEIVER_EXPORTED);
-            binderReceiverRegistered = true;
-            requestDisplayBinder(10);
-        }
-    }
+            displayAttach = new DaemonDisplayAttach(this, mainHandler,
+                new DaemonDisplayAttach.Listener() {
+                    @Override
+                    public void onAttached(@NonNull INativeDisplayRootService service) {
+                        directSink = new DirectInputSink(vmId, service, VMVncDisplayActivity.this::sendInputToDaemon);
+                    }
 
-    // Sends display_attach; the daemon answers with a broadcast. Retries while the daemon
-    // connection is still coming up, since the Activity can open just before DaemonConnection
-    // authenticates.
-    private void requestDisplayBinder(int attemptsLeft) {
-        if (rootConnected || isFinishing()) return;
-        DaemonConnection.getInstance().buildRequest("display_attach")
-            .put("nonce", attachNonce)
-            .onError(e -> retryDisplayBinder(attemptsLeft))
-            .onUnsuccessful(r -> retryDisplayBinder(attemptsLeft))
-            .invoke();
-    }
-
-    private void retryDisplayBinder(int attemptsLeft) {
-        if (attemptsLeft <= 0) {
-            Log.w(TAG, "display_attach exhausted retries; input stays on vm_input RPC");
-            return;
+                    @Override
+                    public void onLost() {
+                        // Drop the direct sink so writes go back to the vm_input RPC.
+                        directSink = null;
+                    }
+                });
+            displayAttach.start();
         }
-        mainHandler.postDelayed(() -> requestDisplayBinder(attemptsLeft - 1), 500);
-    }
-
-    private void onBinderReceived(@NonNull IBinder binder) {
-        if (rootConnected) return; // ignore duplicate broadcasts
-        rootConnected = true;
-        rootService = INativeDisplayRootService.Stub.asInterface(binder);
-        try {
-            binder.linkToDeath(deathRecipient, 0);
-        } catch (RemoteException e) {
-            Log.w(TAG, "linkToDeath failed", e);
-        }
-        directSink = new DirectInputSink(vmId, rootService, this::sendInputToDaemon);
     }
 
     private boolean onDisplayHover(View v, MotionEvent event) {
@@ -436,13 +369,67 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         getWindow().setAttributes(params);
     }
 
-    private void setupWindowInsets() {
+    // Wires the viewport controller (single writer of the display-image geometry), the chrome
+    // controller (single writer of toolbar/status bar/extra keys/system bars visibility) and the
+    // window-insets listener that turns system bars + IME into content padding, which in turn
+    // sizes the display container.
+    private void setupLayoutControllers() {
+        int minAreaPx = Math.round(MIN_AREA_DP * getResources().getDisplayMetrics().density);
+        viewport = new DisplayViewportController(minAreaPx,
+            new DisplayViewportController.Listener() {
+                @Override
+                public void onViewportChanged(int baseW, int baseH, float viewScale,
+                                              float offsetX, float offsetY) {
+                    ivDisplay.setLayoutParams(new FrameLayout.LayoutParams(baseW, baseH, CENTER));
+                    ivDisplay.setScaleX(viewScale);
+                    ivDisplay.setScaleY(viewScale);
+                    ivDisplay.setTranslationX(offsetX);
+                    ivDisplay.setTranslationY(offsetY);
+                }
+
+                @Override
+                public void onGuestResizeWanted(int areaW, int areaH) {
+                    // Auto-resize Guest Display: no guest-side channel on this path yet.
+                }
+            });
+
+        displaySource = new VncBitmapSource(new DisplaySource.Callbacks() {
+            @Override
+            public void onContentSize(int width, int height) {
+                viewport.setContentSize(width, height);
+            }
+
+            @Override
+            public void onStateChanged(@NonNull DisplaySource.State state) {
+                // Status text and overlay are handled by BaseVncActivity's own status plumbing.
+            }
+        });
+
+        chrome = new DisplayChromeController(true, (fullscreen, extraKeysVisible) -> {
+            toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
+            statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
+            extraKeysPanel.setVisibleAnimated(extraKeysVisible);
+            var controller = getWindow().getInsetsController();
+            if (controller != null) {
+                if (fullscreen) {
+                    controller.hide(WindowInsets.Type.systemBars());
+                    controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                } else {
+                    controller.show(WindowInsets.Type.systemBars());
+                }
+            }
+            // Re-request insets so the content padding (and thus the display area) updates in
+            // the same pass as the visibility changes.
+            ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
+        });
+
         var content = (ViewGroup) findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
             Insets sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
-            int top = isFullscreen ? 0 : sysBars.top;
-            int bottom = ime.bottom;
+            boolean fullscreen = chrome != null && chrome.isFullscreen();
+            int top = fullscreen ? 0 : sysBars.top;
+            int bottom = Math.max(fullscreen ? 0 : sysBars.bottom, ime.bottom);
             v.setPadding(0, top, 0, bottom);
             return insets;
         });
@@ -464,7 +451,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     @Override
     protected void onFramebufferReady(int width, int height) {
-        updateAspectRatio(displayContainer.getWidth(), displayContainer.getHeight());
+        displaySource.dispatchContentSize(width, height);
     }
 
     @Override
@@ -473,38 +460,21 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     }
 
     @Override
-    protected void onStatusChanged(String text, VncStatus status) {
-        mainHandler.removeCallbacks(this::hideBars);
-        if (!isFullscreen) showBars();
-    }
-
-    @Override
     protected void onDestroyExtra() {
-        mainHandler.removeCallbacks(this::hideBars);
         mainHandler.removeCallbacks(hideOperationLabel);
         if (inputForwarder != null) inputForwarder.close();
         var sink = directSink;
         directSink = null;
         if (sink != null) sink.close();
-        if (binderReceiverRegistered) {
-            try {
-                unregisterReceiver(binderReceiver);
-            } catch (Exception ignored) {
-            }
-            binderReceiverRegistered = false;
+        if (displayAttach != null) {
+            displayAttach.stop();
+            displayAttach = null;
         }
-        if (rootService != null) {
-            try {
-                rootService.asBinder().unlinkToDeath(deathRecipient, 0);
-            } catch (Exception ignored) {
-            }
-        }
-        rootService = null;
     }
 
     // Routes on-screen touches by input mode. ivDisplay is laid out to the framebuffer's aspect
-    // (updateAspectRatio), so view coords map to fb coords with a plain per-axis scale; touch
-    // coords stay in view-local space even under the three-finger zoom transform.
+    // (DisplayViewportController), so view coords map to fb coords with a plain per-axis scale;
+    // touch coords stay in view-local space even under the three-finger zoom transform.
     private boolean onDisplayTouch(View v, MotionEvent event) {
         if (fbWidth <= 0 || fbHeight <= 0) return false;
         int ivW = ivDisplay.getWidth(), ivH = ivDisplay.getHeight();
@@ -555,10 +525,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             ivDisplay.setOnTouchListener(this::onDisplayTouch);
             displayContainer.setOnTouchListener(null);
             displayContainer.setClickable(true);
-            displayContainer.setOnClickListener(v -> {
-                showBars();
-                toggleSoftKeyboard();
-            });
+            displayContainer.setOnClickListener(v -> toggleSoftKeyboard());
         }
         if (gestureTranslator != null) {
             gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
@@ -572,7 +539,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (inputMode == mode) return;
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
-        resetDisplayTransform();
+        viewport.resetToFit();
         applyInputMode();
     }
 
@@ -588,28 +555,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         }
     }
 
-    private void resetDisplayTransform() {
-        displayScale = 1f;
-        ivDisplay.setScaleX(1f);
-        ivDisplay.setScaleY(1f);
-        ivDisplay.setTranslationX(0);
-        ivDisplay.setTranslationY(0);
-        ivDisplay.setRotation(0);
-    }
-
-    private void applyViewSize() {
-        if (baseViewW <= 0 || baseViewH <= 0) return;
-        var lp = ivDisplay.getLayoutParams();
-        if (lp instanceof FrameLayout.LayoutParams) {
-            ((FrameLayout.LayoutParams) lp).gravity = CENTER;
-            lp.width = baseViewW;
-            lp.height = baseViewH;
-        } else {
-            lp = new FrameLayout.LayoutParams(baseViewW, baseViewH, CENTER);
-        }
-        ivDisplay.setLayoutParams(lp);
-    }
-
     private void showOperation(int resId) {
         if (operationLabel == null) return;
         operationLabel.setText(resId);
@@ -618,55 +563,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         mainHandler.postDelayed(hideOperationLabel, OP_LABEL_HIDE_DELAY_MS);
     }
 
-    private void updateAspectRatio(int containerW, int containerH) {
-        if (containerW <= 0 || containerH <= 0 || fbWidth <= 0 || fbHeight <= 0) return;
-        float vmAspect = (float) fbWidth / fbHeight;
-        float containerAspect = (float) containerW / containerH;
-        if (vmAspect > containerAspect) {
-            baseViewW = containerW;
-            baseViewH = Math.round(containerW / vmAspect);
-        } else {
-            baseViewH = containerH;
-            baseViewW = Math.round(containerH * vmAspect);
-        }
-        applyViewSize();
-    }
-
-    private void showBars() {
-        toolbar.setVisibility(VISIBLE);
-        statusBar.setVisibility(VISIBLE);
-        if (status == VncStatus.CONNECTED)
-            mainHandler.postDelayed(this::hideBars, AUTO_HIDE_DELAY_MS);
-    }
-
-    private void hideBars() {
-        if (isFullscreen) return;
-        toolbar.setVisibility(GONE);
-        statusBar.setVisibility(GONE);
-    }
-
     private void toggleFullscreen() {
-        isFullscreen = !isFullscreen;
-        var controller = getWindow().getInsetsController();
-        if (controller == null) return;
-        if (isFullscreen) {
-            mainHandler.removeCallbacks(this::hideBars);
-            toolbar.setVisibility(GONE);
-            statusBar.setVisibility(GONE);
-            extraKeysPanel.setVisibility(GONE);
-            controller.hide(WindowInsets.Type.systemBars());
-            controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-        } else {
-            showBars();
-            if (extraKeysVisible) extraKeysPanel.animateIn();
-            controller.show(WindowInsets.Type.systemBars());
-        }
-        ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
+        chrome.toggleFullscreen();
     }
 
     private void toggleExtraKeys() {
-        extraKeysVisible = !extraKeysVisible;
-        extraKeysPanel.setVisibleAnimated(extraKeysVisible);
+        chrome.toggleExtraKeys();
     }
 
     @SuppressLint("ClickableViewAccessibility")

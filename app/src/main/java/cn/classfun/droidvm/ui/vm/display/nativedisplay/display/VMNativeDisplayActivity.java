@@ -7,16 +7,11 @@ import static android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_B
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.annotation.SuppressLint;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.IBinder;
 import android.os.Looper;
-import android.os.RemoteException;
 import android.util.Base64;
 import android.util.Log;
 import android.view.KeyCharacterMap;
@@ -35,6 +30,9 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
@@ -42,15 +40,18 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.json.JSONObject;
 
-import java.util.UUID;
-
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
+import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
+import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
@@ -72,13 +73,14 @@ import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TouchScaleCalculato
  * The binder can't ride the daemon's TCP/JSON-RPC channel, so it arrives via a broadcast the daemon
  * sends in response to the {@code display_attach} request below.
  */
-public final class VMNativeDisplayActivity extends AppCompatActivity {
+// ImeInsetsExempt: the display area handles the IME inset itself (root insets listener below);
+// without the exemption the app-wide ImeInsetsApplier would pad the content view a second time.
+public final class VMNativeDisplayActivity extends AppCompatActivity implements ImeInsetsExempt {
     private static final String TAG = "VMNativeDisplay";
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
-    private static final long AUTO_HIDE_DELAY_MS = 3000;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     // Converts committed IME text into key events (handles Shift for upper-case/symbols).
@@ -104,12 +106,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     private int guestWidth = 1280;
     private int guestHeight = 720;
 
-    private INativeDisplayRootService rootService;
-    private DisplayProvider displayProvider;
+    private DisplaySource displaySource;
     private InputForwarder inputForwarder;
     private DirectInputSink directSink;
     private NativeExtraKeysPanel nativeExtraKeys;
-    private boolean isFullscreen = false;
     private boolean connected = false;
     // Pointer input mode, shared with the VNC path via the "display_input_mode" pref; applied to the
     // InputForwarder so on-screen touches route to the multi-touch / mouse / tablet virtio device.
@@ -125,8 +125,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     // (or OEM's) right-click fallback, regardless of what source it claims - swallow it.
     private long lastMouseButtonMs;
     private static final long MOUSE_BACK_SUPPRESS_MS = 800;
-    // Local display transform from the three-finger gesture.
-    private float displayScale = 1f;
+    // Single sources of truth for viewport geometry (fit/zoom/pan across display-area changes)
+    // and chrome visibility (fullscreen / extra keys). See the controller classes for the rules.
+    private DisplayViewportController viewport;
+    private DisplayChromeController chrome;
+    // Display areas smaller than this (e.g. landscape with a tall IME) freeze the viewport
+    // instead of re-laying it out; see DisplayViewportController.
+    private static final int MIN_AREA_DP = 96;
 
     // Maps the unified gestures onto the crosvm --input evdev channels via InputForwarder.
     private final PointerGestureTranslator.Listener gestureListener =
@@ -182,58 +187,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             @Override
             public void onZoomPan(float scaleFactor, float dxView, float dyView,
                                   float focusX, float focusY) {
-                applyDisplayZoomPan(scaleFactor, dxView, dyView);
+                if (viewport != null) viewport.onZoomPan(scaleFactor, dxView, dyView);
             }
         };
 
-    // Three-finger local zoom/pan: transform the surface view only; snaps back to identity at 1x.
-    private void applyDisplayZoomPan(float scaleFactor, float dxView, float dyView) {
-        displayScale = Math.max(1f, Math.min(displayScale * scaleFactor, 5f));
-        if (displayScale <= 1.001f) {
-            displayScale = 1f;
-            surfaceView.setScaleX(1f);
-            surfaceView.setScaleY(1f);
-            surfaceView.setTranslationX(0);
-            surfaceView.setTranslationY(0);
-            return;
-        }
-        surfaceView.setScaleX(displayScale);
-        surfaceView.setScaleY(displayScale);
-        float maxPanX = surfaceView.getWidth() * (displayScale - 1f) / 2f;
-        float maxPanY = surfaceView.getHeight() * (displayScale - 1f) / 2f;
-        surfaceView.setTranslationX(
-            clamp(surfaceView.getTranslationX() + dxView, -maxPanX, maxPanX));
-        surfaceView.setTranslationY(
-            clamp(surfaceView.getTranslationY() + dyView, -maxPanY, maxPanY));
-    }
-
-    private static float clamp(float v, float lo, float hi) {
-        return Math.max(lo, Math.min(v, hi));
-    }
-
-    // Per-attach random token: we only accept the binder broadcast carrying the nonce we requested,
-    // so another app spoofing the (exported) action can't slip us a fake broker binder.
-    private final String attachNonce = UUID.randomUUID().toString();
-    private boolean binderReceiverRegistered = false;
-    private boolean rootConnected = false;
-
-    // The daemon broadcasts its broker binder here in response to our display_attach request.
-    private final BroadcastReceiver binderReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            var bundle = intent.getBundleExtra(NativeDisplay.EXTRA_BUNDLE);
-            if (bundle == null || !attachNonce.equals(bundle.getString(NativeDisplay.EXTRA_NONCE)))
-                return;
-            var binder = bundle.getBinder(NativeDisplay.EXTRA_BINDER);
-            if (binder != null) onBinderReceived(binder);
-        }
-    };
-
-    // Daemon died (e.g. restart): drop the broker binder so writes fall back to the vm_input IPC.
-    private final IBinder.DeathRecipient deathRecipient = () -> mainHandler.post(() -> {
-        Log.w(TAG, "daemon broker binder died");
-        rootService = null;
-    });
+    // Daemon broker binder acquisition (display_attach -> nonce-matched broadcast), shared with
+    // the VNC display path.
+    private DaemonDisplayAttach displayAttach;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -252,6 +212,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
+        setupLayoutControllers();
         setStatus(getString(R.string.native_display_connecting), R.color.vnc_status_connecting);
         showOverlay(getString(R.string.native_display_waiting));
 
@@ -260,50 +221,25 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             showOverlay(getString(R.string.native_display_failed));
             return;
         }
-        // Ask the daemon (uid=0) for its broker binder. It can't ride the JSON-RPC channel, so the
-        // daemon broadcasts it back to binderReceiver (matched by attachNonce).
-        registerReceiver(binderReceiver,
-            new IntentFilter(NativeDisplay.BINDER_BROADCAST_ACTION), Context.RECEIVER_EXPORTED);
-        binderReceiverRegistered = true;
-        requestDisplayBinder(10);
+        displayAttach = new DaemonDisplayAttach(this, mainHandler,
+            new DaemonDisplayAttach.Listener() {
+                @Override
+                public void onAttached(@NonNull INativeDisplayRootService service) {
+                    onRootConnected(service);
+                }
+
+                @Override
+                public void onLost() {
+                    // DirectInputSink falls back to the vm_input RPC per write on a dead binder.
+                }
+            });
+        displayAttach.start();
     }
 
-    // Sends display_attach; the daemon answers with a broadcast. Retries while the daemon connection
-    // is still coming up, since the Activity can open just before DaemonConnection authenticates.
-    private void requestDisplayBinder(int attemptsLeft) {
-        if (rootConnected || isFinishing()) return;
-        DaemonConnection.getInstance().buildRequest("display_attach")
-            .put("nonce", attachNonce)
-            .onError(e -> retryDisplayBinder(attemptsLeft))
-            .onUnsuccessful(r -> retryDisplayBinder(attemptsLeft))
-            .invoke();
-    }
-
-    private void retryDisplayBinder(int attemptsLeft) {
-        if (attemptsLeft <= 0) {
-            Log.w(TAG, "display_attach exhausted retries; daemon unavailable");
-            return;
-        }
-        mainHandler.postDelayed(() -> requestDisplayBinder(attemptsLeft - 1), 500);
-    }
-
-    private void onBinderReceived(@NonNull IBinder binder) {
-        if (rootConnected) return; // ignore duplicate broadcasts
-        rootConnected = true;
-        rootService = INativeDisplayRootService.Stub.asInterface(binder);
-        try {
-            binder.linkToDeath(deathRecipient, 0);
-        } catch (RemoteException e) {
-            Log.w(TAG, "linkToDeath failed", e);
-        }
-        onRootConnected();
-    }
-
-    private void onRootConnected() {
-        if (rootService == null) return;
+    private void onRootConnected(@NonNull INativeDisplayRootService service) {
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
-        directSink = new DirectInputSink(vmId, rootService, this::sendInputToDaemon);
+        directSink = new DirectInputSink(vmId, service, this::sendInputToDaemon);
         inputForwarder = new InputForwarder(directSink);
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
         inputMode = InputMode.fromOrdinal(
@@ -319,10 +255,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             .invoke();
 
         // Display binder is looked up via the root service (servicemanager) on a bg thread.
-        displayProvider = new DisplayProvider(
+        displaySource = new NativeSurfaceSource(
             surfaceView, guestWidth, guestHeight,
             () -> {
-                var svc = rootService;
+                var svc = displayAttach.getService();
                 if (svc == null) return null;
                 try {
                     return svc.waitForDisplayBinder(vmKey);
@@ -330,22 +266,29 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
                     return null;
                 }
             },
-            isConnected -> mainHandler.post(() -> onDisplayConnected(isConnected)),
-            config -> mainHandler.post(() -> {
-                guestWidth = config.width;
-                guestHeight = config.height;
-                updateAspectRatio(displayContainer.getWidth(), displayContainer.getHeight());
-            })
-        );
+            mainHandler,
+            new DisplaySource.Callbacks() {
+                @Override
+                public void onContentSize(int width, int height) {
+                    guestWidth = width;
+                    guestHeight = height;
+                    viewport.setContentSize(width, height);
+                }
+
+                @Override
+                public void onStateChanged(@NonNull DisplaySource.State state) {
+                    onDisplayStateChanged(state);
+                }
+            });
+        displaySource.start();
     }
 
-    private void onDisplayConnected(boolean isConnected) {
-        connected = isConnected;
-        if (isConnected) {
+    private void onDisplayStateChanged(@NonNull DisplaySource.State state) {
+        connected = state == DisplaySource.State.CONNECTED;
+        if (connected) {
             setStatus(fmt(getString(R.string.native_display_connected), guestWidth, guestHeight),
                 R.color.vnc_status_connected);
             hideOverlay();
-            updateAspectRatio(displayContainer.getWidth(), displayContainer.getHeight());
         } else {
             setStatus(getString(R.string.native_display_connecting), R.color.vnc_status_connecting);
             showOverlay(getString(R.string.native_display_waiting));
@@ -371,11 +314,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     @SuppressLint("ClickableViewAccessibility")
     private void setupViews() {
         btnFullscreen.setOnClickListener(v -> toggleFullscreen());
+        // The container's layout size IS the display area: chrome visibility, IME and rotation
+        // all funnel into it through normal layout. The viewport handles degenerate sizes itself.
         displayContainer.addOnLayoutChangeListener((
             v, l, t, r, b, ol, ot, or2, ob
         ) -> {
             int cw = r - l, ch = b - t;
-            if (cw > 0 && ch > 0) v.post(() -> updateAspectRatio(cw, ch));
+            v.post(() -> viewport.setArea(cw, ch));
         });
         surfaceView.setOnTouchListener(this::onSurfaceTouch);
         // Host mouse/stylus: scroll wheel + right/middle buttons come as generic-motion events,
@@ -587,19 +532,60 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
         }
     }
 
-    private void updateAspectRatio(int containerW, int containerH) {
-        if (containerW <= 0 || containerH <= 0 || guestWidth <= 0 || guestHeight <= 0) return;
-        float vmAspect = (float) guestWidth / guestHeight;
-        float containerAspect = (float) containerW / containerH;
-        int viewW, viewH;
-        if (vmAspect > containerAspect) {
-            viewW = containerW;
-            viewH = Math.round(containerW / vmAspect);
-        } else {
-            viewH = containerH;
-            viewW = Math.round(containerH * vmAspect);
-        }
-        surfaceView.setLayoutParams(new FrameLayout.LayoutParams(viewW, viewH, CENTER));
+    // Wires the viewport controller (single writer of the SurfaceView geometry), the chrome
+    // controller (single writer of toolbar/status bar/extra keys/system bars visibility) and the
+    // window-insets listener that turns system bars + IME into root padding, which in turn sizes
+    // the display container.
+    private void setupLayoutControllers() {
+        int minAreaPx = Math.round(MIN_AREA_DP * getResources().getDisplayMetrics().density);
+        viewport = new DisplayViewportController(minAreaPx,
+            new DisplayViewportController.Listener() {
+                @Override
+                public void onViewportChanged(int baseW, int baseH, float viewScale,
+                                              float offsetX, float offsetY) {
+                    surfaceView.setLayoutParams(new FrameLayout.LayoutParams(baseW, baseH, CENTER));
+                    surfaceView.setScaleX(viewScale);
+                    surfaceView.setScaleY(viewScale);
+                    surfaceView.setTranslationX(offsetX);
+                    surfaceView.setTranslationY(offsetY);
+                }
+
+                @Override
+                public void onGuestResizeWanted(int areaW, int areaH) {
+                    // Auto-resize Guest Display: no guest-side channel on this path yet.
+                }
+            });
+        viewport.setContentSize(guestWidth, guestHeight);
+
+        chrome = new DisplayChromeController(true, (fullscreen, extraKeysVisible) -> {
+            toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
+            statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
+            extraKeysPanel.setVisibleAnimated(extraKeysVisible);
+            var controller = getWindow().getInsetsController();
+            if (controller != null) {
+                if (fullscreen) {
+                    controller.hide(WindowInsets.Type.systemBars());
+                    controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                } else {
+                    controller.show(WindowInsets.Type.systemBars());
+                }
+            }
+            // Re-request insets so the root padding (and thus the display area) updates in the
+            // same pass as the visibility changes.
+            ViewCompat.requestApplyInsets(findViewById(R.id.main));
+        });
+
+        View root = findViewById(R.id.main);
+        ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
+            Insets sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            boolean fullscreen = chrome != null && chrome.isFullscreen();
+            int top = fullscreen ? 0 : sysBars.top;
+            int bottom = Math.max(fullscreen ? 0 : sysBars.bottom, ime.bottom);
+            v.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+        ViewCompat.requestApplyInsets(root);
     }
 
     private void setStatus(String text, int colorRes) {
@@ -638,21 +624,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     }
 
     private void toggleFullscreen() {
-        isFullscreen = !isFullscreen;
-        var controller = getWindow().getInsetsController();
-        if (controller == null) return;
-        if (isFullscreen) {
-            toolbar.setVisibility(GONE);
-            statusBar.setVisibility(GONE);
-            extraKeysPanel.setVisibility(GONE);
-            controller.hide(WindowInsets.Type.systemBars());
-            controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-        } else {
-            toolbar.setVisibility(VISIBLE);
-            statusBar.setVisibility(VISIBLE);
-            extraKeysPanel.animateIn();
-            controller.show(WindowInsets.Type.systemBars());
-        }
+        chrome.toggleFullscreen();
     }
 
     private void showFabMenu() {
@@ -684,7 +656,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             toggleSoftKeyboard();
             return true;
         } else if (id == R.id.menu_extra_keys) {
-            extraKeysPanel.setVisibleAnimated(extraKeysPanel.getVisibility() != VISIBLE);
+            chrome.toggleExtraKeys();
             return true;
         } else if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
@@ -722,9 +694,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
     protected void onDestroy() {
         super.onDestroy();
         extraKeysPanel.stopKeyRepeat();
-        if (displayProvider != null) {
-            displayProvider.shutdown();
-            displayProvider = null;
+        if (displaySource != null) {
+            displaySource.shutdown();
+            displaySource = null;
         }
         if (inputForwarder != null) {
             inputForwarder.close();
@@ -734,20 +706,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity {
             directSink.close();
             directSink = null;
         }
-        if (binderReceiverRegistered) {
-            try {
-                unregisterReceiver(binderReceiver);
-            } catch (Exception ignored) {
-            }
-            binderReceiverRegistered = false;
+        if (displayAttach != null) {
+            displayAttach.stop();
+            displayAttach = null;
         }
-        if (rootService != null) {
-            try {
-                rootService.asBinder().unlinkToDeath(deathRecipient, 0);
-            } catch (Exception ignored) {
-            }
-        }
-        rootService = null;
     }
 
     @NonNull
