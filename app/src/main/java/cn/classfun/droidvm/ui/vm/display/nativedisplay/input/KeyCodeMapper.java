@@ -173,9 +173,18 @@ public final class KeyCodeMapper {
     }
 
     static {
-        // Letters: lowercase unshifted, uppercase shifted.
-        for (char c = 'a'; c <= 'z'; c++) ch(c, KEY_A + (c - 'a'), false);
-        for (char c = 'A'; c <= 'Z'; c++) ch(c, KEY_A + (c - 'A'), true);
+        // Letters: lowercase unshifted, uppercase shifted. evdev scan codes follow the physical
+        // QWERTY layout, NOT the alphabet, so map each letter to its own KEY_* (KEY_A + (c-'a')
+        // would send e.g. 'q' as KEY_C).
+        int[] letterKeys = {
+            KEY_A, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J, KEY_K, KEY_L,
+            KEY_M, KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T, KEY_U, KEY_V, KEY_W, KEY_X,
+            KEY_Y, KEY_Z,
+        };
+        for (int i = 0; i < 26; i++) {
+            ch((char) ('a' + i), letterKeys[i], false);
+            ch((char) ('A' + i), letterKeys[i], true);
+        }
         // Digit row, unshifted.
         int[] digitKeys = {KEY_0, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9};
         for (int d = 0; d <= 9; d++) ch((char) ('0' + d), digitKeys[d], false);
