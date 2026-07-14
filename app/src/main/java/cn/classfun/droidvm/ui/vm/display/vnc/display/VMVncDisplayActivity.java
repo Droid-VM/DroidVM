@@ -17,6 +17,7 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Bitmap;
+import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.util.TypedValue;
 import android.view.MenuItem;
@@ -472,9 +473,10 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         }
     }
 
-    // Routes on-screen touches by input mode. ivDisplay is laid out to the framebuffer's aspect
-    // (DisplayViewportController), so view coords map to fb coords with a plain per-axis scale;
-    // touch coords stay in view-local space even under the three-finger zoom transform.
+    // Routes on-screen touches by input mode. TOUCH listens on ivDisplay, which is laid out to
+    // the framebuffer's aspect (DisplayViewportController), so view coords scale straight to the
+    // wire range. MOUSE/TABLET listen on the whole container; the gesture translator pins the
+    // coordinate-carrying gestures to the rendered image rect.
     private boolean onDisplayTouch(View v, MotionEvent event) {
         if (fbWidth <= 0 || fbHeight <= 0) return false;
         int ivW = ivDisplay.getWidth(), ivH = ivDisplay.getHeight();
@@ -489,19 +491,34 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
             return true;
         }
-        float scaleX = (float) fbWidth / ivW;
-        float scaleY = (float) fbHeight / ivH;
         switch (inputMode) {
             case TABLET:
             case MOUSE:
-                return gestureTranslator != null
-                    && gestureTranslator.onTouchEvent(event, scaleX, scaleY);
+                // TABLET rides RFB, whose pointer coordinates are framebuffer px (crosvm's VNC
+                // server normalizes them itself); MOUSE REL deltas are guest px. Both therefore
+                // map the display rect onto the framebuffer size, NOT the normalized ABS range.
+                return gestureTranslator != null && gestureTranslator.onTouchEvent(
+                    event, displayRectInContainer(), fbWidth, fbHeight);
             case TOUCH:
             default:
                 if (inputForwarder == null) return false;
-                inputForwarder.sendTouchEvent(event, scaleX, scaleY);
+                // The evdev multi-touch device advertises the fixed normalized ABS range
+                // (--input multi-touch with no width/height); scale view coords to that range.
+                inputForwarder.sendTouchEvent(event,
+                    (float) EvdevEncoder.NORMALIZED_ABS_MAX / ivW,
+                    (float) EvdevEncoder.NORMALIZED_ABS_MAX / ivH);
                 return true;
         }
+    }
+
+    // Where the framebuffer is rendered, in container coordinates: the letterbox-fitted image
+    // bounds mapped through the viewport's current zoom/pan transform.
+    @NonNull
+    private RectF displayRectInContainer() {
+        var rect = new RectF(0, 0, ivDisplay.getWidth(), ivDisplay.getHeight());
+        ivDisplay.getMatrix().mapRect(rect);
+        rect.offset(ivDisplay.getLeft(), ivDisplay.getTop());
+        return rect;
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -513,8 +530,10 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private void applyInputMode() {
         ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (operationLabel != null) operationLabel.setVisibility(GONE);
-        if (inputMode == InputMode.MOUSE) {
-            // Whole-screen touchpad: relative motion doesn't need to land on the image itself.
+        if (inputMode == InputMode.MOUSE || inputMode == InputMode.TABLET) {
+            // Whole-container gesture surface: MOUSE is a borderless touchpad; TABLET pins the
+            // coordinate-carrying gestures to the rendered image inside the translator, so
+            // multi-finger gestures still work from the letterbox.
             ivDisplay.setClickable(false);
             ivDisplay.setOnTouchListener(null);
             displayContainer.setClickable(true);

@@ -212,6 +212,10 @@
     <string name="create_vm_gpu_api_egl">EGL</string>
     <string name="create_vm_gpu_api_opengles">OpenGL ES</string>
     <string name="create_vm_gpu_api_angle">ANGLE</string>
+    <string name="create_vm_gpu_api_vulkan_system">Vulkan (System)</string>
+    <string name="create_vm_gpu_api_vulkan_turnip">Vulkan (Turnip)</string>
+    <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
+    <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_category_display">Display</string>
     <string name="create_vm_display_enabled">Enable Display</string>
     <string name="create_vm_display_backend">Display Backend</string>

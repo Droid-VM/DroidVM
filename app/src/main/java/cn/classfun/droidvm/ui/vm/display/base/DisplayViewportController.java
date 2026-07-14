@@ -73,7 +73,10 @@ public final class DisplayViewportController {
         }
         contentW = w;
         contentH = h;
-        if (!ready()) {
+        if (areaW <= 0 || areaH <= 0) {
+            // No display area yet (content size can arrive before the first layout pass, e.g.
+            // from the launch intent in onCreate): fitScale() would be 0 and the emitted
+            // viewScale NaN. Hold; the first setArea() re-fits and emits.
             return;
         }
         fit();

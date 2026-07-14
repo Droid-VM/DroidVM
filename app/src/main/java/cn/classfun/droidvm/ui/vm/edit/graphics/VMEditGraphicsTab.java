@@ -10,6 +10,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.generateRandomPassword;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.view.View;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
@@ -90,8 +91,18 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuEnabled.setOnCheckedChangeListener(this::updateGpuVisibility);
         swDisplayEnabled.setOnCheckedChangeListener(this::updateDisplayVisibility);
         swVncEnabled.setOnCheckedChangeListener(this::updateVncVisibility);
+        // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
+        chooseGpuApi.setOnValueChangedListener((o, n) -> {
+            if (n == GpuApi.VULKAN_PANVK) {
+                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
+                    Toast.LENGTH_SHORT).show();
+                chooseGpuApi.setSelectedItem(o instanceof GpuApi ? (GpuApi) o : GpuApi.VULKAN_TURNIP);
+            }
+        });
+        // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
+        // virgl/2d picks a guest GL/Vulkan translation API.
+        chooseGpuBackend.setOnValueChangedListener((o, n) -> updateGpuApiOptions());
         chooseGpuBackend.configure(GpuBackend.class, GPU_GFXSTREAM);
-        chooseGpuApi.configure(GpuApi.class, GpuApi.OPENGLES);
         chooseDisplayBackend.configure(DisplayBackend.class, SIMPLEFB);
         chooseDisplayBackend.setOnValueChangedListener((o, n) -> {
             if (n == DisplayBackend.VIRTIO_GPU && !swGpuEnabled.isChecked()) {
@@ -132,10 +143,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var gpuApi = optEnum(item, "gpu_api", GpuApi.NONE);
         var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
         var displayBackend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        if (gpuApi != GpuApi.NONE)
-            chooseGpuApi.setSelectedItem(gpuApi);
+        // Backend first: its listener rebuilds the API option set (and a default).
         if (gpuBackend != GpuBackend.NONE)
             chooseGpuBackend.setSelectedItem(gpuBackend);
+        // Restore the saved API only if it belongs to the current backend's family;
+        // otherwise keep the default that updateGpuApiOptions() just picked.
+        boolean gfx = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        if (gpuApi != GpuApi.NONE && gfx == isGfxstreamApi(gpuApi))
+            chooseGpuApi.setSelectedItem(gpuApi);
         if (displayBackend != DisplayBackend.NONE)
             chooseDisplayBackend.setSelectedItem(displayBackend);
         updateGpuVisibility();
@@ -217,6 +232,23 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("vnc_host", getEditText(etVncHost));
             var vncPortStr = getEditText(etVncPort);
             item.set("vnc_port", vncPortStr.isEmpty() ? -1 : parseInt(vncPortStr));
+        }
+    }
+
+    private static boolean isGfxstreamApi(GpuApi a) {
+        return a == GpuApi.VULKAN_SYSTEM || a == GpuApi.VULKAN_TURNIP || a == GpuApi.VULKAN_PANVK;
+    }
+
+    // Rebuild the GPU API options to match the selected backend. gfxstream selects a host
+    // Vulkan driver (System / Turnip / PanVK; Qualcomm defaults to Turnip); virgl/2d selects a
+    // guest translation API (Vulkan / EGL / OpenGL ES / ANGLE).
+    private void updateGpuApiOptions() {
+        if (chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM) {
+            chooseGpuApi.setItems(GpuApi.VULKAN_SYSTEM, GpuApi.VULKAN_TURNIP, GpuApi.VULKAN_PANVK);
+            chooseGpuApi.setSelectedItem(GpuApi.VULKAN_TURNIP);
+        } else {
+            chooseGpuApi.setItems(GpuApi.VULKAN, GpuApi.EGL, GpuApi.OPENGLES, GpuApi.ANGLE);
+            chooseGpuApi.setSelectedItem(GpuApi.OPENGLES);
         }
     }
 

@@ -352,6 +352,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
     }
 
+    // Resolve the effective hypervisor (mirrors buildCommand's --hypervisor logic) to gate
+    // Gunyah-only GPU behavior such as gunyah-pvm.
+    private boolean isGunyahHypervisor() {
+        var hyp = config.item.optString("hypervisor", "auto");
+        var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
+        if (hypervisor == VMHypervisor.AUTO)
+            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.CROSVM);
+        return hypervisor == VMHypervisor.GUNYAH;
+    }
+
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);
@@ -388,6 +398,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 gpuArg.append(",vulkan=true,gles=true");
                 gpuArg.append(fmt(",pci-bar-size=%d",
                     item.optLong("gpu_pci_bar_size", 0x100000000L)));
+                // Host-visible folio (reserved-hugepage) budget, MiB -- the pool gfxstream
+                // draws GPU-visible memory from. Reuses gpu_arena_mb (was GFXSTREAM_ARENA_MB).
+                gpuArg.append(fmt(",vram-limit=%d", item.optLong("gpu_arena_mb", 2048)));
+                // gunyah-pvm pins the RingBlob backing so the permanent Gunyah SHARE mapping
+                // stays stable. Only meaningful under the Gunyah hypervisor; other SoCs skip it.
+                if (isGunyahHypervisor()) {
+                    gpuArg.append(",gunyah-pvm=true");
+                }
             } else {
                 gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
                 switch (api) {
@@ -434,14 +452,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void buildInputDevicesCommand(@NonNull List<String> args) {
         var item = config.item;
         var serviceName = NativeDisplay.serviceName(config);
-        var width = item.optLong("display_width", 1280);
-        var height = item.optLong("display_height", 720);
-        // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
-        // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
+        // multi-touch + absolute-mouse advertise a fixed normalized ABS range (crosvm
+        // NORMALIZED_ABS_MAX) because width/height are OMITTED here; the UI scales view coords to
+        // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
+        // resolution-independent and survives guest auto-resize -- no display size needed.
         args.add("--input");
         args.add(fmt(
-            "multi-touch[path=%s,width=%d,height=%d]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH), width, height
+            "multi-touch[path=%s]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH)
         ));
         args.add("--input");
         args.add(fmt(
@@ -460,8 +478,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto it in TABLET mode.
         args.add("--input");
         args.add(fmt(
-            "absolute-mouse[path=%s,width=%d,height=%d]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.TABLET), width, height
+            "absolute-mouse[path=%s]",
+            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.TABLET)
         ));
     }
 
@@ -474,16 +492,20 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var item = config.item;
         if (!item.optBoolean("gpu_enabled", false)) return;
         if (optEnum(item, "gpu_backend", GpuBackend.NONE) != GpuBackend.GPU_GFXSTREAM) return;
-        // Folio-backed host-visible memory + clean per-blob lifecycle on Gunyah.
-        builder.environment("GFXSTREAM_GUNYAH_PIN_RINGBLOB", "1");
+        // Advertise a device-local memory type to the guest. The folio budget
+        // (vram-limit) and Gunyah RingBlob pin (gunyah-pvm) are on the --gpu line.
         builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
-        builder.environment("GFXSTREAM_ARENA_MB",
-            String.valueOf(item.optLong("gpu_arena_mb", 2048)));
-        // Point gfxstream at the bundled turnip ICD (the host Adreno Vulkan driver it
-        // renders through). Falls back to the system Vulkan HAL if the file is absent.
-        var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
-        if (new File(turnip).exists()) {
-            builder.environment("ANDROID_EMU_VK_LOADER_PATH", turnip);
+        // Host Vulkan driver selected by gpu_api. VULKAN_SYSTEM (and the not-yet-wired
+        // VULKAN_PANVK) use the SoC's stock Vulkan HAL -- leave ANDROID_EMU_VK_LOADER_PATH
+        // unset. Otherwise point gfxstream at the bundled turnip ICD (falls back to the
+        // system HAL if the file is missing).
+        var api = optEnum(item, "gpu_api", GpuApi.NONE);
+        boolean systemDriver = api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK;
+        if (!systemDriver) {
+            var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
+            if (new File(turnip).exists()) {
+                builder.environment("ANDROID_EMU_VK_LOADER_PATH", turnip);
+            }
         }
         // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
         // whole host-visible allocation can be wrapped as one dma-buf.

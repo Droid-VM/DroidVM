@@ -23,7 +23,7 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:contentDescription="@string/vnc_menu_input_mode_touch"
-        app:icon="@drawable/ic_touchpad"
+        app:icon="@drawable/ic_touchscreen"
         app:iconGravity="textStart"
         app:iconPadding="0dp" />
 
@@ -36,7 +36,7 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:contentDescription="@string/vnc_menu_input_mode_tablet"
-        app:icon="@drawable/ic_stylus"
+        app:icon="@drawable/ic_tablet_stylus"
         app:iconGravity="textStart"
         app:iconPadding="0dp" />
 
