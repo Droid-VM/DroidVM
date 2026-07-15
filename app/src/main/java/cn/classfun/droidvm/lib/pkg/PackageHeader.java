@@ -18,6 +18,9 @@ public final class PackageHeader {
     public int appVersionCode = 0;
     public int manifestSize = 0;
     public int compression = 0;
+    // 0 = single self-contained file; > 0 = split package whose data lives in
+    // that many <base>.NNN sub-volumes (this file is the metadata master).
+    public int volumeCount = 0;
     public long dataSize = 0;
 
     public PackageHeader() {
@@ -32,6 +35,7 @@ public final class PackageHeader {
         appVersionCode = getUInt16LE(hdr, 8);
         manifestSize = getUInt16LE(hdr, 10);
         compression = getUInt16LE(hdr, 12);
+        volumeCount = getUInt16LE(hdr, 14);
         dataSize = getInt64LE(hdr, 16);
     }
 

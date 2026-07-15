@@ -1089,9 +1089,13 @@
     <string name="vmpkg_export_compression_gzip_desc">Gzip is fast with low CPU usage but produces larger archives.</string>
     <string name="vmpkg_export_compression_xz_desc">XZ (LZMA2) is slowest and CPU-heavy but produces the smallest archives.</string>
     <string name="vmpkg_export_compression_zstd_desc">Zstandard offers the best balance: fast compression with good ratios.</string>
+    <string name="vmpkg_export_volume_size_hint">Volume size</string>
+    <string name="vmpkg_export_volume_size_desc">Split the package into fixed-size volumes (.001, .002, \u2026). Leave empty for a single file.</string>
+    <string name="vmpkg_export_volume_size_invalid">Volume size must be at least %1$d MB</string>
     <string name="vmpkg_export_running">Submitting to daemon\u2026</string>
     <string name="vmpkg_export_scan">Scanning disks\u2026</string>
     <string name="vmpkg_export_pack">Packaging disks\u2026</string>
+    <string name="vmpkg_export_pack_volume">Packaging disks (volume %1$d)\u2026</string>
     <string name="vmpkg_export_progress_detail">%1$s / %2$s %3$d%%</string>
     <string name="vmpkg_export_success">Package created</string>
     <string name="vmpkg_export_success_path">Package created: %1$s</string>
@@ -1110,6 +1114,7 @@
     <string name="vmpkg_import_do">Import</string>
     <string name="vmpkg_import_reading">Reading package\u2026</string>
     <string name="vmpkg_import_running">Importing\u2026</string>
+    <string name="vmpkg_import_running_volume">Importing (%1$d volumes)\u2026</string>
     <string name="vmpkg_import_disks">Disks</string>
     <string name="vmpkg_import_networks">Networks</string>
     <string name="vmpkg_import_no_disks">No disks in this package.</string>
