@@ -4,6 +4,7 @@ import static cn.classfun.droidvm.daemon.vm.pkg.VMImportUtils.remapBootPaths;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMImportUtils.remapDiskPaths;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMImportUtils.uniqueFile;
 import static cn.classfun.droidvm.lib.pkg.PackageConstants.BUFFER;
+import static cn.classfun.droidvm.lib.utils.BinaryUtils.readFully;
 import static cn.classfun.droidvm.lib.utils.JsonUtils.listToJSONArray;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -31,9 +32,12 @@ import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.archive.TarReader;
 import cn.classfun.droidvm.lib.pkg.BootFile;
 import cn.classfun.droidvm.lib.pkg.DiskEntry;
+import cn.classfun.droidvm.lib.pkg.PackageConstants;
+import cn.classfun.droidvm.lib.pkg.PackageHeader;
 import cn.classfun.droidvm.lib.pkg.PackageInput;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
 import cn.classfun.droidvm.lib.pkg.Phase;
+import cn.classfun.droidvm.lib.pkg.VolumeSet;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -47,6 +51,7 @@ public final class VMImportTask {
     private final File targetDir;
     private final String networkMode;
     private int totalItems;
+    private int volumeTotal = 0;
     public VMConfig importedVM = null;
     public PackageManifest importedManifest = null;
     public final ArrayList<DiskEntry> placedDisks = new ArrayList<>();
@@ -125,28 +130,53 @@ public final class VMImportTask {
     private void unpack() throws Exception {
         if (!targetDir.exists() && !targetDir.mkdirs())
             throw new IOException(fmt("Cannot create target dir: %s", targetDir));
-        try (
-            var in = new FileInputStream(srcPath);
-            var pkg = PackageInput.open(in)
-        ) {
-            importedManifest = pkg.manifest;
-            totalItems = importedManifest.disks.size() + importedManifest.boots.size();
-            var data = DataItem.newObject();
-            data.set("done", 0);
-            data.set("total", totalItems);
-            emit(data, Phase.PACK);
-            var tar = new TarReader(pkg.data);
-            tar.forEach(this::onTarItem);
-            var buf = new byte[BUFFER];
-            //noinspection StatementWithEmptyBody
-            while (pkg.data.read(buf) >= 0);
-            pkg.validateDataConsumed();
+        // Any picked path maps to its metadata master (strip a .NNN suffix).
+        var masterPath = VolumeSet.masterOf(srcPath);
+        if (readVolumeCount(masterPath) > 0) {
+            var set = VolumeSet.discover(masterPath);
+            volumeTotal = set.count();
+            try (
+                var in = set.openLogicalStream();
+                var pkg = PackageInput.open(in, set.dataSize())
+            ) {
+                extract(pkg);
+            }
+        } else {
+            try (
+                var in = new FileInputStream(masterPath);
+                var pkg = PackageInput.open(in)
+            ) {
+                extract(pkg);
+            }
         }
         var vm = new VMConfig(importedManifest.vm.toJson());
         vm.setId(UUID.randomUUID());
         remapDiskPaths(vm, placedDisks);
         remapBootPaths(vm, placedBoots);
         importedVM = vm;
+    }
+
+    private int readVolumeCount(@NonNull String masterPath) throws Exception {
+        try (var in = new FileInputStream(masterPath)) {
+            var hdr = new byte[PackageConstants.HEADER_SIZE];
+            readFully(in, hdr);
+            return PackageHeader.fromBytes(hdr).volumeCount;
+        }
+    }
+
+    private void extract(@NonNull PackageInput pkg) throws Exception {
+        importedManifest = pkg.manifest;
+        totalItems = importedManifest.disks.size() + importedManifest.boots.size();
+        var data = DataItem.newObject();
+        data.set("done", 0);
+        data.set("total", totalItems);
+        emit(data, Phase.PACK);
+        var tar = new TarReader(pkg.data);
+        tar.forEach(this::onTarItem);
+        var buf = new byte[BUFFER];
+        //noinspection StatementWithEmptyBody
+        while (pkg.data.read(buf) >= 0);
+        pkg.validateDataConsumed();
     }
 
     @NonNull
@@ -281,6 +311,7 @@ public final class VMImportTask {
             data.put("event", "vm_import_status");
             data.put("task_id", taskId.toString());
             data.put("phase", phase.name().toLowerCase());
+            if (volumeTotal > 0) data.put("volume_total", volumeTotal);
             var ev = new JSONObject();
             ev.put("type", "event");
             ev.put("data", data);

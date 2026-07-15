@@ -54,6 +54,7 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
+import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class VMPkgExportActivity extends AppCompatActivity
     implements DaemonConnection.EventListener {
@@ -70,6 +71,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
     private TextView tvDiskSummary;
     private ChooseRowWidget chooseCompression;
     private TextView tvCompressionDesc;
+    private TextInputRowWidget inputVolumeSize;
     private LinearProgressIndicator pbRun;
     private TextView tvStatus;
     private TextView tvFileName;
@@ -78,9 +80,11 @@ public final class VMPkgExportActivity extends AppCompatActivity
     private ExtendedFloatingActionButton fabShare;
     private VMConfig config;
     private Compression compression = PackageConstants.DEFAULT_COMPRESSION;
+    private long volumeSize = 0;
     private VMPkgExportDiskAdapter adapter;
     private String pendingTaskId = null;
     private String path = null;
+    private int exportVolumeIndex = 0;
     private boolean exporting = false;
     private Phase phase = Phase.IDLE;
     private final ActivityResultLauncher<String> createDocLauncher =
@@ -108,6 +112,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
         tvDiskSummary = findViewById(R.id.tv_disk_summary);
         chooseCompression = findViewById(R.id.choose_compression);
         tvCompressionDesc = findViewById(R.id.tv_compression_desc);
+        inputVolumeSize = findViewById(R.id.input_volume_size);
         pbRun = findViewById(R.id.pb_run);
         tvStatus = findViewById(R.id.tv_status);
         tvFileName = findViewById(R.id.tv_filename);
@@ -144,6 +149,9 @@ public final class VMPkgExportActivity extends AppCompatActivity
         containerDisks.setAdapter(adapter);
         bindDisks();
         bindCompression();
+        // Volume split defaults off: leave the input empty so export produces a
+        // single self-contained file unless the user enters a size.
+        inputVolumeSize.setText("");
         var handler = new VMPkgExportOnBackPressedCallback();
         toolbar.setNavigationOnClickListener(v -> handler.handleOnBackPressed());
         getOnBackPressedDispatcher().addCallback(this, handler);
@@ -303,6 +311,23 @@ public final class VMPkgExportActivity extends AppCompatActivity
 
     private void onDocPicked(@Nullable Uri uri) {
         if (uri == null || exporting) return;
+        // Clear any stale volume index from a previous export so a following
+        // single-file export does not inherit its "volume N" status.
+        exportVolumeIndex = 0;
+        // Read the (empty = single file) volume size on the UI thread before
+        // handing off to the worker pool.
+        var vsText = inputVolumeSize.getText().trim();
+        if (vsText.isEmpty()) {
+            volumeSize = 0;
+        } else if (!inputVolumeSize.isInputValid()) {
+            showToast(R.string.vmpkg_export_failed, getString(
+                R.string.vmpkg_export_volume_size_invalid,
+                PackageConstants.MIN_VOLUME_SIZE / (1024 * 1024)
+            ));
+            return;
+        } else {
+            volumeSize = inputVolumeSize.getValue();
+        }
         runOnPool(() -> startExport(uri));
     }
 
@@ -344,6 +369,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
             .put("disks", diskIndices)
             .put("dest_path", destPath)
             .put("compression", compression)
+            .put("volume_size", volumeSize)
             .onResponse(onExport)
             .onUnsuccessful(f)
             .onError(err)
@@ -384,6 +410,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
         var bytesTotal = data.optLong("bytes_total");
         var file = data.optString("file");
         var message = data.optString("message");
+        exportVolumeIndex = data.optInt("volume_index", exportVolumeIndex);
         mainHandler.post(() -> onProgress(
             phase, done, total, bytesDone, bytesTotal, file, message
         ));
@@ -424,7 +451,10 @@ public final class VMPkgExportActivity extends AppCompatActivity
                 applyProgress(done, total, bytesDone, bytesTotal);
                 break;
             case PACK:
-                tvStatus.setText(R.string.vmpkg_export_pack);
+                if (exportVolumeIndex > 0) tvStatus.setText(getString(
+                    R.string.vmpkg_export_pack_volume, exportVolumeIndex
+                ));
+                else tvStatus.setText(R.string.vmpkg_export_pack);
                 applyProgress(done, total, bytesDone, bytesTotal);
                 applyProgressDetail(file, bytesDone, bytesTotal);
                 break;
@@ -471,6 +501,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
         pbRun.setVisibility(exporting ? VISIBLE : GONE);
         pbRun.setIndeterminate(exporting);
         chooseCompression.setEnabled(!exporting);
+        inputVolumeSize.setEnabled(!exporting);
         containerDisks.setEnabled(!exporting);
         adapter.setEnabled(!exporting);
     }
