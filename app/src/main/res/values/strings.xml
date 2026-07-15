@@ -1183,4 +1183,5 @@
     <string name="kernel_module_working">Working…</string>
     <string name="kernel_module_ok">Done</string>
     <string name="kernel_module_fail">Failed</string>
+    <string name="kernel_module_kmi">KMI: %1$s</string>
 </resources>

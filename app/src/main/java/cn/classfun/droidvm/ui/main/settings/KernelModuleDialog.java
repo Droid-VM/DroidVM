@@ -3,22 +3,23 @@ package cn.classfun.droidvm.ui.main.settings;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.Context;
+import android.content.res.ColorStateList;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.Space;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.app.AlertDialog;
-import androidx.appcompat.widget.SwitchCompat;
+import androidx.annotation.Nullable;
 
-import com.google.android.material.button.MaterialButton;
+import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.util.List;
 
@@ -32,27 +33,24 @@ import cn.classfun.droidvm.R;
 public final class KernelModuleDialog {
     private final Context ctx;
     private final Handler main = new Handler(Looper.getMainLooper());
-    private LinearLayout container;
+    private final LayoutInflater inflater;
+    private TextView kmi, state;
+    private LinearLayout list;
 
     public KernelModuleDialog(@NonNull Context ctx) {
         this.ctx = ctx;
+        this.inflater = LayoutInflater.from(ctx);
     }
 
     public void show() {
-        var scroll = new ScrollView(ctx);
-        container = new LinearLayout(ctx);
-        container.setOrientation(LinearLayout.VERTICAL);
-        int pad = dp(20);
-        container.setPadding(pad, dp(8), pad, dp(8));
-        scroll.addView(container);
-
-        var loading = new TextView(ctx);
-        loading.setText(R.string.kernel_module_loading);
-        container.addView(loading);
+        var content = inflater.inflate(R.layout.dialog_kernel_modules, null);
+        kmi = content.findViewById(R.id.km_kmi);
+        state = content.findViewById(R.id.km_state);
+        list = content.findViewById(R.id.km_list);
 
         new MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.kernel_module_title)
-            .setView(scroll)
+            .setView(content)
             .setPositiveButton(android.R.string.ok, null)
             .show();
 
@@ -61,65 +59,56 @@ public final class KernelModuleDialog {
 
     private void refresh() {
         runOnPool(() -> {
+            var kmiName = KernelModuleManager.deviceKmi();
             var mods = KernelModuleManager.list();
-            main.post(() -> render(mods));
+            main.post(() -> render(kmiName, mods));
         });
     }
 
-    private void render(@NonNull List<KernelModuleManager.Module> mods) {
-        if (container == null) return;
-        container.removeAllViews();
+    private void render(@Nullable String kmiName, @NonNull List<KernelModuleManager.Module> mods) {
+        if (list == null) return;
+        if (kmiName != null) {
+            kmi.setText(ctx.getString(R.string.kernel_module_kmi, kmiName));
+            kmi.setVisibility(View.VISIBLE);
+        }
+        list.removeAllViews();
         if (mods.isEmpty()) {
-            var tv = new TextView(ctx);
-            tv.setText(R.string.kernel_module_none);
-            container.addView(tv);
+            state.setText(R.string.kernel_module_none);
+            state.setVisibility(View.VISIBLE);
             return;
         }
-        for (var mod : mods) container.addView(buildRow(mod));
+        state.setVisibility(View.GONE);
+        for (var mod : mods) list.addView(buildCard(mod));
     }
 
     @NonNull
-    private View buildRow(@NonNull KernelModuleManager.Module mod) {
-        var row = new LinearLayout(ctx);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(0, dp(10), 0, dp(10));
+    private View buildCard(@NonNull KernelModuleManager.Module mod) {
+        var card = inflater.inflate(R.layout.item_kernel_module, list, false);
+        TextView name = card.findViewById(R.id.km_name);
+        TextView status = card.findViewById(R.id.km_status);
+        ImageView dot = card.findViewById(R.id.km_dot);
+        Button toggle = card.findViewById(R.id.km_toggle);
+        MaterialSwitch autostart = card.findViewById(R.id.km_autostart);
 
-        var name = new TextView(ctx);
         name.setText(mod.name);
-        name.setTextSize(16);
-        row.addView(name);
-
-        var status = new TextView(ctx);
         status.setText(mod.loaded ? R.string.kernel_module_loaded : R.string.kernel_module_unloaded);
-        row.addView(status);
+        int tint = MaterialColors.getColor(card, mod.loaded
+            ? androidx.appcompat.R.attr.colorPrimary
+            : com.google.android.material.R.attr.colorOutline);
+        status.setTextColor(tint);
+        dot.setImageTintList(ColorStateList.valueOf(tint));
 
-        var controls = new LinearLayout(ctx);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setGravity(Gravity.CENTER_VERTICAL);
-        controls.setPadding(0, dp(6), 0, 0);
-
-        var toggle = new MaterialButton(ctx);
         toggle.setText(mod.loaded ? R.string.kernel_module_unload : R.string.kernel_module_load);
-        toggle.setOnClickListener(v -> doToggle(mod));
-        controls.addView(toggle);
+        toggle.setOnClickListener(v -> {
+            v.setEnabled(false);
+            doToggle(mod);
+        });
 
-        var spacer = new Space(ctx);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        controls.addView(spacer);
-
-        var autoLabel = new TextView(ctx);
-        autoLabel.setText(R.string.kernel_module_autostart);
-        autoLabel.setPadding(0, 0, dp(8), 0);
-        controls.addView(autoLabel);
-
-        var sw = new SwitchCompat(ctx);
-        sw.setChecked(KernelModuleManager.isAutostart(ctx, mod.name));
-        sw.setOnCheckedChangeListener((b, checked) ->
+        autostart.setChecked(KernelModuleManager.isAutostart(ctx, mod.name));
+        autostart.setOnCheckedChangeListener((b, checked) ->
             KernelModuleManager.setAutostart(ctx, mod.name, checked));
-        controls.addView(sw);
 
-        row.addView(controls);
-        return row;
+        return card;
     }
 
     private void doToggle(@NonNull KernelModuleManager.Module mod) {
@@ -134,9 +123,5 @@ public final class KernelModuleDialog {
                 refresh();
             });
         });
-    }
-
-    private int dp(int v) {
-        return Math.round(v * ctx.getResources().getDisplayMetrics().density);
     }
 }
