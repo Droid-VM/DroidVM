@@ -36,6 +36,8 @@ import cn.classfun.droidvm.lib.pkg.DiskRef;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
 import cn.classfun.droidvm.lib.pkg.Phase;
+import cn.classfun.droidvm.lib.pkg.VolumeIndex;
+import cn.classfun.droidvm.lib.pkg.VolumeSplitOutputStream;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public final class VMExportTask {
@@ -47,6 +49,9 @@ public final class VMExportTask {
     private final UUID sourceVMId;
     private final int totalItems;
     private final String destPath;
+    private final long volumeSize;
+    private VolumeSplitOutputStream vout = null;
+    private int finalVolumeCount = 0;
 
     public VMExportTask(
         @NonNull Server server,
@@ -56,6 +61,7 @@ public final class VMExportTask {
         destPath = request.optString("dest_path");
         if (!destPath.startsWith("/"))
             throw new IllegalArgumentException("missing dest_path");
+        volumeSize = request.optLong("volume_size", 0);
         var vmId = UUID.fromString(request.optString("vm_id"));
         sourceVMId = vmId;
         var vm = server.getContext().getVMs().findById(vmId);
@@ -91,6 +97,10 @@ public final class VMExportTask {
             try {
                 startWrite();
                 data.set("done", totalItems);
+                if (finalVolumeCount > 0) {
+                    data.set("volume_index", finalVolumeCount);
+                    data.set("volume_total", finalVolumeCount);
+                }
                 emit(data, Phase.DONE);
             } catch (Exception e) {
                 Log.w(TAG, fmt("Export task %s failed", taskId), e);
@@ -105,6 +115,11 @@ public final class VMExportTask {
     }
 
     private void startWrite() throws Exception {
+        if (volumeSize > 0) startWriteSplit();
+        else startWriteSingle();
+    }
+
+    private void startWriteSingle() throws Exception {
         var outFile = new File(destPath);
         var manifestBytes = manifest.toJson().toString(4).getBytes(UTF_8);
         if (manifestBytes.length > 0xffff)
@@ -129,6 +144,75 @@ public final class VMExportTask {
             writeZero(raf, alignUp(dataEnd) - dataEnd);
             raf.seek(0);
             raf.write(buildHeader(manifest, manifestBytes.length, dataSize));
+        }
+    }
+
+    // Multi-volume path: (1) slice the compressed data stream into <dest>.001,
+    // .002, ... sub-volumes, then (2) write the metadata master <dest> holding
+    // header + manifest + volume index (no data). The picked SAF file is reused
+    // as the master, so it is not deleted.
+    private void startWriteSplit() throws Exception {
+        var manifestBytes = manifest.toJson().toString(4).getBytes(UTF_8);
+        if (manifestBytes.length > 0xffff)
+            throw new IOException(fmt("manifest too large: %d bytes", manifestBytes.length));
+        var subOut = new VolumeSplitOutputStream(destPath, volumeSize);
+        vout = subOut;
+        try {
+            try (
+                var compressed = wrapCompressionOutput(subOut, manifest.compression);
+                var tar = new TarWriter(compressed)
+            ) {
+                tar.entry(PackageConstants.MANIFEST_NAME, manifestBytes);
+                pack(tar);
+            }
+            subOut.finish();
+        } catch (Exception e) {
+            subOut.abort();
+            deleteQuietly(subOut.files());
+            throw e;
+        } finally {
+            vout = null;
+        }
+        long dataSize = subOut.dataSize();
+        finalVolumeCount = subOut.volumeCount();
+        writeMaster(manifestBytes, dataSize, subOut);
+        // Remove any higher-numbered sub-volumes left by a previous, larger
+        // export to the same base path, so the on-disk set matches the index.
+        for (int i = finalVolumeCount + 1; i <= PackageConstants.VOLUME_MAX_COUNT; i++) {
+            var stale = new File(VolumeSplitOutputStream.volumeName(destPath, i));
+            if (!stale.exists()) break;
+            //noinspection ResultOfMethodCallIgnored
+            stale.delete();
+        }
+    }
+
+    private static void deleteQuietly(@NonNull java.util.List<File> files) {
+        for (var f : files) {
+            //noinspection ResultOfMethodCallIgnored
+            f.delete();
+        }
+    }
+
+    private void writeMaster(
+        @NonNull byte[] manifestBytes,
+        long dataSize,
+        @NonNull VolumeSplitOutputStream subOut
+    ) throws Exception {
+        var index = new VolumeIndex();
+        index.dataSize = dataSize;
+        index.volumes.addAll(subOut.entries());
+        var indexBytes = index.toBytes();
+        try (var raf = new RandomAccessFile(new File(destPath), "rw")) {
+            raf.setLength(0);
+            raf.write(new byte[PackageConstants.HEADER_SIZE]);
+            writeZero(raf, alignUp(raf.getFilePointer()) - raf.getFilePointer());
+            raf.write(manifestBytes);
+            writeZero(raf, alignUpStrict(raf.getFilePointer()) - raf.getFilePointer());
+            raf.write(indexBytes);
+            raf.seek(0);
+            raf.write(buildHeader(
+                manifest, manifestBytes.length, dataSize, finalVolumeCount
+            ));
         }
     }
 
@@ -209,6 +293,9 @@ public final class VMExportTask {
             data.put("phase", phase.name().toLowerCase());
             data.put("vm_id", sourceVMId.toString());
             data.put("vm_name", manifest.vm.getName());
+            var out = vout;
+            if (out != null && !data.has("volume_index"))
+                data.put("volume_index", out.currentIndex());
             var ev = new JSONObject();
             ev.put("type", "event");
             ev.put("data", data);

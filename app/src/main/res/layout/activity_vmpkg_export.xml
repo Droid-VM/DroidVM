@@ -153,6 +153,27 @@
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?android:attr/textColorSecondary" />
 
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_volume_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/vmpkg_export_volume_size_hint"
+                    android:icon="@drawable/ic_sd"
+                    app:ti_max="1TiB"
+                    app:ti_min="16MiB"
+                    app:ti_mode="size" />
+
+                <TextView
+                    android:id="@+id/tv_volume_desc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/vmpkg_export_volume_size_desc"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?android:attr/textColorSecondary" />
+
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
             <com.google.android.material.progressindicator.LinearProgressIndicator

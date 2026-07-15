@@ -41,6 +41,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.util.Date;
@@ -51,6 +52,7 @@ import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageInput;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
 import cn.classfun.droidvm.lib.pkg.Phase;
+import cn.classfun.droidvm.lib.pkg.VolumeSet;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
@@ -86,10 +88,14 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private TextView tvProgressDetail;
     private View groupSummary;
     private Uri pickedUri;
+    // Real filesystem path of the metadata master, resolved at pick time when a
+    // sub-volume (.NNN) is chosen so preview/import target the master directly.
+    private String masterRealPath;
     private PackageManifest preview;
     private VMPkgImportDiskAdapter diskAdapter;
     private VMPkgImportNetworkAdapter networkAdapter;
     private String pendingTaskId = null;
+    private int importVolumeTotal = 0;
     private boolean importing = false;
     private NetworkImportMode networkMode = NetworkImportMode.AUTO;
     private final ActivityResultLauncher<String[]> openDocLauncher =
@@ -188,21 +194,40 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private void onDocPicked(@Nullable Uri uri) {
         if (uri == null || importing) return;
         pickedUri = uri;
+        masterRealPath = null;
+        importVolumeTotal = 0;
         tvError.setVisibility(GONE);
         groupSummary.setVisibility(GONE);
         btnImport.setEnabled(false);
         tvStatus.setText(R.string.vmpkg_import_reading);
         runOnPool(() -> {
-            try (var is = getContentResolver().openInputStream(uri)) {
-                if (is == null) throw new RuntimeException("Cannot open file");
-                try (var input = PackageInput.open(is)) {
-                    preview = input.manifest;
-                }
+            try {
+                preview = readPreviewManifest(uri);
                 mainHandler.post(this::showPreview);
             } catch (Exception e) {
                 mainHandler.post(() -> showError(getString(R.string.vmpkg_import_invalid, e.getMessage())));
             }
         });
+    }
+
+    @NonNull
+    private PackageManifest readPreviewManifest(@NonNull Uri uri) throws Exception {
+        // A picked sub-volume (.NNN) has no header/manifest; redirect to its
+        // metadata master in the same folder (needs MANAGE_EXTERNAL_STORAGE).
+        var real = resolveUriPath(this, uri);
+        if (real != null && !real.isEmpty() && VolumeSet.isSubVolume(real)) {
+            masterRealPath = VolumeSet.masterOf(real);
+            try (var is = new FileInputStream(masterRealPath)) {
+                return PackageInput.peekManifest(is);
+            }
+        }
+        // Master or single file: SAF stream is enough. Remember the resolved
+        // master path (may be null) so import can reuse it.
+        masterRealPath = real == null || real.isEmpty() ? null : VolumeSet.masterOf(real);
+        try (var is = getContentResolver().openInputStream(uri)) {
+            if (is == null) throw new RuntimeException("Cannot open file");
+            return PackageInput.peekManifest(is);
+        }
     }
 
     @SuppressLint("NotifyDataSetChanged")
@@ -252,7 +277,10 @@ public final class VMPkgImportActivity extends AppCompatActivity
 
     private void doImport() {
         if (pickedUri == null || preview == null || importing) return;
-        var srcPath = resolveUriPath(this, pickedUri);
+        // Prefer the master path resolved at pick time; the daemon maps any
+        // .NNN sub-volume to its master anyway.
+        var srcPath = masterRealPath;
+        if (srcPath == null || srcPath.isEmpty()) srcPath = resolveUriPath(this, pickedUri);
         if (srcPath == null || srcPath.isEmpty()) {
             showError(getString(
                 R.string.vmpkg_import_failed,
@@ -296,6 +324,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
         var phase = optEnum(data, "phase", Phase.SCAN);
         var done = data.optInt("done", 0);
         var total = data.optInt("total", 0);
+        importVolumeTotal = data.optInt("volume_total", importVolumeTotal);
         var file = data.optString("file", "");
         var bytesDone = data.optLong("bytes_done", -1);
         var bytesTotal = data.optLong("bytes_total", -1);
@@ -332,7 +361,10 @@ public final class VMPkgImportActivity extends AppCompatActivity
     ) {
         switch (phase) {
             case PACK:
-                tvStatus.setText(R.string.vmpkg_import_running);
+                if (importVolumeTotal > 0) tvStatus.setText(getString(
+                    R.string.vmpkg_import_running_volume, importVolumeTotal
+                ));
+                else tvStatus.setText(R.string.vmpkg_import_running);
                 applyProgress(done, total, bytesDone, bytesTotal);
                 applyProgressDetail(file, bytesDone, bytesTotal);
                 break;

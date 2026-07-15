@@ -1056,6 +1056,11 @@
     <string name="vmpkg_export_scan">正在掃描磁碟\u2026</string>
     <string name="vmpkg_export_pack">正在打包磁碟\u2026</string>
     <string name="vmpkg_export_progress_detail">%1$s / %2$s %3$d%%</string>
+    <string name="vmpkg_export_volume_size_hint">分卷大小</string>
+    <string name="vmpkg_export_volume_size_desc">將封裝包拆分為固定大小的分卷（.001、.002…）。留空則匯出為單一檔案。</string>
+    <string name="vmpkg_export_volume_size_invalid">分卷大小不能小於 %1$d MB</string>
+    <string name="vmpkg_export_pack_volume">正在打包磁碟（分卷 %1$d）…</string>
+    <string name="vmpkg_import_running_volume">正在匯入（共 %1$d 卷）…</string>
     <string name="vmpkg_export_success">包已建立</string>
     <string name="vmpkg_export_success_path">包已建立：%1$s</string>
     <string name="vmpkg_export_failed">匯出失敗：%1$s</string>
