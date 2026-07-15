@@ -66,6 +66,13 @@ public final class KernelModuleManager {
         return subs[0]; // fallback: single/first KMI dir
     }
 
+    /** Name of the KMI dir picked for this device (e.g. "android15-6.6"), or null. Runs root exec. */
+    @Nullable
+    public static String deviceKmi() {
+        var d = deviceKmiDir();
+        return d == null ? null : d.getName();
+    }
+
     /** Names of currently-loaded modules, from {@code /proc/modules} (needs root). */
     @NonNull
     private static Set<String> loadedNames() {

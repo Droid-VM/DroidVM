@@ -1136,4 +1136,5 @@
     <string name="kernel_module_working">執行中…</string>
     <string name="kernel_module_ok">完成</string>
     <string name="kernel_module_fail">失敗</string>
+    <string name="kernel_module_kmi">KMI: %1$s</string>
 </resources>
