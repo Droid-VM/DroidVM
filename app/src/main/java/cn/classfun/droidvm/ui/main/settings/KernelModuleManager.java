@@ -56,8 +56,12 @@ public final class KernelModuleManager {
         var m = KVER.matcher(RunUtils.runList("uname", "-r").getOutString().trim());
         if (m.find()) {
             String mmver = m.group(1);
+            // Match the version as a whole "-<major.minor>" token, not a substring: a plain
+            // contains() would let a 6.1 kernel match an "android16-6.12" dir ("6.12" contains
+            // "6.1"). Require the char after the version to be a non-digit or end-of-name.
+            var tok = Pattern.compile(Pattern.quote("-" + mmver) + "(\\D|$)");
             for (var d : subs)
-                if (d.getName().contains(mmver)) return d;
+                if (tok.matcher(d.getName()).find()) return d;
         }
         return subs[0]; // fallback: single/first KMI dir
     }
