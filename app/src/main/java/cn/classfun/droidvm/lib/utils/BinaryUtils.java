@@ -45,6 +45,15 @@ public class BinaryUtils {
         }
     }
 
+    public static void writeZero(@NonNull java.io.OutputStream out, long count) throws IOException {
+        long rem = count;
+        while (rem > 0) {
+            int n = (int) Math.min(ZERO.length, rem);
+            out.write(ZERO, 0, n);
+            rem -= n;
+        }
+    }
+
     @NonNull
     public static String decodeUtf8(@NonNull byte[] bytes) throws IOException {
         var decoder = UTF_8.newDecoder()
