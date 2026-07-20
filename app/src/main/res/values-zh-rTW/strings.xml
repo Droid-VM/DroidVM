@@ -929,9 +929,12 @@
     <string name="hugepage_stat_total_refilled">已回收次數</string>
     <string name="hugepage_stat_active_vms">活動虛擬機器</string>
     <string name="hugepage_stat_pool_available">可用: %1$d (%2$s)</string>
+    <string name="hugepage_proc_avail_detail">可轉換CMA %1$s、不可轉換CMA %2$s</string>
+    <string name="hugepage_proc_cma_detail">空閒 %1$s、其他 App %2$s</string>
     <string name="hugepage_stat_pool_used">已使用: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_total">總共: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_size">池大小: %1$d (%2$s)</string>
+    <string name="hugepage_stat_pool_size_cma">池大小:%1$d/%2$d(%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">模組未載入</string>
     <string name="hugepage_manual_refill">獲取大頁</string>
     <string name="hugepage_refill_triggered">獲取已觸發</string>
@@ -951,6 +954,8 @@
     <string name="hugepage_proc_acquire_stop">停止獲取</string>
     <string name="hugepage_proc_acquire_full">獲取完成:已達成 %1$s</string>
     <string name="hugepage_proc_acquire_partial">獲取結束:達成 %1$s / 目標 %2$s(系統目前無法再湊出更多)</string>
+    <string name="hugepage_proc_acquire_full_cma">獲取完成:池 %1$s、含 CMA %2$s</string>
+    <string name="hugepage_proc_acquire_partial_cma">獲取停止:池 %1$s / %2$s,含 CMA %3$s / %4$s(系統目前無法再搬移)</string>
     <string name="hugepage_proc_acquire_userspace">模組不足,嘗試 userspace 協助…</string>
     <string name="hugepage_refill_failed">觸發獲取失敗</string>
     <string name="hugepage_acquire_pages_title">獲取大頁</string>
@@ -988,6 +993,28 @@
     <string name="hugepage_proc_deficit">等待獲取</string>
     <string name="hugepage_proc_pid">pid %1$d</string>
     <string name="hugepage_bar_available">可用</string>
+
+    <!-- v10 CMA 料場 -->
+    <string name="hugepage_enable_cma">啟用 CMA</string>
+    <string name="hugepage_enable_cma_sub">閒置保留以 CMA 形式借給 App 使用,透過獲取取回</string>
+    <string name="hugepage_cma_pool_size">含 CMA 池大小</string>
+    <string name="hugepage_cma_not_supported">模組未載入或不支援 CMA(需 v10+)</string>
+    <string name="hugepage_cma_unavailable_title">CMA 不可用</string>
+    <string name="hugepage_cma_unavailable_boot">本次開機模組已停用 CMA 功能(kernel 預檢/符號解析/首塊驗證未通過)。</string>
+    <string name="hugepage_cma_warn_title">如何啟用 CMA</string>
+    <string name="hugepage_cma_warn_msg">此廠商核心預設不讓 App 使用 CMA 保留區,請選擇啟用方式:\n\n• 模組 CMA:只建立保留區,不改動核心,沒有崩潰風險。只有在此核心本來就允許時 App 才用得到;無論如何保留區仍能服務 VM。\n\n• 移除 CMA 限制:額外解除核心限制,讓任何 App 都能使用保留區,但在部分裝置上這可能造成手機崩潰並重新開機。會先套用但「不」存檔:成功的話可再選擇存檔讓每次開機都套用,崩潰的話直接重新開機即可,因為沒有存檔。</string>
+    <string name="hugepage_cma_remove_restriction">移除 CMA 限制</string>
+    <string name="hugepage_cma_module_cma">模組 CMA</string>
+    <string name="hugepage_cma_lever_failed">移除 CMA 限制失敗:此核心沒有可用的開關或掛鉤。</string>
+    <string name="hugepage_cma_save_title">每次開機都套用?</string>
+    <string name="hugepage_cma_save_msg">目前運作正常。要存檔讓它每次開機都自動套用嗎?\n\n若不存檔,它只會維持到下次重新開機為止 —— 作為安全網,以防它之後才造成裝置不穩。</string>
+    <string name="hugepage_cma_save_yes">存檔</string>
+    <string name="hugepage_cma_save_no">僅此一次</string>
+    <string name="hugepage_cma_enabled">CMA 已啟用</string>
+    <string name="hugepage_cma_disabled">CMA 已停用</string>
+    <string name="hugepage_cma_toggle_failed">寫入 CMA 目標失敗</string>
+    <string name="hugepage_bar_cma">CMA</string>
+    <string name="hugepage_bar_cma_lent">CMA(借出)</string>
     <string name="hugepage_proc_vm">虛擬機器:%1$s</string>
     <string name="hugepage_proc_no_vm">非追蹤中的虛擬機器</string>
     <string name="hugepage_proc_state">狀態:%1$c (%2$s)</string>

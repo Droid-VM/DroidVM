@@ -7,4 +7,7 @@
     <color name="kernel_analysis_title">#FF64B5F6</color>
 
     <color name="hugepage_pending">#80BFAF7C</color>
+    <color name="hugepage_cma_used">#80D9A06B</color>
+    <color name="hugepage_cma_free">#807CC7BD</color>
+    <color name="hugepage_avail_non_cma">#5995A7B8</color>
 </resources>

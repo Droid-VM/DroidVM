@@ -966,9 +966,12 @@
     <string name="hugepage_stat_total_refilled">Total Refilled</string>
     <string name="hugepage_stat_active_vms">Active VMs</string>
     <string name="hugepage_stat_pool_available">Available: %1$d (%2$s)</string>
+    <string name="hugepage_proc_avail_detail">CMA convertible %1$s, non-convertible %2$s</string>
+    <string name="hugepage_proc_cma_detail">free %1$s, other apps %2$s</string>
     <string name="hugepage_stat_pool_used">Used: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_total">Total: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_size">Pool size: %1$d (%2$s)</string>
+    <string name="hugepage_stat_pool_size_cma">Pool size: %1$d/%2$d (%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">Module not loaded</string>
     <string name="hugepage_manual_refill">Acquire Pages</string>
     <string name="hugepage_refill_triggered">Acquire triggered</string>
@@ -989,6 +992,8 @@
     <string name="hugepage_proc_acquire_stop">Stop acquiring</string>
     <string name="hugepage_proc_acquire_full">Acquire complete: reached %1$s</string>
     <string name="hugepage_proc_acquire_partial">Acquire stopped: got %1$s of %2$s (system can\'t migrate more right now)</string>
+    <string name="hugepage_proc_acquire_full_cma">Acquire complete: pool %1$s, with CMA %2$s</string>
+    <string name="hugepage_proc_acquire_partial_cma">Acquire stopped: pool %1$s of %2$s, with CMA %3$s of %4$s (system can\'t migrate more right now)</string>
     <string name="hugepage_proc_acquire_userspace">Module short; trying userspace assist...</string>
     <string name="hugepage_acquire_pages_title">Acquire huge pages</string>
     <string name="hugepage_pool_size">Pool Size</string>
@@ -1025,6 +1030,28 @@
     <string name="hugepage_proc_deficit">Waiting for acquire</string>
     <string name="hugepage_proc_pid">pid %1$d</string>
     <string name="hugepage_bar_available">Available</string>
+
+    <!-- v10 CMA reservoir -->
+    <string name="hugepage_enable_cma">Enable CMA</string>
+    <string name="hugepage_enable_cma_sub">Lend the idle reserve to apps as CMA; reclaimed by acquire</string>
+    <string name="hugepage_cma_pool_size">Pool Size with CMA</string>
+    <string name="hugepage_cma_not_supported">Module not loaded or has no CMA support (v10+)</string>
+    <string name="hugepage_cma_unavailable_title">CMA unavailable</string>
+    <string name="hugepage_cma_unavailable_boot">The module disabled its CMA side this boot (kernel preflight / symbol resolution / first-block verification failed).</string>
+    <string name="hugepage_cma_warn_title">How to enable CMA</string>
+    <string name="hugepage_cma_warn_msg">This vendor kernel does not let apps use the CMA reserve on its own, so choose how to enable it:\n\n- Module CMA: builds the reserve without changing the kernel, so there is no crash risk. Apps can use it only where the vendor kernel already allows it; either way the reserve still serves VMs.\n\n- Remove CMA Restriction: also lifts the kernel restriction so any app can use the reserve, but on some devices this can crash the phone and force a reboot. It is applied WITHOUT saving first; if it works you can then save it for every boot, and if it crashes just reboot - nothing was saved.</string>
+    <string name="hugepage_cma_remove_restriction">Remove CMA Restriction</string>
+    <string name="hugepage_cma_module_cma">Module CMA</string>
+    <string name="hugepage_cma_lever_failed">Remove CMA Restriction failed: this kernel has no usable switch or hook.</string>
+    <string name="hugepage_cma_save_title">Apply on every boot?</string>
+    <string name="hugepage_cma_save_msg">It is working now. Save this so it comes back automatically at every boot?\n\nIf you don\'t save, it stays active only until the next reboot - a safety net in case it destabilises the device.</string>
+    <string name="hugepage_cma_save_yes">Save</string>
+    <string name="hugepage_cma_save_no">Just this time</string>
+    <string name="hugepage_cma_enabled">CMA enabled</string>
+    <string name="hugepage_cma_disabled">CMA disabled</string>
+    <string name="hugepage_cma_toggle_failed">Failed to write the CMA target</string>
+    <string name="hugepage_bar_cma">CMA</string>
+    <string name="hugepage_bar_cma_lent">CMA (lent)</string>
     <string name="hugepage_proc_vm">VM: %1$s</string>
     <string name="hugepage_proc_no_vm">Not a tracked VM</string>
     <string name="hugepage_proc_state">State: %1$c (%2$s)</string>

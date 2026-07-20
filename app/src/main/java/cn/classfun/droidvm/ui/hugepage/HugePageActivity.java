@@ -38,6 +38,8 @@ import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
+import android.text.Editable;
+
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -49,6 +51,7 @@ import java.util.concurrent.TimeUnit;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.size.SizeUtils;
+import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
@@ -102,6 +105,19 @@ public final class HugePageActivity extends AppCompatActivity {
     private TextView tvPoolTotal;
     private TextView tvPoolSize;
     private SwitchRowWidget rowModuleEnable;
+    // v10 CMA reservoir controls. The right input is the TOTAL with-CMA pool
+    // size (pool_want_with_cma), not the reservoir delta.
+    private TextInputRowWidget inputCmaSize;
+    private SwitchRowWidget rowCmaEnable;
+    private boolean cmaSwitchSyncing = false;   // programmatic setChecked guard
+    private boolean cmaInputLoaded = false;     // seed the CMA size input once per show
+    private boolean cmaBusy = false;            // an enable/disable flow is in flight
+    // Two-way size link (pool_want <= pool_want_with_cma): which input the
+    // user touched last decides who yields when they cross.
+    private static final int SIZE_EDIT_POOL = 1;
+    private static final int SIZE_EDIT_CMA = 2;
+    private int lastSizeEdit = SIZE_EDIT_POOL;
+    private boolean sizeLinkSyncing = false;    // programmatic setBigValue guard
     private TextRowWidget rowStatState;
     private TextRowWidget rowStatTotalServed;
     private TextRowWidget rowStatTotalRefilled;
@@ -137,6 +153,8 @@ public final class HugePageActivity extends AppCompatActivity {
         tvPoolTotal = findViewById(R.id.tv_pool_total);
         tvPoolSize = findViewById(R.id.tv_pool_size);
         rowModuleEnable = findViewById(R.id.row_module_enable);
+        inputCmaSize = findViewById(R.id.input_cma_size);
+        rowCmaEnable = findViewById(R.id.row_cma_enable);
         rowStatState = findViewById(R.id.row_stat_state);
         rowStatTotalServed = findViewById(R.id.row_stat_total_served);
         rowStatTotalRefilled = findViewById(R.id.row_stat_total_refilled);
@@ -153,6 +171,24 @@ public final class HugePageActivity extends AppCompatActivity {
             else savePoolSize();
         });
         rowModuleEnable.setOnCheckedChangeListener(this::doToggleModule);
+        rowCmaEnable.setOnCheckedChangeListener((btn, checked) -> onCmaSwitchChanged(checked));
+        // Two-way link between the pool size and the with-CMA total: track who
+        // was edited last, reconcile whenever a field is left (and again at
+        // save, since tapping Save doesn't steal the EditText's focus).
+        inputPoolSize.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (!sizeLinkSyncing) lastSizeEdit = SIZE_EDIT_POOL;
+            }
+        });
+        inputCmaSize.addTextChangedListener(new SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (!sizeLinkSyncing) lastSizeEdit = SIZE_EDIT_CMA;
+            }
+        });
+        inputPoolSize.setOnFocusLostListener(this::reconcileSizeLink);
+        inputCmaSize.setOnFocusLostListener(this::reconcileSizeLink);
         // One button:
         //   not installed        -> Install (open releases page)
         //   installed, unloaded  -> Enable (insmod)
@@ -189,6 +225,10 @@ public final class HugePageActivity extends AppCompatActivity {
         applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
         loadPoolSize();
+        // One-time migration: drop a stale cma_probe_result from the removed
+        // probe, which the shipped boot script would otherwise treat as a denial
+        // and keep the module's CMA side cold.
+        runOnPool(model::clearLegacyProbeKey);
     }
 
     /**
@@ -253,6 +293,42 @@ public final class HugePageActivity extends AppCompatActivity {
             .setNegativeButton(android.R.string.cancel, null)
             .setOnDismissListener(d -> setSkipAcquireConfirm(ctx, dontAsk.isChecked()))
             .show();
+    }
+
+    /**
+     * The "acquire finished" bubble, shared by both hugepage screens: how much
+     * the pool reached of its target, and - while the v10 reservoir is on - the
+     * with-CMA total too. Both matter because acquire's own stop condition
+     * covers both (see {@link HugePageModel.Snapshot#deficit}): a pool that hit
+     * its target while the reservoir is still short is not "complete", and a
+     * grown pool_want is filled by staging reservoir pages in, which moves the
+     * pool number without moving the total.
+     */
+    @NonNull
+    static String acquireDoneMessage(
+        @NonNull Context ctx, @NonNull HugePageModel.Snapshot snap
+    ) {
+        long gotPool = snap.free + snap.lent;
+        long wantPool = snap.targetIdeal;
+        if (!snap.cmaActive()) {
+            return gotPool >= wantPool
+                ? ctx.getString(R.string.hugepage_proc_acquire_full, pageSize(wantPool))
+                : ctx.getString(R.string.hugepage_proc_acquire_partial,
+                    pageSize(gotPool), pageSize(wantPool));
+        }
+        long gotTotal = gotPool + snap.cmaPool;
+        long wantTotal = snap.wantWithCma;
+        return (gotPool >= wantPool && gotTotal >= wantTotal)
+            ? ctx.getString(R.string.hugepage_proc_acquire_full_cma,
+                pageSize(wantPool), pageSize(wantTotal))
+            : ctx.getString(R.string.hugepage_proc_acquire_partial_cma,
+                pageSize(gotPool), pageSize(wantPool),
+                pageSize(gotTotal), pageSize(wantTotal));
+    }
+
+    @NonNull
+    private static String pageSize(long pages) {
+        return SizeUtils.formatSize(pages * PAGE_SIZE);
     }
 
     /** True once the user opted out of the acquire prompt (short-press runs directly). */
@@ -345,16 +421,23 @@ public final class HugePageActivity extends AppCompatActivity {
             // Per-VM breakdown through the usage ladder (KO attribution, degrading
             // to a THP scan of running VMs), so this bar matches the usage screen.
             // Each segment is labelled with the friendly VM name from vmMap.
+            // allPids is the unfiltered owner list - the rank-based color map
+            // must see every pid (both screens derive ranks from the same list).
             List<long[]> owners = new ArrayList<>();
+            List<Integer> allPids = new ArrayList<>();
             if (snap.loaded) {
                 for (var e : model.usage(null).entries) {
+                    allPids.add(e.pid);
                     if (e.pages > 0) owners.add(new long[]{e.pid, e.pages});
                 }
             }
             // Only fetch VM names when there are rows to label.
             Map<Integer, String> vmMap = owners.isEmpty()
                 ? new LinkedHashMap<>() : model.vmNames(false);
-            runOnUiThread(() -> updateUI(snap, crashStamp, owners, vmMap));
+            // Reservoir occupancy for the two-tone CMA block (module caches ~1s).
+            var cmaUsage = snap.cmaActive() ? model.cmaUsage() : null;
+            runOnUiThread(() ->
+                updateUI(snap, crashStamp, owners, allPids, vmMap, cmaUsage));
         });
     }
 
@@ -376,7 +459,9 @@ public final class HugePageActivity extends AppCompatActivity {
     private void updateUI(
         @NonNull HugePageModel.Snapshot snap, boolean crashed,
         @NonNull List<long[]> owners,
-        @NonNull Map<Integer, String> vmMap
+        @NonNull List<Integer> allPids,
+        @NonNull Map<Integer, String> vmMap,
+        @Nullable HugePageModel.CmaUsage cmaUsage
     ) {
         if (isFinishing()) return;
         cardCrashWarning.setVisibility(crashed ? VISIBLE : GONE);
@@ -390,11 +475,16 @@ public final class HugePageActivity extends AppCompatActivity {
             // "total" shows the desired target - the model's version-unified
             // want (pool_want, else v6 pool_target, else current capacity).
             var poolWant = snap.targetIdeal;
+            boolean cmaOn = snap.cmaActive();
             // Apple-storage-bar style: one labelled colored block per VM
             // (used), then the available portion as a track-coloured gap,
-            // then the waiting-to-acquire (deficit) block pinned flush right.
-            // Each block draws its label inside if wide enough.
+            // then (v10) the CMA reservoir split into occupied-by-apps and
+            // free halves, then the waiting-to-acquire (deficit) block pinned
+            // flush right. Each block draws its label inside if wide enough.
             boolean dark = HugePageColor.isDark(this);
+            // Rank-based colors over the full owner list, so adjacent VM
+            // segments never land on near-identical hues (see HugePageColor).
+            var colorMap = HugePageColor.forPids(allPids, dark);
             int n = owners.size();
             int[] usedColors = new int[n];
             float[] usedValues = new float[n];
@@ -403,7 +493,8 @@ public final class HugePageActivity extends AppCompatActivity {
             for (int i = 0; i < n; i++) {
                 int pid = (int) owners.get(i)[0];
                 long ownerPages = owners.get(i)[1];
-                usedColors[i] = HugePageColor.forPid(pid, dark);
+                Integer color = colorMap.get(pid);
+                usedColors[i] = color != null ? color : HugePageColor.forRank(i, dark);
                 usedValues[i] = ownerPages;
                 String name = vmMap.get(pid);
                 if (name == null) name = getString(R.string.hugepage_proc_pid, pid);
@@ -417,21 +508,68 @@ public final class HugePageActivity extends AppCompatActivity {
             // orphaned owner-gone pages that have no segment; those surface in
             // the held/available gap rather than as an invisible caption delta.
             long used = seg;
-            long deficit = Math.max(0, poolWant - seg - poolAvail);
+            // With the reservoir on, the bar's denominator is the overall
+            // target pool_want_with_cma and the reservoir counts as filled.
+            long cmaPool = cmaOn ? snap.cmaPool : 0;
+            long barWant = cmaOn ? snap.wantWithCma : poolWant;
+            long deficit = Math.max(0, barWant - seg - poolAvail - cmaPool);
+            // Reservoir occupancy split (pages): still-free vs held by other
+            // apps right now; unknown occupancy shows one undivided free block.
+            boolean cmaUsageOk = cmaOn && cmaUsage != null && cmaUsage.ok;
+            long cmaOther = cmaUsageOk
+                ? Math.min(cmaPool, cmaUsage.usedMb / (PAGE_SIZE / (1024 * 1024)))
+                : 0;
+            long cmaFree = cmaPool - cmaOther;
+            // Avail sub-split: pages flippable to CMA as whole pageblocks vs
+            // not (pool_avail_cma_able); -1 = unreported, no split shown.
+            long availCmaAble = (cmaOn && snap.availCmaAble >= 0)
+                ? Math.min(poolAvail, snap.availCmaAble) : -1;
+            long availNonCma = availCmaAble >= 0 ? poolAvail - availCmaAble : 0;
             // 2x2 caption: used / available on top, total / pool-size below.
-            // Total = real held reserve (used + avail), shown raw - no clamp
-            // to the pool size, so a kernel that fails to release on shrink
-            // shows up as total > the size you set.
+            // With the reservoir on, the pool-size cell shows both targets as
+            // pool_want/pool_want_with_cma; the detailed cma-able and
+            // free/other-apps breakdowns live on the usage screen's synthetic
+            // available/CMA rows. Total = real held reserve (used + avail),
+            // shown raw - no clamp to the pool size, so a kernel that fails
+            // to release on shrink shows up as total > the size you set.
             var held = used + poolAvail;
             setPagesString(tvPoolUsed, R.string.hugepage_stat_pool_used, used);
             setPagesString(tvPoolAvail, R.string.hugepage_stat_pool_available, poolAvail);
             setPagesString(tvPoolTotal, R.string.hugepage_stat_pool_total, held);
-            setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
-            segPoolBar.setStorage(usedColors, usedValues, usedLabels,
-                poolAvail, fmt("%s\n%s", getString(R.string.hugepage_bar_available), SizeUtils.formatSize(poolAvail * PAGE_SIZE)),
-                HugePageColor.pending(this), deficit,
-                fmt("%s\n%s", getString(R.string.hugepage_proc_deficit), SizeUtils.formatSize(deficit * PAGE_SIZE)),
-                poolWant);
+            if (cmaOn) {
+                tvPoolSize.setText(getString(R.string.hugepage_stat_pool_size_cma,
+                    poolWant, snap.wantWithCma,
+                    SizeUtils.formatSize(poolWant * PAGE_SIZE),
+                    SizeUtils.formatSize(snap.wantWithCma * PAGE_SIZE)));
+            } else {
+                setPagesString(tvPoolSize, R.string.hugepage_stat_pool_size, poolWant);
+            }
+            // Bar: [VMs][avail][CMA][CMA lent][waiting]. The CMA parts are two
+            // ordinary labelled segments; only the avail block keeps the
+            // single-label pure-color sub-split ([non-cma-able|normal]).
+            var spec = new SegmentedBar.StorageSpec();
+            spec.usedColors = usedColors;
+            spec.usedValues = usedValues;
+            spec.usedLabels = usedLabels;
+            spec.avail = poolAvail;
+            spec.availLabel = fmt("%s\n%s", getString(R.string.hugepage_bar_available),
+                SizeUtils.formatSize(poolAvail * PAGE_SIZE));
+            spec.availNonCma = Math.max(0, availNonCma);
+            spec.availNonCmaColor = HugePageColor.availNonCma(this);
+            spec.cmaFree = cmaFree;
+            spec.cmaFreeLabel = fmt("%s\n%s", getString(R.string.hugepage_bar_cma),
+                SizeUtils.formatSize(cmaFree * PAGE_SIZE));
+            spec.cmaFreeColor = HugePageColor.cmaFree(this);
+            spec.cmaOther = cmaOther;
+            spec.cmaOtherLabel = fmt("%s\n%s", getString(R.string.hugepage_bar_cma_lent),
+                SizeUtils.formatSize(cmaOther * PAGE_SIZE));
+            spec.cmaOtherColor = HugePageColor.cmaUsed(this);
+            spec.deficitColor = HugePageColor.pending(this);
+            spec.deficit = deficit;
+            spec.deficitLabel = fmt("%s\n%s", getString(R.string.hugepage_proc_deficit),
+                SizeUtils.formatSize(deficit * PAGE_SIZE));
+            spec.want = barWant;
+            segPoolBar.setStorage(spec);
         } else {
             rowStatState.setValue(getString(R.string.hugepage_stats_unavailable));
             rowStatTotalServed.setValue(null);
@@ -459,14 +597,7 @@ public final class HugePageActivity extends AppCompatActivity {
         // which polls). Track the kernel flag, not the optimistic mainAcquiring, so
         // an acquire that never actually started can't fake a "done".
         if (wasAcquiring && !acquiring) {
-            long got = snap.free + snap.lent;
-            long want = snap.targetIdeal;
-            String msg = got >= want
-                    ? getString(R.string.hugepage_proc_acquire_full,
-                        SizeUtils.formatSize(want * PAGE_SIZE))
-                    : getString(R.string.hugepage_proc_acquire_partial,
-                        SizeUtils.formatSize(got * PAGE_SIZE),
-                        SizeUtils.formatSize(want * PAGE_SIZE));
+            String msg = acquireDoneMessage(this, snap);
             // Append why the acquire stopped (kernel free text from refill_stat's
             // acquire_stop_reason), so the user sees the reason in the bubble.
             String reason = snap.acquireStopReason;
@@ -511,6 +642,37 @@ public final class HugePageActivity extends AppCompatActivity {
         // soft-disable (want 0), so there is no version branching here.
         acquireEnabled = snap.loaded && snap.deficit > 0;
         applyAcquireState();
+
+        // CMA switch: only meaningful on a loaded v10+ module. While an enable/
+        // disable flow runs, leave the switch and the size inputs alone - the
+        // flow owns them (the reservoir flips around mid-flow and would flicker).
+        rowCmaEnable.setEnabled(snap.loaded && snap.hasCma);
+        if (!cmaBusy) {
+            boolean cmaActive = snap.cmaActive();
+            if (rowCmaEnable.isChecked() != cmaActive) {
+                cmaSwitchSyncing = true;
+                rowCmaEnable.setChecked(cmaActive);
+                cmaSwitchSyncing = false;
+            }
+            // Two stacked size rows: the with-CMA total is editable only while
+            // the reservoir is on, greyed and non-editable otherwise. Seed it
+            // from pool_want_with_cma once each time CMA turns on.
+            inputCmaSize.setEnabled(cmaActive);
+            if (cmaActive) {
+                if (!cmaInputLoaded) {
+                    sizeLinkSyncing = true;
+                    try {
+                        inputCmaSize.setBigValue(
+                            BigInteger.valueOf(snap.wantWithCma * PAGE_SIZE));
+                    } finally {
+                        sizeLinkSyncing = false;
+                    }
+                    cmaInputLoaded = true;
+                }
+            } else {
+                cmaInputLoaded = false;
+            }
+        }
     }
 
     /**
@@ -599,7 +761,16 @@ public final class HugePageActivity extends AppCompatActivity {
             try {
                 var pages = Long.parseLong(cur);
                 var bytes = BigInteger.valueOf(pages * PAGE_SIZE);
-                runOnUiThread(() -> inputPoolSize.setBigValue(bytes));
+                runOnUiThread(() -> {
+                    // Programmatic seed - don't count it as a user edit for
+                    // the pool<->with-CMA size link.
+                    sizeLinkSyncing = true;
+                    try {
+                        inputPoolSize.setBigValue(bytes);
+                    } finally {
+                        sizeLinkSyncing = false;
+                    }
+                });
             } catch (NumberFormatException e) {
                 Log.w(TAG, "Failed to parse pool_want", e);
             }
@@ -643,10 +814,42 @@ public final class HugePageActivity extends AppCompatActivity {
         return total[0];
     }
 
+    /**
+     * Keep the size pair consistent ({@code pool_want <= pool_want_with_cma}):
+     * when they cross, the field the user touched last wins - raising the pool
+     * above the total drags the total up; lowering the total under the pool
+     * shrinks the pool. Runs on focus-loss of either field and again at save.
+     */
+    private void reconcileSizeLink() {
+        if (!inputCmaSize.isEnabled()) return;   // only linked while CMA is on
+        if (!inputPoolSize.isInputValid() || !inputCmaSize.isInputValid()) return;
+        var pool = inputPoolSize.getBigValue();
+        var withCma = inputCmaSize.getBigValue();
+        if (pool.compareTo(withCma) <= 0) return;
+        sizeLinkSyncing = true;
+        try {
+            if (lastSizeEdit == SIZE_EDIT_CMA) inputPoolSize.setBigValue(withCma);
+            else inputCmaSize.setBigValue(pool);
+        } finally {
+            sizeLinkSyncing = false;
+        }
+    }
+
     private void savePoolSize() {
+        reconcileSizeLink();
         if (!inputPoolSize.isInputValid()) return;
         var bytes = inputPoolSize.getBigValue();
         var pages = bytes.divide(BigInteger.valueOf(PAGE_SIZE));
+        // While the reservoir is on, the with-CMA row IS the with-CMA total
+        // (pool_want_with_cma); the link above already keeps it >= the pool.
+        final long cmaPages;
+        if (inputCmaSize.isEnabled()) {
+            if (!inputCmaSize.isInputValid()) return;
+            cmaPages = inputCmaSize.getBigValue()
+                .divide(BigInteger.valueOf(PAGE_SIZE)).longValue();
+        } else {
+            cmaPages = -1;
+        }
         runOnPool(() -> {
             // The pool must be able to back every running VM's RAM, so it can't
             // be set below the sum of running VMs' configured memory.
@@ -661,12 +864,17 @@ public final class HugePageActivity extends AppCompatActivity {
             }
             // Persist for the next load and apply to the running pool where the
             // live knob exists (v7); v6's read-only target only lands next boot.
-            var res = model.saveSize(pages.longValue());
-            // A grow leaves a deficit -> kick one v1 fill so the raised target
+            // One settings.prop rewrite carries the pool target and (while the
+            // reservoir is on) the with-CMA total together.
+            var res = model.saveTargets(pages.longValue(), cmaPages);
+            // A grow leaves a deficit -> kick one fill so the raised target
             // starts filling at once (a shrink is applied by the write itself).
-            // The GUI drives acquire; the model's saveSize deliberately doesn't.
+            // The GUI drives acquire; the model's save deliberately doesn't.
+            // Only the mode-2/3 sweep runs the reservoir-building Phase R
+            // ("mode 1 remains pool-only legacy"), so a CMA-era grow needs v3.
             var snap = model.state();
-            if (res.ok() && snap.loaded && snap.deficit > 0) model.acquire(1);
+            if (res.ok() && snap.loaded && snap.deficit > 0)
+                model.acquire(snap.cmaActive() ? 3 : 1);
             boolean okSaved = res.ok();
             boolean appliedNow = "pool_want".equals(res.impl);   // live write actually landed
             runOnUiThread(() -> {
@@ -691,6 +899,270 @@ public final class HugePageActivity extends AppCompatActivity {
                         R.string.hugepage_module_now_disabled;
                     Toast.makeText(this, msg, LENGTH_SHORT).show();
                 }
+                refreshStatus();
+            });
+        });
+    }
+
+    /* ================================================================== */
+    /*  v11 CMA reservoir: switch + movable->CMA levers                   */
+    /* ================================================================== */
+
+    private void onCmaSwitchChanged(boolean checked) {
+        if (cmaSwitchSyncing) return;
+        if (cmaBusy) {                 // a flow already owns the switch
+            setCmaSwitch(!checked);
+            return;
+        }
+        if (checked) doCmaEnable();
+        else doCmaDisable();
+    }
+
+    /** Programmatic switch write that doesn't re-enter the change listener. */
+    private void setCmaSwitch(boolean checked) {
+        cmaSwitchSyncing = true;
+        rowCmaEnable.setChecked(checked);
+        cmaSwitchSyncing = false;
+    }
+
+    /** End an enable flow without enabling: release the busy lock, switch off. */
+    private void cancelCmaEnable() {
+        cmaBusy = false;
+        setCmaSwitch(false);
+        refreshStatus();
+    }
+
+    /**
+     * Switch off: revert whichever movable->CMA lever we armed (the module
+     * no-ops these writes when the vendor kernel already redirects, so this is
+     * safe in every case), demolish the reservoir now, and forget the saved
+     * lever so a future boot doesn't re-apply it.
+     */
+    private void doCmaDisable() {
+        cmaBusy = true;
+        runOnPool(() -> {
+            model.setGfpHook(false);
+            model.setRestrictFlip(false);
+            model.clearCmaLever();
+            var res = model.saveCmaTarget(0);
+            runOnUiThread(() -> {
+                cmaBusy = false;
+                Toast.makeText(this, res.ok() ? R.string.hugepage_cma_disabled
+                    : R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
+                if (!res.ok()) setCmaSwitch(true);
+                refreshStatus();
+            });
+        });
+    }
+
+    /**
+     * Switch on. Plain movable allocations only reach the reservoir if the
+     * kernel redirects movable->CMA:
+     * <ul>
+     *   <li>the vendor kernel already redirects - enable directly, no risk;</li>
+     *   <li>otherwise a lever must be armed, which can destabilise the kernel -
+     *       warn, then arm it <b>live only</b> ({@link #tryCmaLever}); on success
+     *       offer to save it ({@link #promptSaveLever}). Splitting arm from save
+     *       is the safety net: if arming crashes the phone, nothing was saved and
+     *       the next boot comes up clean.</li>
+     * </ul>
+     */
+    private void doCmaEnable() {
+        cmaBusy = true;
+        runOnPool(() -> {
+            var snap = model.state();
+            if (!snap.loaded || !snap.hasCma) {
+                runOnUiThread(() -> {
+                    cmaBusy = false;
+                    setCmaSwitch(false);
+                    Toast.makeText(this, R.string.hugepage_cma_not_supported,
+                        LENGTH_SHORT).show();
+                });
+                return;
+            }
+            if (snap.cmaPbOrder < 0) {
+                // The module turned its whole CMA side off this boot (preflight /
+                // symbols / first-block verification) - no lever can help now.
+                runOnUiThread(() -> {
+                    cmaBusy = false;
+                    setCmaSwitch(false);
+                    if (isFinishing()) return;
+                    new MaterialAlertDialogBuilder(this)
+                        .setTitle(R.string.hugepage_cma_unavailable_title)
+                        .setMessage(R.string.hugepage_cma_unavailable_boot)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                });
+                return;
+            }
+            if (model.mtcVenderAllowed() == 1) {
+                // Vendor already redirects movable->CMA: nothing to arm, no risk.
+                enableCmaDirect(snap);
+                return;
+            }
+            // A lever is required, and arming it can crash the device: warn first.
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    cmaBusy = false;
+                    return;
+                }
+                new MaterialAlertDialogBuilder(this)
+                    .setTitle(R.string.hugepage_cma_warn_title)
+                    .setMessage(R.string.hugepage_cma_warn_msg)
+                    .setPositiveButton(R.string.hugepage_cma_remove_restriction,
+                        (d, w) -> tryCmaLever(snap))
+                    .setNeutralButton(R.string.hugepage_cma_module_cma,
+                        (d, w) -> enableCmaReservoirOnly(snap))
+                    .setNegativeButton(android.R.string.cancel,
+                        (d, w) -> cancelCmaEnable())
+                    .setOnCancelListener(d -> cancelCmaEnable())
+                    .show();
+            });
+        });
+    }
+
+    /**
+     * Vendor already redirects movable->CMA (or a saved lever is already live):
+     * just set the with-CMA total and let a v3 acquire build the reservoir (only
+     * the mode-2/3 sweep runs Phase R; mode 1 is pool-only legacy). This path
+     * carries no crash risk, so the target is persisted and there is no separate
+     * save step.
+     */
+    private void enableCmaDirect(@NonNull HugePageModel.Snapshot snap) {
+        runOnPool(() -> {
+            long target = reservoirTarget(snap);
+            boolean ok = target > 0 && model.saveCmaTarget(target).ok();
+            if (ok) {
+                var s2 = model.state();
+                if (s2.loaded && s2.deficit > 0) model.acquire(3);
+            }
+            boolean fOk = ok;
+            runOnUiThread(() -> {
+                cmaBusy = false;
+                Toast.makeText(this, fOk ? R.string.hugepage_cma_enabled
+                    : R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
+                if (!fOk) setCmaSwitch(false);
+                cmaInputLoaded = false;   // reseed the CMA size input
+                refreshStatus();
+            });
+        });
+    }
+
+    /**
+     * Arm a movable->CMA lever <b>live only</b> - nothing is persisted yet. On
+     * 6.1 the {@code restrict_cma_redirect} flag is side-effect-free, so try it
+     * first and fall back to the gfp hook; on 6.6/6.12 that same key also backs
+     * {@code cma_has_pcplist()}, so arm the narrower hook directly (and only try
+     * the flag as a last resort). Then build the reservoir toward a target so the
+     * user can watch it fill, and offer to save the lever for next boot.
+     */
+    private void tryCmaLever(@NonNull HugePageModel.Snapshot snap) {
+        cmaBusy = true;
+        runOnPool(() -> {
+            boolean is61 = model.kernelIs61();
+            String lever = null;
+            if (is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
+            else if (model.setGfpHook(true).ok()) lever = HugePageModel.LEVER_HOOK;
+            else if (!is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
+            if (lever == null) {
+                runOnUiThread(() -> {
+                    cmaBusy = false;
+                    setCmaSwitch(false);
+                    Toast.makeText(this, R.string.hugepage_cma_lever_failed,
+                        LENGTH_SHORT).show();
+                    refreshStatus();
+                });
+                return;
+            }
+            buildReservoirAndPromptSave(snap, lever);
+        });
+    }
+
+    /**
+     * Reservoir-only: build the reservoir <b>without</b> arming any lever, so
+     * there is no crash risk. Useful on a device where the vendor kernel already
+     * lets apps consume CMA even though it reads as not-allowed; elsewhere the
+     * reserve still serves VMs via stage-in. Offers the same save step (which
+     * persists the target but no lever).
+     */
+    private void enableCmaReservoirOnly(@NonNull HugePageModel.Snapshot snap) {
+        cmaBusy = true;
+        runOnPool(() -> buildReservoirAndPromptSave(snap, null));
+    }
+
+    /**
+     * Build the reservoir toward a target with a live (non-persisted) write so
+     * the user can watch it fill, then offer to save. {@code lever} is the lever
+     * the caller armed, or {@code null} for the reservoir-only path. Runs on the
+     * pool thread.
+     */
+    private void buildReservoirAndPromptSave(@NonNull HugePageModel.Snapshot snap,
+                                             @Nullable String lever) {
+        long target = reservoirTarget(snap);
+        if (target > 0) {
+            model.writeWantWithCma(target);
+            var s2 = model.state();
+            if (s2.loaded && s2.deficit > 0) model.acquire(3);
+        }
+        runOnUiThread(() -> {
+            cmaInputLoaded = false;
+            refreshStatus();
+            if (isFinishing()) {
+                cmaBusy = false;
+                return;
+            }
+            promptSaveLever(lever, target);
+        });
+    }
+
+    /** Flip the restrict flag on and confirm the kernel actually opened it. */
+    private boolean flipFlagWorks() {
+        return model.setRestrictFlip(true).ok() && model.readRestrictState() == 1;
+    }
+
+    /** With-CMA target to build: the last saved total, else the pool size. */
+    private long reservoirTarget(@NonNull HugePageModel.Snapshot snap) {
+        return Math.max(model.lastCmaTargetPages(),
+            Math.max(snap.targetIdeal, snap.built));
+    }
+
+    /**
+     * Step 2: the live setting didn't crash the phone. Offer to persist it so it
+     * re-applies at the next boot (written into Magisk's settings.prop).
+     * Declining keeps it running now but leaves the next boot clean - the safety
+     * net, in case it destabilises the device after all. {@code lever} is null on
+     * the reservoir-only path (only the target is persisted).
+     */
+    private void promptSaveLever(@Nullable String lever, long target) {
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.hugepage_cma_save_title)
+            .setMessage(R.string.hugepage_cma_save_msg)
+            .setPositiveButton(R.string.hugepage_cma_save_yes,
+                (d, w) -> finishCmaEnable(lever, target, true))
+            .setNegativeButton(R.string.hugepage_cma_save_no,
+                (d, w) -> finishCmaEnable(lever, target, false))
+            .setOnCancelListener(d -> finishCmaEnable(lever, target, false))
+            .show();
+    }
+
+    /**
+     * Settle an enabled reservoir: switch on and reseed the size input. When
+     * {@code save}, persist the with-CMA target and the lever choice so the next
+     * boot comes up the same way (a null lever clears the key = reservoir-only);
+     * otherwise everything stays live-only.
+     */
+    private void finishCmaEnable(@Nullable String lever, long target, boolean save) {
+        runOnPool(() -> {
+            if (save) {
+                if (lever != null) model.saveCmaLever(lever);
+                else model.clearCmaLever();
+                if (target > 0) model.saveCmaTarget(target);
+            }
+            runOnUiThread(() -> {
+                cmaBusy = false;
+                setCmaSwitch(true);
+                Toast.makeText(this, R.string.hugepage_cma_enabled, LENGTH_SHORT).show();
+                cmaInputLoaded = false;
                 refreshStatus();
             });
         });

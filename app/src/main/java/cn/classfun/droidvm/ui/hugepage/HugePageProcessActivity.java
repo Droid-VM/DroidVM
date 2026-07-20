@@ -51,6 +51,10 @@ public final class HugePageProcessActivity extends AppCompatActivity
     private static final long ACQUIRE_POLL_MS = 500;
     private static final int ACQUIRE_POLL_MAX = 1200;   // ~10 min ceiling
     private static final long HUGE_PAGE_BYTES = 2L * 1024 * 1024;
+    // Fake pids for the synthetic list rows (adapter uses pid as a stable id;
+    // pid 0 already belongs to the "waiting for acquire" row).
+    private static final int PID_AVAIL = -2;
+    private static final int PID_CMA = -3;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HugePageModel model = new HugePageModel();
@@ -218,7 +222,49 @@ public final class HugePageProcessActivity extends AppCompatActivity
             int kernelMode = snap.acquireMode;
             long holdKb = snap.loaded ? snap.free * 2048 : 0;                // avail
             long wantKb = snap.loaded ? snap.targetIdeal * 2048 : tracedKb;  // want
-            long deficitKb = wantKb - holdKb - tracedKb;
+            // v10 reservoir: mirror the status screen - the bar's denominator
+            // becomes pool_want_with_cma and the reservoir counts as filled.
+            boolean cmaOn = snap.loaded && snap.cmaActive();
+            var cmaUsage = cmaOn ? model.cmaUsage() : null;
+            long cmaKb = cmaOn ? snap.cmaPool * 2048 : 0;
+            long cmaOtherKb = (cmaUsage != null && cmaUsage.ok)
+                ? Math.min(cmaKb, cmaUsage.usedMb * 1024) : 0;
+            long cmaFreeKb = cmaKb - cmaOtherKb;
+            long availCmaAbleKb = (cmaOn && snap.availCmaAble >= 0)
+                ? Math.min(holdKb, snap.availCmaAble * 2048) : -1;
+            long availNonCmaKb = availCmaAbleKb >= 0 ? holdKb - availCmaAbleKb : 0;
+            long barWantKb = cmaOn ? snap.wantWithCma * 2048 : wantKb;
+            long deficitKb = barWantKb - holdKb - tracedKb - cmaKb;
+            // Synthetic rows mirroring the bar blocks: available (with its
+            // cma-able / non-cma-able breakdown) and the CMA reservoir
+            // (free / other apps). Distinct negative pids keep the adapter's
+            // stable ids unique (the deficit row already owns pid 0).
+            // The deficit row owns the acquire buttons; when it is hidden but
+            // acquire still has work (a grown pool_want the reservoir can stage
+            // in, so nothing is "waiting to be acquired"), the CMA row shows them.
+            boolean acquireOnCma = cmaOn && deficitKb <= 0 && snap.deficit > 0;
+            if (snap.loaded) {
+                list.add(new HugePageProcess(
+                    PID_AVAIL, getString(R.string.hugepage_bar_available), -1,
+                    holdKb, '?', null, true, HugePageColor.availIcon(dark),
+                    true, false,
+                    availCmaAbleKb >= 0 ? getString(
+                        R.string.hugepage_proc_avail_detail,
+                        SizeUtils.formatSize(availCmaAbleKb * 1024),
+                        SizeUtils.formatSize(availNonCmaKb * 1024)) : null,
+                    false));
+            }
+            if (cmaOn) {
+                list.add(new HugePageProcess(
+                    PID_CMA, getString(R.string.hugepage_bar_cma), -1,
+                    cmaKb, '?', null, true, HugePageColor.cmaFree(this),
+                    true, false,
+                    (cmaUsage != null && cmaUsage.ok) ? getString(
+                        R.string.hugepage_proc_cma_detail,
+                        SizeUtils.formatSize(cmaFreeKb * 1024),
+                        SizeUtils.formatSize(cmaOtherKb * 1024)) : null,
+                    acquireOnCma));
+            }
             if (deficitKb > 0) {
                 list.add(new HugePageProcess(
                     0, getString(R.string.hugepage_proc_deficit), -1, deficitKb,
@@ -230,6 +276,10 @@ public final class HugePageProcessActivity extends AppCompatActivity
             var fKoNow = koNow;
             var fTraced = tracedKb;
             var fHold = holdKb;
+            var fAvailNonCma = availCmaAbleKb >= 0 ? availNonCmaKb : 0;
+            var fCma = cmaKb;
+            var fCmaFree = cmaFreeKb;
+            var fBarWant = barWantKb;
             var fWant = wantKb;
             var fAcquiring = kernelAcquiring;
             var fMode = kernelMode;
@@ -249,7 +299,8 @@ public final class HugePageProcessActivity extends AppCompatActivity
                 int uiMode = fAcquiring ? fMode
                     : (acquireWatching ? acquireWatchMode : -1);
                 adapter.setAcquireState(fAcquiring || acquireWatching, uiMode);
-                showResult(finalList, fTraced, fHold, fWant, finalEmpty);
+                showResult(finalList, fTraced, fHold, fAvailNonCma,
+                    fCma, fCmaFree, fBarWant, fWant, finalEmpty);
             });
         });
     }
@@ -262,12 +313,18 @@ public final class HugePageProcessActivity extends AppCompatActivity
         // Best-effort pid -> VM name (running VMs only); for KO rows this labels
         // the process, for scan rows it echoes the name the entry already carries.
         var vmMap = model.vmNames(false);
+        // Rank-based colors over the full entry list (see HugePageColor).
+        var pids = new ArrayList<Integer>();
+        for (var e : entries) pids.add(e.pid);
+        var colorMap = HugePageColor.forPids(pids, dark);
         var result = new ArrayList<HugePageProcess>();
         for (var e : entries) {
+            Integer color = colorMap.get(e.pid);
             result.add(new HugePageProcess(
                 e.pid, e.comm, -1, e.pages * 2048, e.state,
                 vmMap.getOrDefault(e.pid, e.comm), e.alive,
-                HugePageColor.forPid(e.pid, dark), false, false));
+                color != null ? color : HugePageColor.forRank(0, dark),
+                false, false));
         }
         result.sort((a, b) -> Long.compare(b.thpKb, a.thpKb));
         return result;
@@ -275,17 +332,21 @@ public final class HugePageProcessActivity extends AppCompatActivity
 
     private void showResult(
         @NonNull List<HugePageProcess> list, long usedKb, long availKb,
+        long availNonCmaKb, long cmaKb, long cmaFreeKb, long barWantKb,
         long wantKb, @NonNull String emptyText
     ) {
         if (isFinishing()) return;
         firstRefresh = false;
         adapter.submit(list);
 
-        // Segmented bar (shared builder): VM segments (used), then the available
-        // portion as a track-coloured gap, then the "waiting for acquire" deficit
-        // pinned flush right. This screen's bar is a plain unlabelled meter.
+        // Segmented bar, synced with the status screen: VM segments (used), the
+        // available block (with its non-cma-able left sub-split), the CMA
+        // reservoir block ([free|other apps] sub-split), then the "waiting for
+        // acquire" deficit flush right. Still a plain unlabelled meter here.
+        // The synthetic available/CMA rows ("unknown") are drawn via those
+        // dedicated blocks, not as used segments.
         int used = 0;
-        for (var p : list) if (!p.acquire) used++;
+        for (var p : list) if (!p.acquire && !p.unknown) used++;
         int[] usedColors = new int[used];
         float[] usedValues = new float[used];
         int deficitColor = HugePageColor.pending(this);
@@ -295,14 +356,26 @@ public final class HugePageProcessActivity extends AppCompatActivity
             if (p.acquire) {                       // deficit rows: colour + value
                 deficitColor = p.color;
                 deficit += Math.max(0, p.thpKb);
-            } else {                               // used: one segment per VM
+            } else if (!p.unknown) {               // used: one segment per VM
                 usedColors[u] = p.color;
                 usedValues[u] = Math.max(0, p.thpKb);
                 u++;
             }
         }
-        segBar.setStorage(usedColors, usedValues, null,
-            availKb, null, deficitColor, deficit, null, wantKb);
+        var spec = new SegmentedBar.StorageSpec();
+        spec.usedColors = usedColors;
+        spec.usedValues = usedValues;
+        spec.avail = availKb;
+        spec.availNonCma = availNonCmaKb;
+        spec.availNonCmaColor = HugePageColor.availNonCma(this);
+        spec.cmaFree = cmaFreeKb;
+        spec.cmaFreeColor = HugePageColor.cmaFree(this);
+        spec.cmaOther = cmaKb - cmaFreeKb;
+        spec.cmaOtherColor = HugePageColor.cmaUsed(this);
+        spec.deficitColor = deficitColor;
+        spec.deficit = deficit;
+        spec.want = barWantKb;
+        segBar.setStorage(spec);
 
         // 2x2 caption: used / available on top, total / pool-size below.
         // Total = the real held reserve (used + avail = owned + traced), shown
@@ -417,15 +490,11 @@ public final class HugePageProcessActivity extends AppCompatActivity
                 if (finalSnap != null && finalSnap.loaded) {
                     // Achieved = owned + traced (pool_avail + served), NOT
                     // pool_total: after a shrink that left served pages out,
-                    // pool_total under-counts the pages VMs already hold.
-                    long got = finalSnap.free + finalSnap.lent;
-                    long want = finalSnap.targetIdeal;
-                    String msg = got >= want
-                        ? getString(R.string.hugepage_proc_acquire_full,
-                            fmtPages(want))
-                        : getString(R.string.hugepage_proc_acquire_partial,
-                            fmtPages(got), fmtPages(want));
-                    Toast.makeText(this, msg, LENGTH_LONG).show();
+                    // pool_total under-counts the pages VMs already hold. With
+                    // the reservoir on the message reports the with-CMA total too.
+                    Toast.makeText(this,
+                        HugePageActivity.acquireDoneMessage(this, finalSnap),
+                        LENGTH_LONG).show();
                 } else {
                     Toast.makeText(this, R.string.hugepage_proc_acquire_done,
                         LENGTH_SHORT).show();

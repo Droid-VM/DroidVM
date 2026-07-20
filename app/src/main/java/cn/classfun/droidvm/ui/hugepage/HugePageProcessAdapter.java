@@ -111,17 +111,24 @@ public final class HugePageProcessAdapter
         }
 
         if (p.unknown || p.acquire) {
-            // Synthetic rows: "unattributed" (no action) and "waiting for
-            // acquire" (deficit, with an Acquire button).
+            // Synthetic rows: "available"/"CMA"/"unattributed" (no action) and
+            // "waiting for acquire" (deficit, with an Acquire button). The
+            // served line doubles as their free-text detail (breakdowns).
             holder.title.setText(p.comm);
-            holder.served.setVisibility(GONE);
+            if (p.detail != null) {
+                holder.served.setVisibility(VISIBLE);
+                holder.served.setText(p.detail);
+            } else {
+                holder.served.setVisibility(GONE);
+            }
             holder.stateView.setVisibility(GONE);
             holder.btnStack.setVisibility(GONE);
             holder.btnStack.setOnClickListener(null);
             holder.itemView.setAlpha(1f);
             holder.btnKill.setVisibility(GONE);
             holder.btnKill.setOnClickListener(null);
-            if (p.acquire) {
+            // Usually the deficit row; the CMA row when that one is hidden.
+            if (p.acquireSlots) {
                 bindAcquireSlot(holder.btnAcquireV1, holder.progressAcquireV1, 1);
                 bindAcquireSlot(holder.btnAcquireV2, holder.progressAcquireV2, 2);
                 bindAcquireSlot(holder.btnAcquireV3, holder.progressAcquireV3, 3);

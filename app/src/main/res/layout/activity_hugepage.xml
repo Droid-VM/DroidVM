@@ -113,17 +113,40 @@
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 
-            <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
-                android:id="@+id/input_pool_size"
+            <!-- Pool size and (below) the with-CMA total, stacked so neither is
+                 cramped. Both are GiB-only inputs (ti_unit): no MB/KB/B stops.
+                 The with-CMA row is enabled only while the reservoir is on. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/hugepage_pool_size"
-                android:icon="@drawable/ic_resize"
-                android:inputType="number"
-                app:ti_max="16GiB"
-                app:ti_min="0MiB"
-                app:ti_mode="size"
-                app:ti_precision="2MiB" />
+                android:orientation="vertical">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_pool_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hugepage_pool_size"
+                    android:icon="@drawable/ic_resize"
+                    android:inputType="number"
+                    app:ti_max="16GiB"
+                    app:ti_min="0MiB"
+                    app:ti_mode="size"
+                    app:ti_precision="2MiB"
+                    app:ti_unit="GiB" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_cma_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hugepage_cma_pool_size"
+                    android:icon="@drawable/ic_resize"
+                    android:inputType="number"
+                    app:ti_max="24GiB"
+                    app:ti_min="0MiB"
+                    app:ti_mode="size"
+                    app:ti_precision="2MiB"
+                    app:ti_unit="GiB" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -290,6 +313,14 @@
 
                 <include layout="@layout/acquire_buttons" />
             </LinearLayout>
+
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/row_cma_enable"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_memory"
+                android:subtitle="@string/hugepage_enable_cma_sub"
+                android:text="@string/hugepage_enable_cma" />
 
             <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                 android:id="@+id/row_module_enable"
