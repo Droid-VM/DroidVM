@@ -40,7 +40,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View displayDpiOptions;
     private View vncOptions;
     private View vncPasswordOptions;
-    private View vramAllocOptions;
+    private View vramSettings;
     private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
@@ -78,7 +78,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuApi = view.findViewById(R.id.choose_gpu_api);
         gpuOptions = view.findViewById(R.id.gpu_options);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
-        vramAllocOptions = view.findViewById(R.id.vram_alloc_options);
+        vramSettings = view.findViewById(R.id.vram_settings);
         swGpuDynamicVram = view.findViewById(R.id.sw_gpu_dynamic_vram);
         dynamicVramOptions = view.findViewById(R.id.dynamic_vram_options);
         tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
@@ -421,15 +421,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // native context will bring its own pool).
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
-        swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
-        vramAllocOptions.setVisibility(gfxstream ? VISIBLE : GONE);
+        vramSettings.setVisibility(gfxstream ? VISIBLE : GONE);
         // The guest pool belongs to guest-alloc; dynamic vram is the host-alloc alternative
         // (crosvm ignores a vram limit in guest-alloc mode), so the two never show together.
         tilGpuGuestPoolMb.setVisibility(udmabuf ? VISIBLE : GONE);
         boolean hostAlloc = gfxstream && !udmabuf;
         swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
-        // Shown whenever host-alloc is in play, not only while the switch is on: the numbers are
-        // what the switch turns on, and hiding them makes the switch look like it does nothing.
-        dynamicVramOptions.setVisibility(hostAlloc ? VISIBLE : GONE);
+        dynamicVramOptions.setVisibility(
+            hostAlloc && swGpuDynamicVram.isChecked() ? VISIBLE : GONE);
     }
 }

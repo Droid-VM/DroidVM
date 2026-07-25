@@ -222,6 +222,7 @@
     <string name="create_vm_gpu_guest_pool_mb">guest 池大小 (MB)</string>
     <string name="create_vm_gunyah_dynamic_share">启用动态内存共享</string>
     <string name="create_vm_gunyah_hugepage_threshold">大页阈值 (KB)</string>
+    <string name="create_vm_category_vram">显存设置</string>
     <string name="create_vm_category_display">显示</string>
     <string name="create_vm_display_enabled">启用显示器</string>
     <string name="create_vm_display_backend">显示后端</string>
