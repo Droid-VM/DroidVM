@@ -58,6 +58,7 @@ import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeKeyboardEditText;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TouchScaleCalculator;
@@ -739,6 +740,20 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         setRequestedOrientation(landscape
             ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // A VM display is on screen and rendering: tell the platform this is sustained heavy
+        // gameplay so its power policy raises clocks (see GamePerfHint).
+        GamePerfHint.enterGameplay(this);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        GamePerfHint.exitGameplay(this);
     }
 
     @Override
