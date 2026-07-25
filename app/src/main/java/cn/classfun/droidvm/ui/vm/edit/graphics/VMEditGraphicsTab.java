@@ -36,6 +36,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View displayDpiOptions;
     private View vncOptions;
     private View vncPasswordOptions;
+    private View gunyahDynamicShareOptions;
+    private View vramAllocOptions;
+    private View tilGpuArenaMb;
+    private View tilGpuGuestPoolMb;
+    private SwitchRowWidget swGunyahDynamicShare;
+    private SwitchRowWidget swGpuUdmabuf;
+    private TextInputEditText etGunyahHugepageThreshold;
+    private TextInputEditText etGpuHostPoolMb;
+    private TextInputEditText etGpuArenaMb;
+    private TextInputEditText etGpuGuestPoolMb;
     private SwitchRowWidget swGpuEnabled;
     private SwitchRowWidget swVncEnabled;
     private SwitchRowWidget swVncPasswordAuth;
@@ -65,6 +75,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuBackend = view.findViewById(R.id.choose_gpu_backend);
         chooseGpuApi = view.findViewById(R.id.choose_gpu_api);
         gpuOptions = view.findViewById(R.id.gpu_options);
+        swGunyahDynamicShare = view.findViewById(R.id.sw_gunyah_dynamic_share);
+        gunyahDynamicShareOptions = view.findViewById(R.id.gunyah_dynamic_share_options);
+        etGunyahHugepageThreshold = view.findViewById(R.id.et_gunyah_hugepage_threshold);
+        swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
+        vramAllocOptions = view.findViewById(R.id.vram_alloc_options);
+        tilGpuArenaMb = view.findViewById(R.id.til_gpu_arena_mb);
+        tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
+        etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
+        etGpuArenaMb = view.findViewById(R.id.et_gpu_arena_mb);
+        etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
         swNativeDisplayEnabled = view.findViewById(R.id.sw_native_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
@@ -116,17 +136,28 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             etVncPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
         swVncPasswordAuth.setOnCheckedChangeListener((b, checked) ->
             updateVncPasswordVisibility());
+        swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
+        swGpuUdmabuf.setOnCheckedChangeListener(this::updateVramAllocVisibility);
         updateGpuVisibility();
         updateDisplayVisibility();
         updateDisplayDpiVisibility();
         updateVncVisibility();
         updateVncPasswordVisibility();
+        updateGunyahVisibility();
+        updateVramAllocVisibility();
     }
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
+        swGunyahDynamicShare.setChecked(item.optBoolean("gunyah_dynamic_share", false));
+        etGunyahHugepageThreshold.setText(String.valueOf(
+            item.optLong("gunyah_hugepage_threshold_kb", 1024)));
+        swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
+        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
+        etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
+        etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
         swNativeDisplayEnabled.setChecked(item.optBoolean("native_display_enabled", false));
         etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
@@ -158,6 +189,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateDisplayDpiVisibility();
         updateVncVisibility();
         updateVncPasswordVisibility();
+        updateGunyahVisibility();
+        updateVramAllocVisibility();
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -186,6 +219,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etDisplayRefreshRate, false, 1, 400)) return false;
         if (!checkInputField(etDisplayDpiH, false, 100, 800)) return false;
         if (!checkInputField(etDisplayDpiV, false, 100, 800)) return false;
+        if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
+        if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuArenaMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etVncPort, true, 1024, 65535)) return false;
         if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM && swNativeDisplayEnabled.isChecked())
             return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
@@ -203,11 +240,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         item.set("gpu_enabled", gpuEnabled);
         item.set("display_enabled", displayEnabled);
         item.set("vnc_enabled", vncEnabled);
+        item.set("gunyah_dynamic_share", swGunyahDynamicShare.isChecked());
+        item.set("gunyah_hugepage_threshold_kb", parseInt(getEditText(etGunyahHugepageThreshold)));
         if (gpuEnabled) {
             GpuBackend gb = chooseGpuBackend.getSelectedItem();
             GpuApi ga = chooseGpuApi.getSelectedItem();
             item.set("gpu_backend", gb);
             item.set("gpu_api", ga);
+            item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
+            item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
+            item.set("gpu_arena_mb", parseInt(getEditText(etGpuArenaMb)));
+            item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
         }
         if (displayEnabled) {
             DisplayBackend displayBackend = chooseDisplayBackend.getSelectedItem();
@@ -285,5 +328,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     private void updateVncPasswordVisibility() {
         vncPasswordOptions.setVisibility(swVncPasswordAuth.isChecked() ? VISIBLE : GONE);
+    }
+
+    private void updateGunyahVisibility() {
+        gunyahDynamicShareOptions.setVisibility(
+            swGunyahDynamicShare.isChecked() ? VISIBLE : GONE);
+    }
+
+    // VRAM allocation split: with guest-alloc (udmabuf) the guest owns a pre-sized pool
+    // (gpu_guest_pool_mb); otherwise the host grows a dynamic arena up to gpu_arena_mb.
+    // The host pool stays visible in both modes.
+    private void updateVramAllocVisibility() {
+        boolean udmabuf = swGpuUdmabuf.isChecked();
+        tilGpuGuestPoolMb.setVisibility(udmabuf ? VISIBLE : GONE);
+        tilGpuArenaMb.setVisibility(udmabuf ? GONE : VISIBLE);
     }
 }
