@@ -22,6 +22,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
+import cn.classfun.droidvm.lib.store.vm.DisplayOutput;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
@@ -36,24 +37,20 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View displayDpiOptions;
     private View vncOptions;
     private View vncPasswordOptions;
-    private View gunyahDynamicShareOptions;
     private View vramAllocOptions;
     private View tilGpuArenaMb;
     private View tilGpuGuestPoolMb;
-    private SwitchRowWidget swGunyahDynamicShare;
     private SwitchRowWidget swGpuUdmabuf;
-    private TextInputEditText etGunyahHugepageThreshold;
     private TextInputEditText etGpuHostPoolMb;
     private TextInputEditText etGpuArenaMb;
     private TextInputEditText etGpuGuestPoolMb;
     private SwitchRowWidget swGpuEnabled;
-    private SwitchRowWidget swVncEnabled;
     private SwitchRowWidget swVncPasswordAuth;
     private SwitchRowWidget swDisplayEnabled;
-    private SwitchRowWidget swNativeDisplayEnabled;
     private ChooseRowWidget chooseGpuBackend;
     private ChooseRowWidget chooseGpuApi;
     private ChooseRowWidget chooseDisplayBackend;
+    private ChooseRowWidget chooseDisplayOutput;
     private TextInputEditText etDisplayWidth;
     private TextInputEditText etDisplayHeight;
     private TextInputEditText etDisplayRefreshRate;
@@ -75,9 +72,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuBackend = view.findViewById(R.id.choose_gpu_backend);
         chooseGpuApi = view.findViewById(R.id.choose_gpu_api);
         gpuOptions = view.findViewById(R.id.gpu_options);
-        swGunyahDynamicShare = view.findViewById(R.id.sw_gunyah_dynamic_share);
-        gunyahDynamicShareOptions = view.findViewById(R.id.gunyah_dynamic_share_options);
-        etGunyahHugepageThreshold = view.findViewById(R.id.et_gunyah_hugepage_threshold);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
         vramAllocOptions = view.findViewById(R.id.vram_alloc_options);
         tilGpuArenaMb = view.findViewById(R.id.til_gpu_arena_mb);
@@ -86,8 +80,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuArenaMb = view.findViewById(R.id.et_gpu_arena_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
-        swNativeDisplayEnabled = view.findViewById(R.id.sw_native_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
+        chooseDisplayOutput = view.findViewById(R.id.choose_display_output);
         displayOptions = view.findViewById(R.id.display_options);
         etDisplayWidth = view.findViewById(R.id.et_display_width);
         etDisplayHeight = view.findViewById(R.id.et_display_height);
@@ -95,7 +89,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etDisplayDpiH = view.findViewById(R.id.et_display_dpi_h);
         etDisplayDpiV = view.findViewById(R.id.et_display_dpi_v);
         displayDpiOptions = view.findViewById(R.id.display_dpi_options);
-        swVncEnabled = view.findViewById(R.id.sw_vnc_enabled);
         swVncPasswordAuth = view.findViewById(R.id.sw_vnc_password_auth);
         vncOptions = view.findViewById(R.id.vnc_options);
         vncPasswordOptions = view.findViewById(R.id.vnc_password_options);
@@ -110,7 +103,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     public void initValue() {
         swGpuEnabled.setOnCheckedChangeListener(this::updateGpuVisibility);
         swDisplayEnabled.setOnCheckedChangeListener(this::updateDisplayVisibility);
-        swVncEnabled.setOnCheckedChangeListener(this::updateVncVisibility);
         // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
         chooseGpuApi.setOnValueChangedListener((o, n) -> {
             if (n == GpuApi.VULKAN_PANVK) {
@@ -129,21 +121,28 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                 chooseDisplayBackend.setSelectedItem(SIMPLEFB);
                 return;
             }
+            updateDisplayOutputVisibility();
             updateDisplayDpiVisibility();
+        });
+        // VNC is the default for a new VM: it needs nothing from the host app to be viewable,
+        // which is what the standalone VNC switch used to default to (android:checked="true").
+        chooseDisplayOutput.configure(DisplayOutput.class, DisplayOutput.VNC);
+        chooseDisplayOutput.setOnValueChangedListener((o, n) -> {
+            updateDisplayDpiVisibility();
+            updateVncVisibility();
         });
         btnVncPasswordClear.setOnClickListener(v -> etVncPassword.setText(""));
         btnVncPasswordGenerate.setOnClickListener(v ->
             etVncPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
         swVncPasswordAuth.setOnCheckedChangeListener((b, checked) ->
             updateVncPasswordVisibility());
-        swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
         swGpuUdmabuf.setOnCheckedChangeListener(this::updateVramAllocVisibility);
         updateGpuVisibility();
         updateDisplayVisibility();
+        updateDisplayOutputVisibility();
         updateDisplayDpiVisibility();
         updateVncVisibility();
         updateVncPasswordVisibility();
-        updateGunyahVisibility();
         updateVramAllocVisibility();
     }
 
@@ -151,21 +150,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     public void loadConfig(@NonNull VMConfig config) {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
-        swGunyahDynamicShare.setChecked(item.optBoolean("gunyah_dynamic_share", false));
-        etGunyahHugepageThreshold.setText(String.valueOf(
-            item.optLong("gunyah_hugepage_threshold_kb", 1024)));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
         etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
-        swNativeDisplayEnabled.setChecked(item.optBoolean("native_display_enabled", false));
         etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
         etDisplayHeight.setText(String.valueOf(item.optLong("display_height", 720)));
         etDisplayRefreshRate.setText(String.valueOf(item.optLong("display_refresh_rate", 60)));
         etDisplayDpiH.setText(String.valueOf(item.optLong("display_dpi_h", 160)));
         etDisplayDpiV.setText(String.valueOf(item.optLong("display_dpi_v", 160)));
-        swVncEnabled.setChecked(item.optBoolean("vnc_enabled", false));
         swVncPasswordAuth.setChecked(item.optBoolean("vnc_password_auth", false));
         etVncHost.setText(item.optString("vnc_host", ""));
         var vncPort = item.optLong("vnc_port", -1);
@@ -184,13 +178,25 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             chooseGpuApi.setSelectedItem(gpuApi);
         if (displayBackend != DisplayBackend.NONE)
             chooseDisplayBackend.setSelectedItem(displayBackend);
+        // The output side is UI-only: derive the single choice from the two persisted booleans.
+        // Native wins if both are set -- that is what crosvm does anyway (it keeps the first
+        // display backend that opens and the Android display service is inserted first).
+        chooseDisplayOutput.setSelectedItem(readDisplayOutput(config));
         updateGpuVisibility();
         updateDisplayVisibility();
+        updateDisplayOutputVisibility();
         updateDisplayDpiVisibility();
         updateVncVisibility();
         updateVncPasswordVisibility();
-        updateGunyahVisibility();
         updateVramAllocVisibility();
+    }
+
+    @NonNull
+    private static DisplayOutput readDisplayOutput(@NonNull VMConfig config) {
+        var item = config.item;
+        if (item.optBoolean("native_display_enabled", false)) return DisplayOutput.NATIVE;
+        if (item.optBoolean("vnc_enabled", false)) return DisplayOutput.VNC;
+        return DisplayOutput.NONE;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -219,15 +225,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etDisplayRefreshRate, false, 1, 400)) return false;
         if (!checkInputField(etDisplayDpiH, false, 100, 800)) return false;
         if (!checkInputField(etDisplayDpiV, false, 100, 800)) return false;
-        if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuArenaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
-        if (!checkInputField(etVncPort, true, 1024, 65535)) return false;
-        if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM && swNativeDisplayEnabled.isChecked())
+        DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
+        if (displayOutput == DisplayOutput.VNC
+            && !checkInputField(etVncPort, true, 1024, 65535)) return false;
+        if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM
+            && displayOutput == DisplayOutput.NATIVE)
             return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
-        if (swNativeDisplayEnabled.isChecked() && swVncEnabled.isChecked())
-            return showValidateFailed(R.string.create_vm_error_native_display_vnc_cannot_enabled);
         return true;
     }
 
@@ -236,12 +242,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         var gpuEnabled = swGpuEnabled.isChecked();
         var displayEnabled = swDisplayEnabled.isChecked();
-        var vncEnabled = swVncEnabled.isChecked();
+        // One output, two booleans: crosvm keeps the first display backend that opens (with the
+        // Android display service inserted first), so at most one of them may be set.
+        DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
+        var vncEnabled = displayOutput == DisplayOutput.VNC;
         item.set("gpu_enabled", gpuEnabled);
         item.set("display_enabled", displayEnabled);
         item.set("vnc_enabled", vncEnabled);
-        item.set("gunyah_dynamic_share", swGunyahDynamicShare.isChecked());
-        item.set("gunyah_hugepage_threshold_kb", parseInt(getEditText(etGunyahHugepageThreshold)));
         if (gpuEnabled) {
             GpuBackend gb = chooseGpuBackend.getSelectedItem();
             GpuApi ga = chooseGpuApi.getSelectedItem();
@@ -255,10 +262,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (displayEnabled) {
             DisplayBackend displayBackend = chooseDisplayBackend.getSelectedItem();
             item.set("display_backend", displayBackend);
-            // Native display only applies to virtio-gpu + GPU enabled.
-            item.set("native_display_enabled", gpuEnabled
-                && displayBackend == DisplayBackend.VIRTIO_GPU
-                && swNativeDisplayEnabled.isChecked());
+            item.set("native_display_enabled",
+                displayOutput == DisplayOutput.NATIVE && isNativeDisplayAllowed());
             item.set("display_width", parseInt(getEditText(etDisplayWidth)));
             item.set("display_height", parseInt(getEditText(etDisplayHeight)));
             item.set("display_refresh_rate", parseInt(getEditText(etDisplayRefreshRate)));
@@ -295,44 +300,56 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         }
     }
 
+    // Both display producers can present into the app's Surface: virtio-gpu hands over its
+    // scanout (needs the GPU enabled), while simplefb has crosvm's bridge poll the guest's
+    // linear framebuffer -- no GPU involved. Single source of the rule for the visibility
+    // update and for saveConfig; keep in sync with CrosvmBackendInstance.isNativeDisplayEnabled.
+    private boolean isNativeDisplayAllowed() {
+        DisplayBackend backend = chooseDisplayBackend.getSelectedItem();
+        return (backend == DisplayBackend.VIRTIO_GPU && swGpuEnabled.isChecked())
+            || backend == SIMPLEFB;
+    }
+
     private void updateGpuVisibility() {
         gpuOptions.setVisibility(swGpuEnabled.isChecked() ? VISIBLE : GONE);
         if (!swGpuEnabled.isChecked()) {
             if (chooseDisplayBackend.getSelectedItem() == DisplayBackend.VIRTIO_GPU)
                 chooseDisplayBackend.setSelectedItem(SIMPLEFB);
         }
-        updateNativeDisplayVisibility();
+        updateDisplayOutputVisibility();
+        updateDisplayDpiVisibility();
     }
 
     private void updateDisplayVisibility() {
         displayOptions.setVisibility(swDisplayEnabled.isChecked() ? VISIBLE : GONE);
+        updateDisplayOutputVisibility();
     }
 
+    private void updateDisplayOutputVisibility() {
+        chooseDisplayOutput.setVisibility(swDisplayEnabled.isChecked() ? VISIBLE : GONE);
+        // Never leave an output the current producer cannot drive selected.
+        DisplayOutput output = chooseDisplayOutput.getSelectedItem();
+        if (output == DisplayOutput.NATIVE && !isNativeDisplayAllowed())
+            chooseDisplayOutput.setSelectedItem(DisplayOutput.NONE);
+    }
+
+    // DPI only reaches the guest through virtio-gpu's scanout on the native display: simplefb
+    // has no mode information to carry it and VNC clients pick their own.
     private void updateDisplayDpiVisibility() {
-        var backend = chooseDisplayBackend.getSelectedItem();
-        displayDpiOptions.setVisibility(backend != SIMPLEFB ? VISIBLE : GONE);
-        updateNativeDisplayVisibility();
-    }
-
-    private void updateNativeDisplayVisibility() {
-        // Native display rides on virtio-gpu (gfxstream) only.
-        boolean ok = swGpuEnabled.isChecked()
-            && chooseDisplayBackend.getSelectedItem() == DisplayBackend.VIRTIO_GPU;
-        swNativeDisplayEnabled.setVisibility(ok ? VISIBLE : GONE);
-        if (!ok) swNativeDisplayEnabled.setChecked(false);
+        DisplayBackend backend = chooseDisplayBackend.getSelectedItem();
+        DisplayOutput output = chooseDisplayOutput.getSelectedItem();
+        displayDpiOptions.setVisibility(
+            backend == DisplayBackend.VIRTIO_GPU && output == DisplayOutput.NATIVE
+                ? VISIBLE : GONE);
     }
 
     private void updateVncVisibility() {
-        vncOptions.setVisibility(swVncEnabled.isChecked() ? VISIBLE : GONE);
+        DisplayOutput output = chooseDisplayOutput.getSelectedItem();
+        vncOptions.setVisibility(output == DisplayOutput.VNC ? VISIBLE : GONE);
     }
 
     private void updateVncPasswordVisibility() {
         vncPasswordOptions.setVisibility(swVncPasswordAuth.isChecked() ? VISIBLE : GONE);
-    }
-
-    private void updateGunyahVisibility() {
-        gunyahDynamicShareOptions.setVisibility(
-            swGunyahDynamicShare.isChecked() ? VISIBLE : GONE);
     }
 
     // VRAM allocation split: with guest-alloc (udmabuf) the guest owns a pre-sized pool

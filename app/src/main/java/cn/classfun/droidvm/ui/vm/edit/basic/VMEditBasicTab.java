@@ -1,5 +1,8 @@
 package cn.classfun.droidvm.ui.vm.edit.basic;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+import static java.lang.Integer.parseInt;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
@@ -45,6 +48,9 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
     private SwitchRowWidget swDebug;
+    private SwitchRowWidget swGunyahDynamicShare;
+    private View gunyahDynamicShareOptions;
+    private TextInputEditText etGunyahHugepageThreshold;
     private ChooseRowWidget choosePrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
@@ -69,6 +75,9 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
         swDebug = view.findViewById(R.id.sw_debug);
+        swGunyahDynamicShare = view.findViewById(R.id.sw_gunyah_dynamic_share);
+        gunyahDynamicShareOptions = view.findViewById(R.id.gunyah_dynamic_share_options);
+        etGunyahHugepageThreshold = view.findViewById(R.id.et_gunyah_hugepage_threshold);
         choosePrepareLendMthp = view.findViewById(R.id.choose_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
@@ -90,6 +99,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         parent.put("hypervisor", VMHypervisor.DEFAULT);
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
+        swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
+        updateGunyahVisibility();
         try {
             var socModel = QcomChipName.getCurrentSoC();
             var gunyah = new QcomGunyahSupports(parent);
@@ -119,6 +130,9 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
         swDebug.setChecked(item.optBoolean("strace", false));
+        swGunyahDynamicShare.setChecked(item.optBoolean("gunyah_dynamic_share", false));
+        etGunyahHugepageThreshold.setText(String.valueOf(
+            item.optLong("gunyah_hugepage_threshold_kb", 1024)));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
@@ -131,6 +145,34 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 sb.append(extraOpts.optString(i, ""));
             }
             etExtraOptions.setText(sb.toString());
+        }
+        updateGunyahVisibility();
+    }
+
+    // Gunyah dynamic memory sharing is a hypervisor-level memory-sharing mechanism (the GPU is
+    // just its first user), so it sits with the other lend/share options rather than in the
+    // graphics tab where it used to live.
+    private void updateGunyahVisibility() {
+        gunyahDynamicShareOptions.setVisibility(
+            swGunyahDynamicShare.isChecked() ? VISIBLE : GONE);
+    }
+
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    private boolean checkInputField(
+        @NonNull TextInputEditText field,
+        boolean allowEmpty, int min, int max
+    ) {
+        field.setError(null);
+        try {
+            var text = getEditText(field);
+            if (text.isEmpty() && allowEmpty) return true;
+            var ret = parseInt(text);
+            if (ret < min || ret > max)
+                throw new IllegalArgumentException();
+            return true;
+        } catch (Exception ignored) {
+            field.setError(parent.getString(R.string.create_vm_error_invalid_number));
+            return false;
         }
     }
 
@@ -196,6 +238,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         if (!validateInputMemory(store)) return false;
         if (!validateInputCpu(store)) return false;
         if (!validateHypervisor(store)) return false;
+        if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
         return true;
     }
 
@@ -214,6 +257,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
         item.set("strace", swDebug.isChecked());
+        item.set("gunyah_dynamic_share", swGunyahDynamicShare.isChecked());
+        item.set("gunyah_hugepage_threshold_kb", parseInt(getEditText(etGunyahHugepageThreshold)));
         LendMthpMode lendMthpMode = choosePrepareLendMthp.getSelectedItem();
         item.set(LendMthpMode.KEY, lendMthpMode);
         ProtectedVM pvm = chooseProtectedVm.getSelectedItem();
