@@ -165,17 +165,41 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             case KVM:
                 args.add("kvm");
                 break;
-            case GUNYAH:
+            case GUNYAH: {
                 // gfxstream host-visible blobs on Gunyah use the GuestAccept path
                 // (host SHARE + guest mem_accept), selected via blob_mode.
-                if (item.optBoolean("gpu_enabled", false)
-                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM) {
+                boolean gfxstreamGpu = item.optBoolean("gpu_enabled", false)
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
+                if (gfxstreamGpu) {
                     args.add("gunyah[blob_mode=guest-accept]");
                 } else {
                     args.add("gunyah");
                 }
+                // Dynamic memory sharing: the guest returns folios at runtime instead of pinning
+                // them up front; hugepage-threshold-kb selects which allocations take the
+                // hugepage share path.
+                if (item.optBoolean("gunyah_dynamic_share", false)) {
+                    args.add("--runtime-share");
+                    args.add(fmt("hugepage-threshold-kb=%d",
+                        item.optLong("gunyah_hugepage_threshold_kb", 1024)));
+                }
+                // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
+                // pool). Only meaningful for gfxstream on Gunyah.
+                if (gfxstreamGpu) {
+                    boolean udmabuf = item.optBoolean("gpu_udmabuf", false);
+                    long hostPool = item.optLong("gpu_host_pool_mb", 0);
+                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    if (hostPool > 0 || udmabuf) {
+                        var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
+                        if (udmabuf && guestPool > 0)
+                            preAlloc.append(fmt(",gfx-guest-mb=%d", guestPool));
+                        args.add("--pre-alloc");
+                        args.add(preAlloc.toString());
+                    }
+                }
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
                 break;
+            }
             case GENIEZONE:
                 args.add("geniezone");
                 break;
@@ -405,6 +429,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // stays stable. Only meaningful under the Gunyah hypervisor; other SoCs skip it.
                 if (isGunyahHypervisor()) {
                     gpuArg.append(",gunyah-pvm=true");
+                }
+                // Guest-allocated blobs: the guest owns the host-visible pool and hands
+                // dma-bufs to gfxstream via udmabuf, instead of the host growing the arena.
+                if (item.optBoolean("gpu_udmabuf", false)) {
+                    gpuArg.append(",udmabuf=true");
                 }
             } else {
                 gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
