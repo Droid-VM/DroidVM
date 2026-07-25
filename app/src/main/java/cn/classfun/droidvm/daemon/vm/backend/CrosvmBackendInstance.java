@@ -546,8 +546,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             }
         }
         // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
-        // whole host-visible allocation can be wrapped as one dma-buf.
-        RunUtils.run("echo %d > /sys/module/udmabuf/parameters/size_limit_mb 2>/dev/null || true",
+        // whole host-visible allocation can be wrapped as one dma-buf. The glob covers
+        // both the in-tree driver (/sys/module/udmabuf) and the app-shipped fallback
+        // module for kernels without CONFIG_UDMABUF (/sys/module/udmabuf_gki_6.1 etc.).
+        RunUtils.run("for p in /sys/module/udmabuf*/parameters/size_limit_mb; do " +
+                "echo %d > \"$p\"; done 2>/dev/null || true",
             item.optLong("gpu_udmabuf_limit_mb", 4096));
     }
 
