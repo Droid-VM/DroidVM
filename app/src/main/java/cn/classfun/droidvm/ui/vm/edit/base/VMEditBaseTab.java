@@ -38,6 +38,12 @@ public abstract class VMEditBaseTab {
         return false;
     }
 
+    /** Says something the user needs to know now, without failing anything -- e.g. that the
+     * option they just turned on depends on one in another tab. */
+    protected final void showHint(@NonNull CharSequence message) {
+        Snackbar.make(parent, view, message, Snackbar.LENGTH_LONG).show();
+    }
+
     public abstract void loadConfig(@NonNull VMConfig config);
 
     public abstract boolean validateInput(@NonNull VMStore store);

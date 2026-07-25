@@ -153,8 +153,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     // just its first user), so it sits with the other lend/share options rather than in the
     // graphics tab where it used to live.
     private void updateGunyahVisibility() {
-        gunyahDynamicShareOptions.setVisibility(
-            swGunyahDynamicShare.isChecked() ? VISIBLE : GONE);
+        boolean enabled = swGunyahDynamicShare.isChecked();
+        gunyahDynamicShareOptions.setVisibility(enabled ? VISIBLE : GONE);
+        // Publish it: features in other tabs (guest-alloc vram today, more later) cannot work
+        // without dynamic sharing and check this before letting the VM be saved.
+        parent.put(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, enabled);
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")

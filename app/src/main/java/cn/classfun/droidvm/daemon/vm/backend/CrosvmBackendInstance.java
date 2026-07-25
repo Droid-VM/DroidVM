@@ -186,6 +186,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
                     boolean udmabuf = item.optBoolean("gpu_udmabuf", false);
+                    // The editor refuses this combination; a config built straight through the
+                    // daemon API can still reach here, and only the pre-sized guest pool is
+                    // shared at boot -- anything the guest allocates past it is unreachable by
+                    // the host without dynamic sharing. Boot anyway, but say so.
+                    if (udmabuf && !item.optBoolean("gunyah_dynamic_share", false))
+                        Log.w(TAG, "guest-alloc vram (udmabuf) without gunyah_dynamic_share: "
+                            + "allocations outside the guest pool will not be host-visible");
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
                     long guestPool = item.optLong("gpu_guest_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
