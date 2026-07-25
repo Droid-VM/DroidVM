@@ -176,7 +176,6 @@
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
-    <string name="create_vm_error_native_display_vnc_cannot_enabled">Native display and VNC cannot be enabled at the same time.</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -220,7 +219,6 @@
     <string name="create_vm_gpu_host_pool_mb">Host pool size (MB)</string>
     <string name="create_vm_gpu_dynamic_vram_mb">Dynamic VRAM limit (MB)</string>
     <string name="create_vm_gpu_guest_pool_mb">Guest pool size (MB)</string>
-    <string name="create_vm_category_gunyah">Gunyah</string>
     <string name="create_vm_gunyah_dynamic_share">Dynamic memory sharing</string>
     <string name="create_vm_gunyah_hugepage_threshold">Hugepage threshold (KB)</string>
     <string name="create_vm_category_display">Display</string>
@@ -233,9 +231,10 @@
     <string name="create_vm_display_refresh_rate">Rate (Hz)</string>
     <string name="create_vm_display_dpi_h">DPI Horizontal</string>
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
-    <string name="create_vm_category_vnc">VNC Server</string>
-    <string name="create_vm_vnc_enabled">Enable VNC</string>
-    <string name="create_vm_native_display_enabled">Enable native display (virtio-gpu)</string>
+    <string name="create_vm_display_output">Display output</string>
+    <string name="create_vm_display_output_none">None</string>
+    <string name="create_vm_display_output_native">Native display</string>
+    <string name="create_vm_display_output_vnc">VNC</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>

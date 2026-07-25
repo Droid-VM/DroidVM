@@ -174,7 +174,6 @@
     <string name="create_vm_error_hypervisor_not_supported">所選後端不支援選取的虛擬化模式</string>
     <string name="create_vm_error_path_invalid">無效的絕對路徑</string>
     <string name="create_vm_error_native_display_only_crosvm">原生顯示只在使用CrosVM後端時有效</string>
-    <string name="create_vm_error_native_display_vnc_cannot_enabled">原生顯示和VNC不能同時啟用</string>
     <string name="create_vm_category_kernel">Linux 核心</string>
     <string name="create_vm_kernel_hint">核心</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -218,7 +217,6 @@
     <string name="create_vm_gpu_host_pool_mb">host 池大小 (MB)</string>
     <string name="create_vm_gpu_dynamic_vram_mb">動態顯存上限 (MB)</string>
     <string name="create_vm_gpu_guest_pool_mb">guest 池大小 (MB)</string>
-    <string name="create_vm_category_gunyah">Gunyah</string>
     <string name="create_vm_gunyah_dynamic_share">啟用動態內存共享</string>
     <string name="create_vm_gunyah_hugepage_threshold">大頁閾值 (KB)</string>
     <string name="create_vm_category_display">顯示</string>
@@ -231,9 +229,10 @@
     <string name="create_vm_display_refresh_rate">重新整理率 (Hz)</string>
     <string name="create_vm_display_dpi_h">水平DPI</string>
     <string name="create_vm_display_dpi_v">垂直DPI</string>
-    <string name="create_vm_category_vnc">VNC 伺服器</string>
-    <string name="create_vm_vnc_enabled">啟用 VNC</string>
-    <string name="create_vm_native_display_enabled">啟用原生顯示 (virtio-gpu)</string>
+    <string name="create_vm_display_output">顯示輸出</string>
+    <string name="create_vm_display_output_none">無</string>
+    <string name="create_vm_display_output_native">原生顯示</string>
+    <string name="create_vm_display_output_vnc">VNC</string>
     <string name="create_vm_vnc_host">主機地址</string>
     <string name="create_vm_vnc_port">埠</string>
     <string name="create_vm_vnc_password_auth">密碼認證</string>
