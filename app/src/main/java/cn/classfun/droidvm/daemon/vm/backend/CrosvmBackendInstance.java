@@ -167,15 +167,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 args.add("kvm");
                 break;
             case GUNYAH: {
-                // gfxstream host-visible blobs on Gunyah use the GuestAccept path
-                // (host SHARE + guest mem_accept), selected via blob_mode.
                 boolean gfxstreamGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
-                if (gfxstreamGpu) {
-                    args.add("gunyah[blob_mode=guest-accept]");
-                } else {
-                    args.add("gunyah");
-                }
+                // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
+                // it follows from --runtime-share / --pre-alloc / --gpu vm-accept below. The old
+                // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
+                // every gfxstream-on-Gunyah VM fail to start with "unknown field `blob_mode`".
+                args.add("gunyah");
                 // Dynamic memory sharing: the guest returns folios at runtime instead of pinning
                 // them up front; hugepage-threshold-kb selects which allocations take the
                 // hugepage share path.
@@ -556,10 +554,20 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
 
     private boolean isNativeDisplayEnabled() {
         var item = config.item;
-        if (!item.optBoolean("gpu_enabled", false)) return false;
         if (!item.optBoolean("display_enabled", false)) return false;
         var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        if (backend != DisplayBackend.VIRTIO_GPU) return false;
+        switch (backend) {
+            case VIRTIO_GPU:
+                // The scanout comes from the GPU device, so it has to be enabled.
+                if (!item.optBoolean("gpu_enabled", false)) return false;
+                break;
+            case SIMPLEFB:
+                // No GPU involved: crosvm's simplefb bridge polls the guest's linear framebuffer
+                // and presents it through the same display service.
+                break;
+            default:
+                return false;
+        }
         return item.optBoolean("native_display_enabled", false);
     }
 
