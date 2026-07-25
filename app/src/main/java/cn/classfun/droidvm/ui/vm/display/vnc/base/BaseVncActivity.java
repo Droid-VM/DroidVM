@@ -46,6 +46,7 @@ import java.util.concurrent.ExecutorService;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
@@ -147,6 +148,20 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         onSetupActivity();
         vncExtraKeys = new VncExtraKeysPanel(extraKeysPanel);
         fetchVncInfoAndConnect();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // A VM display is on screen and rendering: tell the platform this is sustained heavy
+        // gameplay so its power policy raises clocks (see GamePerfHint).
+        GamePerfHint.enterGameplay(this);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        GamePerfHint.exitGameplay(this);
     }
 
     @Override
