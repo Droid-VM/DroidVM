@@ -19,6 +19,7 @@ import com.google.android.material.textfield.TextInputEditText;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
@@ -32,18 +33,22 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 
 public final class VMEditGraphicsTab extends VMEditBaseTab {
     private static final int VNC_PASSWORD_LENGTH = 8;
+    /** Set while loadConfig() is applying stored values, so enforcement stays silent. */
+    private boolean loadingConfig = false;
     private View gpuOptions;
     private View displayOptions;
     private View displayDpiOptions;
     private View vncOptions;
     private View vncPasswordOptions;
     private View vramAllocOptions;
-    private View tilGpuArenaMb;
+    private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
+    private SwitchRowWidget swGpuDynamicVram;
     private TextInputEditText etGpuHostPoolMb;
     private TextInputEditText etGpuArenaMb;
     private TextInputEditText etGpuGuestPoolMb;
+    private TextInputEditText etGpuPoolBlobMaxKb;
     private SwitchRowWidget swGpuEnabled;
     private SwitchRowWidget swVncPasswordAuth;
     private SwitchRowWidget swDisplayEnabled;
@@ -74,11 +79,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         gpuOptions = view.findViewById(R.id.gpu_options);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
         vramAllocOptions = view.findViewById(R.id.vram_alloc_options);
-        tilGpuArenaMb = view.findViewById(R.id.til_gpu_arena_mb);
+        swGpuDynamicVram = view.findViewById(R.id.sw_gpu_dynamic_vram);
+        dynamicVramOptions = view.findViewById(R.id.dynamic_vram_options);
         tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
         etGpuArenaMb = view.findViewById(R.id.et_gpu_arena_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
+        etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
         chooseDisplayOutput = view.findViewById(R.id.choose_display_output);
@@ -113,7 +120,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         });
         // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
         // virgl/2d picks a guest GL/Vulkan translation API.
-        chooseGpuBackend.setOnValueChangedListener((o, n) -> updateGpuApiOptions());
+        chooseGpuBackend.setOnValueChangedListener((o, n) -> {
+            updateGpuApiOptions();
+            updateVramAllocVisibility();
+        });
         chooseGpuBackend.configure(GpuBackend.class, GPU_GFXSTREAM);
         chooseDisplayBackend.configure(DisplayBackend.class, SIMPLEFB);
         chooseDisplayBackend.setOnValueChangedListener((o, n) -> {
@@ -136,12 +146,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             etVncPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
         swVncPasswordAuth.setOnCheckedChangeListener((b, checked) ->
             updateVncPasswordVisibility());
-        swGpuUdmabuf.setOnCheckedChangeListener(() -> {
+        swGpuUdmabuf.setOnCheckedChangeListener(this::updateVramAllocVisibility);
+        swGpuDynamicVram.setOnCheckedChangeListener(() -> {
+            // Refuse to turn on without the mechanism underneath: put the switch back and say
+            // why, instead of letting the VM look configured and fail at save time.
+            if (swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable()) {
+                swGpuDynamicVram.setChecked(false);
+                if (!loadingConfig) showHint(dynamicVramNeedsSharingMessage());
+                return;
+            }
             updateVramAllocVisibility();
-            // Say it here rather than only at save time, while the switch is still under the
-            // user's finger.
-            if (swGpuUdmabuf.isChecked() && !isGunyahDynamicShareEnabled())
-                showHint(dynamicShareRequiredMessage());
         });
         updateGpuVisibility();
         updateDisplayVisibility();
@@ -154,12 +168,24 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
+        loadingConfig = true;
+        try {
+            loadConfigLocked(config);
+        } finally {
+            loadingConfig = false;
+        }
+    }
+
+    private void loadConfigLocked(@NonNull VMConfig config) {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
         etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
+        // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
+        swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
+        etGpuPoolBlobMaxKb.setText(String.valueOf(item.optLong("gpu_pool_blob_max_kb", 4096)));
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
         etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
         etDisplayHeight.setText(String.valueOf(item.optLong("display_height", 720)));
@@ -234,30 +260,40 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuArenaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
         DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
         if (displayOutput == DisplayOutput.VNC
             && !checkInputField(etVncPort, true, 1024, 65535)) return false;
         if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM
             && displayOutput == DisplayOutput.NATIVE)
             return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
-        // Guest-alloc vram hands the host dma-bufs made of guest pages. Only the pre-sized guest
-        // pool is shared at boot; everything the guest allocates beyond it, and every
-        // host-visible blob too large for the host pool, needs dynamic sharing to reach the host.
-        if (swGpuEnabled.isChecked() && swGpuUdmabuf.isChecked()
-            && !isGunyahDynamicShareEnabled())
-            return showValidateFailed(dynamicShareRequiredMessage());
+        // Dynamic vram grows host-visible memory by sharing it at runtime, so it needs the
+        // dynamic-sharing mechanism underneath. (Guest-alloc does not: it hands the host
+        // dma-bufs out of the guest pool, which is shared once at boot.)
+        if (swGpuEnabled.isChecked() && !swGpuUdmabuf.isChecked()
+            && swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable())
+            return showValidateFailed(dynamicVramNeedsSharingMessage());
         return true;
     }
 
-    /** Whether the basic tab's Gunyah dynamic memory sharing switch is currently on. */
-    private boolean isGunyahDynamicShareEnabled() {
-        return parent.get(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, false);
+    /**
+     * Whether runtime memory sharing is usable by this VM. Gunyah needs the host module loaded
+     * and the accept transport attached, which the basic tab's switch turns on; KVM and gzvm
+     * expose it to crosvm directly.
+     */
+    private boolean isDynamicMemorySharingAvailable() {
+        var hypervisor = parent.get("hypervisor", VMHypervisor.DEFAULT);
+        if (hypervisor == VMHypervisor.AUTO)
+            hypervisor = VMHypervisor.findPreferredHypervisor(
+                parent.get("backend", VMBackend.DEFAULT));
+        return hypervisor != VMHypervisor.GUNYAH
+            || parent.get(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, false);
     }
 
-    private CharSequence dynamicShareRequiredMessage() {
+    private CharSequence dynamicVramNeedsSharingMessage() {
         return parent.getString(
             R.string.create_vm_error_needs_gunyah_dynamic_share,
-            parent.getString(R.string.create_vm_gpu_udmabuf));
+            parent.getString(R.string.create_vm_gpu_dynamic_vram));
     }
 
     @Override
@@ -281,6 +317,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_arena_mb", parseInt(getEditText(etGpuArenaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
+            item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
+            item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
         }
         if (displayEnabled) {
             DisplayBackend displayBackend = chooseDisplayBackend.getSelectedItem();
@@ -379,8 +417,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // (gpu_guest_pool_mb); otherwise the host grows a dynamic arena up to gpu_arena_mb.
     // The host pool stays visible in both modes.
     private void updateVramAllocVisibility() {
-        boolean udmabuf = swGpuUdmabuf.isChecked();
+        // All of this is gfxstream's memory plumbing; other renderers have none of it (a kgsl
+        // native context will bring its own pool).
+        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
+        swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
+        vramAllocOptions.setVisibility(gfxstream ? VISIBLE : GONE);
+        // The guest pool belongs to guest-alloc; dynamic vram is the host-alloc alternative
+        // (crosvm ignores a vram limit in guest-alloc mode), so the two never show together.
         tilGpuGuestPoolMb.setVisibility(udmabuf ? VISIBLE : GONE);
-        tilGpuArenaMb.setVisibility(udmabuf ? GONE : VISIBLE);
+        boolean hostAlloc = gfxstream && !udmabuf;
+        swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
+        // Shown whenever host-alloc is in play, not only while the switch is on: the numbers are
+        // what the switch turns on, and hiding them makes the switch look like it does nothing.
+        dynamicVramOptions.setVisibility(hostAlloc ? VISIBLE : GONE);
     }
 }

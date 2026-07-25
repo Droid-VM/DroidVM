@@ -216,7 +216,9 @@
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驱动尚未实现</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">宿主池大小 (MB)</string>
+    <string name="create_vm_gpu_dynamic_vram">启用动态显存</string>
     <string name="create_vm_gpu_dynamic_vram_mb">动态显存上限 (MB)</string>
+    <string name="create_vm_gpu_pool_blob_max_kb">blob 分流阈值 (KB)</string>
     <string name="create_vm_gpu_guest_pool_mb">guest 池大小 (MB)</string>
     <string name="create_vm_gunyah_dynamic_share">启用动态内存共享</string>
     <string name="create_vm_gunyah_hugepage_threshold">大页阈值 (KB)</string>

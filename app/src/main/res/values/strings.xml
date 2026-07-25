@@ -218,7 +218,9 @@
     <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">Host pool size (MB)</string>
+    <string name="create_vm_gpu_dynamic_vram">Dynamic vram</string>
     <string name="create_vm_gpu_dynamic_vram_mb">Dynamic VRAM limit (MB)</string>
+    <string name="create_vm_gpu_pool_blob_max_kb">Blob routing threshold (KB)</string>
     <string name="create_vm_gpu_guest_pool_mb">Guest pool size (MB)</string>
     <string name="create_vm_gunyah_dynamic_share">Dynamic memory sharing</string>
     <string name="create_vm_gunyah_hugepage_threshold">Hugepage threshold (KB)</string>
