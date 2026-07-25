@@ -34,8 +34,9 @@
             android:id="@+id/tab_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:tabGravity="start"
-            app:tabMode="scrollable"
+            app:tabGravity="center"
+            app:tabMinWidth="72dp"
+            app:tabMode="auto"
             tools:ignore="SpeakableTextPresentCheck" />
 
     </com.google.android.material.appbar.AppBarLayout>
