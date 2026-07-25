@@ -176,6 +176,7 @@
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
+    <string name="create_vm_error_needs_gunyah_dynamic_share">"%1$s" needs "Dynamic memory sharing" turned on in the Basic tab.</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>
     <string name="create_vm_initrd_hint">Initrd</string>

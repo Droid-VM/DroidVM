@@ -136,7 +136,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             etVncPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
         swVncPasswordAuth.setOnCheckedChangeListener((b, checked) ->
             updateVncPasswordVisibility());
-        swGpuUdmabuf.setOnCheckedChangeListener(this::updateVramAllocVisibility);
+        swGpuUdmabuf.setOnCheckedChangeListener(() -> {
+            updateVramAllocVisibility();
+            // Say it here rather than only at save time, while the switch is still under the
+            // user's finger.
+            if (swGpuUdmabuf.isChecked() && !isGunyahDynamicShareEnabled())
+                showHint(dynamicShareRequiredMessage());
+        });
         updateGpuVisibility();
         updateDisplayVisibility();
         updateDisplayOutputVisibility();
@@ -234,7 +240,24 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM
             && displayOutput == DisplayOutput.NATIVE)
             return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
+        // Guest-alloc vram hands the host dma-bufs made of guest pages. Only the pre-sized guest
+        // pool is shared at boot; everything the guest allocates beyond it, and every
+        // host-visible blob too large for the host pool, needs dynamic sharing to reach the host.
+        if (swGpuEnabled.isChecked() && swGpuUdmabuf.isChecked()
+            && !isGunyahDynamicShareEnabled())
+            return showValidateFailed(dynamicShareRequiredMessage());
         return true;
+    }
+
+    /** Whether the basic tab's Gunyah dynamic memory sharing switch is currently on. */
+    private boolean isGunyahDynamicShareEnabled() {
+        return parent.get(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, false);
+    }
+
+    private CharSequence dynamicShareRequiredMessage() {
+        return parent.getString(
+            R.string.create_vm_error_needs_gunyah_dynamic_share,
+            parent.getString(R.string.create_vm_gpu_udmabuf));
     }
 
     @Override
