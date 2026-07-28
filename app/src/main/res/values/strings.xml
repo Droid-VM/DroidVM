@@ -214,10 +214,12 @@
     <string name="create_vm_gpu_api_angle">ANGLE</string>
     <string name="create_vm_gpu_api_vulkan_system">Vulkan (System)</string>
     <string name="create_vm_gpu_api_vulkan_turnip">Vulkan (Turnip)</string>
+    <string name="create_vm_gpu_api_kgsl">KGSL (native context)</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
     <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">Host pool size (MB)</string>
+    <string name="create_vm_gpu_kgsl_pool_mb">KGSL pool size (MB)</string>
     <string name="create_vm_gpu_dynamic_vram">Dynamic vram</string>
     <string name="create_vm_gpu_dynamic_vram_mb">Dynamic VRAM limit (MB)</string>
     <string name="create_vm_gpu_pool_blob_max_kb">Blob routing threshold (KB)</string>

@@ -169,6 +169,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             case GUNYAH: {
                 boolean gfxstreamGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
+                boolean kgslGpu = item.optBoolean("gpu_enabled", false)
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
+                    && optEnum(item, "gpu_api", GpuApi.NONE) == GpuApi.KGSL;
                 // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
                 // it follows from --runtime-share / --pre-alloc / --gpu vm-accept below. The old
                 // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
@@ -202,6 +205,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                             preAlloc.append(fmt(",gfx-guest-mb=%d", guestPool));
                         args.add("--pre-alloc");
                         args.add(preAlloc.toString());
+                    }
+                }
+                // KGSL native context: one boot-blessed pool that virglrenderer's kgsl backend
+                // sub-allocates every BO from. Omitting it is valid and falls back to sharing
+                // each BO at runtime, which is slower but works.
+                if (kgslGpu) {
+                    long kgslPool = item.optLong("gpu_kgsl_pool_mb", 0);
+                    if (kgslPool > 0) {
+                        args.add("--pre-alloc");
+                        args.add(fmt("kgsl-mb=%d", kgslPool));
                     }
                 }
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
@@ -460,6 +473,18 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 if (udmabufGpu) {
                     gpuArg.append(",udmabuf=true");
                 }
+            } else if (api == GpuApi.KGSL) {
+                // DRM native context: the guest runs its own turnip over vdrm and virglrenderer
+                // translates the msm protocol to KGSL ioctls, so nothing is remoted at the
+                // GL/VK level and the host exposes no Vulkan capset.
+                //
+                // virgl2 MUST stay in the list. With "drm" alone the virgl renderer is never
+                // initialised (NO_VIRGL) and the very first CREATE_2D comes back
+                // ComponentError(22) -- a black screen with nothing else to go on.
+                gpuArg.append(",context-types=virgl2:drm");
+                gpuArg.append(",vulkan=false,egl=true,gles=true,external-blob=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
             } else {
                 gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
                 switch (api) {

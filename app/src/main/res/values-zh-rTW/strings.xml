@@ -212,10 +212,12 @@
     <string name="create_vm_gpu_api_angle">ANGLE</string>
     <string name="create_vm_gpu_api_vulkan_system">Vulkan(系統原生)</string>
     <string name="create_vm_gpu_api_vulkan_turnip">Vulkan(Turnip)</string>
+    <string name="create_vm_gpu_api_kgsl">KGSL(原生上下文)</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驅動尚未實現</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">host 池大小 (MB)</string>
+    <string name="create_vm_gpu_kgsl_pool_mb">KGSL 池大小 (MB)</string>
     <string name="create_vm_gpu_dynamic_vram">啟用動態顯存</string>
     <string name="create_vm_gpu_dynamic_vram_mb">動態顯存上限 (MB)</string>
     <string name="create_vm_gpu_pool_blob_max_kb">blob 分流閾值 (KB)</string>

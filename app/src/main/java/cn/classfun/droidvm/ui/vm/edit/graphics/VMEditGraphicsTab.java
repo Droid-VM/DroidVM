@@ -41,6 +41,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View vncOptions;
     private View vncPasswordOptions;
     private View vramSettings;
+    private View tilGpuKgslPoolMb;
+    private View tilGpuHostPoolMb;
+    private TextInputEditText etGpuKgslPoolMb;
     private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
@@ -82,6 +85,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuDynamicVram = view.findViewById(R.id.sw_gpu_dynamic_vram);
         dynamicVramOptions = view.findViewById(R.id.dynamic_vram_options);
         tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
+        tilGpuKgslPoolMb = view.findViewById(R.id.til_gpu_kgsl_pool_mb);
+        tilGpuHostPoolMb = view.findViewById(R.id.til_gpu_host_pool_mb);
+        etGpuKgslPoolMb = view.findViewById(R.id.et_gpu_kgsl_pool_mb);
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
         etGpuArenaMb = view.findViewById(R.id.et_gpu_arena_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
@@ -116,10 +122,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                 Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
                     Toast.LENGTH_SHORT).show();
                 chooseGpuApi.setSelectedItem(o instanceof GpuApi ? (GpuApi) o : GpuApi.VULKAN_TURNIP);
+                return;
             }
+            // KGSL is picked here rather than on the backend, so the memory section follows it.
+            updateVramAllocVisibility();
         });
         // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
-        // virgl/2d picks a guest GL/Vulkan translation API.
+        // virgl/2d picks a guest GL/Vulkan translation API or the KGSL native context.
         chooseGpuBackend.setOnValueChangedListener((o, n) -> {
             updateGpuApiOptions();
             updateVramAllocVisibility();
@@ -180,6 +189,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
+        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 1024)));
         etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
@@ -314,6 +324,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_backend", gb);
             item.set("gpu_api", ga);
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
+            item.set("gpu_kgsl_pool_mb", parseInt(getEditText(etGpuKgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_arena_mb", parseInt(getEditText(etGpuArenaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
@@ -356,7 +367,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             chooseGpuApi.setItems(GpuApi.VULKAN_SYSTEM, GpuApi.VULKAN_TURNIP, GpuApi.VULKAN_PANVK);
             chooseGpuApi.setSelectedItem(GpuApi.VULKAN_TURNIP);
         } else {
-            chooseGpuApi.setItems(GpuApi.VULKAN, GpuApi.EGL, GpuApi.OPENGLES, GpuApi.ANGLE);
+            chooseGpuApi.setItems(GpuApi.VULKAN, GpuApi.EGL, GpuApi.OPENGLES, GpuApi.ANGLE,
+                GpuApi.KGSL);
             chooseGpuApi.setSelectedItem(GpuApi.OPENGLES);
         }
     }
@@ -417,11 +429,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // (gpu_guest_pool_mb); otherwise the host grows a dynamic arena up to gpu_arena_mb.
     // The host pool stays visible in both modes.
     private void updateVramAllocVisibility() {
-        // All of this is gfxstream's memory plumbing; other renderers have none of it (a kgsl
-        // native context will bring its own pool).
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        // The KGSL native context has exactly one memory knob: the boot-blessed pool its BOs are
+        // sub-allocated from. None of gfxstream's plumbing applies -- vram-limit and the fusion
+        // size gate are gfxstream-only consumers, and a guest-alloc pool cannot exist at all,
+        // because the msm/vdrm wire only ever asks for host-allocated blobs.
+        boolean kgsl = !gfxstream && chooseGpuApi.getSelectedItem() == GpuApi.KGSL;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
-        vramSettings.setVisibility(gfxstream ? VISIBLE : GONE);
+        vramSettings.setVisibility(gfxstream || kgsl ? VISIBLE : GONE);
+        tilGpuKgslPoolMb.setVisibility(kgsl ? VISIBLE : GONE);
+        swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
+        tilGpuHostPoolMb.setVisibility(gfxstream ? VISIBLE : GONE);
         // The guest pool belongs to guest-alloc; dynamic vram is the host-alloc alternative
         // (crosvm ignores a vram limit in guest-alloc mode), so the two never show together.
         tilGpuGuestPoolMb.setVisibility(udmabuf ? VISIBLE : GONE);

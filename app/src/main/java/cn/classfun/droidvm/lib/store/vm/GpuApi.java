@@ -15,7 +15,12 @@ public enum GpuApi implements StringEnum {
     // Vulkan HAL; TURNIP = bundled Mesa turnip (Adreno); PANVK = Mesa PanVK (Mali) — not yet wired.
     VULKAN_SYSTEM(5, "vulkan-system", R.string.create_vm_gpu_api_vulkan_system),
     VULKAN_TURNIP(6, "vulkan-turnip", R.string.create_vm_gpu_api_vulkan_turnip),
-    VULKAN_PANVK(7, "vulkan-panvk", R.string.create_vm_gpu_api_vulkan_panvk);
+    VULKAN_PANVK(7, "vulkan-panvk", R.string.create_vm_gpu_api_vulkan_panvk),
+    // virglrenderer DRM native context: the guest runs its own turnip over vdrm and
+    // virglrenderer translates the msm protocol to KGSL ioctls. Not a translation API like the
+    // others -- nothing is remoted at the GL/VK level -- but it is the same choice for the user:
+    // how the guest reaches the GPU.
+    KGSL(8, "kgsl", R.string.create_vm_gpu_api_kgsl);
 
     private final int value;
     private final String name;
