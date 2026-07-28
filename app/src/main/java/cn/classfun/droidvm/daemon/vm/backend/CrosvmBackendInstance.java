@@ -473,7 +473,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // initialised (NO_VIRGL) and the very first CREATE_2D comes back
                 // ComponentError(22) -- a black screen with nothing else to go on.
                 gpuArg.append(",context-types=virgl2:drm");
-                gpuArg.append(",vulkan=false,egl=true,gles=true,external-blob=true");
+                // No external-blob: create_gpu_device overwrites it with
+                // `is_sandboxed || fixed_blob_mapping` regardless of what the CLI said, so
+                // passing it would only suggest it does something.
+                gpuArg.append(",vulkan=false,egl=true,gles=true");
                 gpuArg.append(fmt(",pci-bar-size=%d",
                     item.optLong("gpu_pci_bar_size", 0x100000000L)));
             } else {
@@ -486,7 +489,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                         gpuArg.append(",gles=true");
                         break;
                     case ANGLE:
-                        gpuArg.append(",angle=true");
+                        // crosvm has no `angle` --gpu key and rejects unknown ones outright, so
+                        // emitting it would stop the VM from starting. Treat a config that
+                        // still carries ANGLE as GLES, which is what the editor migrates it to.
+                        gpuArg.append(",gles=true");
                         break;
                 }
             }

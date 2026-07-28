@@ -416,7 +416,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (!isVulkanProvider(chooseGpuProvider.getSelectedItem()))
                 chooseGpuProvider.setSelectedItem(GpuProvider.VK_TURNIP);
         } else if (mode == GpuMode.OPENGL) {
-            chooseGpuProvider.setItems(GpuProvider.EGL, GpuProvider.GLES, GpuProvider.ANGLE);
+            chooseGpuProvider.setItems(GpuProvider.EGL, GpuProvider.GLES);
             if (isVulkanProvider(chooseGpuProvider.getSelectedItem())
                 || chooseGpuProvider.getSelectedItem() == GpuProvider.NONE)
                 chooseGpuProvider.setSelectedItem(GpuProvider.GLES);
@@ -433,7 +433,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         switch (provider) {
             case EGL:       return GpuApi.EGL;
             case GLES:      return GpuApi.OPENGLES;
-            case ANGLE:     return GpuApi.ANGLE;
+
             case VK_SYSTEM: return GpuApi.VULKAN_SYSTEM;
             case VK_TURNIP: return GpuApi.VULKAN_TURNIP;
             case VK_PANVK:  return GpuApi.VULKAN_PANVK;
