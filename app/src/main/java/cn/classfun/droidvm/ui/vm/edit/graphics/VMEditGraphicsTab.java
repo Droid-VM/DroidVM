@@ -26,6 +26,8 @@ import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.DisplayOutput;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.GpuMode;
+import cn.classfun.droidvm.lib.store.vm.GpuProvider;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
@@ -56,7 +58,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swVncPasswordAuth;
     private SwitchRowWidget swDisplayEnabled;
     private ChooseRowWidget chooseGpuBackend;
-    private ChooseRowWidget chooseGpuApi;
+    private ChooseRowWidget chooseGpuMode;
+    private ChooseRowWidget chooseGpuProvider;
     private ChooseRowWidget chooseDisplayBackend;
     private ChooseRowWidget chooseDisplayOutput;
     private TextInputEditText etDisplayWidth;
@@ -78,7 +81,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     public void initView() {
         swGpuEnabled = view.findViewById(R.id.sw_gpu_enabled);
         chooseGpuBackend = view.findViewById(R.id.choose_gpu_backend);
-        chooseGpuApi = view.findViewById(R.id.choose_gpu_api);
+        chooseGpuMode = view.findViewById(R.id.choose_gpu_mode);
+        chooseGpuProvider = view.findViewById(R.id.choose_gpu_provider);
         gpuOptions = view.findViewById(R.id.gpu_options);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
         vramSettings = view.findViewById(R.id.vram_settings);
@@ -117,20 +121,26 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuEnabled.setOnCheckedChangeListener(this::updateGpuVisibility);
         swDisplayEnabled.setOnCheckedChangeListener(this::updateDisplayVisibility);
         // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
-        chooseGpuApi.setOnValueChangedListener((o, n) -> {
-            if (n == GpuApi.VULKAN_PANVK) {
+        // Acceleration decides which host drivers make sense and which memory knobs exist,
+        // so it drives both of the rows under it.
+        chooseGpuMode.setOnValueChangedListener((o, n) -> {
+            updateGpuProviderOptions();
+            updateVramAllocVisibility();
+        });
+        // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
+        chooseGpuProvider.setOnValueChangedListener((o, n) -> {
+            if (n == GpuProvider.VK_PANVK) {
                 Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
                     Toast.LENGTH_SHORT).show();
-                chooseGpuApi.setSelectedItem(o instanceof GpuApi ? (GpuApi) o : GpuApi.VULKAN_TURNIP);
-                return;
+                chooseGpuProvider.setSelectedItem(
+                    o instanceof GpuProvider ? (GpuProvider) o : GpuProvider.VK_TURNIP);
             }
-            // KGSL is picked here rather than on the backend, so the memory section follows it.
-            updateVramAllocVisibility();
         });
         // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
         // virgl/2d picks a guest GL/Vulkan translation API or the KGSL native context.
         chooseGpuBackend.setOnValueChangedListener((o, n) -> {
-            updateGpuApiOptions();
+            updateGpuModeOptions();
+            updateGpuProviderOptions();
             updateVramAllocVisibility();
         });
         chooseGpuBackend.configure(GpuBackend.class, GPU_GFXSTREAM);
@@ -166,6 +176,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             }
             updateVramAllocVisibility();
         });
+        // The backend chooser's configure() above does not fire its listener, so seed the two
+        // rows under it before the first paint; loadConfig() then restores over the top.
+        updateGpuModeOptions();
+        updateGpuProviderOptions();
+        updateVramAllocVisibility();
         updateGpuVisibility();
         updateDisplayVisibility();
         updateDisplayOutputVisibility();
@@ -207,17 +222,27 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var vncPort = item.optLong("vnc_port", -1);
         etVncPort.setText(vncPort > 0 ? String.valueOf(vncPort) : "");
         etVncPassword.setText(item.optString("vnc_password", ""));
-        var gpuApi = optEnum(item, "gpu_api", GpuApi.NONE);
         var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
         var displayBackend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        // Backend first: its listener rebuilds the API option set (and a default).
+        // Configs written before acceleration and host driver were separate rows carry a single
+        // gpu_api whose meaning depended on the renderer. Derive both from it when the new keys
+        // are absent; gpu_api is left in place, so an older build still reads the VM.
+        var legacyApi = optEnum(item, "gpu_api", GpuApi.NONE);
+        var gpuMode = optEnum(item, "gpu_mode", GpuMode.NONE);
+        var gpuProvider = optEnum(item, "gpu_provider", GpuProvider.NONE);
+        if (gpuMode == GpuMode.NONE) gpuMode = GpuMode.fromLegacyApi(legacyApi);
+        if (gpuProvider == GpuProvider.NONE) gpuProvider = GpuProvider.fromLegacyApi(legacyApi);
+        // Backend first: its listener rebuilds the option sets below it (and their defaults).
         if (gpuBackend != GpuBackend.NONE)
             chooseGpuBackend.setSelectedItem(gpuBackend);
-        // Restore the saved API only if it belongs to the current backend's family;
-        // otherwise keep the default that updateGpuApiOptions() just picked.
+        // Restore each saved choice only if the backend still offers it; otherwise keep the
+        // default updateGpuModeOptions()/updateGpuProviderOptions() just picked.
         boolean gfx = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        if (gpuApi != GpuApi.NONE && gfx == isGfxstreamApi(gpuApi))
-            chooseGpuApi.setSelectedItem(gpuApi);
+        if (gpuMode != GpuMode.NONE && (gfx == (gpuMode == GpuMode.VULKAN)))
+            chooseGpuMode.setSelectedItem(gpuMode);
+        updateGpuProviderOptions();
+        if (gpuProvider != GpuProvider.NONE && gfx == isVulkanProvider(gpuProvider))
+            chooseGpuProvider.setSelectedItem(gpuProvider);
         if (displayBackend != DisplayBackend.NONE)
             chooseDisplayBackend.setSelectedItem(displayBackend);
         // The output side is UI-only: derive the single choice from the two persisted booleans.
@@ -320,9 +345,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         item.set("vnc_enabled", vncEnabled);
         if (gpuEnabled) {
             GpuBackend gb = chooseGpuBackend.getSelectedItem();
-            GpuApi ga = chooseGpuApi.getSelectedItem();
+            GpuMode gm = chooseGpuMode.getSelectedItem();
+            GpuProvider gp = chooseGpuProvider.getSelectedItem();
             item.set("gpu_backend", gb);
-            item.set("gpu_api", ga);
+            item.set("gpu_mode", gm);
+            item.set("gpu_provider", gp);
+            // Keep gpu_api written too: the daemon and an older build still read it, and it is
+            // exactly recoverable from the pair.
+            item.set("gpu_api", toLegacyApi(gm, gp));
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
             item.set("gpu_kgsl_pool_mb", parseInt(getEditText(etGpuKgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
@@ -355,22 +385,65 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         }
     }
 
-    private static boolean isGfxstreamApi(GpuApi a) {
-        return a == GpuApi.VULKAN_SYSTEM || a == GpuApi.VULKAN_TURNIP || a == GpuApi.VULKAN_PANVK;
+    // What the selected renderer can actually proxy.
+    //
+    // gfxstream is Vulkan-only here (its GLES and composer capsets are not used, and the guest
+    // reaches GL through zink on top of Vulkan). virglrenderer offers OpenGL (capset virgl2)
+    // and Native (capset drm). Its third mode, Vulkan via venus, is deliberately absent: this
+    // build's libvirglrenderer.so has no venus symbols at all, so offering it could only
+    // produce a VM that fails to start.
+    private void updateGpuModeOptions() {
+        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        if (gfxstream) {
+            chooseGpuMode.setItems(GpuMode.VULKAN);
+            chooseGpuMode.setSelectedItem(GpuMode.VULKAN);
+        } else {
+            chooseGpuMode.setItems(GpuMode.OPENGL, GpuMode.NATIVE);
+            Object cur = chooseGpuMode.getSelectedItem();
+            if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE)
+                chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
+        }
     }
 
-    // Rebuild the GPU API options to match the selected backend. gfxstream selects a host
-    // Vulkan driver (System / Turnip / PanVK; Qualcomm defaults to Turnip); virgl/2d selects a
-    // guest translation API (Vulkan / EGL / OpenGL ES / ANGLE).
-    private void updateGpuApiOptions() {
-        if (chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM) {
-            chooseGpuApi.setItems(GpuApi.VULKAN_SYSTEM, GpuApi.VULKAN_TURNIP, GpuApi.VULKAN_PANVK);
-            chooseGpuApi.setSelectedItem(GpuApi.VULKAN_TURNIP);
-        } else {
-            chooseGpuApi.setItems(GpuApi.VULKAN, GpuApi.EGL, GpuApi.OPENGLES, GpuApi.ANGLE,
-                GpuApi.KGSL);
-            chooseGpuApi.setSelectedItem(GpuApi.OPENGLES);
+    // Which host driver serves the proxied calls. Native has none -- the DRM backend is
+    // compiled into virglrenderer for the device it runs on (KGSL on Adreno).
+    private void updateGpuProviderOptions() {
+        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        GpuMode mode = chooseGpuMode.getSelectedItem();
+        if (gfxstream) {
+            chooseGpuProvider.setItems(
+                GpuProvider.VK_SYSTEM, GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK);
+            if (!isVulkanProvider(chooseGpuProvider.getSelectedItem()))
+                chooseGpuProvider.setSelectedItem(GpuProvider.VK_TURNIP);
+        } else if (mode == GpuMode.OPENGL) {
+            chooseGpuProvider.setItems(GpuProvider.EGL, GpuProvider.GLES, GpuProvider.ANGLE);
+            if (isVulkanProvider(chooseGpuProvider.getSelectedItem())
+                || chooseGpuProvider.getSelectedItem() == GpuProvider.NONE)
+                chooseGpuProvider.setSelectedItem(GpuProvider.GLES);
         }
+        chooseGpuProvider.setVisibility(gfxstream || mode == GpuMode.OPENGL ? VISIBLE : GONE);
+    }
+
+    // The single value the daemon still reads. Every (mode, provider) pair the UI can produce
+    // maps onto one of the old names, so nothing is lost by keeping both written.
+    @NonNull
+    private static GpuApi toLegacyApi(GpuMode mode, GpuProvider provider) {
+        if (mode == GpuMode.NATIVE) return GpuApi.KGSL;
+        if (provider == null) return GpuApi.NONE;
+        switch (provider) {
+            case EGL:       return GpuApi.EGL;
+            case GLES:      return GpuApi.OPENGLES;
+            case ANGLE:     return GpuApi.ANGLE;
+            case VK_SYSTEM: return GpuApi.VULKAN_SYSTEM;
+            case VK_TURNIP: return GpuApi.VULKAN_TURNIP;
+            case VK_PANVK:  return GpuApi.VULKAN_PANVK;
+            default:        return mode == GpuMode.VULKAN ? GpuApi.VULKAN : GpuApi.NONE;
+        }
+    }
+
+    private static boolean isVulkanProvider(Object p) {
+        return p == GpuProvider.VK_SYSTEM || p == GpuProvider.VK_TURNIP
+            || p == GpuProvider.VK_PANVK;
     }
 
     // Both display producers can present into the app's Surface: virtio-gpu hands over its
@@ -434,7 +507,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // sub-allocated from. None of gfxstream's plumbing applies -- vram-limit and the fusion
         // size gate are gfxstream-only consumers, and a guest-alloc pool cannot exist at all,
         // because the msm/vdrm wire only ever asks for host-allocated blobs.
-        boolean kgsl = !gfxstream && chooseGpuApi.getSelectedItem() == GpuApi.KGSL;
+        boolean kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
         vramSettings.setVisibility(gfxstream || kgsl ? VISIBLE : GONE);
         tilGpuKgslPoolMb.setVisibility(kgsl ? VISIBLE : GONE);

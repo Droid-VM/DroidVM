@@ -32,12 +32,23 @@
                 android:icon="@drawable/ic_drawing"
                 android:text="@string/create_vm_gpu_backend" />
 
+            <!-- The two axes rutabaga actually has, in order: what gets proxied (the capset /
+                 context type), then which host driver serves it. The old single "GPU API" row
+                 conflated them, so its options meant three different things depending on the
+                 renderer above. -->
             <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                android:id="@+id/choose_gpu_api"
+                android:id="@+id/choose_gpu_mode"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:icon="@drawable/ic_application_cog"
-                android:text="@string/create_vm_gpu_api" />
+                android:text="@string/create_vm_gpu_mode" />
+
+            <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+                android:id="@+id/choose_gpu_provider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_memory"
+                android:text="@string/create_vm_gpu_provider" />
 
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:id="@+id/vram_settings"
