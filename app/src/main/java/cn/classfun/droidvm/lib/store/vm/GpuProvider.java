@@ -22,10 +22,13 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  */
 public enum GpuProvider implements StringEnum {
     NONE(0, "none", R.string.nullptr),
-    // Host GL, for virglrenderer's OpenGL mode. Passed through as --gpu egl=/gles=/angle=.
+    // Host GL, for virglrenderer's OpenGL mode. Passed through as --gpu egl= / gles=.
+    //
+    // There is deliberately no ANGLE. GpuParameters carries no `angle` field and is declared
+    // #[serde(deny_unknown_fields)], so `--gpu ...,angle=true` does not enable anything -- it
+    // makes crosvm reject the whole --gpu argument and the VM never starts.
     EGL(1, "egl", R.string.create_vm_gpu_api_egl),
     GLES(2, "gles", R.string.create_vm_gpu_api_opengles),
-    ANGLE(3, "angle", R.string.create_vm_gpu_api_angle),
     // Host Vulkan, for gfxstream. Selects ANDROID_EMU_VK_LOADER_PATH: the SoC's stock Vulkan
     // HAL, the bundled Mesa turnip (Adreno), or Mesa PanVK (Mali) -- PanVK is not wired yet.
     VK_SYSTEM(4, "vulkan-system", R.string.create_vm_gpu_api_vulkan_system),
@@ -58,7 +61,9 @@ public enum GpuProvider implements StringEnum {
         switch (api) {
             case EGL:           return EGL;
             case OPENGLES:      return GLES;
-            case ANGLE:         return ANGLE;
+            // A saved ANGLE could never have booted (see above); land it on GLES rather than
+            // carrying a value that only fails.
+            case ANGLE:         return GLES;
             case VULKAN_SYSTEM: return VK_SYSTEM;
             case VULKAN_TURNIP: return VK_TURNIP;
             case VULKAN_PANVK:  return VK_PANVK;
