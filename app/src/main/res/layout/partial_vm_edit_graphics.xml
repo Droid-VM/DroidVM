@@ -147,15 +147,15 @@
                     android:orientation="vertical">
 
                     <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_arena_mb"
+                        android:id="@+id/til_gpu_vram_quota_mb"
                         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:hint="@string/create_vm_gpu_dynamic_vram_mb">
+                        android:hint="@string/create_vm_gpu_vram_quota_mb">
 
                         <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_arena_mb"
+                            android:id="@+id/et_gpu_vram_quota_mb"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:inputType="number"
