@@ -64,7 +64,7 @@ public enum GpuMode implements StringEnum {
             case VULKAN_TURNIP:
             case VULKAN_PANVK:
                 return VULKAN;
-            case KGSL:
+            case DRM2KGSL:
                 return NATIVE;
             default:
                 return NONE;

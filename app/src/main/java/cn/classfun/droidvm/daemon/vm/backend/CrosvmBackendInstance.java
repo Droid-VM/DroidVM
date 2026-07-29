@@ -169,7 +169,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             case GUNYAH: {
                 boolean gfxstreamGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
-                boolean kgslGpu = item.optBoolean("gpu_enabled", false)
+                boolean drm2kgslGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
                     && effectiveGpuMode(item) == GpuMode.NATIVE;
                 // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
@@ -216,8 +216,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // The guest pool needs udmabuf=true as well; that is what gates
                 // VIRTIO_GPU_F_CREATE_GUEST_HANDLE, and without it guest mesa silently keeps a
                 // host-allocating path this host no longer implements.
-                if (kgslGpu) {
-                    long drmHostPool = item.optLong("gpu_kgsl_pool_mb", 0);
+                if (drm2kgslGpu) {
+                    long drmHostPool = item.optLong("gpu_drm2kgsl_pool_mb", 0);
                     long guestPool = item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
@@ -427,7 +427,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * <p>Configs written before that split carry only {@code gpu_api}, whose meaning depended on
      * the renderer, so fall back to the same migration the editor shows. Reading {@code gpu_api}
      * directly is what this replaces: a VM configured through the new rows stores
-     * {@code gpu_mode=native} and no longer sets {@code gpu_api=kgsl}, so the KGSL branch below
+     * {@code gpu_mode=native} and no longer sets {@code gpu_api=drm2kgsl}, so the drm2kgsl branch below
      * would silently not fire and the VM would come up without context-types=virgl2:drm.
      */
     @NonNull

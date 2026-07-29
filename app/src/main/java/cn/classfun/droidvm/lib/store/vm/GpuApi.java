@@ -20,7 +20,7 @@ public enum GpuApi implements StringEnum {
     // virglrenderer translates the msm protocol to KGSL ioctls. Not a translation API like the
     // others -- nothing is remoted at the GL/VK level -- but it is the same choice for the user:
     // how the guest reaches the GPU.
-    KGSL(8, "kgsl", R.string.create_vm_gpu_api_kgsl);
+    DRM2KGSL(8, "drm2kgsl", R.string.create_vm_gpu_api_drm2kgsl);
 
     private final int value;
     private final String name;
