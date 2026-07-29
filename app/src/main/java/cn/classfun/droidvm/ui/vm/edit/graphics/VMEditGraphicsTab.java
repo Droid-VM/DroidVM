@@ -43,9 +43,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View vncOptions;
     private View vncPasswordOptions;
     private View vramSettings;
-    private View tilGpuKgslPoolMb;
+    private View tilGpuDrm2KgslPoolMb;
     private View tilGpuHostPoolMb;
-    private TextInputEditText etGpuKgslPoolMb;
+    private TextInputEditText etGpuDrm2KgslPoolMb;
     private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
@@ -89,9 +89,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuDynamicVram = view.findViewById(R.id.sw_gpu_dynamic_vram);
         dynamicVramOptions = view.findViewById(R.id.dynamic_vram_options);
         tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
-        tilGpuKgslPoolMb = view.findViewById(R.id.til_gpu_kgsl_pool_mb);
+        tilGpuDrm2KgslPoolMb = view.findViewById(R.id.til_gpu_drm2kgsl_pool_mb);
         tilGpuHostPoolMb = view.findViewById(R.id.til_gpu_host_pool_mb);
-        etGpuKgslPoolMb = view.findViewById(R.id.et_gpu_kgsl_pool_mb);
+        etGpuDrm2KgslPoolMb = view.findViewById(R.id.et_gpu_drm2kgsl_pool_mb);
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
         etGpuVramQuotaMb = view.findViewById(R.id.et_gpu_vram_quota_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
@@ -148,7 +148,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             }
         });
         // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
-        // virgl/2d picks a guest GL/Vulkan translation API or the KGSL native context.
+        // virgl/2d picks a guest GL/Vulkan translation API or the drm2kgsl native context.
         chooseGpuBackend.setOnValueChangedListener((o, n) -> {
             updateGpuModeOptions();
             updateGpuProviderOptions();
@@ -220,7 +220,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The DRM route's host pool holds only the per-context msm shmem rings: 16 KiB each,
         // 192 KiB measured across a desktop plus Minecraft, on top of the 2 MiB the RM base guard
         // takes at the head of the pool. 8 MiB is room for ~380 contexts.
-        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 8)));
+        etGpuDrm2KgslPoolMb.setText(String.valueOf(item.optLong("gpu_drm2kgsl_pool_mb", 8)));
         // gfxstream's holds its ASG rings, one per guest context, at 1036 KiB each -- a desktop
         // plus Minecraft was 16 of them, 18.2 MiB including the guard. 64 MiB is room for ~61
         // contexts, and this is mlocked physical memory, so the spare is not free.
@@ -380,7 +380,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // exactly recoverable from the pair.
             item.set("gpu_api", toLegacyApi(gm, gp));
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
-            item.set("gpu_kgsl_pool_mb", parseInt(getEditText(etGpuKgslPoolMb)));
+            item.set("gpu_drm2kgsl_pool_mb", parseInt(getEditText(etGpuDrm2KgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
@@ -462,8 +462,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         } else if (mode == GpuMode.NATIVE) {
             // One backend today, but the row stays: it is what makes the config say WHICH DRM
             // driver the host answers with, and it is the key the launcher branches on.
-            chooseGpuProvider.setItems(GpuProvider.DRM_KGSL);
-            chooseGpuProvider.setSelectedItem(GpuProvider.DRM_KGSL);
+            chooseGpuProvider.setItems(GpuProvider.DRM2KGSL);
+            chooseGpuProvider.setSelectedItem(GpuProvider.DRM2KGSL);
         }
         chooseGpuProvider.setVisibility(
             gfxstream || mode == GpuMode.OPENGL || mode == GpuMode.NATIVE ? VISIBLE : GONE);
@@ -473,7 +473,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // maps onto one of the old names, so nothing is lost by keeping both written.
     @NonNull
     private static GpuApi toLegacyApi(GpuMode mode, GpuProvider provider) {
-        if (mode == GpuMode.NATIVE) return GpuApi.KGSL;
+        if (mode == GpuMode.NATIVE) return GpuApi.DRM2KGSL;
         if (provider == null) return GpuApi.NONE;
         switch (provider) {
             case EGL:       return GpuApi.EGL;
@@ -552,16 +552,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The DRM native context has two: a guest pool every BO is allocated from, and a small
         // host pool left holding only the per-context msm shmem rings. None of gfxstream's other
         // plumbing applies -- vram-limit and the fusion size gate have gfxstream-only consumers.
-        boolean kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
+        boolean drm2kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
-        vramSettings.setVisibility(gfxstream || kgsl ? VISIBLE : GONE);
-        tilGpuKgslPoolMb.setVisibility(kgsl ? VISIBLE : GONE);
+        vramSettings.setVisibility(gfxstream || drm2kgsl ? VISIBLE : GONE);
+        tilGpuDrm2KgslPoolMb.setVisibility(drm2kgsl ? VISIBLE : GONE);
         swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
         tilGpuHostPoolMb.setVisibility(gfxstream ? VISIBLE : GONE);
         // The guest-allocated pool is the same region and the same flag for both renderers -- the
         // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
         // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
-        tilGpuGuestPoolMb.setVisibility(udmabuf || kgsl ? VISIBLE : GONE);
+        tilGpuGuestPoolMb.setVisibility(udmabuf || drm2kgsl ? VISIBLE : GONE);
         boolean hostAlloc = gfxstream && !udmabuf;
         swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
         dynamicVramOptions.setVisibility(
