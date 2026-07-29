@@ -124,6 +124,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // Acceleration decides which host drivers make sense and which memory knobs exist,
         // so it drives both of the rows under it.
         chooseGpuMode.setOnValueChangedListener((o, n) -> {
+            // Vulkan on virglrenderer means venus, which is not compiled into this build --
+            // selecting it would produce a VM with a capset nothing serves. Same treatment as
+            // PanVK below: say so and put the row back.
+            if (n == GpuMode.VULKAN
+                && chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER) {
+                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
+                    Toast.LENGTH_SHORT).show();
+                chooseGpuMode.setSelectedItem(
+                    o instanceof GpuMode && o != GpuMode.VULKAN ? (GpuMode) o : GpuMode.OPENGL);
+                return;
+            }
             updateGpuProviderOptions();
             updateVramAllocVisibility();
         });
@@ -204,8 +215,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
-        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 1024)));
-        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
+        // Host pools hold what the host itself allocates, which since guest-alloc is not much:
+        // gfxstream's ASG rings and scanout, or the DRM route's per-context msm shmem rings at
+        // 16 KiB each. Both were sized for BO backing they no longer carry.
+        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 64)));
+        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 64)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
@@ -393,23 +407,36 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // build's libvirglrenderer.so has no venus symbols at all, so offering it could only
     // produce a VM that fails to start.
     private void updateGpuModeOptions() {
-        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        if (gfxstream) {
+        var backend = chooseGpuBackend.getSelectedItem();
+        if (backend == GPU_GFXSTREAM) {
+            // gfxstream proxies Vulkan and nothing else here.
             chooseGpuMode.setItems(GpuMode.VULKAN);
             chooseGpuMode.setSelectedItem(GpuMode.VULKAN);
-        } else {
-            chooseGpuMode.setItems(GpuMode.OPENGL, GpuMode.NATIVE);
+        } else if (backend == GpuBackend.GPU_VIRGLRENDERER) {
+            // Venus is listed but not compiled into this build; selecting it toasts and reverts,
+            // the same treatment PanVK gets one row down.
+            chooseGpuMode.setItems(GpuMode.OPENGL, GpuMode.VULKAN, GpuMode.NATIVE);
             Object cur = chooseGpuMode.getSelectedItem();
             if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE)
                 chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
+        } else {
+            // 2D has no acceleration to choose and no host driver to serve it.
+            chooseGpuMode.setItems();
         }
     }
 
     // Which host driver serves the proxied calls. Native has none -- the DRM backend is
     // compiled into virglrenderer for the device it runs on (KGSL on Adreno).
     private void updateGpuProviderOptions() {
-        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        var backend = chooseGpuBackend.getSelectedItem();
+        boolean gfxstream = backend == GPU_GFXSTREAM;
+        boolean twoD = backend != GPU_GFXSTREAM && backend != GpuBackend.GPU_VIRGLRENDERER;
         GpuMode mode = chooseGpuMode.getSelectedItem();
+        if (twoD) {
+            chooseGpuProvider.setItems();
+            chooseGpuProvider.setVisibility(GONE);
+            return;
+        }
         if (gfxstream) {
             chooseGpuProvider.setItems(
                 GpuProvider.VK_SYSTEM, GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK);
