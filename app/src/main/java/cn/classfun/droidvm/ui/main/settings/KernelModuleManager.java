@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.lib.utils.RunUtils;
@@ -32,6 +33,16 @@ public final class KernelModuleManager {
     // Leading major.minor of `uname -r` (e.g. "6.6.30-android15-..." -> "6.6"), matched against the
     // KMI dir names ("android15-6.6", "android16-6.12") to pick the right build for this kernel.
     private static final Pattern KVER = Pattern.compile("^(\\d+\\.\\d+)");
+
+    /**
+     * Modules seen loaded on this device this session -- the gate on arming autostart.
+     *
+     * Deliberately in memory only. It is a hint, not a setting: the point is that a module must
+     * have demonstrably loaded before it is put in the daemon's startup path, and a fresh process
+     * can re-establish that for free from /proc/modules (see list()). Persisting it would outlive
+     * the kernel it was true for -- an OTA changes the KMI and the claim silently stops holding.
+     */
+    private static final Set<String> VERIFIED = ConcurrentHashMap.newKeySet();
 
     private KernelModuleManager() {
     }
@@ -99,7 +110,10 @@ public final class KernelModuleManager {
         for (var ko : kos) {
             String base = ko.getName().substring(0, ko.getName().length() - 3);
             String name = base.replace('-', '_'); // /proc/modules uses underscores
-            out.add(new Module(name, ko.getAbsolutePath(), loaded.contains(name)));
+            boolean isLoaded = loaded.contains(name);
+            // Already loaded -- however it got there, autostart is answerable for it now.
+            if (isLoaded) VERIFIED.add(name);
+            out.add(new Module(name, ko.getAbsolutePath(), isLoaded));
         }
         return out;
     }
@@ -107,6 +121,23 @@ public final class KernelModuleManager {
     /** {@code insmod} the module; true on success. */
     public static boolean load(@NonNull String path) {
         return RunUtils.run("insmod %s", RunUtils.escapedString(path)).isSuccess();
+    }
+
+    /**
+     * {@code insmod} and, on success, record that this module loads on this device -- which is
+     * what {@link #setAutostart} requires before it will arm one. Use this for user-initiated
+     * loads; {@link #applyAutostart} deliberately does not, since a module can only get there by
+     * having been verified already.
+     */
+    public static boolean loadAndVerify(@NonNull Module mod) {
+        if (!load(mod.path)) return false;
+        VERIFIED.add(mod.name);
+        return true;
+    }
+
+    /** Has this module been seen loaded this session? Arming autostart requires it. */
+    public static boolean isVerified(@NonNull String name) {
+        return VERIFIED.contains(name);
     }
 
     /** {@code rmmod} the module by name; true on success. */
@@ -131,11 +162,18 @@ public final class KernelModuleManager {
         return autostartSet(ctx).contains(name);
     }
 
-    public static void setAutostart(@NonNull Context ctx, @NonNull String name, boolean enabled) {
+    /**
+     * Arm or disarm autostart. Arming is refused for a module that has never loaded here: the
+     * caller is expected to have greyed the control out, and this is the backstop that keeps an
+     * unverified module out of the boot path regardless. Returns false when refused.
+     */
+    public static boolean setAutostart(@NonNull Context ctx, @NonNull String name, boolean enabled) {
+        if (enabled && !isVerified(name)) return false;
         var set = autostartSet(ctx);
         if (enabled) set.add(name);
         else set.remove(name);
         prefs(ctx).edit().putStringSet(KEY_AUTOSTART, set).apply();
+        return true;
     }
 
     /**

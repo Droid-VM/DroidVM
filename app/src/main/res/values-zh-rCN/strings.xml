@@ -1160,7 +1160,8 @@
     <string name="kernel_module_unloaded">未加载</string>
     <string name="kernel_module_load">加载</string>
     <string name="kernel_module_unload">卸载</string>
-    <string name="kernel_module_autostart">开机自动加载</string>
+    <string name="kernel_module_autostart">随守护进程自动加载</string>
+    <string name="kernel_module_autostart_needs_load">请先手动加载一次 — 只有在本机成功加载过的模块才能开启自动加载</string>
     <string name="kernel_module_working">执行中…</string>
     <string name="kernel_module_ok">完成</string>
     <string name="kernel_module_fail">失败</string>

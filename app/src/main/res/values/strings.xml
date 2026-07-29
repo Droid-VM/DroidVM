@@ -1197,7 +1197,8 @@
     <string name="kernel_module_unloaded">Not loaded</string>
     <string name="kernel_module_load">Load</string>
     <string name="kernel_module_unload">Unload</string>
-    <string name="kernel_module_autostart">Auto-load</string>
+    <string name="kernel_module_autostart">Load with daemon</string>
+    <string name="kernel_module_autostart_needs_load">Load it once first — auto-load is only offered for a module that has loaded on this device</string>
     <string name="kernel_module_working">Working…</string>
     <string name="kernel_module_ok">Done</string>
     <string name="kernel_module_fail">Failed</string>
