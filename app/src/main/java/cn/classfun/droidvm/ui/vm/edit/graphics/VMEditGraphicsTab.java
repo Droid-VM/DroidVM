@@ -509,19 +509,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // The host pool stays visible in both modes.
     private void updateVramAllocVisibility() {
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        // The KGSL native context has exactly one memory knob: the boot-blessed pool its BOs are
-        // sub-allocated from. None of gfxstream's plumbing applies -- vram-limit and the fusion
-        // size gate are gfxstream-only consumers, and a guest-alloc pool cannot exist at all,
-        // because the msm/vdrm wire only ever asks for host-allocated blobs.
+        // The DRM native context has two: a guest pool every BO is allocated from, and a small
+        // host pool left holding only the per-context msm shmem rings. None of gfxstream's other
+        // plumbing applies -- vram-limit and the fusion size gate have gfxstream-only consumers.
         boolean kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
         vramSettings.setVisibility(gfxstream || kgsl ? VISIBLE : GONE);
         tilGpuKgslPoolMb.setVisibility(kgsl ? VISIBLE : GONE);
         swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
         tilGpuHostPoolMb.setVisibility(gfxstream ? VISIBLE : GONE);
-        // The guest pool belongs to guest-alloc; dynamic vram is the host-alloc alternative
-        // (crosvm ignores a vram limit in guest-alloc mode), so the two never show together.
-        tilGpuGuestPoolMb.setVisibility(udmabuf ? VISIBLE : GONE);
+        // The guest-allocated pool is the same region and the same flag for both renderers -- the
+        // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
+        // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
+        tilGpuGuestPoolMb.setVisibility(udmabuf || kgsl ? VISIBLE : GONE);
         boolean hostAlloc = gfxstream && !udmabuf;
         swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
         dynamicVramOptions.setVisibility(
