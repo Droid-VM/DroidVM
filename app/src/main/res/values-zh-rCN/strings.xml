@@ -213,8 +213,8 @@
     <string name="create_vm_gpu_api_vulkan_system">Vulkan(系统原生)</string>
     <string name="create_vm_gpu_api_vulkan_turnip">Vulkan(Turnip)</string>
     <string name="create_vm_gpu_api_kgsl">KGSL(原生上下文)</string>
-    <string name="create_vm_gpu_mode_opengl">OpenGL(代理 GL 调用)</string>
-    <string name="create_vm_gpu_mode_vulkan">Vulkan(代理 Vulkan 调用)</string>
+    <string name="create_vm_gpu_mode_opengl">OpenGL</string>
+    <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
     <string name="create_vm_gpu_mode_native">Native Context</string>
     <string name="create_vm_gpu_provider_drm_kgsl">DRM to KGSL</string>
     <string name="create_vm_gpu_mode">图形 API</string>
