@@ -420,8 +420,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (isVulkanProvider(chooseGpuProvider.getSelectedItem())
                 || chooseGpuProvider.getSelectedItem() == GpuProvider.NONE)
                 chooseGpuProvider.setSelectedItem(GpuProvider.GLES);
+        } else if (mode == GpuMode.NATIVE) {
+            // One backend today, but the row stays: it is what makes the config say WHICH DRM
+            // driver the host answers with, and it is the key the launcher branches on.
+            chooseGpuProvider.setItems(GpuProvider.DRM_KGSL);
+            chooseGpuProvider.setSelectedItem(GpuProvider.DRM_KGSL);
         }
-        chooseGpuProvider.setVisibility(gfxstream || mode == GpuMode.OPENGL ? VISIBLE : GONE);
+        chooseGpuProvider.setVisibility(
+            gfxstream || mode == GpuMode.OPENGL || mode == GpuMode.NATIVE ? VISIBLE : GONE);
     }
 
     // The single value the daemon still reads. Every (mode, provider) pair the UI can produce

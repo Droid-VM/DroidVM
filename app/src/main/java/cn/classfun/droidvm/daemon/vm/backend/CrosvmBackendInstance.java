@@ -39,6 +39,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
+import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
@@ -170,7 +171,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
                 boolean kgslGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
-                    && optEnum(item, "gpu_api", GpuApi.NONE) == GpuApi.KGSL;
+                    && effectiveGpuMode(item) == GpuMode.NATIVE;
                 // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
                 // it follows from --runtime-share / --pre-alloc / --gpu vm-accept below. The old
                 // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
@@ -405,6 +406,23 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return hypervisor == VMHypervisor.GUNYAH;
     }
 
+    /**
+     * What the guest hands to the host: the {@code gpu_mode} row of the editor's three-level
+     * GPU section (renderer / mode / provider).
+     *
+     * <p>Configs written before that split carry only {@code gpu_api}, whose meaning depended on
+     * the renderer, so fall back to the same migration the editor shows. Reading {@code gpu_api}
+     * directly is what this replaces: a VM configured through the new rows stores
+     * {@code gpu_mode=native} and no longer sets {@code gpu_api=kgsl}, so the KGSL branch below
+     * would silently not fire and the VM would come up without context-types=virgl2:drm.
+     */
+    @NonNull
+    private static GpuMode effectiveGpuMode(@NonNull DataItem item) {
+        var mode = optEnum(item, "gpu_mode", GpuMode.NONE);
+        if (mode != GpuMode.NONE) return mode;
+        return GpuMode.fromLegacyApi(optEnum(item, "gpu_api", GpuApi.NONE));
+    }
+
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);
@@ -464,7 +482,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 if (udmabufGpu) {
                     gpuArg.append(",udmabuf=true");
                 }
-            } else if (api == GpuApi.KGSL) {
+            } else if (effectiveGpuMode(item) == GpuMode.NATIVE) {
                 // DRM native context: the guest runs its own turnip over vdrm and virglrenderer
                 // translates the msm protocol to KGSL ioctls, so nothing is remoted at the
                 // GL/VK level and the host exposes no Vulkan capset.

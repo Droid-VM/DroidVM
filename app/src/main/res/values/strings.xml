@@ -218,6 +218,7 @@
     <string name="create_vm_gpu_mode_opengl">OpenGL (proxy GL calls)</string>
     <string name="create_vm_gpu_mode_vulkan">Vulkan (proxy Vulkan calls)</string>
     <string name="create_vm_gpu_mode_native">Native (proxy ioctls only)</string>
+    <string name="create_vm_gpu_provider_drm_kgsl">DRM to KGSL</string>
     <string name="create_vm_gpu_mode">Acceleration</string>
     <string name="create_vm_gpu_provider">Host driver</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
