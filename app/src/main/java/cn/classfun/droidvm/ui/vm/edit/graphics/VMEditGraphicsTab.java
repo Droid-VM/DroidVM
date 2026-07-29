@@ -51,7 +51,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuUdmabuf;
     private SwitchRowWidget swGpuDynamicVram;
     private TextInputEditText etGpuHostPoolMb;
-    private TextInputEditText etGpuArenaMb;
+    private TextInputEditText etGpuVramQuotaMb;
     private TextInputEditText etGpuGuestPoolMb;
     private TextInputEditText etGpuPoolBlobMaxKb;
     private SwitchRowWidget swGpuEnabled;
@@ -93,7 +93,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         tilGpuHostPoolMb = view.findViewById(R.id.til_gpu_host_pool_mb);
         etGpuKgslPoolMb = view.findViewById(R.id.et_gpu_kgsl_pool_mb);
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
-        etGpuArenaMb = view.findViewById(R.id.et_gpu_arena_mb);
+        etGpuVramQuotaMb = view.findViewById(R.id.et_gpu_vram_quota_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
@@ -214,7 +214,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private void loadConfigLocked(@NonNull VMConfig config) {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
-        swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
+        swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", true));
         // The two host pools hold very different things, so they are sized very differently.
         //
         // The DRM route's host pool holds only the per-context msm shmem rings: 16 KiB each,
@@ -230,7 +230,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // what the dynamic-VRAM switch below governs. So a pool that is too small costs speed,
         // not correctness -- 64 MiB leaves ~46 MiB of that fast path once the rings are in.
         etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 64)));
-        etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
+        // A quota, not an allocation: crosvm meters host-visible memory against this rather
+        // than reserving any. Only read when guest-alloc is off.
+        etGpuVramQuotaMb.setText(String.valueOf(item.optLong("gpu_vram_quota_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
         swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
@@ -317,7 +319,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etDisplayDpiH, false, 100, 800)) return false;
         if (!checkInputField(etDisplayDpiV, false, 100, 800)) return false;
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
-        if (!checkInputField(etGpuArenaMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuVramQuotaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
         DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
@@ -380,7 +382,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
             item.set("gpu_kgsl_pool_mb", parseInt(getEditText(etGpuKgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
-            item.set("gpu_arena_mb", parseInt(getEditText(etGpuArenaMb)));
+            item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
             item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
             item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
@@ -425,7 +427,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         } else if (backend == GpuBackend.GPU_VIRGLRENDERER) {
             // Venus is listed but not compiled into this build; selecting it toasts and reverts,
             // the same treatment PanVK gets one row down.
-            chooseGpuMode.setItems(GpuMode.OPENGL, GpuMode.VULKAN, GpuMode.NATIVE);
+            chooseGpuMode.setItems(GpuMode.NATIVE, GpuMode.OPENGL, GpuMode.VULKAN);
             Object cur = chooseGpuMode.getSelectedItem();
             if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE)
                 chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
@@ -449,7 +451,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         }
         if (gfxstream) {
             chooseGpuProvider.setItems(
-                GpuProvider.VK_SYSTEM, GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK);
+                GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK, GpuProvider.VK_SYSTEM);
             if (!isVulkanProvider(chooseGpuProvider.getSelectedItem()))
                 chooseGpuProvider.setSelectedItem(GpuProvider.VK_TURNIP);
         } else if (mode == GpuMode.OPENGL) {
@@ -542,7 +544,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     }
 
     // VRAM allocation split: with guest-alloc (udmabuf) the guest owns a pre-sized pool
-    // (gpu_guest_pool_mb); otherwise the host grows a dynamic arena up to gpu_arena_mb.
+    // (gpu_guest_pool_mb); otherwise host-visible memory is shared in at runtime, metered
+    // against gpu_vram_quota_mb.
     // The host pool stays visible in both modes.
     private void updateVramAllocVisibility() {
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;

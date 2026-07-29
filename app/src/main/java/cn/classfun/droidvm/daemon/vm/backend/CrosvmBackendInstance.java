@@ -189,7 +189,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
-                    boolean udmabuf = item.optBoolean("gpu_udmabuf", false);
+                    boolean udmabuf = item.optBoolean("gpu_udmabuf", true);
                     // The editor refuses this combination; a config built straight through the
                     // daemon API can still reach here. Dynamic vram grows host-visible memory by
                     // sharing it at runtime, which on Gunyah needs the module and the accept
@@ -486,10 +486,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // memory (and, with a pre-alloc pool, fusion routing); leaving it undefined keeps
                 // every allocation inside the pool. crosvm ignores it in guest-alloc mode, where
                 // the guest pool is the cap, so only send it for host-alloc.
-                boolean udmabufGpu = item.optBoolean("gpu_udmabuf", false);
+                boolean udmabufGpu = item.optBoolean("gpu_udmabuf", true);
                 boolean dynamicVram = !udmabufGpu && item.optBoolean("gpu_dynamic_vram", true);
                 if (dynamicVram) {
-                    gpuArg.append(fmt(",vram-limit=%d", item.optLong("gpu_arena_mb", 2048)));
+                    // crosvm calls it vram-limit, and it meters three separate things: the
+                    // runtime-share folio budget, the VK_EXT_memory_budget figure handed to
+                    // the guest driver, and -- by being defined and non-zero at all --
+                    // whether fusion routing is on. All three are ignored under guest-alloc.
+                    gpuArg.append(
+                        fmt(",vram-limit=%d", item.optLong("gpu_vram_quota_mb", 2048)));
                     // Fusion size gate: host-visible allocations up to this try the pre-alloc
                     // pool first, larger ones go straight to the runtime-SHARE path.
                     gpuArg.append(fmt(",pool-blob-max-kb=%d",
