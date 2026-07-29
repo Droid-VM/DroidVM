@@ -202,19 +202,33 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     if (hostPool > 0 || udmabuf) {
                         var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
                         if (udmabuf && guestPool > 0)
-                            preAlloc.append(fmt(",gfx-guest-mb=%d", guestPool));
+                            preAlloc.append(fmt(",gpu-guest-mb=%d", guestPool));
                         args.add("--pre-alloc");
                         args.add(preAlloc.toString());
                     }
                 }
-                // KGSL native context: one boot-blessed pool that virglrenderer's kgsl backend
-                // sub-allocates every BO from. Omitting it is valid and falls back to sharing
-                // each BO at runtime, which is slower but works.
+                // DRM native context. Two pools, and they hold different things:
+                //   drm-host-mb  the host arena, now only the per-context msm shmem rings, so
+                //                single-digit MB rather than the gigabyte the BOs used to need.
+                //   gpu-guest-mb the guest's drm_buddy pool, where every BO comes from. Same
+                //                region and flag as the gfxstream guest pool -- the guest driver
+                //                keeps one allocator and cannot tell the renderers apart.
+                // The guest pool needs udmabuf=true as well; that is what gates
+                // VIRTIO_GPU_F_CREATE_GUEST_HANDLE, and without it guest mesa silently keeps a
+                // host-allocating path this host no longer implements.
                 if (kgslGpu) {
-                    long kgslPool = item.optLong("gpu_kgsl_pool_mb", 0);
-                    if (kgslPool > 0) {
+                    long drmHostPool = item.optLong("gpu_kgsl_pool_mb", 0);
+                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    var preAlloc = new StringBuilder();
+                    if (drmHostPool > 0)
+                        preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
+                    if (guestPool > 0) {
+                        if (preAlloc.length() > 0) preAlloc.append(',');
+                        preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
+                    }
+                    if (preAlloc.length() > 0) {
                         args.add("--pre-alloc");
-                        args.add(fmt("kgsl-mb=%d", kgslPool));
+                        args.add(preAlloc.toString());
                     }
                 }
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
@@ -495,6 +509,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // `is_sandboxed || fixed_blob_mapping` regardless of what the CLI said, so
                 // passing it would only suggest it does something.
                 gpuArg.append(",vulkan=false,egl=true,gles=true");
+                // udmabuf builds the dma-buf for a guest-allocated blob, and -- less obviously --
+                // it is what gates VIRTIO_GPU_F_CREATE_GUEST_HANDLE. Without it the feature is
+                // never offered, the guest reports has_create_guest_handle=0, and guest mesa
+                // falls back to a host-allocating path this host no longer implements. The VM
+                // boots and the desktop comes up; the failure waits for the first large buffer.
+                gpuArg.append(",udmabuf=true");
                 gpuArg.append(fmt(",pci-bar-size=%d",
                     item.optLong("gpu_pci_bar_size", 0x100000000L)));
             } else {
