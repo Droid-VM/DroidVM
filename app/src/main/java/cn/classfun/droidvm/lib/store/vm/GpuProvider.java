@@ -13,9 +13,10 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  * control: with {@link GpuMode#OPENGL} virglrenderer needs a host GL context, and with
  * {@link GpuMode#VULKAN} gfxstream needs a host Vulkan driver.
  *
- * <p>{@link GpuMode#NATIVE} has no entry here on purpose. The DRM backend that answers is
- * compiled into virglrenderer for the device it runs on (KGSL on Adreno), so there is nothing
- * for a user to pick.
+ * <p>{@link GpuMode#NATIVE} has one entry today, {@link #DRM_KGSL}. The row is still shown for
+ * it: which DRM backend answers is a real axis (msm on a drm/msm kernel, KGSL on Adreno's
+ * downstream one), this device just has a single answer, and leaving the row visible keeps the
+ * three levels legible instead of making NATIVE look like it has no host driver at all.
  *
  * <p>Persisted as {@code gpu_provider}; older configs carry the pre-split {@code gpu_api} and
  * are migrated by {@link #fromLegacyApi}.
@@ -33,7 +34,11 @@ public enum GpuProvider implements StringEnum {
     // HAL, the bundled Mesa turnip (Adreno), or Mesa PanVK (Mali) -- PanVK is not wired yet.
     VK_SYSTEM(4, "vulkan-system", R.string.create_vm_gpu_api_vulkan_system),
     VK_TURNIP(5, "vulkan-turnip", R.string.create_vm_gpu_api_vulkan_turnip),
-    VK_PANVK(6, "vulkan-panvk", R.string.create_vm_gpu_api_vulkan_panvk);
+    VK_PANVK(6, "vulkan-panvk", R.string.create_vm_gpu_api_vulkan_panvk),
+    // The DRM backend for GpuMode.NATIVE. virglrenderer receives the msm wire protocol and
+    // re-synthesises it as KGSL ioctls against the host's /dev/kgsl-3d0; the guest never sees
+    // a KGSL device of its own. Selects --gpu context-types=virgl2:drm.
+    DRM_KGSL(7, "drm-kgsl", R.string.create_vm_gpu_provider_drm_kgsl);
 
     private final int value;
     private final String name;
@@ -67,6 +72,7 @@ public enum GpuProvider implements StringEnum {
             case VULKAN_SYSTEM: return VK_SYSTEM;
             case VULKAN_TURNIP: return VK_TURNIP;
             case VULKAN_PANVK:  return VK_PANVK;
+            case KGSL:          return DRM_KGSL;
             // Old plain VULKAN on virglrenderer only ever set --gpu vulkan=true; there is no
             // host-driver choice behind it, and on this build no venus to serve it either.
             default:            return NONE;
