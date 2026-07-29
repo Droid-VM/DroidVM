@@ -1143,7 +1143,7 @@
     <string name="vmpkg_import_failed">导入失败：%1$s</string>
     <string name="vmpkg_import_invalid">不是有效的 vmpkg：%1$s</string>
     <string name="kernel_module_title">内核模块</string>
-    <string name="kernel_module_subtitle">加载主机内核模块、设置开机自动加载</string>
+    <string name="kernel_module_subtitle">加载主机内核模块、设置随守护进程自动加载</string>
     <string name="kernel_module_loading">加载中…</string>
     <string name="kernel_module_none">没有可用模块</string>
     <string name="kernel_module_loaded">已加载</string>

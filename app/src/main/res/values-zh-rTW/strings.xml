@@ -222,7 +222,7 @@
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驅動尚未實現</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
-    <string name="create_vm_gpu_host_pool_mb">host 池大小 (MB)</string>
+    <string name="create_vm_gpu_host_pool_mb">主機池大小 (MB)</string>
     <string name="create_vm_gpu_kgsl_pool_mb">KGSL 池大小 (MB)</string>
     <string name="create_vm_gpu_dynamic_vram">啟用動態顯存</string>
     <string name="create_vm_gpu_dynamic_vram_mb">動態顯存上限 (MB)</string>
@@ -1143,7 +1143,7 @@
     <string name="vmpkg_import_failed">匯入失敗：%1$s</string>
     <string name="vmpkg_import_invalid">不是有效的 vmpkg：%1$s</string>
     <string name="kernel_module_title">內核模組</string>
-    <string name="kernel_module_subtitle">載入主機內核模組、設定開機自動載入</string>
+    <string name="kernel_module_subtitle">載入主機內核模組、設定隨 daemon 自動載入</string>
     <string name="kernel_module_loading">載入中…</string>
     <string name="kernel_module_none">沒有可用模組</string>
     <string name="kernel_module_loaded">已載入</string>

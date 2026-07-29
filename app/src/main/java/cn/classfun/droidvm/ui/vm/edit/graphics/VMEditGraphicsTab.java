@@ -221,11 +221,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // 192 KiB measured across a desktop plus Minecraft, on top of the 2 MiB the RM base guard
         // takes at the head of the pool. 8 MiB is room for ~380 contexts.
         etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 8)));
-        // gfxstream's stays at 256. Its ASG rings come from here at 2 MiB alignment apiece, and
-        // that is not a small residue: measured with guest-alloc on, so VkDeviceMemory was going
-        // to the guest pool and only the non-VK remainder was left here, 64 MiB still could not
-        // start GNOME Shell -- gdm gave up after repeated failures where 256 MiB works.
-        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
+        // gfxstream's holds its ASG rings, one per guest context, at 1036 KiB each -- a desktop
+        // plus Minecraft was 16 of them, 18.2 MiB including the guard. 64 MiB is room for ~61
+        // contexts, and this is mlocked physical memory, so the spare is not free.
+        //
+        // It is a floor rather than a cap: with guest-alloc off, host-visible VkDeviceMemory
+        // comes from here too and whatever does not fit falls back to runtime SHARE, which is
+        // what the dynamic-VRAM switch below governs. So a pool that is too small costs speed,
+        // not correctness -- 64 MiB leaves ~46 MiB of that fast path once the rings are in.
+        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 64)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
