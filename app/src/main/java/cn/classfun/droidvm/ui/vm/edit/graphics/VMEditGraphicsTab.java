@@ -215,11 +215,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", false));
-        // Host pools hold what the host itself allocates, which since guest-alloc is not much:
-        // gfxstream's ASG rings and scanout, or the DRM route's per-context msm shmem rings at
-        // 16 KiB each. Both were sized for BO backing they no longer carry.
-        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 64)));
-        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 64)));
+        // The two host pools hold very different things, so they are sized very differently.
+        //
+        // The DRM route's host pool holds only the per-context msm shmem rings: 16 KiB each,
+        // 192 KiB measured across a desktop plus Minecraft, on top of the 2 MiB the RM base guard
+        // takes at the head of the pool. 8 MiB is room for ~380 contexts.
+        etGpuKgslPoolMb.setText(String.valueOf(item.optLong("gpu_kgsl_pool_mb", 8)));
+        // gfxstream's stays at 256. Its ASG rings come from here at 2 MiB alignment apiece, and
+        // that is not a small residue: measured with guest-alloc on, so VkDeviceMemory was going
+        // to the guest pool and only the non-VK remainder was left here, 64 MiB still could not
+        // start GNOME Shell -- gdm gave up after repeated failures where 256 MiB works.
+        etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 256)));
         etGpuArenaMb.setText(String.valueOf(item.optLong("gpu_arena_mb", 2048)));
         etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
         // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
