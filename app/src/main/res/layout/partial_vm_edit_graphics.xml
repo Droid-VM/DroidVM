@@ -55,7 +55,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:title="@string/create_vm_category_vram"
-                app:cc_expanded="false">
+                app:cc_expanded="true">
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                     android:id="@+id/sw_gpu_udmabuf"
