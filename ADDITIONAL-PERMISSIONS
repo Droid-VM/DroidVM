@@ -1,0 +1,61 @@
+Additional permissions under GNU GPL version 3, section 7
+=========================================================
+
+These additional permissions apply to the parts of this work copyrighted by
+HuJK and by contributors to this project. They do not apply to material
+copyrighted by others -- in particular, material inherited from the upstream
+project this repository is derived from, which remains under its own terms and
+is not affected by anything below.
+
+
+1. Upstream contribution
+------------------------
+
+You may modify this material and distribute the result under the license terms
+that an Upstream Project requires of contributions to it, for the sole purpose
+of having that material included in the Upstream Project's official repository.
+
+This permission takes effect only for material that the Upstream Project
+accepts and publishes. Proposing material to an Upstream Project -- opening a
+merge request, posting a patch, or any other act of submission -- does not by
+itself place that material under any license other than the GNU GPL. Material
+that is not accepted remains under the GNU GPL alone.
+
+Once an Upstream Project has published material under its own license, that
+license governs the copy the Upstream Project published. Nothing in this
+document restricts what anyone may do with that copy.
+
+This permission does not authorise distribution under any other license for any
+other purpose. In particular, it does not authorise distributing this material
+under a permissive license to the public at large, to a fork, or to a
+redistributor, whether or not an Upstream Project was also asked to take it.
+
+
+2. Upstream Projects
+--------------------
+
+"Upstream Project" means one of the following, and no others:
+
+
+
+An Upstream Project's "official repository" is the repository named above, or a
+repository that project's own maintainers designate as its successor. A fork,
+a mirror, a vendored copy, and a redistribution are not official repositories.
+
+
+3. Notes
+--------
+
+Under GPL version 3 section 7, a recipient may remove these additional
+permissions from a copy they convey. Doing so does not affect the terms on
+which the permissions are offered here, and does not withdraw them from anyone
+who received them.
+
+Adding permissions on top of the GNU GPL does not restrict any freedom the GPL
+grants. Every recipient keeps the full GPL grant regardless of whether they use
+anything in this document.
+
+Contributions to this project are made under this project's license, which
+includes these additional permissions. A contributor therefore does not need to
+sign a separate agreement for their contribution to be eligible for upstream
+submission under section 1. See CONTRIBUTING.md.

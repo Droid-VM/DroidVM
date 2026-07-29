@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.boot;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
