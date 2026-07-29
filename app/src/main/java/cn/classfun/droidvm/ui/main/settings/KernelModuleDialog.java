@@ -104,9 +104,19 @@ public final class KernelModuleDialog {
             doToggle(mod);
         });
 
-        autostart.setChecked(KernelModuleManager.isAutostart(ctx, mod.name));
-        autostart.setOnCheckedChangeListener((b, checked) ->
-            KernelModuleManager.setAutostart(ctx, mod.name, checked));
+        // Arming autostart requires the module to have been seen loaded. The switch stays
+        // pressable so the refusal can explain itself -- a greyed-out control just looks broken.
+        // Rejected flips it back to off, and that second callback is a no-op (disarming is
+        // always allowed), so there is no loop.
+        autostart.setChecked(KernelModuleManager.isAutostart(ctx, mod.name)
+            && KernelModuleManager.isVerified(mod.name));
+        autostart.setOnCheckedChangeListener((b, checked) -> {
+            if (!KernelModuleManager.setAutostart(ctx, mod.name, checked)) {
+                b.setChecked(false);
+                Toast.makeText(ctx, R.string.kernel_module_autostart_needs_load,
+                    Toast.LENGTH_SHORT).show();
+            }
+        });
 
         return card;
     }
@@ -116,7 +126,7 @@ public final class KernelModuleDialog {
         runOnPool(() -> {
             boolean ok = mod.loaded
                 ? KernelModuleManager.unload(mod.name)
-                : KernelModuleManager.load(mod.path);
+                : KernelModuleManager.loadAndVerify(mod);
             main.post(() -> {
                 Toast.makeText(ctx, ok ? R.string.kernel_module_ok : R.string.kernel_module_fail,
                     Toast.LENGTH_SHORT).show();

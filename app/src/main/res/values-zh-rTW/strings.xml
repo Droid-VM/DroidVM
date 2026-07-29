@@ -1150,7 +1150,8 @@
     <string name="kernel_module_unloaded">未載入</string>
     <string name="kernel_module_load">載入</string>
     <string name="kernel_module_unload">卸載</string>
-    <string name="kernel_module_autostart">開機自動載入</string>
+    <string name="kernel_module_autostart">隨 daemon 自動載入</string>
+    <string name="kernel_module_autostart_needs_load">請先手動載入一次 — 只有在本機成功載入過的模組才能開啟自動載入</string>
     <string name="kernel_module_working">執行中…</string>
     <string name="kernel_module_ok">完成</string>
     <string name="kernel_module_fail">失敗</string>
