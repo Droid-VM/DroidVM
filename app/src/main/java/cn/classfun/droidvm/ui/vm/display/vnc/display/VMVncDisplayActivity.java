@@ -51,6 +51,8 @@ import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
@@ -63,6 +65,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private static final long OP_LABEL_HIDE_DELAY_MS = 2000;
     private static final String PREFS_NAME = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
+    // Chrome memory, shared with the native path: extra-keys on/off per typing surface + whether
+    // the physical keyboard is up.
+    private static final String KEY_EXTRA_KEYS_STRIP = "display_extra_keys_strip";
+    private static final String KEY_EXTRA_KEYS_PHY = "display_extra_keys_phy";
+    private static final String KEY_PHY_KEYBOARD = "display_phy_keyboard";
     // RFB pointer button-mask bits (the crosvm VNC server is fixed to tablet mode: an absolute
     // pointer with these buttons plus scroll pulses).
     private static final int MASK_LEFT = 1;
@@ -80,6 +87,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private FrameLayout displayContainer;
     private FloatingActionButton fabMenu;
     private TextView operationLabel;
+    private DisplayPhysicalKeyboardView phyKeyboard;
     private InputMode inputMode = InputMode.TOUCH;
     private SharedPreferences prefs;
 
@@ -237,12 +245,18 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         displayContainer = findViewById(R.id.display_container);
         fabMenu = findViewById(R.id.fab_menu);
         operationLabel = findViewById(R.id.tv_operation);
+        phyKeyboard = findViewById(R.id.phy_keyboard);
     }
 
     @Override
     protected void onSetupActivity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         inputMode = InputMode.values()[prefs.getInt(KEY_INPUT_MODE, 0)];
+        phyKeyboard.setKeyListener(vncExtraKeys);
+        // The physical keyboard's Shift/Ctrl/Alt/Win mirror the panel's sticky-modifier state.
+        extraKeysPanel.setModifierStateObserver(() -> phyKeyboard.refreshModifiers(
+            extraKeysPanel.isCtrlDown(), extraKeysPanel.isAltDown(),
+            extraKeysPanel.isShiftDown(), extraKeysPanel.isWinDown()));
         setupCutoutMode();
         setupLayoutControllers();
         btnFullscreen.setOnClickListener(v -> toggleFullscreen());
@@ -409,23 +423,35 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             }
         });
 
-        chrome = new DisplayChromeController(true, (fullscreen, extraKeysVisible) -> {
-            toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
-            statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
-            extraKeysPanel.setVisibleAnimated(extraKeysVisible);
-            var controller = getWindow().getInsetsController();
-            if (controller != null) {
-                if (fullscreen) {
-                    controller.hide(WindowInsets.Type.systemBars());
-                    controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                } else {
-                    controller.show(WindowInsets.Type.systemBars());
+        chrome = new DisplayChromeController(
+            prefs.getBoolean(KEY_EXTRA_KEYS_STRIP, true),
+            prefs.getBoolean(KEY_EXTRA_KEYS_PHY, false),
+            prefs.getBoolean(KEY_PHY_KEYBOARD, false),
+            (fullscreen, extraKeysVisible, phyKeyboardVisible) -> {
+                toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
+                statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
+                extraKeysPanel.setPhyCommonRowVisible(!phyKeyboardVisible);
+                extraKeysPanel.setVisibleAnimated(extraKeysVisible);
+                phyKeyboard.setVisibleAnimated(phyKeyboardVisible);
+                var controller = getWindow().getInsetsController();
+                if (controller != null) {
+                    if (fullscreen) {
+                        controller.hide(WindowInsets.Type.systemBars());
+                        controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    } else {
+                        controller.show(WindowInsets.Type.systemBars());
+                    }
                 }
-            }
-            // Re-request insets so the content padding (and thus the display area) updates in
-            // the same pass as the visibility changes.
-            ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
-        });
+                // Re-request insets so the content padding (and thus the display area) updates in
+                // the same pass as the visibility changes.
+                ViewCompat.requestApplyInsets(findViewById(android.R.id.content));
+            });
+        chrome.setStateListener((extraStrip, extraPhy, phy) -> prefs.edit()
+            .putBoolean(KEY_EXTRA_KEYS_STRIP, extraStrip)
+            .putBoolean(KEY_EXTRA_KEYS_PHY, extraPhy)
+            .putBoolean(KEY_PHY_KEYBOARD, phy)
+            .apply());
+        chrome.applyInitial();
 
         var content = (ViewGroup) findViewById(android.R.id.content);
         ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
@@ -547,7 +573,10 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             ivDisplay.setOnTouchListener(this::onDisplayTouch);
             displayContainer.setOnTouchListener(null);
             displayContainer.setClickable(true);
-            displayContainer.setOnClickListener(v -> toggleSoftKeyboard());
+            // Tap-to-summon-IME, unless the physical keyboard is the active typing surface.
+            displayContainer.setOnClickListener(v -> {
+                if (chrome == null || !chrome.isPhyKeyboardVisible()) toggleSoftKeyboard();
+            });
         }
         if (gestureTranslator != null) {
             gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
@@ -589,10 +618,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         chrome.toggleFullscreen();
     }
 
-    private void toggleExtraKeys() {
-        chrome.toggleExtraKeys();
-    }
-
     @SuppressLint("ClickableViewAccessibility")
     private void setupFab() {
         var listener = new DragTouchListener(this, this::showFabMenu);
@@ -602,9 +627,57 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_vnc_display_menu);
-        popup.setHeaderView(buildInputModeHeader(popup));
+        var header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.addView(buildInputModeHeader(popup));
+        header.addView(DisplayKeyboardMenuRow.build(
+            getLayoutInflater(), keyboardMenuHost(), popup::dismiss));
+        popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
+    }
+
+    @NonNull
+    private DisplayKeyboardMenuRow.Host keyboardMenuHost() {
+        return new DisplayKeyboardMenuRow.Host() {
+            @Override
+            public boolean isExtraKeysVisible() {
+                return chrome.isExtraKeysVisible();
+            }
+
+            @Override
+            public void toggleExtraKeys() {
+                chrome.toggleExtraKeys();
+            }
+
+            @Override
+            public boolean isImeVisible() {
+                var insets = ViewCompat.getRootWindowInsets(displayContainer);
+                return insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
+            }
+
+            @Override
+            public void showSystemKeyboard() {
+                toggleSoftKeyboard();
+            }
+
+            @Override
+            public void hideSystemKeyboard() {
+                var imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
+                if (imm != null) imm.hideSoftInputFromWindow(
+                    displayContainer.getWindowToken(), 0);
+            }
+
+            @Override
+            public boolean isPhyKeyboardVisible() {
+                return chrome.isPhyKeyboardVisible();
+            }
+
+            @Override
+            public void setPhyKeyboardVisible(boolean visible) {
+                chrome.setPhyKeyboardVisible(visible);
+            }
+        };
     }
 
     // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
@@ -625,10 +698,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     @Override
     protected boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_extra_keys) {
-            toggleExtraKeys();
-            return true;
-        } else if (id == R.id.menu_fullscreen) {
+        if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
         }
