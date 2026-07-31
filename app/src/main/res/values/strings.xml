@@ -396,8 +396,10 @@
     <string name="settings_vm_auto_console_summary">Automatically open the console when a VM is started</string>
     <string name="settings_vm_clear_logs_before_start_title">Clear logs before start</string>
     <string name="settings_vm_clear_logs_before_start_summary">Clear all console logs for the VM before it starts</string>
-    <string name="settings_vm_keep_compress_on_optimize_title">Keep compression when optimizing</string>
-    <string name="settings_vm_keep_compress_on_optimize_summary">Preserve a disk\'s existing compression when optimizing instead of decompressing it; off rewrites the disk uncompressed</string>
+    <string name="settings_optimize_compression_title">Optimize compression</string>
+    <string name="settings_optimize_compression_ask">Ask every time</string>
+    <string name="disk_compress_none">Uncompressed</string>
+    <string name="disk_optimize_compress_remember">Remember this choice</string>
     <string name="settings_cpu_affinity_title">CPU affinity</string>
     <string name="settings_cpu_affinity_summary_fmt">Disk ops run on cores %1$s</string>
     <string name="settings_cpu_affinity_all_cores">Disk ops may use all cores</string>

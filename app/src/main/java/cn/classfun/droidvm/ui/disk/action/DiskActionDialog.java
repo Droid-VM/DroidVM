@@ -45,10 +45,12 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.agent.password.ChangePasswordActivity;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.disk.create.DiskCreateActivity;
 import cn.classfun.droidvm.ui.disk.download.ImportURLActivity;
 import cn.classfun.droidvm.ui.disk.images.ImportImagesActivity;
 import cn.classfun.droidvm.ui.disk.lxc.ImportLxcImagesActivity;
+import cn.classfun.droidvm.ui.disk.operation.OptimizeCompression;
 
 public final class DiskActionDialog {
     private final static String TAG = "DiskActionDialog";
@@ -111,6 +113,11 @@ public final class DiskActionDialog {
     }
 
     public void tryOptimize(@NonNull DiskConfig config) {
+        // Target compression comes from the preferred-compression setting (or its ask prompt).
+        OptimizeCompression.resolve(context, () -> {}, compress -> tryOptimize(config, compress));
+    }
+
+    private void tryOptimize(@NonNull DiskConfig config, @NonNull DiskCompress compress) {
         Consumer<JSONObject> invoke = obj -> {
             try {
                 var intent = createIntent(context, config.getId(), obj);
@@ -124,7 +131,7 @@ public final class DiskActionDialog {
             try {
                 var info = ImageUtils.getImageInfo(config.getFullPath());
                 obj.put("action", "convert");
-                obj.put("keep_compress", true); // preserve compression when optimizing
+                obj.put("compress", compress.value());
                 obj.put("format", info.getString("format"));
                 if (info.has("backing-filename"))
                     obj.put("backing_path", info.getString("backing-filename"));

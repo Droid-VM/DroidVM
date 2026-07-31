@@ -6,8 +6,6 @@ package cn.classfun.droidvm.ui.disk.operation;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
-import static cn.classfun.droidvm.lib.utils.ImageUtils.getImageInfo;
-import static cn.classfun.droidvm.lib.utils.ImageUtils.hasCompressedClusters;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
@@ -47,6 +45,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 
 public final class DiskOperationActivity extends AppCompatActivity {
@@ -132,19 +131,38 @@ public final class DiskOperationActivity extends AppCompatActivity {
         return intent;
     }
 
-    public static void startOptimize(
-        @NonNull Context context,
-        @NonNull UUID diskId
+    /**
+     * Post-import hook: optimize only when the imported image's compression isn't in
+     * {@link DiskCompress#CROSVM_SUPPORTED} (an image crosvm already boots needs no rewrite).
+     * The compression check runs off the main thread; {@code done} always runs on the main
+     * thread - after launching the optimize, after skipping it, or on prompt cancel.
+     */
+    public static void startOptimizeAfterImport(
+        @NonNull android.app.Activity activity,
+        @NonNull UUID diskId,
+        @NonNull String path,
+        @NonNull Runnable done
     ) {
-        try {
-            var obj = new JSONObject();
-            obj.put("action", "convert");
-            obj.put("keep_compress", true); // preserve compression when optimizing
-            var intent = createIntent(context, diskId, obj);
-            context.startActivity(intent);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start optimize activity", e);
-        }
+        runOnPool(() -> {
+            var supported = DiskCompress.detect(path).isCrosvmSupported();
+            activity.runOnUiThread(() -> {
+                if (supported || activity.isFinishing()) {
+                    done.run();
+                    return;
+                }
+                OptimizeCompression.resolve(activity, done, compress -> {
+                    try {
+                        var obj = new JSONObject();
+                        obj.put("action", "convert");
+                        obj.put("compress", compress.value());
+                        activity.startActivity(createIntent(activity, diskId, obj));
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to start optimize activity", e);
+                    }
+                    done.run();
+                });
+            });
+        });
     }
 
     public static void startConvert(
@@ -231,7 +249,6 @@ public final class DiskOperationActivity extends AppCompatActivity {
             final String cmd;
             try {
                 var task = new JSONObject(taskJsonStr);
-                applyKeepCompress(getApplicationContext(), task, diskPath);
                 var gen = new ImageCommandGenerate(diskStore);
                 gen.setCpuAffinity(
                     MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext()));
@@ -246,41 +263,6 @@ public final class DiskOperationActivity extends AppCompatActivity {
             Log.i(TAG, fmt("Running: %s", cmd));
             runOnUiThread(() -> startTerminalSession(cmd));
         });
-    }
-
-    /**
-     * When a task opts into keep-compress (the user-facing "optimize", not the
-     * pre-start decompress in {@link #optimizeForResultIntent}), re-compress the
-     * rewritten image with the algorithm the source uses instead of rewriting it
-     * uncompressed. Whether the source is compressed at all is decided by
-     * qemu-img's real {@code compressed-clusters} count
-     * ({@code ImageUtils.hasCompressedClusters}); the qcow2 header's
-     * {@code compression-type} is only read to pick zlib vs
-     * zstd, because that header field reads "zlib" for every v3 image and so
-     * cannot on its own distinguish an uncompressed disk from a compressed one.
-     * An uncompressed source (raw, or a v3 qcow2 with no compressed data) is left
-     * alone. An explicit {@code compress} in the task always wins, the user can
-     * turn this off globally in settings, and any detection failure falls through
-     * to the default (uncompressed) rewrite.
-     */
-    private static void applyKeepCompress(
-        @NonNull Context ctx, @NonNull JSONObject task, @NonNull String path) {
-        if (!task.optBoolean("keep_compress", false) || task.has("compress"))
-            return;
-        if (!MainSettingsFragment.isKeepCompressOnOptimizeEnabled(ctx))
-            return;
-        try {
-            if (!hasCompressedClusters(path))
-                return; // nothing actually compressed -- rewrite uncompressed
-            var info = getImageInfo(path);
-            var fmtSpecific = info.optJSONObject("format-specific");
-            var data = fmtSpecific == null ? null : fmtSpecific.optJSONObject("data");
-            var type = data == null ? "" : data.optString("compression-type", "");
-            // qemu compression-type zstd stays zstd; zlib (and anything else) -> deflate.
-            task.put("compress", "zstd".equals(type) ? "zstd" : "deflate");
-        } catch (Exception e) {
-            Log.w(TAG, "keep-compress detection failed", e);
-        }
     }
 
     private void startTerminalSession(String cmd) {
