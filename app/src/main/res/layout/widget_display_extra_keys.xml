@@ -60,21 +60,21 @@
         android:orientation="horizontal">
 
         <Button
-            android:id="@+id/btn_tab"
+            android:id="@+id/btn_bksp"
             style="@style/ExtraKey"
-            android:text="@string/key_tab"
+            android:text="@string/key_bksp"
             tools:ignore="TouchTargetSizeCheck" />
 
         <Button
-            android:id="@+id/btn_ctrl"
+            android:id="@+id/btn_del"
             style="@style/ExtraKey"
-            android:text="@string/key_ctrl"
+            android:text="@string/key_del"
             tools:ignore="TouchTargetSizeCheck" />
 
         <Button
-            android:id="@+id/btn_alt"
+            android:id="@+id/btn_ins"
             style="@style/ExtraKey"
-            android:text="@string/key_alt"
+            android:text="@string/key_ins"
             tools:ignore="TouchTargetSizeCheck" />
 
         <Button
@@ -102,55 +102,7 @@
             tools:ignore="TouchTargetSizeCheck" />
     </LinearLayout>
 
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="40dp"
-        android:background="@color/extra_keys_background"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/btn_win"
-            style="@style/ExtraKey"
-            android:text="@string/key_win"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_cap"
-            style="@style/ExtraKey"
-            android:text="@string/key_cap"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_shift"
-            style="@style/ExtraKey"
-            android:text="@string/key_shift"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_del"
-            style="@style/ExtraKey"
-            android:text="@string/key_del"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_ins"
-            style="@style/ExtraKey"
-            android:text="@string/key_ins"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_enter"
-            style="@style/ExtraKey"
-            android:text="@string/key_enter"
-            tools:ignore="TouchTargetSizeCheck" />
-
-        <Button
-            android:id="@+id/btn_fnx"
-            style="@style/ExtraKey"
-            android:text="@string/key_fnx"
-            tools:ignore="TouchTargetSizeCheck" />
-    </LinearLayout>
-
+    <!-- Above the bottom row so the FNx toggle expands upward and FNx itself never moves. -->
     <LinearLayout
         android:id="@+id/fn_keys_container"
         android:layout_width="match_parent"
@@ -199,6 +151,12 @@
                 style="@style/ExtraKey"
                 android:text="@string/key_f6"
                 tools:ignore="TouchTargetSizeCheck" />
+
+            <Button
+                android:id="@+id/btn_prtsc"
+                style="@style/ExtraKey"
+                android:text="@string/key_prtsc"
+                tools:ignore="TouchTargetSizeCheck" />
         </LinearLayout>
 
         <LinearLayout
@@ -242,8 +200,65 @@
                 style="@style/ExtraKey"
                 android:text="@string/key_f12"
                 tools:ignore="TouchTargetSizeCheck" />
+
+            <Button
+                android:id="@+id/btn_pause"
+                style="@style/ExtraKey"
+                android:text="@string/key_pause"
+                tools:ignore="TouchTargetSizeCheck" />
         </LinearLayout>
 
+    </LinearLayout>
+
+    <!-- Keys a laptop layout already has; hidden while the physical keyboard is up. -->
+    <LinearLayout
+        android:id="@+id/phy_common_row"
+        android:layout_width="match_parent"
+        android:layout_height="40dp"
+        android:background="@color/extra_keys_background"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btn_tab"
+            style="@style/ExtraKey"
+            android:text="@string/key_tab"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_ctrl"
+            style="@style/ExtraKey"
+            android:text="@string/key_ctrl"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_shift"
+            style="@style/ExtraKey"
+            android:text="@string/key_shift"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_win"
+            style="@style/ExtraKey"
+            android:text="@string/key_win"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_alt"
+            style="@style/ExtraKey"
+            android:text="@string/key_alt"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_enter"
+            style="@style/ExtraKey"
+            android:text="@string/key_enter"
+            tools:ignore="TouchTargetSizeCheck" />
+
+        <Button
+            android:id="@+id/btn_fnx"
+            style="@style/ExtraKey"
+            android:text="@string/key_fnx"
+            tools:ignore="TouchTargetSizeCheck" />
     </LinearLayout>
 
 </merge>

@@ -148,8 +148,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (vmId == null) vmId = "";
         bindViews();
         setupToolbar();
-        onSetupActivity();
+        // Before onSetupActivity() so subclasses can wire views (e.g. the physical keyboard)
+        // to the adapter during their setup.
         vncExtraKeys = new VncExtraKeysPanel(extraKeysPanel);
+        onSetupActivity();
         fetchVncInfoAndConnect();
     }
 
@@ -171,7 +173,6 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected void onDestroy() {
         super.onDestroy();
         onDestroyExtra();
-        extraKeysPanel.stopKeyRepeat();
         running = false;
         if (vncClient != null) vncClient.requestStop();
         executor.shutdown();
@@ -764,10 +765,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     protected boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_keyboard) {
-            toggleSoftKeyboard();
-            return true;
-        } else if (id == R.id.menu_rotate) {
+        if (id == R.id.menu_rotate) {
             rotateScreen();
             return true;
         } else if (id == R.id.menu_reconnect) {

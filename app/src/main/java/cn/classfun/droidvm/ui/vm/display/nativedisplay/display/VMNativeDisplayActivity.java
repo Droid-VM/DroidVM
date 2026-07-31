@@ -54,6 +54,8 @@ import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
@@ -104,6 +106,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private FloatingActionButton fabMenu;
     private MaterialButton btnFullscreen;
     private DisplayExtraKeysPanel extraKeysPanel;
+    private DisplayPhysicalKeyboardView phyKeyboard;
 
     private String vmName = "";
     private String vmId = "";
@@ -121,6 +124,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private InputMode inputMode = InputMode.TOUCH;
     private static final String INPUT_PREFS = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
+    // Chrome memory, shared with the VNC path: extra-keys on/off per typing surface + whether
+    // the physical keyboard is up.
+    private static final String KEY_EXTRA_KEYS_STRIP = "display_extra_keys_strip";
+    private static final String KEY_EXTRA_KEYS_PHY = "display_extra_keys_phy";
+    private static final String KEY_PHY_KEYBOARD = "display_phy_keyboard";
     // Unified MOUSE/TABLET gesture layer (two-finger tap = right click, two-finger pan = scroll,
     // three-finger = local zoom/pan). TOUCH mode bypasses it and stays raw multi-touch.
     private PointerGestureTranslator gestureTranslator;
@@ -323,6 +331,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         btnFullscreen = findViewById(R.id.btn_fullscreen);
         extraKeysPanel = findViewById(R.id.extra_keys_panel);
         nativeExtraKeys = new NativeExtraKeysPanel(extraKeysPanel);
+        phyKeyboard = findViewById(R.id.phy_keyboard);
+        phyKeyboard.setKeyListener(nativeExtraKeys);
+        // The physical keyboard's Shift/Ctrl/Alt/Win mirror the panel's sticky-modifier state.
+        extraKeysPanel.setModifierStateObserver(() -> phyKeyboard.refreshModifiers(
+            extraKeysPanel.isCtrlDown(), extraKeysPanel.isAltDown(),
+            extraKeysPanel.isShiftDown(), extraKeysPanel.isWinDown()));
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -606,23 +620,36 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             });
         viewport.setContentSize(guestWidth, guestHeight);
 
-        chrome = new DisplayChromeController(true, (fullscreen, extraKeysVisible) -> {
-            toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
-            statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
-            extraKeysPanel.setVisibleAnimated(extraKeysVisible);
-            var controller = getWindow().getInsetsController();
-            if (controller != null) {
-                if (fullscreen) {
-                    controller.hide(WindowInsets.Type.systemBars());
-                    controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-                } else {
-                    controller.show(WindowInsets.Type.systemBars());
+        var inputPrefs = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE);
+        chrome = new DisplayChromeController(
+            inputPrefs.getBoolean(KEY_EXTRA_KEYS_STRIP, true),
+            inputPrefs.getBoolean(KEY_EXTRA_KEYS_PHY, false),
+            inputPrefs.getBoolean(KEY_PHY_KEYBOARD, false),
+            (fullscreen, extraKeysVisible, phyKeyboardVisible) -> {
+                toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
+                statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
+                extraKeysPanel.setPhyCommonRowVisible(!phyKeyboardVisible);
+                extraKeysPanel.setVisibleAnimated(extraKeysVisible);
+                phyKeyboard.setVisibleAnimated(phyKeyboardVisible);
+                var controller = getWindow().getInsetsController();
+                if (controller != null) {
+                    if (fullscreen) {
+                        controller.hide(WindowInsets.Type.systemBars());
+                        controller.setSystemBarsBehavior(BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                    } else {
+                        controller.show(WindowInsets.Type.systemBars());
+                    }
                 }
-            }
-            // Re-request insets so the root padding (and thus the display area) updates in the
-            // same pass as the visibility changes.
-            ViewCompat.requestApplyInsets(findViewById(R.id.main));
-        });
+                // Re-request insets so the root padding (and thus the display area) updates in the
+                // same pass as the visibility changes.
+                ViewCompat.requestApplyInsets(findViewById(R.id.main));
+            });
+        chrome.setStateListener((extraStrip, extraPhy, phy) -> inputPrefs.edit()
+            .putBoolean(KEY_EXTRA_KEYS_STRIP, extraStrip)
+            .putBoolean(KEY_EXTRA_KEYS_PHY, extraPhy)
+            .putBoolean(KEY_PHY_KEYBOARD, phy)
+            .apply());
+        chrome.applyInitial();
 
         View root = findViewById(R.id.main);
         ViewCompat.setOnApplyWindowInsetsListener(root, (v, insets) -> {
@@ -685,9 +712,57 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
-        popup.setHeaderView(buildInputModeHeader(popup));
+        var header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.addView(buildInputModeHeader(popup));
+        header.addView(DisplayKeyboardMenuRow.build(
+            getLayoutInflater(), keyboardMenuHost(), popup::dismiss));
+        popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
+    }
+
+    @NonNull
+    private DisplayKeyboardMenuRow.Host keyboardMenuHost() {
+        return new DisplayKeyboardMenuRow.Host() {
+            @Override
+            public boolean isExtraKeysVisible() {
+                return chrome.isExtraKeysVisible();
+            }
+
+            @Override
+            public void toggleExtraKeys() {
+                chrome.toggleExtraKeys();
+            }
+
+            @Override
+            public boolean isImeVisible() {
+                var insets = ViewCompat.getRootWindowInsets(findViewById(R.id.main));
+                return insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
+            }
+
+            @Override
+            public void showSystemKeyboard() {
+                toggleSoftKeyboard();
+            }
+
+            @Override
+            public void hideSystemKeyboard() {
+                var imm = getSystemService(InputMethodManager.class);
+                if (imm != null) imm.hideSoftInputFromWindow(
+                    findViewById(R.id.main).getWindowToken(), 0);
+            }
+
+            @Override
+            public boolean isPhyKeyboardVisible() {
+                return chrome.isPhyKeyboardVisible();
+            }
+
+            @Override
+            public void setPhyKeyboardVisible(boolean visible) {
+                chrome.setPhyKeyboardVisible(visible);
+            }
+        };
     }
 
     // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
@@ -707,13 +782,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_keyboard) {
-            toggleSoftKeyboard();
-            return true;
-        } else if (id == R.id.menu_extra_keys) {
-            chrome.toggleExtraKeys();
-            return true;
-        } else if (id == R.id.menu_fullscreen) {
+        if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
         } else if (id == R.id.menu_rotate) {
@@ -762,7 +831,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        extraKeysPanel.stopKeyRepeat();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;

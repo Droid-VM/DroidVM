@@ -42,7 +42,7 @@
         <item name="android:textSize">11sp</item>
         <item name="android:textColor">@color/extra_key_text</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:background">@drawable/extra_key_bg</item>
         <item name="backgroundTint">@null</item>
     </style>
 

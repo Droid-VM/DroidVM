@@ -5,19 +5,11 @@ package cn.classfun.droidvm.ui.vm.display.base;
 
 import static android.view.HapticFeedbackConstants.KEYBOARD_TAP;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
-import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 
@@ -26,17 +18,30 @@ import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
 
+/**
+ * The extra-keys panel. Two zones: the top rows hold keys a laptop layout doesn't have (nav
+ * cluster, Esc, symbols); the bottom {@code phy_common_row} holds keys a laptop layout does have
+ * (Tab/modifiers/Enter/FNx) and yields - {@link #setPhyCommonRowVisible} - while the physical
+ * keyboard is up. Non-modifier keys send real key down/up ({@link HoldKeyTouchListener}), so the
+ * guest sees holds; modifiers are sticky (tap = one-shot, long-press = locked), owned by
+ * {@link BaseExtraKeysAdapter} with this panel as the display of that state.
+ */
 public final class DisplayExtraKeysPanel extends LinearLayout {
-    private static final long ANIM_DURATION = 200;
-    private static final long KEY_REPEAT_DELAY_MS = 400;
-    private static final long KEY_REPEAT_INTERVAL_MS = 50;
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private Runnable activeRepeatRunnable;
     private LinearLayout fnKeysContainer;
-    private boolean capsActive = false;
+    private LinearLayout phyCommonRow;
     private boolean fnxActive = false;
+    private boolean phyCommonVisible = true;
     @Nullable
     private KeyListener keyListener;
+    // Notified whenever the modifier toggle state repaints, so a second view of the same state
+    // (the physical keyboard's modifier keys) can repaint too.
+    @Nullable
+    private Runnable modifierStateObserver;
+    // Down/up + glide handling for every non-modifier key (press = down, slide-in = that key's
+    // down, release/slide-off = up).
+    private final HoldKeyGroup holdKeys = new HoldKeyGroup((code, down) -> {
+        if (keyListener != null) keyListener.onKey(code, down);
+    });
 
     private boolean ctrlDown, altDown, shiftDown, winDown;
 
@@ -50,7 +55,8 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         init(context);
     }
 
-    public DisplayExtraKeysPanel(@NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
+    public DisplayExtraKeysPanel(
+        @NonNull Context context, @Nullable AttributeSet attrs, int defStyleAttr) {
         super(context, attrs, defStyleAttr);
         init(context);
     }
@@ -59,6 +65,7 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         setOrientation(VERTICAL);
         LayoutInflater.from(context).inflate(R.layout.widget_display_extra_keys, this, true);
         fnKeysContainer = findViewById(R.id.fn_keys_container);
+        phyCommonRow = findViewById(R.id.phy_common_row);
         setupKeys();
     }
 
@@ -66,29 +73,24 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         this.keyListener = listener;
     }
 
-    @SuppressWarnings("unused")
+    public void setModifierStateObserver(@Nullable Runnable observer) {
+        this.modifierStateObserver = observer;
+    }
+
     public boolean isCtrlDown() {
         return ctrlDown;
     }
 
-    @SuppressWarnings("unused")
     public boolean isAltDown() {
         return altDown;
     }
 
-    @SuppressWarnings("unused")
     public boolean isShiftDown() {
         return shiftDown;
     }
 
-    @SuppressWarnings("unused")
     public boolean isWinDown() {
         return winDown;
-    }
-
-    @SuppressWarnings("unused")
-    public boolean isCapsActive() {
-        return capsActive;
     }
 
     public void setCtrlDown(boolean v) {
@@ -116,8 +118,8 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         setToggleStyle(findViewById(R.id.btn_alt), altDown);
         setToggleStyle(findViewById(R.id.btn_shift), shiftDown);
         setToggleStyle(findViewById(R.id.btn_win), winDown);
-        setToggleStyle(findViewById(R.id.btn_cap), capsActive);
         setToggleStyle(findViewById(R.id.btn_fnx), fnxActive);
+        if (modifierStateObserver != null) modifierStateObserver.run();
     }
 
     private void setToggleStyle(@Nullable Button btn, boolean active) {
@@ -126,97 +128,61 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
             btn.setBackgroundColor(getContext().getColor(R.color.extra_key_bg_active));
             btn.setTextColor(getContext().getColor(R.color.extra_key_text_active));
         } else {
-            btn.setBackground(null);
+            btn.setBackgroundResource(R.drawable.extra_key_bg);
             btn.setTextColor(getContext().getColor(R.color.extra_key_text));
         }
     }
 
     private void setupKeys() {
-        setKeyRepeat(R.id.btn_esc, () -> fireKeyRepeat(KeyEvent.KEYCODE_ESCAPE));
-        setKeyRepeat(R.id.btn_slash, () -> fireCharRepeat('/'));
-        setKeyRepeat(R.id.btn_dash, () -> fireCharRepeat('-'));
-        setKeyRepeat(R.id.btn_home, () -> fireKeyRepeat(KeyEvent.KEYCODE_MOVE_HOME));
-        setKeyRepeat(R.id.btn_up, () -> fireKeyRepeat(KeyEvent.KEYCODE_DPAD_UP));
-        setKeyRepeat(R.id.btn_end, () -> fireKeyRepeat(KeyEvent.KEYCODE_MOVE_END));
-        setKeyRepeat(R.id.btn_pgup, () -> fireKeyRepeat(KeyEvent.KEYCODE_PAGE_UP));
-        setKeyRepeat(R.id.btn_tab, () -> fireKeyRepeat(KeyEvent.KEYCODE_TAB));
+        setupHoldKey(R.id.btn_esc, KeyEvent.KEYCODE_ESCAPE);
+        setupHoldKey(R.id.btn_slash, KeyEvent.KEYCODE_SLASH);
+        setupHoldKey(R.id.btn_dash, KeyEvent.KEYCODE_MINUS);
+        setupHoldKey(R.id.btn_home, KeyEvent.KEYCODE_MOVE_HOME);
+        setupHoldKey(R.id.btn_up, KeyEvent.KEYCODE_DPAD_UP);
+        setupHoldKey(R.id.btn_end, KeyEvent.KEYCODE_MOVE_END);
+        setupHoldKey(R.id.btn_pgup, KeyEvent.KEYCODE_PAGE_UP);
+        setupHoldKey(R.id.btn_bksp, KeyEvent.KEYCODE_DEL);
+        setupHoldKey(R.id.btn_del, KeyEvent.KEYCODE_FORWARD_DEL);
+        setupHoldKey(R.id.btn_ins, KeyEvent.KEYCODE_INSERT);
+        setupHoldKey(R.id.btn_left, KeyEvent.KEYCODE_DPAD_LEFT);
+        setupHoldKey(R.id.btn_down, KeyEvent.KEYCODE_DPAD_DOWN);
+        setupHoldKey(R.id.btn_right, KeyEvent.KEYCODE_DPAD_RIGHT);
+        setupHoldKey(R.id.btn_pgdn, KeyEvent.KEYCODE_PAGE_DOWN);
+        setupHoldKey(R.id.btn_tab, KeyEvent.KEYCODE_TAB);
         setupModifierKey(R.id.btn_ctrl, KeyEvent.KEYCODE_CTRL_LEFT);
-        setupModifierKey(R.id.btn_alt, KeyEvent.KEYCODE_ALT_LEFT);
-        setKeyRepeat(R.id.btn_left, () -> fireKeyRepeat(KeyEvent.KEYCODE_DPAD_LEFT));
-        setKeyRepeat(R.id.btn_down, () -> fireKeyRepeat(KeyEvent.KEYCODE_DPAD_DOWN));
-        setKeyRepeat(R.id.btn_right, () -> fireKeyRepeat(KeyEvent.KEYCODE_DPAD_RIGHT));
-        setKeyRepeat(R.id.btn_pgdn, () -> fireKeyRepeat(KeyEvent.KEYCODE_PAGE_DOWN));
-        setupModifierKey(R.id.btn_win, KeyEvent.KEYCODE_META_LEFT);
-        setKeyClick(R.id.btn_cap, v -> {
-            capsActive = !capsActive;
-            if (keyListener != null) keyListener.onCapsToggle(capsActive);
-            updateToggleButtons();
-        });
         setupModifierKey(R.id.btn_shift, KeyEvent.KEYCODE_SHIFT_LEFT);
-        setKeyRepeat(R.id.btn_del, () -> fireKeyRepeat(KeyEvent.KEYCODE_FORWARD_DEL));
-        setKeyRepeat(R.id.btn_ins, () -> fireKeyRepeat(KeyEvent.KEYCODE_INSERT));
-        setKeyRepeat(R.id.btn_enter, () -> fireKeyRepeat(KeyEvent.KEYCODE_ENTER));
-        setKeyClick(R.id.btn_fnx, v -> {
+        setupModifierKey(R.id.btn_win, KeyEvent.KEYCODE_META_LEFT);
+        setupModifierKey(R.id.btn_alt, KeyEvent.KEYCODE_ALT_LEFT);
+        setupHoldKey(R.id.btn_enter, KeyEvent.KEYCODE_ENTER);
+        findViewById(R.id.btn_fnx).setOnClickListener(v -> {
+            v.performHapticFeedback(KEYBOARD_TAP);
             fnxActive = !fnxActive;
-            setRowVisible(fnKeysContainer, fnxActive);
+            ViewHeightAnimator.setVisible(fnKeysContainer, fnxActive);
             updateToggleButtons();
         });
-        setKeyRepeat(R.id.btn_f1, () -> fireKeyRepeat(KeyEvent.KEYCODE_F1));
-        setKeyRepeat(R.id.btn_f2, () -> fireKeyRepeat(KeyEvent.KEYCODE_F2));
-        setKeyRepeat(R.id.btn_f3, () -> fireKeyRepeat(KeyEvent.KEYCODE_F3));
-        setKeyRepeat(R.id.btn_f4, () -> fireKeyRepeat(KeyEvent.KEYCODE_F4));
-        setKeyRepeat(R.id.btn_f5, () -> fireKeyRepeat(KeyEvent.KEYCODE_F5));
-        setKeyRepeat(R.id.btn_f6, () -> fireKeyRepeat(KeyEvent.KEYCODE_F6));
-        setKeyRepeat(R.id.btn_f7, () -> fireKeyRepeat(KeyEvent.KEYCODE_F7));
-        setKeyRepeat(R.id.btn_f8, () -> fireKeyRepeat(KeyEvent.KEYCODE_F8));
-        setKeyRepeat(R.id.btn_f9, () -> fireKeyRepeat(KeyEvent.KEYCODE_F9));
-        setKeyRepeat(R.id.btn_f10, () -> fireKeyRepeat(KeyEvent.KEYCODE_F10));
-        setKeyRepeat(R.id.btn_f11, () -> fireKeyRepeat(KeyEvent.KEYCODE_F11));
-        setKeyRepeat(R.id.btn_f12, () -> fireKeyRepeat(KeyEvent.KEYCODE_F12));
+        setupHoldKey(R.id.btn_f1, KeyEvent.KEYCODE_F1);
+        setupHoldKey(R.id.btn_f2, KeyEvent.KEYCODE_F2);
+        setupHoldKey(R.id.btn_f3, KeyEvent.KEYCODE_F3);
+        setupHoldKey(R.id.btn_f4, KeyEvent.KEYCODE_F4);
+        setupHoldKey(R.id.btn_f5, KeyEvent.KEYCODE_F5);
+        setupHoldKey(R.id.btn_f6, KeyEvent.KEYCODE_F6);
+        setupHoldKey(R.id.btn_prtsc, KeyEvent.KEYCODE_SYSRQ);
+        setupHoldKey(R.id.btn_f7, KeyEvent.KEYCODE_F7);
+        setupHoldKey(R.id.btn_f8, KeyEvent.KEYCODE_F8);
+        setupHoldKey(R.id.btn_f9, KeyEvent.KEYCODE_F9);
+        setupHoldKey(R.id.btn_f10, KeyEvent.KEYCODE_F10);
+        setupHoldKey(R.id.btn_f11, KeyEvent.KEYCODE_F11);
+        setupHoldKey(R.id.btn_f12, KeyEvent.KEYCODE_F12);
+        setupHoldKey(R.id.btn_pause, KeyEvent.KEYCODE_BREAK);
     }
 
-    private void fireKeyRepeat(int keyCode) {
-        if (keyListener != null) keyListener.onKeyRepeat(keyCode);
-    }
-
-    private void fireCharRepeat(char ch) {
-        if (keyListener != null) keyListener.onCharRepeat(ch);
-    }
-
-    private void setKeyClick(int id, OnClickListener listener) {
-        findViewById(id).setOnClickListener(v -> {
-            v.performHapticFeedback(KEYBOARD_TAP);
-            listener.onClick(v);
-        });
+    private void setupHoldKey(int id, int keyCode) {
+        holdKeys.register(findViewById(id), keyCode);
     }
 
     @SuppressLint("ClickableViewAccessibility")
-    private void setKeyRepeat(int id, Runnable action) {
-        findViewById(id).setOnTouchListener((v, event) -> {
-            switch (event.getActionMasked()) {
-                case MotionEvent.ACTION_DOWN:
-                    v.setPressed(true);
-                    v.performHapticFeedback(KEYBOARD_TAP);
-                    action.run();
-                    stopKeyRepeat();
-                    activeRepeatRunnable = () -> {
-                        action.run();
-                        handler.postDelayed(activeRepeatRunnable, KEY_REPEAT_INTERVAL_MS);
-                    };
-                    handler.postDelayed(activeRepeatRunnable, KEY_REPEAT_DELAY_MS);
-                    return true;
-                case MotionEvent.ACTION_UP:
-                case MotionEvent.ACTION_CANCEL:
-                    v.setPressed(false);
-                    stopKeyRepeat();
-                    return true;
-            }
-            return false;
-        });
-    }
-
     private void setupModifierKey(int btnId, int keyCode) {
-        View btn = findViewById(btnId);
+        var btn = findViewById(btnId);
         btn.setOnClickListener(v -> {
             v.performHapticFeedback(KEYBOARD_TAP);
             if (keyListener != null) keyListener.onModifierClick(keyCode);
@@ -228,77 +194,26 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         });
     }
 
-    public void stopKeyRepeat() {
-        if (activeRepeatRunnable != null) {
-            handler.removeCallbacks(activeRepeatRunnable);
-            activeRepeatRunnable = null;
+    /**
+     * Show/hide the bottom row of laptop-common keys. Hidden while the physical keyboard is up
+     * (it has those keys itself); the FNx expansion collapses with it since FNx lives there.
+     */
+    public void setPhyCommonRowVisible(boolean visible) {
+        if (phyCommonVisible == visible) return;
+        phyCommonVisible = visible;
+        if (!visible && fnxActive) {
+            fnxActive = false;
+            fnKeysContainer.setVisibility(GONE);
+            updateToggleButtons();
+        }
+        if (getVisibility() == VISIBLE) {
+            ViewHeightAnimator.setVisible(phyCommonRow, visible);
+        } else {
+            phyCommonRow.setVisibility(visible ? VISIBLE : GONE);
         }
     }
 
-    public void animateIn() {
-        animateRowIn(this);
-    }
-
-    public void animateOut() {
-        animateRowOut(this);
-    }
-
     public void setVisibleAnimated(boolean visible) {
-        if (visible) animateIn();
-        else animateOut();
-    }
-
-    private void animateRowIn(@NonNull View row) {
-        if (row.getVisibility() == VISIBLE) return;
-        row.setVisibility(VISIBLE);
-        row.measure(
-            MeasureSpec.makeMeasureSpec(
-                ((View) row.getParent()).getWidth(), MeasureSpec.EXACTLY),
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-        );
-        int target = row.getMeasuredHeight();
-        var lp = row.getLayoutParams();
-        lp.height = 0;
-        row.requestLayout();
-        var anim = ValueAnimator.ofInt(0, target);
-        anim.setDuration(ANIM_DURATION);
-        anim.addUpdateListener(a -> {
-            lp.height = (int) a.getAnimatedValue();
-            row.requestLayout();
-        });
-        anim.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator a) {
-                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                row.requestLayout();
-            }
-        });
-        anim.start();
-    }
-
-    private void animateRowOut(@NonNull View row) {
-        if (row.getVisibility() == GONE) return;
-        int start = row.getHeight();
-        var lp = row.getLayoutParams();
-        var anim = ValueAnimator.ofInt(start, 0);
-        anim.setDuration(ANIM_DURATION);
-        anim.addUpdateListener(a -> {
-            lp.height = (int) a.getAnimatedValue();
-            row.requestLayout();
-        });
-        anim.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator a) {
-                row.setVisibility(GONE);
-                lp.height = ViewGroup.LayoutParams.WRAP_CONTENT;
-                row.requestLayout();
-            }
-        });
-        anim.start();
-    }
-
-    private void setRowVisible(@NonNull View row, boolean visible) {
-        if (visible) animateRowIn(row);
-        else animateRowOut(row);
+        ViewHeightAnimator.setVisible(this, visible);
     }
 }

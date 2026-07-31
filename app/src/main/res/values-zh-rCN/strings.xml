@@ -858,6 +858,7 @@
 
     <string name="vnc_menu_keyboard">软键盘</string>
     <string name="vnc_menu_extra_keys">额外按键</string>
+    <string name="vnc_menu_phy_keyboard">实体键盘</string>
     <string name="vnc_menu_fullscreen">全屏</string>
     <string name="vnc_menu_input_mode_touch">触摸模式</string>
     <string name="vnc_menu_input_mode_mouse">鼠标模式</string>
