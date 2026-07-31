@@ -471,6 +471,12 @@
     <string name="vm_compressed_disk_title">Compressed disk image</string>
     <string name="vm_compressed_disk_message">crosvm can\'t read compressed qcow2 images -- the VM would boot to disk I/O errors with no partition table. Convert it to uncompressed and start?\n%1$s</string>
     <string name="vm_compressed_disk_convert">Convert &amp; start</string>
+    <string name="vm_snapshot_disk_title">Disk has internal snapshots</string>
+    <string name="vm_snapshot_disk_message">crosvm has no qcow2 snapshot support and won\'t open a snapshotted disk for writing, so the VM can\'t start. Flattening keeps the current disk state and permanently deletes the snapshots. To keep them, attach the disk read-only or start this VM with the QEMU backend instead.\n%1$s</string>
+    <string name="vm_snapshot_disk_flatten">Delete snapshots &amp; start</string>
+    <string name="disk_snapshot_crosvm_warning_title">crosvm can\'t use snapshots</string>
+    <string name="disk_snapshot_crosvm_warning_message">This disk is attached writable to a crosvm VM (%1$s), which won\'t start while the disk has snapshots -- it has no qcow2 snapshot support. For crosvm, use a backing-file overlay instead. Create the snapshot anyway?</string>
+    <string name="disk_snapshot_crosvm_warning_create">Create anyway</string>
     <string name="vm_compressed_disk_start_anyway">Start anyway</string>
     <string name="vm_compressed_disk_start_countdown">Start anyway (%1$d)</string>
     <string name="field_copy">Copy</string>

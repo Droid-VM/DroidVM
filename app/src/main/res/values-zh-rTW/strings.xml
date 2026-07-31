@@ -433,6 +433,12 @@
     <string name="vm_compressed_disk_title">壓縮的磁碟映像</string>
     <string name="vm_compressed_disk_message">crosvm 無法讀取壓縮的 qcow2 映像——啟動時會出現磁碟 I/O 錯誤且找不到分割槽表。要先轉換成非壓縮再啟動嗎？\n%1$s</string>
     <string name="vm_compressed_disk_convert">轉換並啟動</string>
+    <string name="vm_snapshot_disk_title">磁碟含內部快照</string>
+    <string name="vm_snapshot_disk_message">crosvm 不支援 qcow2 快照，也不會以可寫方式開啟含快照的磁碟，因此虛擬機器無法啟動。攤平會保留磁碟目前的狀態，並永久刪除這些快照。若要保留快照，請將磁碟改為唯讀掛載，或改用 QEMU 後端啟動。\n%1$s</string>
+    <string name="vm_snapshot_disk_flatten">刪除快照並啟動</string>
+    <string name="disk_snapshot_crosvm_warning_title">crosvm 無法使用快照</string>
+    <string name="disk_snapshot_crosvm_warning_message">此磁碟以可寫方式掛載於 crosvm 虛擬機器（%1$s），而 crosvm 不支援 qcow2 快照，磁碟含快照時該虛擬機器將無法啟動。在 crosvm 上請改用 backing file 增量映像。仍要建立快照嗎？</string>
+    <string name="disk_snapshot_crosvm_warning_create">仍要建立</string>
     <string name="vm_compressed_disk_start_anyway">仍要啟動</string>
     <string name="vm_compressed_disk_start_countdown">仍要啟動 (%1$d)</string>
     <string name="field_copy">複製</string>
