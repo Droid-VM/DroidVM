@@ -7,6 +7,7 @@ import static android.widget.Toast.LENGTH_LONG;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
+import static cn.classfun.droidvm.lib.utils.ImageUtils.hasInternalSnapshots;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
@@ -68,11 +69,13 @@ public final class VMActions {
         @NonNull AtomicBoolean wantOpenConsole,
         @Nullable ConvertLauncher convertLauncher
     ) {
-        // crosvm can't read compressed qcow2 (the guest gets vda I/O errors
-        // and an unreadable partition table, so any root= hangs). Catch it
-        // before start and offer to convert; everything else starts normally.
-        guardCompressedDisks(config, mainHandler, ui, convertLauncher,
-            () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole));
+        // Two things crosvm can't do with a qcow2 disk: read compressed clusters (the guest gets
+        // vda I/O errors and an unreadable partition table, so any root= hangs), and open an
+        // image with internal snapshots for writing at all. Catch both before start and offer to
+        // convert; everything else starts normally.
+        guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
+            () -> guardCompressedDisks(config, mainHandler, ui, convertLauncher,
+                () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole)));
     }
 
     private static void startAfterGuard(
@@ -98,6 +101,66 @@ public final class VMActions {
             return;
         }
         doCreateAndStart(config, mainHandler, ui, wantOpenConsole, null);
+    }
+
+    /**
+     * Pre-start check: crosvm refuses to open a qcow2 with internal snapshots for writing (it
+     * has no snapshot support, and writing would corrupt them), so a writable disk carrying
+     * snapshots means the VM cannot start at all. Offer to flatten it - the same convert the
+     * compression guard uses, which keeps the active state and drops the snapshots - and say so
+     * plainly, since that is destructive in a way the compression convert is not. There is no
+     * "start anyway": crosvm would just fail to open the disk. Read-only disks are skipped;
+     * crosvm accepts snapshots there.
+     */
+    private static void guardSnapshotDisks(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @Nullable ConvertLauncher convertLauncher,
+        @NonNull Runnable proceed
+    ) {
+        if (convertLauncher == null
+            || optEnum(config.item, "backend", VMBackend.DEFAULT) != VMBackend.CROSVM) {
+            proceed.run();
+            return;
+        }
+        var qcow2 = qcow2DiskPaths(config, true);
+        if (qcow2.isEmpty()) {
+            proceed.run();
+            return;
+        }
+        runOnPool(() -> {
+            var snapshotted = new JSONArray();
+            for (var p : qcow2)
+                if (hasInternalSnapshots(p)) snapshotted.put(p);
+            if (snapshotted.length() == 0)
+                mainHandler.post(proceed);
+            else
+                mainHandler.post(() ->
+                    promptFlattenSnapshots(ui, convertLauncher, snapshotted, proceed));
+        });
+    }
+
+    private static void promptFlattenSnapshots(
+        @NonNull UIContext ui,
+        @NonNull ConvertLauncher convertLauncher,
+        @NonNull JSONArray snapshotted,
+        @NonNull Runnable proceed
+    ) {
+        if (!ui.isAlive()) return;
+        var ctx = ui.getContext();
+        var files = new StringBuilder();
+        for (int i = 0; i < snapshotted.length(); i++) {
+            var p = snapshotted.optString(i, "");
+            if (!p.isEmpty()) files.append("\n- ").append(basename(p));
+        }
+        new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.vm_snapshot_disk_title)
+            .setMessage(ctx.getString(R.string.vm_snapshot_disk_message, files.toString()))
+            .setPositiveButton(R.string.vm_snapshot_disk_flatten,
+                (d, w) -> convertNext(ctx, convertLauncher, snapshotted, 0, proceed))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     /**
@@ -211,13 +274,26 @@ public final class VMActions {
     /** Absolute paths of the VM's qcow2 disks (the ones crosvm reads as blocks). */
     @NonNull
     private static List<String> qcow2DiskPaths(@NonNull VMConfig config) {
+        return qcow2DiskPaths(config, false);
+    }
+
+    /**
+     * Absolute paths of the VM's qcow2 disks; with {@code writableOnly}, skips the ones attached
+     * read-only ({@code ro=true}), which crosvm opens under rules of their own - notably it
+     * accepts internal snapshots there, since reading never touches them.
+     */
+    @NonNull
+    private static List<String> qcow2DiskPaths(@NonNull VMConfig config, boolean writableOnly) {
         var out = new ArrayList<String>();
         var disks = config.item.opt("disks", null);
         if (disks != null && disks.is(DataItem.Type.ARRAY)) {
             for (var disk : disks.asArray()) {
                 var path = disk.optString("path", "");
-                if (!path.isEmpty() && DiskFormat.fromFilename(path) == DiskFormat.QCOW2)
-                    out.add(path);
+                if (path.isEmpty() || DiskFormat.fromFilename(path) != DiskFormat.QCOW2)
+                    continue;
+                if (writableOnly && disk.optBoolean("readonly", false))
+                    continue;
+                out.add(path);
             }
         }
         return out;

@@ -66,6 +66,22 @@ public final class ImageUtils {
     }
 
     /**
+     * Whether the image carries qcow2 internal snapshots ({@code qemu-img snapshot -c}). crosvm
+     * refuses to open such an image for writing - it has no snapshot support, and writing would
+     * damage the snapshots rather than ignore them - so a VM disk must be flattened first.
+     * Detection failures return {@code false}: an image we can't read tells us nothing, and a
+     * real start would surface the problem anyway.
+     */
+    public static boolean hasInternalSnapshots(String path) {
+        try {
+            var snapshots = getImageInfo(path).optJSONArray("snapshots");
+            return snapshots != null && snapshots.length() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
      * The image's effective compression as qemu names it: {@code "none"} unless the image
      * actually stores compressed clusters (see {@link #hasCompressedClusters}); the qcow2
      * header's {@code compression-type} then picks {@code "zlib"} vs {@code "zstd"} (that header
