@@ -8,6 +8,7 @@ import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isClearLogsBeforeStartEnabled;
 
@@ -39,6 +40,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity;
 import cn.classfun.droidvm.ui.vm.boot.BootMenuDialog;
@@ -99,12 +101,13 @@ public final class VMActions {
     }
 
     /**
-     * Pre-start check: for a crosvm VM with qcow2 disks, ask the daemon
-     * (lbx) which are zlib-compressed and therefore unreadable by crosvm. If
-     * any are, prompt to convert (decompress) them, then {@code proceed};
-     * otherwise {@code proceed} straight away. A check failure never blocks a
-     * start -- a real boot would surface the problem. Callbacks arrive on the
-     * daemon thread, so UI work is posted to {@code mainHandler}.
+     * Pre-start check: for a crosvm VM with qcow2 disks, detect each disk's compression via
+     * qemu-img ({@link DiskCompress#detect}; ImageUtils runs it through the root run-context,
+     * so daemon-owned paths read fine) and prompt to convert any whose compression isn't in
+     * {@link DiskCompress#CROSVM_SUPPORTED} - the convert rewrites uncompressed, which is
+     * always supported - then {@code proceed}; otherwise {@code proceed} straight away. A
+     * detection failure reads as uncompressed, so a check hiccup never blocks a start (a real
+     * boot would surface the problem anyway).
      */
     private static void guardCompressedDisks(
         @NonNull VMConfig config,
@@ -123,24 +126,16 @@ public final class VMActions {
             proceed.run();
             return;
         }
-        var images = new JSONArray();
-        for (var p : qcow2) images.put(p);
-        DaemonConnection.getInstance().buildRequest("disk_compat")
-            .put("images", images)
-            .onResponse(resp -> {
-                var compressed = resp.optJSONArray("compressed");
-                if (compressed == null || compressed.length() == 0)
-                    mainHandler.post(proceed);
-                else
-                    mainHandler.post(() ->
-                        promptConvert(config, ui, convertLauncher, compressed, proceed));
-            })
-            .onUnsuccessful(resp -> mainHandler.post(proceed))
-            .onError(e -> {
-                Log.w(TAG, "disk_compat check failed", e);
+        runOnPool(() -> {
+            var unsupported = new JSONArray();
+            for (var p : qcow2)
+                if (!DiskCompress.detect(p).isCrosvmSupported()) unsupported.put(p);
+            if (unsupported.length() == 0)
                 mainHandler.post(proceed);
-            })
-            .invoke();
+            else
+                mainHandler.post(() ->
+                    promptConvert(config, ui, convertLauncher, unsupported, proceed));
+        });
     }
 
     private static void promptConvert(

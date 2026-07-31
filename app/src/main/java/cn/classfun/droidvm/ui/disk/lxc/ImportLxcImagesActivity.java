@@ -18,7 +18,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
-import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimize;
+import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimizeAfterImport;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -784,8 +784,12 @@ public final class ImportLxcImagesActivity extends AppCompatActivity {
         var resultData = new Intent();
         resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
         setResult(RESULT_OK, resultData);
-        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2)
-            startOptimize(this, result.diskId);
+        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2) {
+            // Rewrite only when the compression can't boot on crosvm; finish once decided.
+            startOptimizeAfterImport(this, result.diskId,
+                pathJoin(result.folder, result.name), this::finish);
+            return;
+        }
         finish();
     }
 

@@ -64,4 +64,25 @@ public final class ImageUtils {
             return false;
         }
     }
+
+    /**
+     * The image's effective compression as qemu names it: {@code "none"} unless the image
+     * actually stores compressed clusters (see {@link #hasCompressedClusters}); the qcow2
+     * header's {@code compression-type} then picks {@code "zlib"} vs {@code "zstd"} (that header
+     * field alone can't - it reads "zlib" for every v3 image). Detection failures return
+     * {@code "none"}: an undetectable image is treated as uncompressed.
+     */
+    @NonNull
+    public static String detectCompression(String path) {
+        try {
+            if (!hasCompressedClusters(path)) return "none";
+            var info = getImageInfo(path);
+            var fmtSpecific = info.optJSONObject("format-specific");
+            var data = fmtSpecific == null ? null : fmtSpecific.optJSONObject("data");
+            var type = data == null ? "" : data.optString("compression-type", "");
+            return "zstd".equals(type) ? "zstd" : "zlib";
+        } catch (Exception e) {
+            return "none";
+        }
+    }
 }

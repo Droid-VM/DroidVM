@@ -25,6 +25,7 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.os.LocaleListCompat;
@@ -38,6 +39,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Locale;
@@ -57,6 +59,8 @@ import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
+import cn.classfun.droidvm.ui.disk.operation.OptimizeCompression;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.base.MainBaseFragment;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
@@ -72,7 +76,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
-    public static final String KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE = "vm_keep_compress_on_optimize";
+    public static final String KEY_VM_OPTIMIZE_COMPRESSION = "vm_optimize_compression";
+    /** Sentinel for {@link #KEY_VM_OPTIMIZE_COMPRESSION}: prompt on every optimize. */
+    public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
     public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
@@ -88,7 +94,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemDaemonRestart;
     private SwitchRowWidget itemVMAutoConsole;
     private SwitchRowWidget itemVMClearLogsBeforeStart;
-    private SwitchRowWidget itemVMKeepCompressOnOptimize;
+    private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
     private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
@@ -146,7 +152,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemDaemonRestart = view.findViewById(R.id.item_daemon_restart);
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
-        itemVMKeepCompressOnOptimize = view.findViewById(R.id.item_vm_keep_compress_on_optimize);
+        itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
         itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
@@ -180,7 +186,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
         bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
-        bindOnChecked(itemVMKeepCompressOnOptimize, KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+        bindOnClick(itemVMOptimizeCompression, this::showOptimizeCompressionDialog);
+        refreshOptimizeCompressionSummary();
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
@@ -228,9 +235,57 @@ public final class MainSettingsFragment extends MainBaseFragment {
         return prefs.getBoolean(KEY_VM_CLEAR_LOGS_BEFORE_START, false);
     }
 
-    public static boolean isKeepCompressOnOptimizeEnabled(@NonNull Context context) {
+    /**
+     * The compression a disk optimize should target: the wire value of a member of
+     * {@link DiskCompress#CROSVM_SUPPORTED}, or {@link #OPTIMIZE_COMPRESSION_ASK} to prompt
+     * each time (the prompt's "remember" writes this back). A stored value that isn't (or is
+     * no longer) crosvm-supported reads as ask.
+     */
+    @NonNull
+    public static String getOptimizeCompression(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+        var value = prefs.getString(KEY_VM_OPTIMIZE_COMPRESSION, OPTIMIZE_COMPRESSION_ASK);
+        var compress = DiskCompress.fromValue(value);
+        if (compress != null && compress.isCrosvmSupported()) return value;
+        return OPTIMIZE_COMPRESSION_ASK;
+    }
+
+    public static void setOptimizeCompression(@NonNull Context context, @NonNull String value) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_VM_OPTIMIZE_COMPRESSION, value).apply();
+    }
+
+    @StringRes
+    private static int optimizeCompressionLabel(@NonNull String value) {
+        var compress = DiskCompress.fromValue(value);
+        if (compress != null) return OptimizeCompression.labelOf(compress);
+        return R.string.settings_optimize_compression_ask;
+    }
+
+    private void refreshOptimizeCompressionSummary() {
+        itemVMOptimizeCompression.setSubtitle(
+            optimizeCompressionLabel(getOptimizeCompression(requireContext())));
+    }
+
+    // Ask + every crosvm-supported compression; the list grows as CROSVM_SUPPORTED does.
+    private void showOptimizeCompressionDialog() {
+        var values = new ArrayList<String>();
+        values.add(OPTIMIZE_COMPRESSION_ASK);
+        for (var compress : DiskCompress.CROSVM_SUPPORTED) values.add(compress.value());
+        var labels = new String[values.size()];
+        for (int i = 0; i < values.size(); i++)
+            labels[i] = getString(optimizeCompressionLabel(values.get(i)));
+        var current = getOptimizeCompression(requireContext());
+        int checked = Math.max(0, values.indexOf(current));
+        new MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_optimize_compression_title)
+            .setSingleChoiceItems(labels, checked, (d, which) -> {
+                setOptimizeCompression(requireContext(), values.get(which));
+                refreshOptimizeCompressionSummary();
+                d.dismiss();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     public static boolean isAutoCheckUpdateEnabled(@NonNull Context context) {

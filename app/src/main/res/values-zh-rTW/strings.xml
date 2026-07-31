@@ -389,8 +389,10 @@
     <string name="settings_vm_auto_console_summary">啟動虛擬機器時自動開啟控制台</string>
     <string name="settings_vm_clear_logs_before_start_title">啟動前清理日誌</string>
     <string name="settings_vm_clear_logs_before_start_summary">啟動虛擬機器前清理該虛擬機器的所有控制台日誌</string>
-    <string name="settings_vm_keep_compress_on_optimize_title">最佳化時保持壓縮</string>
-    <string name="settings_vm_keep_compress_on_optimize_summary">最佳化磁碟時保留其原有壓縮而非解壓縮；關閉則重寫為未壓縮</string>
+    <string name="settings_optimize_compression_title">最佳化壓縮格式</string>
+    <string name="settings_optimize_compression_ask">每次詢問</string>
+    <string name="disk_compress_none">未壓縮</string>
+    <string name="disk_optimize_compress_remember">記住此選擇</string>
     <string name="settings_cpu_affinity_title">CPU 親和性</string>
     <string name="settings_cpu_affinity_summary_fmt">磁碟操作執行於核心 %1$s</string>
     <string name="settings_cpu_affinity_all_cores">磁碟操作可使用全部核心</string>
