@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Host for a module description page. The WebView's height is set in code to a
+  fraction of the screen: a WebView cannot measure its own content before it has
+  laid it out, and resizing the dialog afterwards would make it jump.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingHorizontal="20dp">
+
+    <WebView
+        android:id="@+id/descr_web"
+        android:layout_width="match_parent"
+        android:layout_height="300dp" />
+
+</FrameLayout>

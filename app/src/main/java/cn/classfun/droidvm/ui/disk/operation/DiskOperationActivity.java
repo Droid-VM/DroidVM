@@ -6,6 +6,7 @@ package cn.classfun.droidvm.ui.disk.operation;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
+import static cn.classfun.droidvm.lib.utils.ImageUtils.hasBackingFile;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
@@ -42,6 +43,7 @@ import java.util.UUID;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
@@ -145,8 +147,11 @@ public final class DiskOperationActivity extends AppCompatActivity {
     ) {
         runOnPool(() -> {
             var supported = DiskCompress.detect(path).isCrosvmSupported();
+            // An imported overlay is skipped outright: it is mostly a header (nothing worth
+            // rewriting), and its chain gets checked by the pre-start guard instead.
+            var isOverlay = hasBackingFile(path);
             activity.runOnUiThread(() -> {
-                if (supported || activity.isFinishing()) {
+                if (supported || isOverlay || activity.isFinishing()) {
                     done.run();
                     return;
                 }
@@ -265,6 +270,92 @@ public final class DiskOperationActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * After a successful {@code qemu-img commit}: the base's logical content now equals the
+     * overlay's, so re-pointing the overlay's children and VM attachments at the base is a
+     * lossless swap. Order matters only in that the overlay is deleted LAST - until then both
+     * "points at overlay" and "points at base" are valid views, so a failure at any step leaves
+     * a consistent, recoverable state.
+     */
+    private void finishCommit() {
+        try {
+            var store = new DiskStore();
+            store.load(this);
+            var overlay = store.findById(diskConfig.getId());
+            if (overlay == null) return;
+            var parent = store.parentOf(overlay);
+            if (parent == null) {
+                Log.w(TAG, "commit finished but overlay has no registered parent");
+                return;
+            }
+            var overlayPath = overlay.getFullPath();
+            var parentPath = parent.getFullPath();
+            var parentFormat = detectFormat(parentPath);
+            // Children of the committed overlay re-base onto the (now content-identical)
+            // parent: header-only rewrite, then the registry link.
+            for (var child : store.childrenOf(overlay.getId())) {
+                var result = RunUtils.runList(
+                    findQemuImg(), "rebase", "-u",
+                    "-b", parentPath, "-F", parentFormat, child.getFullPath());
+                if (!result.isSuccess()) result.printLog(TAG);
+                child.setParentId(parent.getId());
+            }
+            // Any VM attachment of the overlay now means the base.
+            var vmStore = new cn.classfun.droidvm.lib.store.vm.VMStore();
+            if (vmStore.load(vmStore, this)) {
+                boolean vmChanged = false;
+                for (int i = 0; i < vmStore.size(); i++) {
+                    var disks = vmStore.get(i).item.opt("disks", null);
+                    if (disks == null
+                        || !disks.is(cn.classfun.droidvm.lib.store.base.DataItem.Type.ARRAY))
+                        continue;
+                    for (var disk : disks.asArray()) {
+                        if (overlayPath.equals(disk.optString("path", ""))) {
+                            disk.set("path", parentPath);
+                            vmChanged = true;
+                        }
+                    }
+                }
+                if (vmChanged) vmStore.save(this);
+            }
+            store.removeById(overlay.getId());
+            store.save(this);
+            RunUtils.runList("rm", "-f", overlayPath);
+        } catch (Exception e) {
+            Log.e(TAG, "commit follow-up failed", e);
+        }
+    }
+
+    /** After a successful flatten the overlay stands alone; only the registry link changes. */
+    private void finishFlatten() {
+        try {
+            var store = new DiskStore();
+            store.load(this);
+            var overlay = store.findById(diskConfig.getId());
+            if (overlay == null) return;
+            overlay.setParentId(null);
+            store.save(this);
+        } catch (Exception e) {
+            Log.e(TAG, "flatten follow-up failed", e);
+        }
+    }
+
+    @NonNull
+    private static String detectFormat(@NonNull String path) {
+        try {
+            var f = cn.classfun.droidvm.lib.utils.ImageUtils.getImageInfo(path)
+                .optString("format", "");
+            if (!f.isEmpty()) return f;
+        } catch (Exception ignored) {
+        }
+        return "qcow2";
+    }
+
+    @NonNull
+    private static String findQemuImg() {
+        return cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath("qemu-img");
+    }
+
     private void startTerminalSession(String cmd) {
         var shell = findExecute("su", "/system/bin/su");
         var cwd = getFilesDir().getAbsolutePath();
@@ -285,9 +376,18 @@ public final class DiskOperationActivity extends AppCompatActivity {
         if (finished) return;
         finished = true;
         int exitCode = session == null ? -1 : session.getExitStatus();
+        // Overlay-tree operations carry registry/VM follow-up decided before launch; run it
+        // unattended now that the data operation succeeded.
+        if (exitCode == 0 && diskConfig != null && "commit".equals(taskAction)) {
+            runOnPool(this::finishCommit);
+        } else if (exitCode == 0 && diskConfig != null && "flatten".equals(taskAction)) {
+            runOnPool(this::finishFlatten);
+        }
         // Path mode (no registered DiskConfig) is an in-place op, so there is
-        // nothing to persist -- skip the store update.
-        if (exitCode == 0 && outputPath != null && diskConfig != null) {
+        // nothing to persist -- skip the store update. commit/flatten did their own registry
+        // work above (their outputPath equals the disk path; nothing to rename either).
+        if (exitCode == 0 && outputPath != null && diskConfig != null
+            && !"commit".equals(taskAction) && !"flatten".equals(taskAction)) {
             if (taskAction.equals("clone")) {
                 var cloned = new DiskConfig();
                 if (outputPath.contains("/")) {

@@ -82,6 +82,13 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         if (diskAdapter != null) diskAdapter.notifyDataSetChanged();
     }
 
+    @Override
+    public void onTabShown() {
+        // Merges and flattens run in other screens; re-derive which disks are overlay bases so
+        // a row's read-only lock reflects the tree as it is now.
+        if (diskAdapter != null) diskAdapter.reloadLockedPaths();
+    }
+
     private void diskAdapterOnImportOrCreate(int pos) {
         Runnable onImportPickerUi = () -> parent.runOnUiThread(this::onImportPicker);
         pendingBrowsePosition = pos;

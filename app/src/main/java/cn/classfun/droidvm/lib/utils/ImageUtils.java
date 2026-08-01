@@ -65,6 +65,15 @@ public final class ImageUtils {
         }
     }
 
+    /** Whether the image declares a backing file (i.e. it is an overlay). Failures read false. */
+    public static boolean hasBackingFile(String path) {
+        try {
+            return !getImageInfo(path).optString("backing-filename", "").isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     /**
      * Whether the image carries qcow2 internal snapshots ({@code qemu-img snapshot -c}). crosvm
      * refuses to open such an image for writing - it has no snapshot support, and writing would

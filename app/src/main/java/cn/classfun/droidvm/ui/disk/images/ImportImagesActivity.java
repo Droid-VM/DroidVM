@@ -45,6 +45,7 @@ import cn.classfun.droidvm.lib.download.DiskDownloadManager;
 import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.lib.ui.NotificationPermission;
+import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -398,9 +399,12 @@ public final class ImportImagesActivity extends AppCompatActivity {
         resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
         setResult(RESULT_OK, resultData);
         if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2) {
-            // Rewrite only when the compression can't boot on crosvm; finish once decided.
-            startOptimizeAfterImport(this, result.diskId,
-                pathJoin(result.folder, result.name), this::finish);
+            // Resolve the backing chain first (may prompt once), then rewrite only when the
+            // compression can't boot on crosvm; finish once everything is decided.
+            var diskId = result.diskId;
+            var diskPath = pathJoin(result.folder, result.name);
+            BackingChainLinker.link(this, diskId, () ->
+                startOptimizeAfterImport(this, diskId, diskPath, this::finish));
             return;
         }
         finish();

@@ -89,6 +89,14 @@
                 android:title="@string/edit_vm_disk_bus"
                 app:pb_mode="dialog" />
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_branches"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:text="@string/disk_branches_button" />
+
             <Space
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"

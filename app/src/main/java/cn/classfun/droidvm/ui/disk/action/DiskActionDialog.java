@@ -37,11 +37,21 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONObject;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.ui.disk.tree.DiskTree;
+import cn.classfun.droidvm.ui.vm.VmRunningQuery;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.agent.password.ChangePasswordActivity;
@@ -82,21 +92,31 @@ public final class DiskActionDialog {
 
     public boolean diskMenuOnClick(@NonNull DiskConfig config, @IdRes int id) {
         if (id == R.id.menu_disk_resize) {
-            new DiskResizeDialog(context, config);
+            guardUnlocked(config, () -> new DiskResizeDialog(context, config));
             return true;
         } else if (id == R.id.menu_disk_convert) {
-            var convert = new DiskSetFormatDialog(context, config);
-            convert.show();
+            guardUnlocked(config, () -> new DiskSetFormatDialog(context, config).show());
+            return true;
         } else if (id == R.id.menu_disk_optimize) {
-            tryOptimize(config);
+            guardUnlocked(config, () -> tryOptimize(config));
             return true;
         } else if (id == R.id.menu_disk_delete) {
             confirmDelete(config);
             return true;
         } else if (id == R.id.menu_disk_create_increment) {
-            var intent = new Intent(context, DiskCreateActivity.class);
-            intent.putExtra(DiskCreateActivity.EXTRA_BACKING_ID, config.getId().toString());
-            launchActivity(intent);
+            // Snapshot-feel path: one name field, instant create. Advanced (size, compression,
+            // encryption) falls through to the full create screen in backing mode.
+            new DiskOverlayCreateDialog(context, config, onUpdate, () -> {
+                var intent = new Intent(context, DiskCreateActivity.class);
+                intent.putExtra(DiskCreateActivity.EXTRA_BACKING_ID, config.getId().toString());
+                launchActivity(intent);
+            }).show();
+            return true;
+        } else if (id == R.id.menu_disk_merge) {
+            tryMerge(config);
+            return true;
+        } else if (id == R.id.menu_disk_flatten) {
+            tryFlatten(config);
             return true;
         } else if (id == R.id.menu_disk_show_info) {
             showMoreInfo(config);
@@ -105,11 +125,267 @@ public final class DiskActionDialog {
             new DiskCloneDialog(context, config).show();
             return true;
         } else if (id == R.id.menu_disk_change_password) {
-            var intent = ChangePasswordActivity.createIntent(context, config.getId());
-            launchActivity(intent);
+            guardUnlocked(config, () -> {
+                var intent = ChangePasswordActivity.createIntent(context, config.getId());
+                launchActivity(intent);
+            });
             return true;
         }
         return false;
+    }
+
+    /**
+     * Merge the overlay's changes down into its base ("delete the snapshot, keep the current
+     * state"). All conditions are checked and every consequence is stated in ONE confirmation
+     * before anything runs; the data merge and its registry/VM follow-up (children re-based
+     * onto the base, attachments re-pointed, overlay deleted last) then run unattended in
+     * {@code DiskOperationActivity}. Requires the overlay to be its base's only child - commit
+     * rewrites the base, which would corrupt sibling overlays - and the whole family's VMs off.
+     */
+    public void tryMerge(@NonNull DiskConfig config) {
+        tryMerge(config, null);
+    }
+
+    /**
+     * @param extraNote appended to the confirmation - the caller's own consequences (e.g. the
+     *                  VM row being edited will re-point), so the user still sees exactly one
+     *                  question before anything runs
+     */
+    public void tryMerge(@NonNull DiskConfig config, @Nullable String extraNote) {
+        tryMerge(config, extraNote, null);
+    }
+
+    /** @param onConfirmed runs (main thread) only once the user confirms, never on cancel. */
+    public void tryMerge(
+        @NonNull DiskConfig config, @Nullable String extraNote, @Nullable Runnable onConfirmed) {
+        runOnPool(() -> {
+            try {
+                var store = new DiskStore();
+                store.load(context);
+                var self = store.findById(config.getId());
+                var parent = self == null ? null : store.parentOf(self);
+                if (parent == null) {
+                    fail(context.getString(R.string.disk_merge_not_overlay));
+                    return;
+                }
+                if (store.childrenOf(parent.getId()).size() != 1) {
+                    fail(context.getString(R.string.disk_merge_siblings, parent.getName()));
+                    return;
+                }
+                var runningNames = runningFamilyVms(store, self);
+                if (!runningNames.isEmpty()) {
+                    fail(context.getString(R.string.disk_family_vm_running,
+                        "\n- " + String.join("\n- ", runningNames)));
+                    return;
+                }
+                int childCount = store.childrenOf(self.getId()).size();
+                var repoints = vmsAttaching(self.getFullPath());
+                var message = new StringBuilder(context.getString(
+                    R.string.disk_merge_confirm, self.getName(), parent.getName()));
+                if (childCount > 0)
+                    message.append(context.getString(
+                        R.string.disk_merge_confirm_children, childCount, parent.getName()));
+                if (!repoints.isEmpty())
+                    message.append(context.getString(
+                        R.string.disk_merge_confirm_vms,
+                        "\n- " + String.join("\n- ", repoints), parent.getName()));
+                if (extraNote != null) message.append(extraNote);
+                mainLooper.post(() -> new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.disk_merge)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, (d, w) -> {
+                        try {
+                            var obj = new JSONObject();
+                            obj.put("action", "commit");
+                            context.startActivity(createIntent(context, config.getId(), obj));
+                            if (onConfirmed != null) onConfirmed.run();
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to start commit", e);
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show());
+            } catch (Exception e) {
+                Log.w(TAG, "merge pre-checks failed", e);
+                fail(String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    /**
+     * Make the overlay standalone by pulling its base's data in ("take the branch with you").
+     * Writes only the overlay, so sibling overlays never matter; the family's VMs must be off
+     * because the file is rewritten in place.
+     */
+    public void tryFlatten(@NonNull DiskConfig config) {
+        tryFlatten(config, null);
+    }
+
+    /** @param extraNote appended to the confirmation; see {@link #tryMerge(DiskConfig, String)}. */
+    public void tryFlatten(@NonNull DiskConfig config, @Nullable String extraNote) {
+        runOnPool(() -> {
+            try {
+                var store = new DiskStore();
+                store.load(context);
+                var self = store.findById(config.getId());
+                var parent = self == null ? null : store.parentOf(self);
+                if (parent == null) {
+                    fail(context.getString(R.string.disk_merge_not_overlay));
+                    return;
+                }
+                var runningNames = runningFamilyVms(store, self);
+                if (!runningNames.isEmpty()) {
+                    fail(context.getString(R.string.disk_family_vm_running,
+                        "\n- " + String.join("\n- ", runningNames)));
+                    return;
+                }
+                var message = context.getString(
+                    R.string.disk_flatten_confirm, self.getName(), parent.getName())
+                    + (extraNote == null ? "" : extraNote);
+                mainLooper.post(() -> new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.disk_flatten)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, (d, w) -> {
+                        try {
+                            var obj = new JSONObject();
+                            obj.put("action", "flatten");
+                            context.startActivity(createIntent(context, config.getId(), obj));
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to start flatten", e);
+                        }
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show());
+            } catch (Exception e) {
+                Log.w(TAG, "flatten pre-checks failed", e);
+                fail(String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    /** Running VMs attaching any image in {@code config}'s whole family tree. Blocking. */
+    @NonNull
+    private List<String> runningFamilyVms(@NonNull DiskStore store, @NonNull DiskConfig config) {
+        var paths = new HashSet<String>();
+        var queue = new ArrayDeque<UUID>();
+        queue.add(DiskTree.rootOf(store, config.getId()));
+        var seen = new HashSet<UUID>();
+        while (!queue.isEmpty()) {
+            var id = queue.poll();
+            if (!seen.add(id)) continue;
+            var cfg = store.findById(id);
+            if (cfg == null) continue;
+            paths.add(cfg.getFullPath());
+            for (var child : store.childrenOf(id)) queue.add(child.getId());
+        }
+        var candidates = new ArrayList<String>();
+        try {
+            var vmStore = new VMStore();
+            if (vmStore.load(vmStore, context)) {
+                for (int i = 0; i < vmStore.size(); i++) {
+                    var vm = vmStore.get(i);
+                    if (attachesAny(vm, paths)) candidates.add(vm.getName());
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "family VM scan failed", e);
+        }
+        return VmRunningQuery.runningAmong(candidates);
+    }
+
+    /** {@code config} followed by all its descendants, parents before children. */
+    private static void collectSubtree(
+        @NonNull DiskStore store, @NonNull DiskConfig config, @NonNull List<DiskConfig> out) {
+        for (var seen : out)
+            if (seen.getId().equals(config.getId())) return; // cycle guard
+        out.add(config);
+        for (var child : store.childrenOf(config.getId()))
+            collectSubtree(store, child, out);
+    }
+
+    /** Running VMs attaching any of {@code paths}. Blocking. */
+    @NonNull
+    private List<String> runningVmsAttaching(@NonNull java.util.Set<String> paths) {
+        var candidates = new ArrayList<String>();
+        try {
+            var vmStore = new VMStore();
+            if (vmStore.load(vmStore, context)) {
+                for (int i = 0; i < vmStore.size(); i++) {
+                    var vm = vmStore.get(i);
+                    if (attachesAny(vm, paths)) candidates.add(vm.getName());
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "attachment scan failed", e);
+        }
+        return VmRunningQuery.runningAmong(candidates);
+    }
+
+    /** Names of VMs (any attach mode) holding {@code path}. */
+    @NonNull
+    private List<String> vmsAttaching(@NonNull String path) {
+        var out = new ArrayList<String>();
+        try {
+            var vmStore = new VMStore();
+            if (vmStore.load(vmStore, context)) {
+                for (int i = 0; i < vmStore.size(); i++) {
+                    var vm = vmStore.get(i);
+                    if (attachesAny(vm, java.util.Set.of(path))) out.add(vm.getName());
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "attachment scan failed", e);
+        }
+        return out;
+    }
+
+    private static boolean attachesAny(
+        @NonNull VMConfig vm, @NonNull java.util.Set<String> paths) {
+        var disks = vm.item.opt("disks", null);
+        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return false;
+        for (var disk : disks.asArray())
+            if (paths.contains(disk.optString("path", ""))) return true;
+        return false;
+    }
+
+    private void fail(@Nullable String message) {
+        mainLooper.post(() -> new MaterialAlertDialogBuilder(context)
+            .setMessage(message == null ? "?" : message)
+            .setPositiveButton(android.R.string.ok, null)
+            .show());
+    }
+
+    /**
+     * Write operations on a disk other images overlay would shift the ground under those
+     * overlays (resize/convert/password change the content or size; delete orphans them), so a
+     * disk with registered children only allows read-side actions until its overlays are merged,
+     * flattened or deleted. Runs {@code action} on the main thread when unlocked; explains
+     * otherwise. The registry read happens off the main thread.
+     */
+    private void guardUnlocked(@NonNull DiskConfig config, @NonNull Runnable action) {
+        runOnPool(() -> {
+            int children = 0;
+            try {
+                var store = new DiskStore();
+                store.load(context);
+                children = store.childrenOf(config.getId()).size();
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to check disk children", e);
+            }
+            final int n = children;
+            mainLooper.post(() -> {
+                if (n == 0) {
+                    action.run();
+                    return;
+                }
+                new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.disk_locked_title)
+                    .setMessage(context.getString(
+                        R.string.disk_locked_message, config.getName(), n))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            });
+        });
     }
 
     public void tryOptimize(@NonNull DiskConfig config) {
@@ -265,6 +541,9 @@ public final class DiskActionDialog {
             });
             if (this.onUpdate != null)
                 this.onUpdate.run();
+            // Resolve the imported image's backing chain: link/offer-to-import parents,
+            // absolutize relative backing paths. Prompts (if any) come as a single dialog.
+            BackingChainLinker.link(context, config.getId(), this.onUpdate);
         });
         return config;
     }
@@ -277,27 +556,93 @@ public final class DiskActionDialog {
     }
 
     public void confirmDelete(@NonNull DiskConfig config) {
+        confirmDelete(config, null);
+    }
+
+    /** @param extraNote appended to the confirmation; see {@link #tryMerge(DiskConfig, String)}. */
+    public void confirmDelete(@NonNull DiskConfig config, @Nullable String extraNote) {
+        confirmDelete(config, extraNote, null);
+    }
+
+    /**
+     * Delete a disk and everything overlaying it. An overlay holds only differences against its
+     * base, so a base cannot go without taking its descendants with it - deleting is therefore
+     * always a whole-subtree operation (unlike merge, which preserves the data by writing it
+     * down into the base first and can re-link the survivors). The confirmation lists every disk
+     * that will go, and says so as "delete the entire tree" when the target is a family root.
+     *
+     * @param onConfirmed runs (main thread) only once the user confirms, never on cancel.
+     */
+    public void confirmDelete(
+        @NonNull DiskConfig config, @Nullable String extraNote, @Nullable Runnable onConfirmed) {
+        runOnPool(() -> {
+            var store = new DiskStore();
+            store.load(context);
+            var subtree = new ArrayList<DiskConfig>();
+            var self = store.findById(config.getId());
+            collectSubtree(store, self == null ? config : self, subtree);
+            boolean isRoot = self == null || store.parentOf(self) == null;
+            var paths = new HashSet<String>();
+            for (var cfg : subtree) paths.add(cfg.getFullPath());
+            var runningNames = runningVmsAttaching(paths);
+            if (!runningNames.isEmpty()) {
+                fail(context.getString(R.string.disk_family_vm_running,
+                    "\n- " + String.join("\n- ", runningNames)));
+                return;
+            }
+            mainLooper.post(() ->
+                showDeleteDialog(subtree, isRoot, extraNote, onConfirmed));
+        });
+    }
+
+    private void showDeleteDialog(
+        @NonNull List<DiskConfig> subtree,
+        boolean isRoot,
+        @Nullable String extraNote,
+        @Nullable Runnable onConfirmed
+    ) {
         var layout = new LinearLayout(context);
         var checkBox = new CheckBox(context);
         checkBox.setText(R.string.disk_delete_file);
         int pad = (int) (16 * context.getResources().getDisplayMetrics().density);
         layout.setPadding(pad, 0, pad, 0);
         layout.addView(checkBox);
+        var message = new StringBuilder();
+        if (subtree.size() > 1) {
+            var names = new StringBuilder();
+            for (var cfg : subtree) names.append("\n- ").append(cfg.getName());
+            message.append(context.getString(
+                isRoot ? R.string.disk_delete_tree_message
+                    : R.string.disk_delete_subtree_message, names.toString()));
+        } else {
+            message.append(context.getString(R.string.disk_delete_confirm));
+        }
+        if (extraNote != null) message.append(extraNote);
         DialogInterface.OnClickListener onclick = (d, w) -> {
             boolean isChecked = checkBox.isChecked();
-            var store = new DiskStore();
             runOnPool(() -> {
-                if (isChecked) runList("rm", "-f", config.getFullPath());
+                var store = new DiskStore();
                 store.load(context);
-                store.removeById(config.getId());
+                // Leaves first: a half-finished delete then leaves no overlay stranded on a
+                // base that is already gone.
+                for (int i = subtree.size() - 1; i >= 0; i--) {
+                    var cfg = subtree.get(i);
+                    if (isChecked) runList("rm", "-f", cfg.getFullPath());
+                    store.removeById(cfg.getId());
+                }
                 store.save(context);
                 if (this.onUpdate != null)
                     this.onUpdate.run();
+                // After the registry is written, so a listener re-reading it (e.g. to redo the
+                // lock state of a disk that just lost its last overlay) sees the new truth.
+                if (onConfirmed != null) mainLooper.post(onConfirmed);
             });
         };
         new MaterialAlertDialogBuilder(context)
-            .setTitle(config.getName())
-            .setMessage(R.string.disk_delete_confirm)
+            .setTitle(subtree.size() > 1 && isRoot
+                ? context.getString(R.string.disk_delete_tree_title)
+                : subtree.get(0).getName())
+            .setMessage(message)
             .setView(layout)
             .setPositiveButton(R.string.vm_delete, onclick)
             .setNegativeButton(android.R.string.cancel, null)
