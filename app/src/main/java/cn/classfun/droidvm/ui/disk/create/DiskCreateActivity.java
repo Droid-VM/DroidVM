@@ -272,9 +272,18 @@ public final class DiskCreateActivity extends AppCompatActivity {
             inputName.setError(R.string.disk_create_error_exists);
             return;
         }
+        // Link the overlay to its registered backing so the tree and lock rules see it. A
+        // manually-typed backing path counts too when it resolves to a registered disk.
+        var manualBacking = backing;
         runOnPool(() -> {
             var store = new DiskStore();
             store.load(this);
+            if (backingId != null) {
+                config.setParentId(backingId);
+            } else if (!manualBacking.isEmpty()) {
+                var registered = store.findByPath(manualBacking);
+                if (registered != null) config.setParentId(registered.getId());
+            }
             store.add(config);
             store.save(this);
         });

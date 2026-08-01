@@ -104,9 +104,28 @@ public final class ImageCommandGenerate {
             case "convert":
                 appendConvert();
                 break;
+            case "commit":
+                appendCommit();
+                break;
+            case "flatten":
+                appendFlatten();
+                break;
             default:
                 throw new RuntimeException(fmt("Unknown action: %s", action));
         }
+    }
+
+    /** Merge the overlay's changes down into its backing file (in place, both files). */
+    private void appendCommit() {
+        sb.append(" commit -p ").append(eDiskPath);
+    }
+
+    /**
+     * Pull all backing data into the overlay so it stands alone ({@code rebase} to an empty
+     * backing). Writes only the overlay - siblings of the old backing are unaffected.
+     */
+    private void appendFlatten() {
+        sb.append(" rebase -p -b ").append(escapedString("")).append(" ").append(eDiskPath);
     }
 
     private void appendClone() throws JSONException {
@@ -138,6 +157,17 @@ public final class ImageCommandGenerate {
             task.put("format", format);
         } else throw new RuntimeException("No format specified in task or image info");
         sb.append(" --target-format ").append(format);
+        // convert reads through the whole backing chain, so rewriting an overlay without
+        // re-declaring its backing silently flattens it into a standalone full image. Unless the
+        // task names a backing itself (or asks to drop it), carry the source's backing over.
+        if (!task.has("backing_id") && !task.has("backing_path")
+            && !task.optBoolean("drop_backing", false)
+            && info.has("backing-filename")
+            && "qcow2".equalsIgnoreCase(format)) {
+            var backing = info.optString("full-backing-filename",
+                info.getString("backing-filename"));
+            if (!backing.isEmpty()) task.put("backing_path", backing);
+        }
         if (task.has("output")) {
             outputPath = task.getString("output");
             // In-place re-compress (output == source): writing straight to the

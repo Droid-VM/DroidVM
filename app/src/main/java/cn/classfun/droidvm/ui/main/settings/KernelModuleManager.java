@@ -101,18 +101,24 @@ public final class KernelModuleManager {
         return set;
     }
 
-    /** All shipped modules for this device's KMI, with live loaded state. */
+    /**
+     * Shipped modules that apply to this device: the KMI directory selects the ones built for this
+     * kernel, {@link KernelModuleMatch} then drops the ones built for a different SoC. Both halves
+     * are needed -- a Gunyah module is a matching KMI and a wrong device on a MediaTek phone.
+     */
     @NonNull
-    public static List<Module> list() {
+    public static List<Module> list(@NonNull Context ctx) {
         var out = new ArrayList<Module>();
         var dir = deviceKmiDir();
         if (dir == null) return out;
         var kos = dir.listFiles((d, n) -> n.endsWith(".ko"));
         if (kos == null) return out;
+        KernelModuleMatch.preload(ctx);
         var loaded = loadedNames();
         for (var ko : kos) {
             String base = ko.getName().substring(0, ko.getName().length() - 3);
             String name = base.replace('-', '_'); // /proc/modules uses underscores
+            if (!KernelModuleMatch.allows(name)) continue;
             boolean isLoaded = loaded.contains(name);
             // Already loaded -- however it got there, autostart is answerable for it now.
             if (isLoaded) VERIFIED.add(name);
@@ -186,7 +192,7 @@ public final class KernelModuleManager {
     public static void applyAutostart(@NonNull Context ctx) {
         var enabled = autostartSet(ctx);
         if (enabled.isEmpty()) return;
-        for (var mod : list()) {
+        for (var mod : list(ctx)) {
             if (enabled.contains(mod.name) && !mod.loaded)
                 load(mod.path);
         }

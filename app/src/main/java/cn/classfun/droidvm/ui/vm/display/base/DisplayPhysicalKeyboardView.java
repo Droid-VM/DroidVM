@@ -64,20 +64,21 @@ public final class DisplayPhysicalKeyboardView extends LinearLayout {
         return new Key(label, code, weight, KIND_MODIFIER);
     }
 
-    // The FN toggle at the bottom-right corner: shows/hides FN_ROWS, same as the strip's FNx.
-    // Esc/PrtSc/Pause are not repeated here - the extra-keys panel already carries them.
+    // The FN toggle at the bottom-right corner: shows/hides FN_ROWS - the same 7x2 grid the
+    // extra-keys strip's FNx opens, so the expansion reads identically whichever keyboard is up.
+    // Esc and the navigation cluster (PgUp/PgDn included) stay with the extra-keys strip.
     private static final Key[][] FN_ROWS = {
         {
             k("F1", KeyEvent.KEYCODE_F1), k("F2", KeyEvent.KEYCODE_F2),
             k("F3", KeyEvent.KEYCODE_F3), k("F4", KeyEvent.KEYCODE_F4),
             k("F5", KeyEvent.KEYCODE_F5), k("F6", KeyEvent.KEYCODE_F6),
-            k("PGUP", KeyEvent.KEYCODE_PAGE_UP),
+            k("PRTSC", KeyEvent.KEYCODE_SYSRQ),
         },
         {
             k("F7", KeyEvent.KEYCODE_F7), k("F8", KeyEvent.KEYCODE_F8),
             k("F9", KeyEvent.KEYCODE_F9), k("F10", KeyEvent.KEYCODE_F10),
             k("F11", KeyEvent.KEYCODE_F11), k("F12", KeyEvent.KEYCODE_F12),
-            k("PGDN", KeyEvent.KEYCODE_PAGE_DOWN),
+            k("PAUSE", KeyEvent.KEYCODE_BREAK),
         },
     };
 

@@ -112,13 +112,13 @@
             tools:ignore="VisualLintButtonSize" />
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_create_increment"
+            android:id="@+id/btn_manage_branches"
             style="@style/Widget.Material3.Button.TonalButton"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="4dp"
             android:layout_weight="1"
-            android:text="@string/disk_create_increment"
+            android:text="@string/disk_manage_branches"
             app:icon="@drawable/ic_file_multiple"
             tools:ignore="VisualLintButtonSize" />
 

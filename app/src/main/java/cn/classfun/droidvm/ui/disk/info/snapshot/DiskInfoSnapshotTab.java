@@ -42,6 +42,7 @@ import java.util.Date;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
+import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
@@ -301,6 +302,26 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
         if (config == null) return;
         var fullPath = config.getFullPath();
         runOnPool(() -> {
+            // Snapshot commands rewrite the image; a disk other images overlay is locked.
+            try {
+                var diskStore = new DiskStore();
+                diskStore.load(activity);
+                int n = diskStore.childrenOf(config.getId()).size();
+                if (n > 0) {
+                    activity.runOnUiThread(() -> {
+                        if (activity.isFinishing()) return;
+                        new MaterialAlertDialogBuilder(activity)
+                            .setTitle(R.string.disk_locked_title)
+                            .setMessage(activity.getString(
+                                R.string.disk_locked_message, config.getName(), n))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                    });
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to check disk children", e);
+            }
             try {
                 var result = runList(
                     getPrebuiltBinaryPath("qemu-img"),

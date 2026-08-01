@@ -9,6 +9,8 @@ import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.ImageUtils.hasInternalSnapshots;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
+import static cn.classfun.droidvm.lib.utils.StringUtils.dirname;
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isClearLogsBeforeStartEnabled;
@@ -29,6 +31,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -36,7 +39,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
+import cn.classfun.droidvm.lib.utils.ImageUtils;
+import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
+import cn.classfun.droidvm.ui.disk.tree.DiskTree;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -69,13 +76,14 @@ public final class VMActions {
         @NonNull AtomicBoolean wantOpenConsole,
         @Nullable ConvertLauncher convertLauncher
     ) {
-        // Two things crosvm can't do with a qcow2 disk: read compressed clusters (the guest gets
-        // vda I/O errors and an unreadable partition table, so any root= hangs), and open an
-        // image with internal snapshots for writing at all. Catch both before start and offer to
-        // convert; everything else starts normally.
+        // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
+        // image attached writable (writing would corrupt its overlays - any backend), and
+        // compressed clusters (crosvm boots to I/O errors). Each prompts with its fix and
+        // chains to the next; everything else starts normally.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
-            () -> guardCompressedDisks(config, mainHandler, ui, convertLauncher,
-                () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole)));
+            () -> guardLockedParents(config, mainHandler, ui,
+                () -> guardCompressedDisks(config, mainHandler, ui, convertLauncher,
+                    () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole))));
     }
 
     private static void startAfterGuard(
@@ -101,6 +109,100 @@ public final class VMActions {
             return;
         }
         doCreateAndStart(config, mainHandler, ui, wantOpenConsole, null);
+    }
+
+    /**
+     * Pre-start check: a disk attached writable while registered overlays build on it must not
+     * be written - the overlays' copy-on-write base would shift under them - so offer to flip
+     * those attachments to read-only (persisted) and start. Backend-independent, unlike the
+     * crosvm-specific guards. Registry state can change after a VM was configured, which is why
+     * the disk editor's forced-readonly alone isn't enough.
+     */
+    private static void guardLockedParents(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Runnable proceed
+    ) {
+        if (!ui.isAlive()) {
+            proceed.run();
+            return;
+        }
+        var appContext = ui.getContext().getApplicationContext();
+        runOnPool(() -> {
+            // Reconcile parent links from the images' own headers first, so registries predating
+            // the overlay tree (or images rebased outside the app) lock correctly from here on.
+            // Cheap and unambiguous at this point: a chain whose members are all present is
+            // exactly the case where linking is right, and a broken one can't boot anyway.
+            BackingChainLinker.repairAllBlocking(appContext, qcow2DiskPaths(config));
+            var lockedPaths = new ArrayList<String>();
+            try {
+                var diskStore = new DiskStore();
+                diskStore.load(appContext);
+                var disks = config.item.opt("disks", null);
+                if (disks != null && disks.is(DataItem.Type.ARRAY)) {
+                    for (var disk : disks.asArray()) {
+                        var path = disk.optString("path", "");
+                        if (path.isEmpty() || disk.optBoolean("readonly", false)) continue;
+                        var registered = diskStore.findByPath(path);
+                        if (registered != null && diskStore.hasChildren(registered.getId()))
+                            lockedPaths.add(path);
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "locked-parent check failed", e);
+            }
+            if (lockedPaths.isEmpty()) {
+                mainHandler.post(proceed);
+                return;
+            }
+            mainHandler.post(() -> {
+                if (!ui.isAlive()) return;
+                var ctx = ui.getContext();
+                var files = new StringBuilder();
+                for (var p : lockedPaths) files.append("\n- ").append(basename(p));
+                new MaterialAlertDialogBuilder(ctx)
+                    .setTitle(R.string.vm_locked_disk_title)
+                    .setMessage(ctx.getString(R.string.vm_locked_disk_message, files.toString()))
+                    .setPositiveButton(R.string.vm_locked_disk_readonly_start, (d, w) ->
+                        runOnPool(() -> {
+                            applyReadonly(appContext, config, lockedPaths);
+                            mainHandler.post(proceed);
+                        }))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            });
+        });
+    }
+
+    /** Flip the given attachments to read-only on the live config and the persisted VM store. */
+    private static void applyReadonly(
+        @NonNull Context context,
+        @NonNull VMConfig config,
+        @NonNull List<String> paths
+    ) {
+        setReadonlyOnDisks(config, paths);
+        try {
+            var store = new VMStore();
+            if (store.load(store, context)) {
+                var stored = store.findById(config.getId());
+                if (stored != null) {
+                    setReadonlyOnDisks(stored, paths);
+                    store.save(context);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to persist read-only flip", e);
+        }
+    }
+
+    private static void setReadonlyOnDisks(@NonNull VMConfig config, @NonNull List<String> paths) {
+        var disks = config.item.opt("disks", null);
+        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return;
+        for (var disk : disks.asArray()) {
+            if (paths.contains(disk.optString("path", "")))
+                disk.set("readonly", true);
+        }
     }
 
     /**
@@ -190,15 +292,45 @@ public final class VMActions {
             return;
         }
         runOnPool(() -> {
+            // Walk each disk's whole backing chain: crosvm reads the base images too, so a
+            // compressed cluster anywhere in the chain gives the guest the same I/O errors.
+            // The convert preserves an overlay's backing (appendConvert carries it), so
+            // decompressing a chain member never flattens it.
             var unsupported = new JSONArray();
-            for (var p : qcow2)
-                if (!DiskCompress.detect(p).isCrosvmSupported()) unsupported.put(p);
+            var seen = new HashSet<String>();
+            for (var top : qcow2)
+                for (var p : backingChainOf(top))
+                    if (seen.add(p) && !DiskCompress.detect(p).isCrosvmSupported())
+                        unsupported.put(p);
             if (unsupported.length() == 0)
                 mainHandler.post(proceed);
             else
                 mainHandler.post(() ->
                     promptConvert(config, ui, convertLauncher, unsupported, proceed));
         });
+    }
+
+    /** {@code path} plus every backing file under it (header walk, cycle- and depth-guarded). */
+    @NonNull
+    private static List<String> backingChainOf(@NonNull String path) {
+        var out = new ArrayList<String>();
+        var seen = new HashSet<String>();
+        var current = path;
+        for (int i = 0; i < DiskTree.MAX_DEPTH && seen.add(current); i++) {
+            out.add(current);
+            try {
+                var info = ImageUtils.getImageInfo(current);
+                var backing = info.optString("full-backing-filename",
+                    info.optString("backing-filename", ""));
+                if (backing.isEmpty()) break;
+                if (!backing.startsWith("/"))
+                    backing = pathJoin(dirname(current), backing);
+                current = backing;
+            } catch (Exception e) {
+                break; // unreadable member - the boot itself will surface it
+            }
+        }
+        return out;
     }
 
     private static void promptConvert(

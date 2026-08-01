@@ -30,6 +30,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
 import cn.classfun.droidvm.ui.disk.info.DiskInfoActivity;
 import cn.classfun.droidvm.ui.disk.info.base.DiskInfoBaseTab;
+import cn.classfun.droidvm.ui.disk.tree.DiskTreeDialog;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
@@ -53,7 +54,7 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
     private MaterialButton btnResize;
     private MaterialButton btnConvert;
     private MaterialButton btnOptimize;
-    private MaterialButton btnCreateIncrement;
+    private MaterialButton btnManageBranches;
     private MaterialButton btnClone;
     private MaterialButton btnDelete;
     private DiskActionDialog dialog;
@@ -90,7 +91,7 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
         btnResize = view.findViewById(R.id.btn_resize);
         btnConvert = view.findViewById(R.id.btn_convert);
         btnOptimize = view.findViewById(R.id.btn_optimize);
-        btnCreateIncrement = view.findViewById(R.id.btn_create_increment);
+        btnManageBranches = view.findViewById(R.id.btn_manage_branches);
         btnClone = view.findViewById(R.id.btn_clone);
         btnDelete = view.findViewById(R.id.btn_delete);
         initialize();
@@ -101,7 +102,10 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
         bindButton(btnResize, R.id.menu_disk_resize);
         bindButton(btnConvert, R.id.menu_disk_convert);
         bindButton(btnOptimize, R.id.menu_disk_optimize);
-        bindButton(btnCreateIncrement, R.id.menu_disk_create_increment);
+        // Branch management supersedes the old create-overlay shortcut: creating one is an
+        // action inside the tree, alongside merge/flatten/delete.
+        btnManageBranches.setOnClickListener(v ->
+            DiskTreeDialog.show(activity, activity.config.getFullPath(), null));
         bindButton(btnClone, R.id.menu_disk_clone);
         bindButton(btnDelete, R.id.menu_disk_delete);
         bindCopy(rowFilename);

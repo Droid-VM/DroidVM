@@ -64,6 +64,8 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
         var fmt = config.getFormat();
         if (!DiskConfig.supportsExtraOperations(fmt))
             return R.menu.menu_disk_actions_simple;
+        if (config.getParentId() != null)
+            return R.menu.menu_disk_actions_overlay;
         return R.menu.menu_disk_actions;
     }
 
@@ -80,5 +82,12 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
         filePicker = registerForActivityResult(
             new OpenDocument(), uri -> dialog.onFileImported(uri)
         );
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        // Enables collapse persistence for the overlay tree.
+        adapter.attachContext(requireContext());
     }
 }
