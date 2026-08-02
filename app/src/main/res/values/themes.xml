@@ -30,6 +30,18 @@
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 
+    <!-- Icon-only key: an ImageButton centres its drawable, which a Button's compound drawable
+         does not do reliably at these sizes. -->
+    <style name="ExtraKeyIcon">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:background">@drawable/extra_key_bg</item>
+        <item name="android:tint">@color/extra_key_text</item>
+    </style>
+
     <style name="ExtraKey" parent="Widget.Material3.Button.TextButton">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>

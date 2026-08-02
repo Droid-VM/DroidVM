@@ -142,6 +142,55 @@ public final class DisplayViewportController {
         emit();
     }
 
+    /**
+     * Pan the smallest amount that brings a GUEST-space point back inside the visible area, with
+     * {@code marginPx} of screen-space breathing room around it. No-op unless zoomed in.
+     *
+     * This is what makes the view follow the guest's pointer while zoomed: the cursor can leave
+     * the visible rectangle without the user ever touching the edge of the screen, because in
+     * relative-pointer mode a small finger drag can move the guest cursor a long way.
+     *
+     * Deliberately the SMALLEST correction rather than re-centring on the point: re-centring turns
+     * every cursor movement near an edge into a large view jump, which is far more disorienting
+     * than the pointer briefly reaching the edge. When the view is fitted there is nothing
+     * off-screen to reveal, and clampOffset would undo any pan anyway, so it returns early.
+     *
+     * @return true if the viewport actually moved.
+     */
+    public boolean panToShowContentPoint(float gx, float gy, float marginPx) {
+        if (!ready() || areaW == 0 || frozen || autoResize || isFitted()) {
+            return false;
+        }
+        // Content is drawn centred on the area, then displaced by offset.
+        float sx = areaW / 2f + offsetX + (gx - contentW / 2f) * scale;
+        float sy = areaH / 2f + offsetY + (gy - contentH / 2f) * scale;
+
+        // A margin wider than half the area would fight itself on both edges at once.
+        float mx = Math.min(marginPx, areaW / 2f);
+        float my = Math.min(marginPx, areaH / 2f);
+
+        float beforeX = offsetX, beforeY = offsetY;
+        if (sx < mx) {
+            offsetX += mx - sx;
+        } else if (sx > areaW - mx) {
+            offsetX -= sx - (areaW - mx);
+        }
+        if (sy < my) {
+            offsetY += my - sy;
+        } else if (sy > areaH - my) {
+            offsetY -= sy - (areaH - my);
+        }
+        if (offsetX == beforeX && offsetY == beforeY) {
+            return false;
+        }
+        clampOffset();
+        if (offsetX == beforeX && offsetY == beforeY) {
+            return false; // the pan was entirely clamped away; do not emit a no-change frame
+        }
+        emit();
+        return true;
+    }
+
     /** Back to fit-to-window (e.g. on input-mode switch). */
     public void resetToFit() {
         if (!ready() || areaW == 0) {

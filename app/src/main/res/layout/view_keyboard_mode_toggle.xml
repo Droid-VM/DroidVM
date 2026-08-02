@@ -1,76 +1,57 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Keyboard row of the display fab-menu header: an extra-keys on/off toggle, then a
-     single-selection group choosing the typing surface (system IME / physical keyboard);
-     tapping the selected surface again deselects it (= no typing surface). -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- Keyboard row of the display fab-menu header: one single-selection group choosing the typing
+     surface. The Extra/FNx zone toggles are not here - they live on the keyboard itself, since
+     they only mean anything while one is up. -->
+<com.google.android.material.button.MaterialButtonToggleGroup
+    xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/keyboard_mode_group"
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
     android:paddingStart="12dp"
     android:paddingEnd="12dp"
     android:paddingTop="2dp"
-    android:paddingBottom="10dp">
+    android:paddingBottom="10dp"
+    app:selectionRequired="true"
+    app:singleSelection="true">
 
-    <com.google.android.material.button.MaterialButtonToggleGroup
-        android:id="@+id/extra_toggle_group"
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mode_kb_none"
+        style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:singleSelection="true"
-        app:selectionRequired="false">
+        android:contentDescription="@string/keyboard_mode_none"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        app:icon="@drawable/ic_keyboard_close"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/toggle_extra"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="60dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:contentDescription="@string/vnc_menu_extra_keys"
-            app:icon="@drawable/ic_keyboard_esc"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp" />
-
-    </com.google.android.material.button.MaterialButtonToggleGroup>
-
-    <Space
-        android:layout_width="8dp"
-        android:layout_height="wrap_content" />
-
-    <com.google.android.material.button.MaterialButtonToggleGroup
-        android:id="@+id/surface_group"
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mode_kb_system"
+        style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        app:singleSelection="true"
-        app:selectionRequired="false">
+        android:contentDescription="@string/keyboard_mode_system"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        app:icon="@drawable/ic_keyboard"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/mode_sys"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="60dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:contentDescription="@string/vnc_menu_keyboard"
-            app:icon="@drawable/ic_keyboard"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp" />
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/mode_kb_laptop"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/keyboard_mode_laptop"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        app:icon="@drawable/ic_keyboard_phy"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/mode_phy"
-            style="?attr/materialButtonOutlinedStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="60dp"
-            android:paddingStart="16dp"
-            android:paddingEnd="16dp"
-            android:contentDescription="@string/vnc_menu_phy_keyboard"
-            app:icon="@drawable/ic_keyboard_phy"
-            app:iconGravity="textStart"
-            app:iconPadding="0dp" />
-
-    </com.google.android.material.button.MaterialButtonToggleGroup>
-
-</LinearLayout>
+</com.google.android.material.button.MaterialButtonToggleGroup>

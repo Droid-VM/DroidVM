@@ -49,4 +49,20 @@ public interface DisplaySource {
 
     /** Ask the guest display to switch to width x height; the ack arrives via onContentSize. */
     void requestGuestResize(int width, int height);
+
+    /**
+     * Give this source a view to host the guest's HARDWARE cursor, or null for none.
+     *
+     * Only meaningful where the transport carries the cursor plane separately from the scanout
+     * (the native crosvm path does; VNC composites it server-side), so the default ignores it.
+     */
+    default void setCursorView(android.view.SurfaceView cursorView) {
+    }
+
+    /**
+     * Observe the guest's cursor position, in GUEST framebuffer coordinates, on the main thread.
+     * Default: no such channel, never called.
+     */
+    default void setCursorListener(java.util.function.BiConsumer<Integer, Integer> listener) {
+    }
 }

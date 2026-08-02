@@ -45,6 +45,8 @@ final class DisplayProvider {
     // Linux runtime xrandr all flow through it). This is what lets the aspect ratio follow a guest
     // resolution change mid-session. A resize is rare and user-driven, so 1s lag is fine.
     private static final long CONFIG_POLL_MS = 1000;
+    /** virtio-gpu's cursor plane size; a smaller cursor image lands in its top-left. */
+    static final int CURSOR_PLANE_PX = 64;
 
     private final SurfaceView mainView;
     private int width;
@@ -61,6 +63,10 @@ final class DisplayProvider {
     private ICrosvmAndroidDisplayService displayService;
     private boolean needsSend = false;
     private boolean hasSavedFrame = false;
+    private CursorPositionStream cursorStream;
+    private CursorPositionStream.Listener cursorListener;
+    private SurfaceView cursorView;
+    private boolean cursorSurfaceSent = false;
 
     private final IBinder.DeathRecipient deathRecipient;
 
@@ -143,6 +149,13 @@ final class DisplayProvider {
         } catch (Exception e) {
             Log.w(TAG, fmt("getDisplayConfig unavailable, using default %dx%d", width, height));
         }
+        // Attach the cursor position pipe, if anybody wants it. crosvm has always written guest
+        // cursor moves to this fd; nothing ever read it, so the backend dropped them all.
+        attachCursorStream();
+        if (cursorView != null) {
+            trySendCursorSurface(cursorView.getHolder());
+        }
+
         onConnected.accept(true);
         applyPendingSurface();
         startConfigPoll(displayService);
@@ -260,12 +273,94 @@ final class DisplayProvider {
         }
     }
 
+    /**
+     * Ask for guest cursor positions. Safe to call before or after the display binder arrives:
+     * whichever happens second does the attaching, so a caller does not have to know which.
+     */
+    void setCursorListener(CursorPositionStream.Listener listener) {
+        cursorListener = listener;
+        attachCursorStream();
+    }
+
+    private void attachCursorStream() {
+        if (cursorListener == null || displayService == null || cursorStream != null) {
+            return;
+        }
+        cursorStream = CursorPositionStream.attach(displayService, cursorListener);
+    }
+
+    /**
+     * Give crosvm a Surface for the guest's HARDWARE cursor.
+     *
+     * Until something calls setSurface(_, forCursor=true), the native backend's cursor surface has
+     * no native window: lock() hands crosvm a sink buffer whose own comment says it "is never
+     * displayed on the physical screen", and unlockAndPost() returns without posting. The pointer
+     * is rendered perfectly and thrown away.
+     *
+     * Linux guests can be told to draw the pointer into the framebuffer instead, which is why this
+     * went unnoticed; Windows' virtio-gpu driver and UEFI have no equivalent and use the cursor
+     * plane unconditionally, so without this they have no visible pointer at all.
+     */
+    void setCursorView(SurfaceView view) {
+        cursorView = view;
+        if (view == null) {
+            return;
+        }
+        // Above the scanout SurfaceView. Both are surfaces in their own layers, so ordinary view
+        // z-order does not apply -- without this the cursor is composited BEHIND the display.
+        view.setZOrderMediaOverlay(true);
+        view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
+        view.getHolder().setFixedSize(CURSOR_PLANE_PX, CURSOR_PLANE_PX);
+        view.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(@NonNull SurfaceHolder h) {
+                cursorSurfaceSent = false;
+                trySendCursorSurface(h);
+            }
+            @Override public void surfaceChanged(@NonNull SurfaceHolder h, int f, int w, int hh) {
+                // Same rule as the main surface: setSurface at most once per surface lifetime.
+                trySendCursorSurface(h);
+            }
+            @Override public void surfaceDestroyed(@NonNull SurfaceHolder h) {
+                cursorSurfaceSent = false;
+                var svc = displayService;
+                if (svc == null) return;
+                try {
+                    svc.removeSurface(true);
+                } catch (Exception e) {
+                    Log.w(TAG, "removeSurface(cursor) failed", e);
+                }
+            }
+        });
+        trySendCursorSurface(view.getHolder());
+    }
+
+    private void trySendCursorSurface(@NonNull SurfaceHolder holder) {
+        var svc = displayService;
+        if (svc == null || cursorSurfaceSent) return;
+        Surface surface = holder.getSurface();
+        if (surface == null || !surface.isValid()) return;
+        try {
+            svc.setSurface(surface, true);
+            cursorSurfaceSent = true;
+            Log.i(TAG, "cursor surface delivered");
+        } catch (IllegalArgumentException e) {
+            // Same known/benign binder reply behaviour as the main surface.
+            cursorSurfaceSent = true;
+        } catch (Exception e) {
+            Log.w(TAG, "setSurface(cursor) failed", e);
+        }
+    }
+
     void shutdown() {
         if (displayService != null) {
             try {
                 displayService.asBinder().unlinkToDeath(deathRecipient, 0);
             } catch (Exception ignored) {
             }
+        }
+        if (cursorStream != null) {
+            cursorStream.close();
+            cursorStream = null;
         }
         executor.shutdownNow();
         displayService = null;
