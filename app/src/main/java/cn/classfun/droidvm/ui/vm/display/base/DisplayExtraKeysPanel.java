@@ -33,10 +33,8 @@ import cn.classfun.droidvm.R;
  * {@link BaseExtraKeysAdapter} owning that state and this panel rendering it.
  */
 public final class DisplayExtraKeysPanel extends LinearLayout {
-    /** Zone toggles and the IME summon live on the keys themselves, not in a menu. */
+    /** Zone toggle and IME summon live on the keys themselves, not in a menu. */
     public interface ZoneListener {
-        void onToggleExtraZone();
-
         void onToggleFnxZone();
 
         void onShowSystemKeyboard();
@@ -141,10 +139,20 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         if (modifierStateObserver != null) modifierStateObserver.run();
     }
 
-    /** Repaint the Extra/FNx toggles to match the zones actually on screen. */
-    public void setZoneToggleState(boolean extraOn, boolean fnxOn) {
-        setToggleStyle(findViewById(R.id.btn_zone_extra), extraOn);
+    /** Repaint the Fn toggle to match the zone actually on screen. */
+    public void setZoneToggleState(boolean fnxOn) {
         setToggleStyle(findViewById(R.id.btn_zone_fnx), fnxOn);
+    }
+
+    /**
+     * Which key owns the Main row's last slot. The IME's own visibility decides: while it is up
+     * the slot toggles the Fn zone, and while it is dismissed it summons the IME back - the
+     * other key would do nothing in each case. The Fn zone itself keeps its state throughout;
+     * only the way to toggle it goes away with the IME.
+     */
+    public void setImeVisible(boolean imeVisible) {
+        findViewById(R.id.btn_zone_fnx).setVisibility(imeVisible ? VISIBLE : GONE);
+        findViewById(R.id.btn_show_ime).setVisibility(imeVisible ? GONE : VISIBLE);
     }
 
     /** Works for both kinds of key: a text {@link Button} and an icon-only {@link ImageButton}. */
@@ -194,9 +202,6 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
         setupModifierKey(R.id.btn_shift, KeyEvent.KEYCODE_SHIFT_LEFT);
         setupModifierKey(R.id.btn_win, KeyEvent.KEYCODE_META_LEFT);
         setupModifierKey(R.id.btn_alt, KeyEvent.KEYCODE_ALT_LEFT);
-        setupTapKey(R.id.btn_zone_extra, () -> {
-            if (zoneListener != null) zoneListener.onToggleExtraZone();
-        });
         setupTapKey(R.id.btn_zone_fnx, () -> {
             if (zoneListener != null) zoneListener.onToggleFnxZone();
         });
@@ -235,7 +240,7 @@ public final class DisplayExtraKeysPanel extends LinearLayout {
      * is - an empty panel would otherwise leave a blank strip over the display.
      */
     public void applyZones(boolean extraOn, boolean fnxOn, boolean systemMainOn) {
-        setZoneToggleState(extraOn, fnxOn);
+        setZoneToggleState(fnxOn);
         boolean any = extraOn || fnxOn || systemMainOn;
         if (!any) {
             // Slide the whole panel away; the zones keep their own states for the way back.

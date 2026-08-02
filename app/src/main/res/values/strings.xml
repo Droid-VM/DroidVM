@@ -447,7 +447,6 @@
     <string name="key_down" translatable="false">\u2193</string>
     <string name="key_right" translatable="false">\u2192</string>
     <string name="key_pgdn" translatable="false">PGDN</string>
-    <string name="key_zone_extra" translatable="false">Ex</string>
     <string name="key_ime" translatable="false">IM</string>
     <string name="key_desc_backspace">Backspace</string>
     <string name="key_desc_win">Windows key</string>
