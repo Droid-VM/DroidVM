@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "modules": {
+    "gh_hugepage_reserve": { "soc_vendor": ["qualcomm"] },
+    "gunyah_host_share": { "soc_vendor": ["qualcomm"] },
+    "gunyah_kvcalloc": { "soc_vendor": ["qualcomm"] },
+    "gh_unmovable": { "soc_vendor": ["qualcomm"] },
+    "udmabuf": { "comment": "generic dma-buf provider/repair, nothing Gunyah about it: any SoC" }
+  }
+}

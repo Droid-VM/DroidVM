@@ -36,6 +36,24 @@ public final class NativeSurfaceSource implements DisplaySource {
             config -> mainHandler.post(() -> callbacks.onContentSize(config.width, config.height)));
     }
 
+    /**
+     * Follow the guest cursor. Positions are GUEST framebuffer coordinates, delivered on the main
+     * thread, and arrive only on this display path -- the VNC path has no such channel.
+     *
+     * The caller decides what to do with them, and in particular whether to act at all: a cursor
+     * move caused by a remote desktop session is indistinguishable here from one the user made,
+     * so gating on "the user is currently driving the pointer" belongs to the consumer.
+     */
+    @Override
+    public void setCursorView(android.view.SurfaceView cursorView) {
+        provider.setCursorView(cursorView);
+    }
+
+    @Override
+    public void setCursorListener(java.util.function.BiConsumer<Integer, Integer> listener) {
+        provider.setCursorListener(listener == null ? null : listener::accept);
+    }
+
     @Override
     public void start() {
     }

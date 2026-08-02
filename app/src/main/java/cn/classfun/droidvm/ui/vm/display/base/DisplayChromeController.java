@@ -7,59 +7,68 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 /**
- * Single source of truth for the display chrome: which of toolbar / status bar / extra-keys panel
- * / physical keyboard / system bars are visible. Everything that used to flip view visibility
- * directly (fullscreen toggle, menu items, timers) mutates this state instead, and the one
+ * Single source of truth for the display chrome: toolbar / status bar / system bars, and which
+ * parts of the on-screen keyboard are up. Everything that used to flip view visibility directly
+ * (fullscreen toggle, menu items, keyboard buttons) mutates this state instead, and the one
  * {@link Host#applyChrome} callback writes the whole set atomically - so the pieces can never
  * drift apart.
  *
  * Rules:
  * <ul>
- *   <li>The physical keyboard is the "phy" typing surface; while it is up, the extra-keys panel
- *       hides its bottom laptop-common row (the host derives that from the phy flag).</li>
- *   <li>The extra-keys on/off is remembered separately per typing surface (with vs. without the
- *       physical keyboard), so e.g. landscape users can keep extra off only while phy is up.</li>
- *   <li>Fullscreen hides toolbar + status bar + system bars + extra keys + physical keyboard.
- *       The state before entering is remembered and restored on exit; toggles made while
- *       fullscreen show on top of it and are not persisted.</li>
- *   <li>No auto-hide: bars visibility is a pure function of this state. Transient system bars
- *       swiped in during fullscreen are the system's overlay and don't touch this state.</li>
+ *   <li>The keyboard mode picks the Main zone: nothing, the one-row companion to the system IME,
+ *       or the laptop keyboard.</li>
+ *   <li>Extra and FNx are independent zone toggles. They keep their values through
+ *       {@link KeyboardMode#NONE} - hiding the keyboard is not the same as turning its zones
+ *       off - and only take effect while a keyboard is up.</li>
+ *   <li>Fullscreen hides toolbar + status bar + system bars + the whole keyboard. The state
+ *       before entering is remembered and restored on exit; changes made while fullscreen show
+ *       on top of it and are not persisted.</li>
+ *   <li>No auto-hide: bar visibility is a pure function of this state. Transient system bars
+ *       swiped in during fullscreen are the system's overlay and don't touch it.</li>
  * </ul>
  */
 public final class DisplayChromeController {
     public interface Host {
         /**
          * Write the whole chrome set: toolbar/status bar/system bars shown iff
-         * {@code !fullscreen}; extra-keys panel shown iff {@code extraKeysVisible} (with its
-         * laptop-common row hidden iff {@code phyKeyboardVisible}); physical keyboard shown iff
-         * {@code phyKeyboardVisible}. The host should re-request insets after applying so the
-         * display area updates in one pass.
+         * {@code !fullscreen}; the keyboard's Main zone per {@code mode}; the Extra and FNx
+         * zones shown iff their flag is set and {@code mode} shows a keyboard at all. The host
+         * should re-request insets after applying so the display area updates in one pass.
          */
-        void applyChrome(boolean fullscreen, boolean extraKeysVisible, boolean phyKeyboardVisible);
+        void applyChrome(
+            boolean fullscreen,
+            @NonNull KeyboardMode mode,
+            boolean extraVisible,
+            boolean fnxVisible);
     }
 
-    /** Persistence hook: fired after a (non-fullscreen) user action changes the remembered state. */
+    /** Persistence hook: fired after a (non-fullscreen) user action changes the state. */
     public interface StateListener {
-        void onUserStateChanged(boolean extraWithStrip, boolean extraWithPhy, boolean phyVisible);
+        void onUserStateChanged(
+            @NonNull KeyboardMode mode, boolean extraVisible, boolean fnxVisible);
     }
 
     private final Host host;
     @Nullable
     private StateListener stateListener;
     private boolean fullscreen;
-    private boolean phyVisible;
-    // Extra-keys visibility, remembered per typing surface.
-    private boolean extraWithStrip;
-    private boolean extraWithPhy;
+    private KeyboardMode mode;
+    private boolean extraVisible;
+    private boolean fnxVisible;
     // Pre-fullscreen memory.
-    private boolean savedPhy, savedExtraWithStrip, savedExtraWithPhy;
+    private KeyboardMode savedMode;
+    private boolean savedExtra, savedFnx;
 
     public DisplayChromeController(
-        boolean extraWithStrip, boolean extraWithPhy, boolean phyVisible, @NonNull Host host) {
+        @NonNull KeyboardMode mode,
+        boolean extraVisible,
+        boolean fnxVisible,
+        @NonNull Host host
+    ) {
         this.host = host;
-        this.extraWithStrip = extraWithStrip;
-        this.extraWithPhy = extraWithPhy;
-        this.phyVisible = phyVisible;
+        this.mode = mode;
+        this.extraVisible = extraVisible;
+        this.fnxVisible = fnxVisible;
     }
 
     public void setStateListener(@Nullable StateListener listener) {
@@ -81,30 +90,33 @@ public final class DisplayChromeController {
         }
         fullscreen = enabled;
         if (enabled) {
-            savedPhy = phyVisible;
-            savedExtraWithStrip = extraWithStrip;
-            savedExtraWithPhy = extraWithPhy;
-            phyVisible = false;
-            extraWithStrip = false;
-            extraWithPhy = false;
+            savedMode = mode;
+            savedExtra = extraVisible;
+            savedFnx = fnxVisible;
+            mode = KeyboardMode.NONE;
         } else {
-            phyVisible = savedPhy;
-            extraWithStrip = savedExtraWithStrip;
-            extraWithPhy = savedExtraWithPhy;
+            mode = savedMode == null ? KeyboardMode.NONE : savedMode;
+            extraVisible = savedExtra;
+            fnxVisible = savedFnx;
         }
         apply();
     }
 
-    public void toggleExtraKeys() {
-        if (phyVisible) extraWithPhy = !extraWithPhy;
-        else extraWithStrip = !extraWithStrip;
+    public void setKeyboardMode(@NonNull KeyboardMode newMode) {
+        if (mode == newMode) return;
+        mode = newMode;
         notifyState();
         apply();
     }
 
-    public void setPhyKeyboardVisible(boolean visible) {
-        if (phyVisible == visible) return;
-        phyVisible = visible;
+    public void toggleExtraZone() {
+        extraVisible = !extraVisible;
+        notifyState();
+        apply();
+    }
+
+    public void toggleFnxZone() {
+        fnxVisible = !fnxVisible;
         notifyState();
         apply();
     }
@@ -113,20 +125,26 @@ public final class DisplayChromeController {
         return fullscreen;
     }
 
-    public boolean isExtraKeysVisible() {
-        return phyVisible ? extraWithPhy : extraWithStrip;
+    @NonNull
+    public KeyboardMode getKeyboardMode() {
+        return mode;
     }
 
-    public boolean isPhyKeyboardVisible() {
-        return phyVisible;
+    public boolean isExtraVisible() {
+        return extraVisible;
+    }
+
+    public boolean isFnxVisible() {
+        return fnxVisible;
     }
 
     private void notifyState() {
         if (stateListener != null && !fullscreen)
-            stateListener.onUserStateChanged(extraWithStrip, extraWithPhy, phyVisible);
+            stateListener.onUserStateChanged(mode, extraVisible, fnxVisible);
     }
 
     private void apply() {
-        host.applyChrome(fullscreen, isExtraKeysVisible(), phyVisible);
+        boolean showing = mode.showsKeyboard();
+        host.applyChrome(fullscreen, mode, showing && extraVisible, showing && fnxVisible);
     }
 }

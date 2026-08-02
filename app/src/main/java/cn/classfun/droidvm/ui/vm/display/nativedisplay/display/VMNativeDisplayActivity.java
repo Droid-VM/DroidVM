@@ -36,6 +36,7 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -55,6 +56,7 @@ import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
+import cn.classfun.droidvm.ui.vm.display.base.KeyboardMode;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
@@ -102,6 +104,19 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private TextView tvConnectingMessage;
     private FrameLayout displayContainer;
     private SurfaceView surfaceView;
+    private SurfaceView cursorView;
+
+    // Last viewport transform, mirrored so the cursor overlay can be placed without asking the
+    // controller to recompute it. Written only by onViewportChanged, read only on the main thread.
+    private float vpBaseW, vpBaseH, vpViewScale = 1f, vpOffsetX, vpOffsetY;
+
+    // True while a finger is on the container in relative-pointer mode. This is the gate for
+    // viewport follow: a cursor move from a REMOTE DESKTOP session is byte-identical to one the
+    // user made -- the position stream cannot tell them apart -- so only the input layer, which
+    // knows whether this device is currently driving, may decide to pan.
+    private boolean pointerDriveActive = false;
+    private int lastCursorX = -1;
+    private int lastCursorY = -1;
     private NativeKeyboardEditText keyboardInput;
     private FloatingActionButton fabMenu;
     private MaterialButton btnFullscreen;
@@ -126,9 +141,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private static final String KEY_INPUT_MODE = "display_input_mode";
     // Chrome memory, shared with the VNC path: extra-keys on/off per typing surface + whether
     // the physical keyboard is up.
-    private static final String KEY_EXTRA_KEYS_STRIP = "display_extra_keys_strip";
-    private static final String KEY_EXTRA_KEYS_PHY = "display_extra_keys_phy";
-    private static final String KEY_PHY_KEYBOARD = "display_phy_keyboard";
+    private static final String KEY_KEYBOARD_MODE = "display_keyboard_mode";
+    private static final String KEY_ZONE_EXTRA = "display_keyboard_zone_extra";
+    private static final String KEY_ZONE_FNX = "display_keyboard_zone_fnx";
     // Unified MOUSE/TABLET gesture layer (two-finger tap = right click, two-finger pan = scroll,
     // three-finger = local zoom/pan). TOUCH mode bypasses it and stays raw multi-touch.
     private PointerGestureTranslator gestureTranslator;
@@ -145,6 +160,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     // Display areas smaller than this (e.g. landscape with a tall IME) freeze the viewport
     // instead of re-laying it out; see DisplayViewportController.
     private static final int MIN_AREA_DP = 96;
+    /** Screen-space breathing room kept around the guest cursor when the view follows it. */
+    private static final float CURSOR_FOLLOW_MARGIN_PX = 96f;
 
     // Maps the unified gestures onto the crosvm --input evdev channels via InputForwarder.
     private final PointerGestureTranslator.Listener gestureListener =
@@ -255,14 +272,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         directSink = new DirectInputSink(vmId, service, this::sendInputToDaemon);
         inputForwarder = new InputForwarder(directSink);
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
-        inputMode = InputMode.fromOrdinal(
-            getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(KEY_INPUT_MODE, 0));
+        // A forwarder is built fresh on every attach and starts in TOUCH, so it has to be told
+        // the mode this session is actually in (restored in setupViews, or since changed).
         inputForwarder.setInputMode(inputMode);
-        // setupViews() configured the translator before the persisted mode was read; sync it or
-        // a session opening in TABLET runs the gesture machine with relative (mouse) semantics
-        // until the user toggles the mode away and back.
-        if (gestureTranslator != null)
-            gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
 
         // Start the VM now that listeners are up (no-op if already running).
         DaemonConnection.getInstance().buildRequest("vm_start")
@@ -277,6 +289,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             surfaceView, guestWidth, guestHeight,
             () -> {
                 var svc = displayAttach.getService();
+        // Hardware cursor: give crosvm a Surface for the guest's cursor plane and follow the
+        // positions it reports. Both are no-ops on a guest that never uses the cursor plane.
+        displaySource.setCursorView(cursorView);
+        displaySource.setCursorListener(this::onGuestCursorMoved);
                 if (svc == null) return null;
                 try {
                     return svc.waitForDisplayBinder(vmKey);
@@ -325,6 +341,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         overlayConnecting = findViewById(R.id.overlay_connecting);
         tvConnectingMessage = findViewById(R.id.tv_connecting_message);
         displayContainer = findViewById(R.id.display_container);
+        cursorView = findViewById(R.id.cursor_view);
         surfaceView = findViewById(R.id.surface_view);
         keyboardInput = findViewById(R.id.keyboard_input);
         fabMenu = findViewById(R.id.fab_menu);
@@ -337,6 +354,38 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         extraKeysPanel.setModifierStateObserver(() -> phyKeyboard.refreshModifiers(
             extraKeysPanel.isCtrlDown(), extraKeysPanel.isAltDown(),
             extraKeysPanel.isShiftDown(), extraKeysPanel.isWinDown()));
+        extraKeysPanel.setZoneListener(new DisplayExtraKeysPanel.ZoneListener() {
+            @Override
+            public void onToggleExtraZone() {
+                chrome.toggleExtraZone();
+            }
+
+            @Override
+            public void onToggleFnxZone() {
+                chrome.toggleFnxZone();
+            }
+
+            @Override
+            public void onShowSystemKeyboard() {
+                toggleSoftKeyboard();
+            }
+        });
+        phyKeyboard.setZoneListener(new DisplayPhysicalKeyboardView.ZoneListener() {
+            @Override
+            public void onToggleExtraZone() {
+                chrome.toggleExtraZone();
+            }
+
+            @Override
+            public void onToggleFnxZone() {
+                chrome.toggleFnxZone();
+            }
+
+            @Override
+            public void onCloseKeyboard() {
+                chrome.setKeyboardMode(KeyboardMode.NONE);
+            }
+        });
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -363,6 +412,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         // still be consumed or the framework synthesizes BACK from it.
         displayContainer.setOnGenericMotionListener(this::onSurfaceGenericMotion);
         surfaceView.setOnHoverListener(this::onSurfaceHover);
+        // Restore the persisted mode here rather than on the daemon attach: the FAB menu is
+        // reachable before the binder arrives, and a menu built on a stale TOUCH would write that
+        // back over the stored mode.
+        inputMode = InputMode.fromOrdinal(
+            getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(KEY_INPUT_MODE, 0));
         gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
         gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
         // Keep the display area out of the system-gesture zones so multi-finger gestures
@@ -447,7 +501,85 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             ? EvdevEncoder.NORMALIZED_ABS_MAX : guestWidth;
         float unitH = inputMode == InputMode.TABLET
             ? EvdevEncoder.NORMALIZED_ABS_MAX : guestHeight;
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                pointerDriveActive = true;
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                pointerDriveActive = false;
+                break;
+            default:
+                break;
+        }
         return gestureTranslator.onTouchEvent(event, displayRectInContainer(), unitW, unitH);
+    }
+
+    /**
+     * The guest moved its hardware cursor. Places the overlay and, only while the user is actually
+     * driving the pointer with a finger in relative mode, pans a zoomed view to keep it visible.
+     *
+     * The gate is deliberately narrow. In relative mode a short drag can send the guest pointer a
+     * long way, so it can leave a zoomed viewport without the finger ever nearing the screen edge
+     * -- that is the case worth following. A remote desktop session driving the same guest cursor
+     * must NOT drag this device's view around under someone else's hand.
+     */
+    private void onGuestCursorMoved(int gx, int gy) {
+        // crosvm sends u32::MAX,MAX when the guest hides its pointer (UPDATE_CURSOR resource_id=0,
+        // which is what switching to a text console does). Without acting on it the overlay keeps
+        // showing the last cursor image on a console that should have none. A real position is a
+        // framebuffer coordinate, so this value can never be a genuine one.
+        if (gx == -1 && gy == -1) {   // u32::MAX arrives as -1 in Java's signed int
+            lastCursorX = -1;
+            lastCursorY = -1;
+            if (cursorView != null) {
+                cursorView.setVisibility(GONE);
+            }
+            return;
+        }
+        lastCursorX = gx;
+        lastCursorY = gy;
+        positionCursorOverlay();
+        if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null) {
+            viewport.panToShowContentPoint(gx, gy, CURSOR_FOLLOW_MARGIN_PX);
+        }
+    }
+
+    /**
+     * Put the 64x64 cursor overlay where the guest says its pointer is.
+     *
+     * Same transform the scanout gets: content is centred in the container, scaled about its
+     * centre, then displaced by the pan offset. The overlay is scaled too -- the guest's cursor is
+     * in guest pixels, so at 2x zoom it has to double like everything else, or the pointer shrinks
+     * relative to what it is pointing at. Pivot goes to (0,0) so scaling grows the image away from
+     * the hotspot corner instead of around its middle.
+     */
+    private void positionCursorOverlay() {
+        if (cursorView == null || vpBaseW <= 0 || guestWidth <= 0 || guestHeight <= 0) {
+            return;
+        }
+        if (lastCursorX < 0) {
+            return; // no position yet
+        }
+        View area = (View) surfaceView.getParent();
+        if (area == null || area.getWidth() <= 0) {
+            return;
+        }
+        float vx = lastCursorX * vpBaseW / guestWidth;
+        float vy = lastCursorY * vpBaseH / guestHeight;
+        float cx = area.getWidth() / 2f + vpOffsetX + (vx - vpBaseW / 2f) * vpViewScale;
+        float cy = area.getHeight() / 2f + vpOffsetY + (vy - vpBaseH / 2f) * vpViewScale;
+        float pxPerGuestPx = (vpBaseW / (float) guestWidth) * vpViewScale;
+
+        cursorView.setPivotX(0f);
+        cursorView.setPivotY(0f);
+        cursorView.setScaleX(pxPerGuestPx);
+        cursorView.setScaleY(pxPerGuestPx);
+        cursorView.setTranslationX(cx);
+        cursorView.setTranslationY(cy);
+        if (cursorView.getVisibility() != VISIBLE) {
+            cursorView.setVisibility(VISIBLE);
+        }
     }
 
     // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with the
@@ -611,6 +743,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                     surfaceView.setScaleY(viewScale);
                     surfaceView.setTranslationX(offsetX);
                     surfaceView.setTranslationY(offsetY);
+                    vpBaseW = baseW;
+                    vpBaseH = baseH;
+                    vpViewScale = viewScale;
+                    vpOffsetX = offsetX;
+                    vpOffsetY = offsetY;
+                    positionCursorOverlay();
                 }
 
                 @Override
@@ -622,15 +760,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
 
         var inputPrefs = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE);
         chrome = new DisplayChromeController(
-            inputPrefs.getBoolean(KEY_EXTRA_KEYS_STRIP, true),
-            inputPrefs.getBoolean(KEY_EXTRA_KEYS_PHY, false),
-            inputPrefs.getBoolean(KEY_PHY_KEYBOARD, false),
-            (fullscreen, extraKeysVisible, phyKeyboardVisible) -> {
+            KeyboardMode.fromName(inputPrefs.getString(KEY_KEYBOARD_MODE, null)),
+            inputPrefs.getBoolean(KEY_ZONE_EXTRA, true),
+            inputPrefs.getBoolean(KEY_ZONE_FNX, false),
+            (fullscreen, mode, extraVisible, fnxVisible) -> {
                 toolbar.setVisibility(fullscreen ? GONE : VISIBLE);
                 statusBar.setVisibility(fullscreen ? GONE : VISIBLE);
-                extraKeysPanel.setPhyCommonRowVisible(!phyKeyboardVisible);
-                extraKeysPanel.setVisibleAnimated(extraKeysVisible);
-                phyKeyboard.setVisibleAnimated(phyKeyboardVisible);
+                extraKeysPanel.applyZones(
+                    extraVisible, fnxVisible, mode == KeyboardMode.SYSTEM);
+                phyKeyboard.setZoneToggleState(extraVisible, fnxVisible);
+                phyKeyboard.setVisibleAnimated(mode == KeyboardMode.LAPTOP);
                 var controller = getWindow().getInsetsController();
                 if (controller != null) {
                     if (fullscreen) {
@@ -644,10 +783,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                 // same pass as the visibility changes.
                 ViewCompat.requestApplyInsets(findViewById(R.id.main));
             });
-        chrome.setStateListener((extraStrip, extraPhy, phy) -> inputPrefs.edit()
-            .putBoolean(KEY_EXTRA_KEYS_STRIP, extraStrip)
-            .putBoolean(KEY_EXTRA_KEYS_PHY, extraPhy)
-            .putBoolean(KEY_PHY_KEYBOARD, phy)
+        chrome.setStateListener((mode, extraVisible, fnxVisible) -> inputPrefs.edit()
+            .putString(KEY_KEYBOARD_MODE, mode.name())
+            .putBoolean(KEY_ZONE_EXTRA, extraVisible)
+            .putBoolean(KEY_ZONE_FNX, fnxVisible)
             .apply());
         chrome.applyInitial();
 
@@ -716,53 +855,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         header.setOrientation(LinearLayout.VERTICAL);
         header.addView(buildInputModeHeader(popup));
         header.addView(DisplayKeyboardMenuRow.build(
-            getLayoutInflater(), keyboardMenuHost(), popup::dismiss));
+            getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
+            popup::dismiss));
         popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
-    }
-
-    @NonNull
-    private DisplayKeyboardMenuRow.Host keyboardMenuHost() {
-        return new DisplayKeyboardMenuRow.Host() {
-            @Override
-            public boolean isExtraKeysVisible() {
-                return chrome.isExtraKeysVisible();
-            }
-
-            @Override
-            public void toggleExtraKeys() {
-                chrome.toggleExtraKeys();
-            }
-
-            @Override
-            public boolean isImeVisible() {
-                var insets = ViewCompat.getRootWindowInsets(findViewById(R.id.main));
-                return insets != null && insets.isVisible(WindowInsetsCompat.Type.ime());
-            }
-
-            @Override
-            public void showSystemKeyboard() {
-                toggleSoftKeyboard();
-            }
-
-            @Override
-            public void hideSystemKeyboard() {
-                var imm = getSystemService(InputMethodManager.class);
-                if (imm != null) imm.hideSoftInputFromWindow(
-                    findViewById(R.id.main).getWindowToken(), 0);
-            }
-
-            @Override
-            public boolean isPhyKeyboardVisible() {
-                return chrome.isPhyKeyboardVisible();
-            }
-
-            @Override
-            public void setPhyKeyboardVisible(boolean visible) {
-                chrome.setPhyKeyboardVisible(visible);
-            }
-        };
     }
 
     // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
@@ -778,6 +875,25 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             popup.dismiss();
         });
         return group;
+    }
+
+    // Selecting the system keyboard summons the IME; anything else puts it away, so the mode
+    // and what is actually on screen agree.
+    private void applyKeyboardMode(@NonNull KeyboardMode mode) {
+        chrome.setKeyboardMode(mode);
+        if (mode == KeyboardMode.SYSTEM) toggleSoftKeyboard();
+        else hideSoftKeyboard();
+    }
+
+    // Dropping the editor's focus first matters: it is what the IME is attached to, and some
+    // ROMs re-show the keyboard for a still-focused editor right after a hide request.
+    private void hideSoftKeyboard() {
+        keyboardInput.clearFocus();
+        var controller = WindowCompat.getInsetsController(getWindow(), keyboardInput);
+        controller.hide(WindowInsetsCompat.Type.ime());
+        var imm = getSystemService(InputMethodManager.class);
+        if (imm != null)
+            imm.hideSoftInputFromWindow(findViewById(R.id.main).getWindowToken(), 0);
     }
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {

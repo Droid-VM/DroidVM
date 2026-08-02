@@ -68,6 +68,25 @@
             android:layout_height="match_parent"
             android:layout_gravity="center" />
 
+        <!-- The guest's HARDWARE cursor, composited by Android on top of the scanout.
+             virtio-gpu delivers the pointer on a separate cursor plane and crosvm hands it to us
+             as a second Surface; without this view those pixels go to a sink buffer that is never
+             displayed and the guest has no visible pointer.
+
+             Not optional dressing: a Linux compositor can be told to draw the pointer into the
+             framebuffer instead (KWIN_FORCE_SW_CURSOR and friends), but Windows' virtio-gpu driver
+             and UEFI have no such knob, and only ever use the cursor plane.
+
+             64x64 is virtio-gpu's cursor plane size; a smaller cursor image arrives in the
+             top-left with the rest transparent. Positioned from the guest's own cursor stream, so
+             layout_gravity is only the origin that the translation is applied from. -->
+        <SurfaceView
+            android:id="@+id/cursor_view"
+            android:layout_width="64px"
+            android:layout_height="64px"
+            android:layout_gravity="top|start"
+            android:visibility="gone" />
+
         <!-- Editor that hosts the IME; SurfaceView is an unreliable keyboard target. Kept visually
              imperceptible (1px, transparent text/background, no cursor) rather than alpha=0, because
              some ROMs (e.g. OPlus) refuse to show the keyboard for a fully invisible editor. -->

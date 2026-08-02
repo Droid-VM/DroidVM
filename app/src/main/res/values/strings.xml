@@ -433,20 +433,24 @@
     <string name="key_up" translatable="false">\u2191</string>
     <string name="key_end" translatable="false">END</string>
     <string name="key_pgup" translatable="false">PGUP</string>
+    <!-- Still a text key on the console screen, which has its own key row. -->
     <string name="key_tab" translatable="false">TAB</string>
+    <string name="key_desc_tab">Tab</string>
     <string name="key_ctrl" translatable="false">CTRL</string>
     <string name="key_alt" translatable="false">ALT</string>
     <string name="key_left" translatable="false">\u2190</string>
     <string name="key_down" translatable="false">\u2193</string>
     <string name="key_right" translatable="false">\u2192</string>
     <string name="key_pgdn" translatable="false">PGDN</string>
-    <string name="key_win" translatable="false">WIN</string>
-    <string name="key_bksp" translatable="false">\u232b</string>
+    <string name="key_zone_extra" translatable="false">Ex</string>
+    <string name="key_ime" translatable="false">IM</string>
+    <string name="key_desc_backspace">Backspace</string>
+    <string name="key_desc_win">Windows key</string>
     <string name="key_del" translatable="false">DEL</string>
     <string name="key_ins" translatable="false">INS</string>
-    <string name="key_shift" translatable="false">SHIFT</string>
-    <string name="key_enter" translatable="false">ENTER</string>
-    <string name="key_fnx" translatable="false">FNx</string>
+    <string name="key_desc_shift">Shift</string>
+    <string name="key_desc_enter">Enter</string>
+    <string name="key_fnx" translatable="false">Fn</string>
     <string name="key_f1" translatable="false">F1</string>
     <string name="key_f2" translatable="false">F2</string>
     <string name="key_f3" translatable="false">F3</string>
@@ -942,7 +946,9 @@
 
     <string name="vnc_menu_keyboard">Soft Keyboard</string>
     <string name="vnc_menu_extra_keys">Extra Keys</string>
-    <string name="vnc_menu_phy_keyboard">Physical Keyboard</string>
+    <string name="keyboard_mode_none">No keyboard</string>
+    <string name="keyboard_mode_system">System keyboard</string>
+    <string name="keyboard_mode_laptop">Laptop keyboard</string>
     <string name="vnc_menu_fullscreen">Fullscreen</string>
     <string name="vnc_menu_input_mode_touch">Touch Mode</string>
     <string name="vnc_menu_input_mode_mouse">Mouse Mode</string>
