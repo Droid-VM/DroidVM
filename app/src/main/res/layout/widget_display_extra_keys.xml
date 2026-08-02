@@ -269,12 +269,10 @@
             android:src="@drawable/ic_key_enter"
             tools:ignore="TouchTargetSizeCheck" />
 
-        <Button
-            android:id="@+id/btn_zone_extra"
-            style="@style/ExtraKey"
-            android:text="@string/key_zone_extra"
-            tools:ignore="TouchTargetSizeCheck" />
-
+        <!-- One slot, two mutually exclusive keys: with the IME up there is nothing to summon,
+             so it becomes the Fn toggle; with the IME dismissed the toggle has no zone to sit
+             above, so it becomes the button that brings the IME back. Keeping the row at seven
+             keys is why they share. -->
         <Button
             android:id="@+id/btn_zone_fnx"
             style="@style/ExtraKey"
@@ -285,6 +283,7 @@
             android:id="@+id/btn_show_ime"
             style="@style/ExtraKey"
             android:text="@string/key_ime"
+            android:visibility="gone"
             tools:ignore="TouchTargetSizeCheck" />
 
     </LinearLayout>

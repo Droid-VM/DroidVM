@@ -17,9 +17,11 @@ import androidx.annotation.Nullable;
  * <ul>
  *   <li>The keyboard mode picks the Main zone: nothing, the one-row companion to the system IME,
  *       or the laptop keyboard.</li>
- *   <li>Extra and FNx are independent zone toggles. They keep their values through
- *       {@link KeyboardMode#NONE} - hiding the keyboard is not the same as turning its zones
- *       off - and only take effect while a keyboard is up.</li>
+ *   <li>The Extra zone is the point of the system-IME mode - the keys an IME cannot send - so
+ *       it is always up there; only the laptop mode, whose Main block already carries most of
+ *       them, lets it be toggled off. FNx is a toggle in both. Both keep their values through
+ *       {@link KeyboardMode#NONE}: hiding the keyboard is not the same as turning its zones
+ *       off.</li>
  *   <li>Fullscreen hides toolbar + status bar + system bars + the whole keyboard. The state
  *       before entering is remembered and restored on exit; changes made while fullscreen show
  *       on top of it and are not persisted.</li>
@@ -145,6 +147,7 @@ public final class DisplayChromeController {
 
     private void apply() {
         boolean showing = mode.showsKeyboard();
-        host.applyChrome(fullscreen, mode, showing && extraVisible, showing && fnxVisible);
+        boolean extra = mode == KeyboardMode.SYSTEM || (showing && extraVisible);
+        host.applyChrome(fullscreen, mode, extra, showing && fnxVisible);
     }
 }

@@ -263,11 +263,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             extraKeysPanel.isShiftDown(), extraKeysPanel.isWinDown()));
         extraKeysPanel.setZoneListener(new DisplayExtraKeysPanel.ZoneListener() {
             @Override
-            public void onToggleExtraZone() {
-                chrome.toggleExtraZone();
-            }
-
-            @Override
             public void onToggleFnxZone() {
                 chrome.toggleFnxZone();
             }
@@ -494,6 +489,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         ViewCompat.setOnApplyWindowInsetsListener(content, (v, insets) -> {
             Insets sysBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            // The Main row's shared slot follows the IME: Fn while it is up, "show IME" while
+            // it is down. The system owns that visibility, so read it rather than track it.
+            extraKeysPanel.setImeVisible(insets.isVisible(WindowInsetsCompat.Type.ime()));
             boolean fullscreen = chrome != null && chrome.isFullscreen();
             int top = fullscreen ? 0 : sysBars.top;
             int bottom = Math.max(fullscreen ? 0 : sysBars.bottom, ime.bottom);
