@@ -59,6 +59,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseBackend;
     private ChooseRowWidget chooseHypervisor;
     private TextInputEditText etExtraOptions;
+    private TextInputEditText etEnvironmentVariables;
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -86,6 +87,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend = view.findViewById(R.id.choose_backend);
         chooseHypervisor = view.findViewById(R.id.choose_hypervisor);
         etExtraOptions = view.findViewById(R.id.et_extra_options);
+        etEnvironmentVariables = view.findViewById(R.id.et_environment_variables);
     }
 
     @Override
@@ -148,6 +150,17 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 sb.append(extraOpts.optString(i, ""));
             }
             etExtraOptions.setText(sb.toString());
+        }
+        var environmentVariables = item.opt("environment_variables", null);
+        if (environmentVariables != null && environmentVariables.is(DataItem.Type.ARRAY)) {
+            var sb = new StringBuilder();
+            for (int i = 0; i < environmentVariables.size(); i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(environmentVariables.optString(i, ""));
+            }
+            etEnvironmentVariables.setText(sb.toString());
+        } else {
+            etEnvironmentVariables.setText("");
         }
         updateGunyahVisibility();
     }
@@ -238,12 +251,28 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         return true;
     }
 
+    private boolean validateEnvironmentVariables() {
+        etEnvironmentVariables.setError(null);
+        for (var line : getEditText(etEnvironmentVariables).split("\n")) {
+            var trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            var separator = trimmed.indexOf('=');
+            if (separator <= 0 || trimmed.substring(0, separator).trim().isEmpty()) {
+                etEnvironmentVariables.setError(
+                    parent.getString(R.string.create_vm_error_invalid_environment_variable));
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean validateInput(@NonNull VMStore store) {
         if (!validateInputName(store)) return false;
         if (!validateInputMemory(store)) return false;
         if (!validateInputCpu(store)) return false;
         if (!validateHypervisor(store)) return false;
+        if (!validateEnvironmentVariables()) return false;
         if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
         return true;
     }
@@ -281,6 +310,15 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 arr.append(DataItem.newString(trimmed));
         }
         item.set("extra_options", arr);
+
+        var environmentVariables = DataItem.newArray();
+        var environmentText = getEditText(etEnvironmentVariables);
+        for (var line : environmentText.split("\n")) {
+            var trimmed = line.trim();
+            if (!trimmed.isEmpty())
+                environmentVariables.append(DataItem.newString(trimmed));
+        }
+        item.set("environment_variables", environmentVariables);
     }
 
     /**

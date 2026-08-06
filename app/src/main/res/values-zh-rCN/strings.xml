@@ -171,6 +171,7 @@
     <string name="create_vm_error_name_duplicate">已存在同名虚拟机</string>
     <string name="create_vm_error_save">保存配置时发生错误</string>
     <string name="create_vm_error_invalid_number">无效数字</string>
+    <string name="create_vm_error_invalid_environment_variable">环境变量必须使用 KEY=VALUE 格式</string>
     <string name="create_vm_error_gpu_guest_prealloc_exceeds_pool">Guest 启动预分配不能超过 Guest 显存池大小</string>
     <string name="create_vm_error_gpu_guest_dynamic_requires_room">启用动态步长时，Guest 启动预分配必须小于 Guest 显存池大小</string>
     <string name="create_vm_error_gpu_guest_step_invalid">Guest 动态步长必须为 0，或是不小于 2 MiB 的 2 次幂</string>
@@ -202,6 +203,7 @@
     <string name="create_vm_protected_without_firmware">无固件保护</string>
     <string name="create_vm_category_extra_options">额外选项</string>
     <string name="create_vm_extra_option_hint">额外选项（每行一个）</string>
+    <string name="create_vm_environment_variables_hint">环境变量（KEY=VALUE，每行一个）</string>
     <string name="create_vm_category_gpu">图形加速器</string>
     <string name="create_vm_gpu_enabled">启用GPU</string>
     <string name="create_vm_gpu_backend">渲染器</string>
