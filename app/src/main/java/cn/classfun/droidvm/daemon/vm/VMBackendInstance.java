@@ -24,6 +24,7 @@ import java.util.Map;
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.utils.FileUtils;
 
@@ -74,6 +75,26 @@ public abstract class VMBackendInstance {
         run("echo 1 > /proc/sys/vm/compact_memory");
     }
 
+    private void applyConfiguredEnvironment(@NonNull NativeProcess.Builder builder) {
+        var environment = config.item.opt("environment_variables", DataItem.newArray());
+        if (environment == null || !environment.is(DataItem.Type.ARRAY)) return;
+        for (var entry : environment.asArray()) {
+            if (entry == null || !entry.is(DataItem.Type.STRING)) continue;
+            var raw = entry.asString().trim();
+            var separator = raw.indexOf('=');
+            if (separator <= 0) {
+                Log.w(TAG, "Ignoring invalid VM environment variable entry");
+                continue;
+            }
+            var key = raw.substring(0, separator).trim();
+            if (key.isEmpty()) {
+                Log.w(TAG, "Ignoring VM environment variable with an empty name");
+                continue;
+            }
+            builder.environment(key, raw.substring(separator + 1));
+        }
+    }
+
     protected void prepareProcess(@NonNull NativeProcess.Builder builder) {
         String[] preload = {
             pathJoin(DATA_DIR, "lib", "libsimpledump.so"),
@@ -81,6 +102,7 @@ public abstract class VMBackendInstance {
         };
         builder.environment("LD_PRELOAD", String.join(":", preload));
         builder.environment("LD_LIBRARY_PATH", pathJoin(DATA_DIR, "usr", "lib"));
+        applyConfiguredEnvironment(builder);
         builder.maxOpenFiles(65536);
         builder.maxLockedMemory(RLIM_INFINITY);
         cleanUpMemory();
