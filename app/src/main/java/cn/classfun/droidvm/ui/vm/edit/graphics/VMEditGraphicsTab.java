@@ -56,6 +56,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private TextInputEditText etGpuHostPoolMb;
     private TextInputEditText etGpuVramQuotaMb;
     private TextInputEditText etGpuGuestPoolMb;
+    private View tilGpuGuestPreallocMb;
+    private View tilGpuGuestStepMb;
+    private View tilGpuGuestMaxGrants;
+    private TextInputEditText etGpuGuestPreallocMb;
+    private TextInputEditText etGpuGuestStepMb;
+    private TextInputEditText etGpuGuestMaxGrants;
     private TextInputEditText etGpuPoolBlobMaxKb;
     private SwitchRowWidget swGpuEnabled;
     private SwitchRowWidget swVncPasswordAuth;
@@ -98,6 +104,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
         etGpuVramQuotaMb = view.findViewById(R.id.et_gpu_vram_quota_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
+        tilGpuGuestPreallocMb = view.findViewById(R.id.til_gpu_guest_prealloc_mb);
+        tilGpuGuestStepMb = view.findViewById(R.id.til_gpu_guest_step_mb);
+        tilGpuGuestMaxGrants = view.findViewById(R.id.til_gpu_guest_max_grants);
+        etGpuGuestPreallocMb = view.findViewById(R.id.et_gpu_guest_prealloc_mb);
+        etGpuGuestStepMb = view.findViewById(R.id.et_gpu_guest_step_mb);
+        etGpuGuestMaxGrants = view.findViewById(R.id.et_gpu_guest_max_grants);
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
@@ -236,7 +248,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // A quota, not an allocation: crosvm meters host-visible memory against this rather
         // than reserving any. Only read when guest-alloc is off.
         etGpuVramQuotaMb.setText(String.valueOf(item.optLong("gpu_vram_quota_mb", 2048)));
-        etGpuGuestPoolMb.setText(String.valueOf(item.optLong("gpu_guest_pool_mb", 1024)));
+        long guestPool = item.optLong("gpu_guest_pool_mb", 1024);
+        etGpuGuestPoolMb.setText(String.valueOf(guestPool));
+        etGpuGuestPreallocMb.setText(String.valueOf(
+            item.optLong("gpu_guest_prealloc_mb", guestPool)));
+        etGpuGuestStepMb.setText(String.valueOf(item.optLong("gpu_guest_step_mb", 0)));
+        etGpuGuestMaxGrants.setText(String.valueOf(item.optLong("gpu_guest_max_grants", 0)));
         // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
         swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
         etGpuPoolBlobMaxKb.setText(String.valueOf(item.optLong("gpu_pool_blob_max_kb", 4096)));
@@ -324,7 +341,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuVramQuotaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuGuestPreallocMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuGuestStepMb, false, 0, 65536)) return false;
+        if (!checkInputField(etGpuGuestMaxGrants, false, 0, 65536)) return false;
         if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
+        if (!validateGuestPoolOptions()) return false;
         DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
         if (displayOutput == DisplayOutput.VNC
             && !checkInputField(etVncPort, true, 1024, 65535)) return false;
@@ -338,6 +359,35 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             && swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable())
             return showValidateFailed(dynamicVramNeedsSharingMessage());
         return true;
+    }
+
+    private boolean validateGuestPoolOptions() {
+        if (!usesGuestPool()) return true;
+        int guestPool = parseInt(getEditText(etGpuGuestPoolMb));
+        int prealloc = parseInt(getEditText(etGpuGuestPreallocMb));
+        int step = parseInt(getEditText(etGpuGuestStepMb));
+        if (prealloc > guestPool) {
+            etGpuGuestPreallocMb.setError(
+                parent.getString(R.string.create_vm_error_gpu_guest_prealloc_exceeds_pool));
+            return false;
+        }
+        if (step > 0 && prealloc >= guestPool) {
+            etGpuGuestPreallocMb.setError(
+                parent.getString(R.string.create_vm_error_gpu_guest_dynamic_requires_room));
+            return false;
+        }
+        if (step > 0 && (step < 2 || (step & (step - 1)) != 0)) {
+            etGpuGuestStepMb.setError(
+                parent.getString(R.string.create_vm_error_gpu_guest_step_invalid));
+            return false;
+        }
+        return true;
+    }
+
+    private boolean usesGuestPool() {
+        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        boolean drm2kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
+        return drm2kgsl || (gfxstream && swGpuUdmabuf.isChecked());
     }
 
     /**
@@ -387,6 +437,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
+            item.set("gpu_guest_prealloc_mb", parseInt(getEditText(etGpuGuestPreallocMb)));
+            item.set("gpu_guest_step_mb", parseInt(getEditText(etGpuGuestStepMb)));
+            item.set("gpu_guest_max_grants", parseInt(getEditText(etGpuGuestMaxGrants)));
             item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
             item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
         }
@@ -564,7 +617,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The guest-allocated pool is the same region and the same flag for both renderers -- the
         // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
         // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
-        tilGpuGuestPoolMb.setVisibility(udmabuf || drm2kgsl ? VISIBLE : GONE);
+        boolean guestAlloc = udmabuf || drm2kgsl;
+        tilGpuGuestPoolMb.setVisibility(guestAlloc ? VISIBLE : GONE);
+        tilGpuGuestPreallocMb.setVisibility(guestAlloc ? VISIBLE : GONE);
+        tilGpuGuestStepMb.setVisibility(guestAlloc ? VISIBLE : GONE);
+        tilGpuGuestMaxGrants.setVisibility(guestAlloc ? VISIBLE : GONE);
         boolean hostAlloc = gfxstream && !udmabuf;
         swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
         dynamicVramOptions.setVisibility(

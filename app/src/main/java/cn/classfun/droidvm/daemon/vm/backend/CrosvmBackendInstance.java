@@ -142,6 +142,26 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return result;
     }
 
+    /**
+     * Appends the guest-owned VRAM pool settings. Older configs only have the total pool size;
+     * their defaults keep the whole pool preallocated and leave dynamic grants disabled.
+     */
+    private static void appendGuestPoolOptions(
+        @NonNull StringBuilder preAlloc,
+        @NonNull DataItem item,
+        long guestPool
+    ) {
+        if (guestPool <= 0) return;
+        if (preAlloc.length() > 0) preAlloc.append(',');
+        preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
+        preAlloc.append(fmt(",gpu-guest-prealloc-mb=%d",
+            item.optLong("gpu_guest_prealloc_mb", guestPool)));
+        preAlloc.append(fmt(",gpu-guest-step-mb=%d",
+            item.optLong("gpu_guest_step_mb", 0)));
+        preAlloc.append(fmt(",gpu-guest-max-grants=%d",
+            item.optLong("gpu_guest_max_grants", 0)));
+    }
+
     @NonNull
     private List<String> buildCommand() {
         var item = config.item;
@@ -204,8 +224,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     long guestPool = item.optLong("gpu_guest_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
                         var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
-                        if (udmabuf && guestPool > 0)
-                            preAlloc.append(fmt(",gpu-guest-mb=%d", guestPool));
+                        if (udmabuf)
+                            appendGuestPoolOptions(preAlloc, item, guestPool);
                         args.add("--pre-alloc");
                         args.add(preAlloc.toString());
                     }
@@ -225,10 +245,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
                         preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
-                    if (guestPool > 0) {
-                        if (preAlloc.length() > 0) preAlloc.append(',');
-                        preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
-                    }
+                    appendGuestPoolOptions(preAlloc, item, guestPool);
                     if (preAlloc.length() > 0) {
                         args.add("--pre-alloc");
                         args.add(preAlloc.toString());

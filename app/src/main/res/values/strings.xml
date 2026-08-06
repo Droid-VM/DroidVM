@@ -173,6 +173,9 @@
     <string name="create_vm_error_name_duplicate">A VM with this name already exists</string>
     <string name="create_vm_error_save">Error while saving config</string>
     <string name="create_vm_error_invalid_number">Invalid number</string>
+    <string name="create_vm_error_gpu_guest_prealloc_exceeds_pool">Guest preallocation cannot exceed the guest pool size</string>
+    <string name="create_vm_error_gpu_guest_dynamic_requires_room">Guest preallocation must be smaller than the guest pool when the step is enabled</string>
+    <string name="create_vm_error_gpu_guest_step_invalid">Guest step must be 0 or a power of two of at least 2 MB</string>
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
@@ -230,6 +233,9 @@
     <string name="create_vm_gpu_vram_quota_mb">Dynamic VRAM quota (MB)</string>
     <string name="create_vm_gpu_pool_blob_max_kb">Blob routing threshold (KB)</string>
     <string name="create_vm_gpu_guest_pool_mb">VRAM size (MB)</string>
+    <string name="create_vm_gpu_guest_prealloc_mb">Guest preallocation (MB)</string>
+    <string name="create_vm_gpu_guest_step_mb">Guest allocation step (MB)</string>
+    <string name="create_vm_gpu_guest_max_grants">Guest max grants (0 = unlimited)</string>
     <string name="create_vm_gunyah_dynamic_share">Dynamic memory sharing</string>
     <string name="create_vm_gunyah_hugepage_threshold">Hugepage threshold (KB)</string>
     <string name="create_vm_category_vram">VRAM</string>

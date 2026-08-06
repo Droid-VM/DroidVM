@@ -171,6 +171,9 @@
     <string name="create_vm_error_name_duplicate">已存在同名虚拟机</string>
     <string name="create_vm_error_save">保存配置时发生错误</string>
     <string name="create_vm_error_invalid_number">无效数字</string>
+    <string name="create_vm_error_gpu_guest_prealloc_exceeds_pool">Guest 启动预分配不能超过 Guest 显存池大小</string>
+    <string name="create_vm_error_gpu_guest_dynamic_requires_room">启用动态步长时，Guest 启动预分配必须小于 Guest 显存池大小</string>
+    <string name="create_vm_error_gpu_guest_step_invalid">Guest 动态步长必须为 0，或是不小于 2 MiB 的 2 次幂</string>
     <string name="create_vm_error_hypervisor_not_supported">所选后端不支持选中的虚拟化模式</string>
     <string name="create_vm_error_path_invalid">无效的绝对路径</string>
     <string name="create_vm_error_native_display_only_crosvm">原生显示只在使用CrosVM后端时有效</string>
@@ -228,6 +231,9 @@
     <string name="create_vm_gpu_vram_quota_mb">动态显存配额 (MB)</string>
     <string name="create_vm_gpu_pool_blob_max_kb">blob 分流阈值 (KB)</string>
     <string name="create_vm_gpu_guest_pool_mb">显存大小 (MB)</string>
+    <string name="create_vm_gpu_guest_prealloc_mb">Guest 启动预分配 (MB)</string>
+    <string name="create_vm_gpu_guest_step_mb">Guest 动态步长 (MB)</string>
+    <string name="create_vm_gpu_guest_max_grants">Guest 最大 memparcel 数 (0 = 不限)</string>
     <string name="create_vm_gunyah_dynamic_share">启用动态内存共享</string>
     <string name="create_vm_gunyah_hugepage_threshold">大页阈值 (KB)</string>
     <string name="create_vm_category_vram">显存设置</string>
