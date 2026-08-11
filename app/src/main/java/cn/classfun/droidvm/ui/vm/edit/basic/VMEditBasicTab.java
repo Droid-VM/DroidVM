@@ -20,10 +20,16 @@ import androidx.annotation.Nullable;
 
 import com.google.android.material.textfield.TextInputEditText;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.QcomChipName;
 import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -31,14 +37,18 @@ import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
+import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
 public final class VMEditBasicTab extends VMEditBaseTab {
     private final String TAG = "VMEditBasicTab";
+    /** Matches the ti_max on input_cpu in partial_vm_edit_basic.xml. */
+    private static final int MAX_VCPUS = 64;
     private TextInputRowWidget inputName;
     private TextInputRowWidget inputMemory;
     private TextInputRowWidget inputCpu;
@@ -60,6 +70,20 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseHypervisor;
     private TextInputEditText etExtraOptions;
     private TextInputEditText etEnvironmentVariables;
+
+    /** Host cores as reported by sysfs; read once, drives the cpuset picker. */
+    private List<CpuUtils.CpuCore> hostCores = List.of();
+    /**
+     * vCPU affinity held for the editor dialog and for save: vCPU index to host
+     * cores. Only vCPUs the user actually bound appear, matching crosvm's
+     * "absent means no mask". Edited through {@link VMCpuAffinityDialog}.
+     */
+    private final Map<Integer, List<Integer>> affinity = new TreeMap<>();
+    /** Auto-derive capacity/cluster; the dialog owns this, the tab persists it. */
+    private boolean cpuTopologyAuto = true;
+    /** Manual capacity/cluster overrides, only meaningful when auto is off. */
+    private String manualCapacity = "";
+    private String manualClusters = "";
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -106,6 +130,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
         swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
         updateGunyahVisibility();
+        initCpuTopology();
         try {
             var socModel = QcomChipName.getCurrentSoC();
             var gunyah = new QcomGunyahSupports(parent);
@@ -162,7 +187,47 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         } else {
             etEnvironmentVariables.setText("");
         }
+        loadCpuTopology(item);
         updateGunyahVisibility();
+    }
+
+    private void loadCpuTopology(@NonNull DataItem item) {
+        affinity.clear();
+        affinity.putAll(CpuPlacementPlan.parseAffinity(
+            item.optString(CpuPlacementPlan.KEY_AFFINITY, "")));
+        cpuTopologyAuto = item.optBoolean(CpuPlacementPlan.KEY_AUTO, true);
+        manualCapacity = item.optString(CpuPlacementPlan.KEY_CAPACITY, "");
+        manualClusters = item.optString(CpuPlacementPlan.KEY_CLUSTERS, "");
+    }
+
+    /**
+     * Wires up CPU placement: the vCPU affinity editor behind the CPU count field's
+     * icon button. The affinity, capacity and cluster flags are one decision from
+     * three sides -- affinity pins vCPU threads to host cores, capacity and cluster
+     * describe that placement to the guest via the FDT -- so they are edited together
+     * in {@link VMCpuAffinityDialog}.
+     */
+    private void initCpuTopology() {
+        hostCores = CpuUtils.getCores();
+        inputCpu.setIconButtonOnClickListener(this::showAffinityDialog);
+    }
+
+    /**
+     * Opens the affinity editor for the vCPU count as currently entered. Reading
+     * the count here rather than tracking edits is the point of the dialog: the
+     * row list cannot disagree with the field.
+     */
+    private void showAffinityDialog() {
+        new VMCpuAffinityDialog(
+            parent, currentVcpuCount(), affinity, cpuTopologyAuto,
+            manualCapacity, manualClusters,
+            (newAffinity, auto, capacity, clusters) -> {
+                affinity.clear();
+                affinity.putAll(newAffinity);
+                cpuTopologyAuto = auto;
+                manualCapacity = capacity;
+                manualClusters = clusters;
+            });
     }
 
     // Gunyah dynamic memory sharing is a hypervisor-level memory-sharing mechanism (the GPU is
@@ -174,6 +239,27 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         // Publish it: features in other tabs (guest-alloc vram today, more later) cannot work
         // without dynamic sharing and check this before letting the VM be saved.
         parent.put(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, enabled);
+    }
+
+    /** vCPU count as currently typed, clamped to the field's own 1..64 range. */
+    private int currentVcpuCount() {
+        try {
+            var text = inputCpu.getText().trim();
+            if (text.isEmpty()) return 1;
+            return Math.max(1, Math.min(parseInt(text), MAX_VCPUS));
+        } catch (Exception ignored) {
+            return 1;
+        }
+    }
+
+    @NonNull
+    private static String joinCsv(@NonNull Collection<Integer> values) {
+        var sb = new StringBuilder();
+        for (var value : values) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(value);
+        }
+        return sb.toString();
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
@@ -274,6 +360,59 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         if (!validateHypervisor(store)) return false;
         if (!validateEnvironmentVariables()) return false;
         if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
+        if (!validateCpuTopology()) return false;
+        return true;
+    }
+
+    /**
+     * The affinity dialog already keeps its own edits in range, so this mostly
+     * guards a stored config that was hand-edited, or a CPU count lowered after
+     * the affinity was set.
+     */
+    private boolean validateCpuTopology() {
+        if (!affinity.isEmpty()) {
+            int count = currentVcpuCount();
+            var hostIdx = CpuCorePickerDialog.hostCoreIndices(hostCores);
+            for (var entry : affinity.entrySet()) {
+                if (entry.getKey() >= count)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
+                for (var host : entry.getValue())
+                    if (!hostIdx.contains(host))
+                        return showValidateFailed(parent.getString(
+                            R.string.create_vm_error_cpu_affinity_host_oob, host));
+            }
+            if (!cpuTopologyAuto && !validateManualTopology(count)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Hand-written capacity/cluster strings. Capacity is only range-checked;
+     * clusters additionally must not repeat a vCPU, which crosvm rejects
+     * ("CPU index must be unique").
+     */
+    private boolean validateManualTopology(int vcpuCount) {
+        var capacityText = manualCapacity.trim();
+        if (!capacityText.isEmpty()) {
+            var capacity = CpuPlacementPlan.parseCapacity(capacityText);
+            if (capacity.isEmpty())
+                return showValidateFailed(R.string.create_vm_error_cpu_capacity_invalid);
+            for (var entry : capacity.entrySet()) {
+                if (entry.getKey() >= vcpuCount)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
+                if (entry.getValue() > CpuUtils.MAX_CAPACITY)
+                    return showValidateFailed(R.string.create_vm_error_cpu_capacity_invalid);
+            }
+        }
+        var clusters = CpuPlacementPlan.parseClusters(manualClusters.trim());
+        var overlaps = CpuPlacementPlan.findClusterOverlaps(clusters);
+        if (!overlaps.isEmpty())
+            return showValidateFailed(parent.getString(
+                R.string.create_vm_error_cpu_clusters_overlap, joinCsv(overlaps)));
+        for (var cluster : clusters)
+            for (var vcpu : cluster)
+                if (vcpu >= vcpuCount)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
         return true;
     }
 
@@ -319,6 +458,25 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 environmentVariables.append(DataItem.newString(trimmed));
         }
         item.set("environment_variables", environmentVariables);
+        saveCpuTopology(item);
+    }
+
+    private void saveCpuTopology(@NonNull DataItem item) {
+        // An empty affinity string is how CpuPlacementPlan is told to emit no CPU
+        // placement flags at all; the dialog returns an empty map when turned off.
+        item.set(CpuPlacementPlan.KEY_AFFINITY, CpuPlacementPlan.formatAffinity(affinity));
+        item.set(CpuPlacementPlan.KEY_AUTO, cpuTopologyAuto);
+        item.set(CpuPlacementPlan.KEY_CAPACITY, manualCapacity);
+        item.set(CpuPlacementPlan.KEY_CLUSTERS, manualClusters);
+    }
+
+    /**
+     * The vCPU affinity as currently edited, so the graphics tab can warn when the
+     * GPU worker cpuset overlaps it. Read-only view: the dialog owns the edits.
+     */
+    @NonNull
+    public Map<Integer, List<Integer>> getCurrentAffinity() {
+        return affinity;
     }
 
     /**

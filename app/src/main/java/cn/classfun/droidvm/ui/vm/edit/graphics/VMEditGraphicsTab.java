@@ -31,10 +31,19 @@ import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuProvider;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
+import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
+import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
+import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
+import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
+
+import java.util.List;
+import java.util.Map;
 
 public final class VMEditGraphicsTab extends VMEditBaseTab {
     private static final int VNC_PASSWORD_LENGTH = 8;
@@ -81,6 +90,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private TextInputEditText etVncPassword;
     private MaterialButton btnVncPasswordClear;
     private MaterialButton btnVncPasswordGenerate;
+    private SwitchRowWidget swGpuCgroup;
+    private View gpuCgroupOptions;
+    private TextInputEditText etGpuCgroupPath;
+    private TextRowWidget rowGpuCgroupCpus;
+
+    /** Host cores in the GPU worker cpuset, as a CPUSET string. */
+    private String gpuCgroupCpus = "";
+    /** Host cores as reported by sysfs; read once, drives the cpuset picker. */
+    private List<CpuUtils.CpuCore> hostCores = List.of();
 
     public VMEditGraphicsTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -129,6 +147,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etVncPassword = view.findViewById(R.id.et_vnc_password);
         btnVncPasswordClear = view.findViewById(R.id.btn_vnc_password_clear);
         btnVncPasswordGenerate = view.findViewById(R.id.btn_vnc_password_generate);
+        swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
+        gpuCgroupOptions = view.findViewById(R.id.gpu_cgroup_options);
+        etGpuCgroupPath = view.findViewById(R.id.et_gpu_cgroup_path);
+        rowGpuCgroupCpus = view.findViewById(R.id.row_gpu_cgroup_cpus);
     }
 
     @Override
@@ -214,6 +236,71 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateVncVisibility();
         updateVncPasswordVisibility();
         updateVramAllocVisibility();
+        initGpuCgroup();
+    }
+
+    private void initGpuCgroup() {
+        hostCores = CpuUtils.getCores();
+        etGpuCgroupPath.setText(CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH);
+        swGpuCgroup.setOnCheckedChangeListener(() -> {
+            // Default to the top (usually prime) core, the one worth keeping vCPUs off.
+            if (swGpuCgroup.isChecked() && gpuCgroupCpus.trim().isEmpty()
+                && !hostCores.isEmpty())
+                setGpuCgroupCpus(String.valueOf(hostCores.get(hostCores.size() - 1).index));
+            updateGpuCgroupVisibility();
+        });
+        rowGpuCgroupCpus.setOnClickListener(v -> showGpuCpusPicker());
+        // Unconditionally, so the row always carries a value label ("none selected"
+        // when empty) rather than a bare title with a blank right-hand side.
+        setGpuCgroupCpus(gpuCgroupCpus);
+        updateGpuCgroupVisibility();
+    }
+
+    private void updateGpuCgroupVisibility() {
+        gpuCgroupOptions.setVisibility(swGpuCgroup.isChecked() ? VISIBLE : GONE);
+    }
+
+    private void showGpuCpusPicker() {
+        CpuCorePickerDialog.show(
+            parent, R.string.create_vm_gpu_cgroup_cpus, gpuCgroupCpus,
+            picked -> {
+                setGpuCgroupCpus(picked);
+                warnOnGpuCgroupOverlap();
+            });
+    }
+
+    private void setGpuCgroupCpus(@NonNull String cpuSet) {
+        gpuCgroupCpus = cpuSet;
+        var compact = CpuUtils.compactRanges(cpuSet);
+        rowGpuCgroupCpus.setValue(compact.isEmpty()
+            ? parent.getString(R.string.create_vm_gpu_cgroup_cpus_none)
+            : parent.getString(R.string.create_vm_gpu_cgroup_cpus_summary_fmt, compact));
+    }
+
+    /**
+     * Sharing a core between vCPUs and the GPU worker is allowed -- on a host with
+     * few big cores it is often the only workable split -- but it defeats the point
+     * of the cpuset, so say so instead of silently accepting it. The affinity lives
+     * in the basic tab, so it is read from there rather than held here.
+     */
+    private void warnOnGpuCgroupOverlap() {
+        if (!swGpuCgroup.isChecked()) return;
+        Map<Integer, List<Integer>> affinity = Map.of();
+        try {
+            var basic = (VMEditBasicTab) parent.getTab(VMEditTab.TAB_BASIC);
+            affinity = basic.getCurrentAffinity();
+        } catch (Exception ignored) {
+        }
+        if (affinity.isEmpty()) return;
+        var shared = CpuPlacementPlan.findHostOverlaps(affinity, gpuCgroupCpus);
+        if (shared.isEmpty()) return;
+        var sb = new StringBuilder();
+        for (var core : shared) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(core);
+        }
+        showHint(parent.getString(
+            R.string.create_vm_cpu_affinity_host_overlap, sb.toString()));
     }
 
     @Override
@@ -302,6 +389,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateVncVisibility();
         updateVncPasswordVisibility();
         updateVramAllocVisibility();
+        swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
+        etGpuCgroupPath.setText(item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
+            CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH));
+        setGpuCgroupCpus(item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, ""));
+        updateGpuCgroupVisibility();
     }
 
     @NonNull
@@ -358,6 +450,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (swGpuEnabled.isChecked() && !swGpuUdmabuf.isChecked()
             && swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable())
             return showValidateFailed(dynamicVramNeedsSharingMessage());
+        if (swGpuCgroup.isChecked()) {
+            var path = getEditText(etGpuCgroupPath).trim();
+            if (path.isEmpty() || !path.startsWith("/"))
+                return showValidateFailed(R.string.create_vm_error_gpu_cgroup_path);
+            if (gpuCgroupCpus.trim().isEmpty())
+                return showValidateFailed(R.string.create_vm_error_gpu_cgroup_cpus_empty);
+        }
         return true;
     }
 
@@ -465,6 +564,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             var vncPortStr = getEditText(etVncPort);
             item.set("vnc_port", vncPortStr.isEmpty() ? -1 : parseInt(vncPortStr));
         }
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, swGpuCgroup.isChecked());
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, gpuCgroupCpus.trim());
     }
 
     // What the selected renderer can actually proxy.
