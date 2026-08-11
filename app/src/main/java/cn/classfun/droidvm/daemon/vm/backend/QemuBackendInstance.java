@@ -171,10 +171,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add(cpu);
         long cpuCount = Math.max(item.optLong("cpu_count", 1), 1);
         boolean smt = item.optBoolean("smt", true);
-        long threads = smt ? 2 : 1;
-        long cores = Math.max(cpuCount / threads, 1);
+        long threads = smt && cpuCount % 2 == 0 ? 2 : 1;
+        long cores = cpuCount / threads;
         args.add("-smp");
-        args.add(fmt("%d,sockets=1,cores=%d,threads=%d", cores * threads, cores, threads));
+        args.add(fmt("%d,sockets=1,cores=%d,threads=%d", cpuCount, cores, threads));
         long memMb = Math.max(item.optLong("memory_mb", 512), 64);
         args.add("-m");
         args.add(fmt("%dM", memMb));
