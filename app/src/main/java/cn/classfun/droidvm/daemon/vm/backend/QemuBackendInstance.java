@@ -147,7 +147,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
                 break;
             case SOFT:
-                args.add("tcg");
+                args.add("tcg,thread=multi,tb-size=128");
                 break;
             default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
         }
