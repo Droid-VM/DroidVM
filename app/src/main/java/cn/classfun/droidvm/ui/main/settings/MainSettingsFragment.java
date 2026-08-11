@@ -41,9 +41,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
@@ -70,6 +68,7 @@ import cn.classfun.droidvm.ui.update.UpdateInfo;
 import cn.classfun.droidvm.ui.update.VersionCheck;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
+import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
 public final class MainSettingsFragment extends MainBaseFragment {
     private static final long DAEMON_REFRESH_INTERVAL_MS = 1000L;
@@ -375,78 +374,16 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showCpuAffinityDialog() {
         var ctx = requireContext();
-        var cores = CpuUtils.getCores();
-        int tiers = CpuUtils.tierCount(cores);
-        var labels = new String[cores.size()];
-        for (int i = 0; i < cores.size(); i++)
-            labels[i] = cpuCoreLabel(cores.get(i), tiers);
-
         // Saved selection, or the "filter out little cores" default when unset.
         var savedCsv = getQemuImgCpuAffinity(ctx);
-        var selectedIdx = parseCsvToSet(
-            savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv);
-        var checked = new boolean[cores.size()];
-        for (int i = 0; i < cores.size(); i++)
-            checked[i] = selectedIdx.contains(cores.get(i).index);
-
-        var dialog = new MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.settings_cpu_affinity_title)
-            .setMultiChoiceItems(labels, checked, (d, which, isChecked) ->
-                checked[which] = isChecked)
-            .setNeutralButton(R.string.settings_cpu_affinity_big_only, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok, (d, w) -> {
-                var sb = new StringBuilder();
-                for (int i = 0; i < cores.size(); i++) {
-                    if (!checked[i]) continue;
-                    if (sb.length() > 0) sb.append(',');
-                    sb.append(cores.get(i).index);
-                }
+        CpuCorePickerDialog.show(
+            ctx, R.string.settings_cpu_affinity_title,
+            savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv,
+            picked -> {
                 ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, sb.toString()).apply();
+                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, picked).apply();
                 refreshCpuAffinitySummary();
-            })
-            .create();
-        dialog.show();
-        // Re-check only the big cores without dismissing the dialog.
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-            var bigIdx = parseCsvToSet(CpuUtils.defaultBigCoresCsv());
-            var list = dialog.getListView();
-            for (int i = 0; i < cores.size(); i++) {
-                checked[i] = bigIdx.contains(cores.get(i).index);
-                list.setItemChecked(i, checked[i]);
-            }
-        });
-    }
-
-    @NonNull
-    private String cpuCoreLabel(@NonNull CpuUtils.CpuCore core, int tiers) {
-        var freq = CpuUtils.formatFreq(core.maxFreqKHz);
-        int tierRes;
-        if (tiers <= 1) tierRes = 0;
-        else if (core.tier == 0) tierRes = R.string.settings_cpu_affinity_tier_little;
-        else if (tiers >= 3 && core.tier == tiers - 1)
-            tierRes = R.string.settings_cpu_affinity_tier_prime;
-        else tierRes = R.string.settings_cpu_affinity_tier_big;
-        var sb = new StringBuilder(fmt("CPU%d", core.index));
-        if (!freq.isEmpty()) sb.append("    ").append(freq);
-        if (tierRes != 0) sb.append("    ").append(getString(tierRes));
-        return sb.toString();
-    }
-
-    @NonNull
-    private static Set<Integer> parseCsvToSet(@NonNull String csv) {
-        var set = new HashSet<Integer>();
-        if (csv.isEmpty()) return set;
-        for (var part : csv.split(",")) {
-            part = part.trim();
-            if (part.isEmpty()) continue;
-            try {
-                set.add(Integer.parseInt(part));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return set;
+            });
     }
 
     private void showLicenseDialog() {

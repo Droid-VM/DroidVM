@@ -41,6 +41,7 @@ import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
@@ -60,6 +61,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
     private SerialPipe uart = null;
     private String controlSocketPath = null;
+    /** Set by prepareGpuCgroup() once the cpuset exists and holds cores; else null. */
+    private String gpuCgroupPath = null;
     /** Owns the per-VM native-display input sockets (crosvm-facing + UI-facing); see start(). */
     private final NativeDisplayInputBridge inputBridge = new NativeDisplayInputBridge();
     private final FDPipeConsoleStream uartStream;
@@ -114,6 +117,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
             }
         }
+        // Must happen before buildCommand(): crosvm opens <cgroup>/tasks and never
+        // creates the directory, and buildCommand() only passes the flag if this worked.
+        prepareGpuCgroup();
         var args = buildCommand();
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
         try {
@@ -179,6 +185,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         args.add(String.valueOf(Math.max(item.optLong("memory_mb", 512), 64)));
         args.add("--cpus");
         args.add(String.valueOf(Math.max(item.optLong("cpu_count", 1), 1)));
+        buildCpuPlacementCommand(args);
         var hyp = item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
         if (hypervisor == VMHypervisor.AUTO)
@@ -355,6 +362,78 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         for (long blockSize : new long[]{262144, 65536, 4096})
             if (size > 0 && size % blockSize == 0) return blockSize;
         return 262144;
+    }
+
+    /**
+     * Creates and configures the gpuworker cpuset cgroup before crosvm starts.
+     * crosvm opens {@code <path>/tasks} without creating the directory; the cpuset
+     * requires non-empty {@code cpus}/{@code mems} before threads can join it.
+     *
+     * <p>Soft-fail: any error is logged and {@link #gpuCgroupPath} stays null so
+     * {@link #buildCpuPlacementCommand} simply omits the flag. Better to run
+     * without GPU thread isolation than to refuse to start the VM.
+     */
+    private void prepareGpuCgroup() {
+        gpuCgroupPath = null;
+        var item = config.item;
+        if (!item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false)) return;
+        var path = item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
+            CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH).trim();
+        var cpus = item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, "").trim();
+        if (path.isEmpty() || !path.startsWith("/")) {
+            Log.w(TAG, fmt("gpu-cgroup-path is not an absolute path: '%s'; skipping", path));
+            return;
+        }
+        if (cpus.isEmpty()) {
+            Log.w(TAG, "gpu_cgroup_cpus is empty; cannot set up cpuset, skipping");
+            return;
+        }
+        // Parent dir for inheriting cpuset.mems (single NUMA node = "0" on all
+        // Android devices, but copy the parent rather than hard-coding it).
+        var parent = new java.io.File(path).getParent();
+        if (parent == null) parent = "/dev/cpuset";
+        var ep = RunUtils.escapedString(path);
+        var ec = RunUtils.escapedString(cpus);
+        var eq = RunUtils.escapedString(parent);
+        // Shell.cmd feeds the whole string to the persistent root shell; newlines work.
+        var script =
+            "p=" + ep + "\n" +
+            "c=" + ec + "\n" +
+            "q=" + eq + "\n" +
+            "mkdir -p \"$p\" || exit 1\n" +
+            // mems first: some kernels validate cpus against a non-empty mems
+            "for n in mems cpuset.mems; do\n" +
+            "  if [ -e \"$p/$n\" ] && [ ! -s \"$p/$n\" ]; then\n" +
+            "    v=$(cat \"$q/$n\" 2>/dev/null); [ -n \"$v\" ] || v=0\n" +
+            "    echo \"$v\" > \"$p/$n\"\n" +
+            "  fi\n" +
+            "done\n" +
+            // cpuset v1 (noprefix) uses 'cpus'; v2 uses 'cpuset.cpus' -- try both
+            "for n in cpus cpuset.cpus; do\n" +
+            "  if [ -e \"$p/$n\" ]; then echo \"$c\" > \"$p/$n\"; fi\n" +
+            "done\n" +
+            // Last line output verifies the write; also becomes the script exit code
+            "cat \"$p/cpus\" 2>/dev/null || cat \"$p/cpuset.cpus\" 2>/dev/null";
+        var result = RunUtils.run(script);
+        if (!result.isSuccess() || result.getOutString().trim().isEmpty()) {
+            Log.e(TAG, fmt("Failed to set up gpuworker cpuset at %s (cpus=%s): %s",
+                path, cpus, result.getErrString()));
+            return;
+        }
+        Log.i(TAG, fmt("gpuworker cpuset ready: %s (cpus=%s)", path, result.getOutString().trim()));
+        gpuCgroupPath = path;
+    }
+
+    /**
+     * Appends CPU placement flags: per-vCPU host affinity, guest capacity, guest
+     * clusters, and (when the cpuset was successfully prepared) the GPU cgroup.
+     */
+    private void buildCpuPlacementCommand(@NonNull List<String> args) {
+        CpuPlacementPlan.of(config.item).appendArgs(args);
+        if (gpuCgroupPath != null) {
+            args.add("--gpu-cgroup-path");
+            args.add(gpuCgroupPath);
+        }
     }
 
     private void buildDiskCommand(@NonNull List<String> args) {

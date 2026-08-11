@@ -204,6 +204,38 @@
     <string name="create_vm_category_extra_options">额外选项</string>
     <string name="create_vm_extra_option_hint">额外选项（每行一个）</string>
     <string name="create_vm_environment_variables_hint">环境变量（KEY=VALUE，每行一个）</string>
+
+    <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_cpu_affinity_title">vCPU 亲和性</string>
+    <string name="create_vm_cpu_affinity">每 vCPU 宿主核亲和性</string>
+    <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
+    <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
+    <string name="create_vm_cpu_affinity_unbound">不绑定</string>
+    <string name="create_vm_cpu_affinity_cores_fmt">%d 个核心</string>
+    <string name="create_vm_cpu_affinity_section_vcpus">vCPU 到宿主核心</string>
+    <string name="create_vm_cpu_affinity_section_topology">客户机拓扑</string>
+    <string name="create_vm_cpu_topology_auto">自动推导 Capacity 和 Cluster</string>
+    <string name="create_vm_cpu_topology_unset">不传递给客户机</string>
+    <string name="create_vm_cpu_capacity">Capacity</string>
+    <string name="create_vm_cpu_capacity_group_fmt">vCPU %1$s：%2$d</string>
+    <string name="create_vm_cpu_capacity_hint">如 0=792,1=792,6=1024</string>
+    <string name="create_vm_cpu_cluster">Cluster</string>
+    <string name="create_vm_cpu_cluster_count_fmt">%d 个 Cluster</string>
+    <string name="create_vm_cpu_cluster_single">单个 Cluster（crosvm 默认）</string>
+    <string name="create_vm_cpu_clusters_hint">如 0-5;6（分号分隔）</string>
+    <string name="create_vm_cpu_affinity_big_only">仅大核</string>
+    <string name="create_vm_cpu_affinity_host_overlap">核心 %s 与 GPU Worker cpuset 重叠</string>
+    <string name="create_vm_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_gpu_cgroup_path_hint">cpuset 路径（如 /dev/cpuset/gpuworker）</string>
+    <string name="create_vm_gpu_cgroup_cpus">cpuset 核心</string>
+    <string name="create_vm_gpu_cgroup_cpus_summary_fmt">核心：%s</string>
+    <string name="create_vm_gpu_cgroup_cpus_none">未选择</string>
+    <string name="create_vm_error_cpu_affinity_vcpu_oob">vCPU 索引超出范围（须小于 CPU 数量）</string>
+    <string name="create_vm_error_cpu_affinity_host_oob">宿主核 %d 在本机不存在</string>
+    <string name="create_vm_error_cpu_capacity_invalid">capacity 格式无效（应为 vcpu=1..1024,…）</string>
+    <string name="create_vm_error_cpu_clusters_overlap">cluster 中 vCPU %s 重复出现</string>
+    <string name="create_vm_error_gpu_cgroup_path">GPU cgroup 路径必须为绝对路径</string>
+    <string name="create_vm_error_gpu_cgroup_cpus_empty">请至少选择一个核心给 GPU Worker</string>
     <string name="create_vm_category_gpu">图形加速器</string>
     <string name="create_vm_gpu_enabled">启用GPU</string>
     <string name="create_vm_gpu_backend">渲染器</string>

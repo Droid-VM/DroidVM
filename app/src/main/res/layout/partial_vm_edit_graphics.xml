@@ -509,4 +509,58 @@
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
+    <!-- The GPU worker cpuset. The per-vCPU affinity that pairs with it lives in
+         VMCpuAffinityDialog, reached from the CPU count field, since its rows are
+         a function of that count. This block is not: it is a plain host cpuset. -->
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_gpu_cgroup">
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_gpu_cgroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_gpu"
+            android:text="@string/create_vm_gpu_cgroup" />
+
+        <LinearLayout
+            android:id="@+id/gpu_cgroup_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_gpu_cgroup_path"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="@string/create_vm_gpu_cgroup_path_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_gpu_cgroup_path"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="text"
+                    android:textSize="14sp" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Tapping opens a multi-choice host-core picker. -->
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_gpu_cgroup_cpus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_cpu"
+                android:text="@string/create_vm_gpu_cgroup_cpus" />
+
+        </LinearLayout>
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
 </LinearLayout>

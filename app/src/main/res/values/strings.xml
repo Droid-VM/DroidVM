@@ -206,6 +206,38 @@
     <string name="create_vm_category_extra_options">Extra Options</string>
     <string name="create_vm_extra_option_hint">Extra arguments (one per line)</string>
     <string name="create_vm_environment_variables_hint">Environment variables (KEY=VALUE, one per line)</string>
+
+    <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_cpu_affinity_title">vCPU Affinity</string>
+    <string name="create_vm_cpu_affinity">Per-vCPU Host Affinity</string>
+    <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
+    <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
+    <string name="create_vm_cpu_affinity_unbound">Not bound</string>
+    <string name="create_vm_cpu_affinity_cores_fmt">%d cores</string>
+    <string name="create_vm_cpu_affinity_section_vcpus">vCPU to host cores</string>
+    <string name="create_vm_cpu_affinity_section_topology">Guest topology</string>
+    <string name="create_vm_cpu_topology_auto">Auto-derive Capacity &amp; Cluster</string>
+    <string name="create_vm_cpu_topology_unset">Not passed to the guest</string>
+    <string name="create_vm_cpu_capacity">Capacity</string>
+    <string name="create_vm_cpu_capacity_group_fmt">vCPU %1$s: %2$d</string>
+    <string name="create_vm_cpu_capacity_hint">e.g. 0=792,1=792,6=1024</string>
+    <string name="create_vm_cpu_cluster">Clusters</string>
+    <string name="create_vm_cpu_cluster_count_fmt">%d clusters</string>
+    <string name="create_vm_cpu_cluster_single">Single cluster (crosvm default)</string>
+    <string name="create_vm_cpu_clusters_hint">e.g. 0-5;6  (semicolon-separated)</string>
+    <string name="create_vm_cpu_affinity_big_only">Big cores</string>
+    <string name="create_vm_cpu_affinity_host_overlap">Core %s is shared with the GPU worker cpuset</string>
+    <string name="create_vm_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_gpu_cgroup_path_hint">Cpuset path (e.g. /dev/cpuset/gpuworker)</string>
+    <string name="create_vm_gpu_cgroup_cpus">Cpuset cores</string>
+    <string name="create_vm_gpu_cgroup_cpus_summary_fmt">Cores: %s</string>
+    <string name="create_vm_gpu_cgroup_cpus_none">None selected</string>
+    <string name="create_vm_error_cpu_affinity_vcpu_oob">vCPU index out of range (must be &lt; CPU count)</string>
+    <string name="create_vm_error_cpu_affinity_host_oob">Host core %d not found on this device</string>
+    <string name="create_vm_error_cpu_capacity_invalid">Invalid capacity (expected vcpu=1..1024,…)</string>
+    <string name="create_vm_error_cpu_clusters_overlap">Cluster overlap at vCPU %s</string>
+    <string name="create_vm_error_gpu_cgroup_path">GPU cgroup path must be absolute</string>
+    <string name="create_vm_error_gpu_cgroup_cpus_empty">Select at least one core for the GPU worker</string>
     <string name="create_vm_category_gpu">Graphics Accelerator</string>
     <string name="create_vm_gpu_enabled">Enable GPU</string>
     <string name="create_vm_gpu_backend">Renderer</string>
