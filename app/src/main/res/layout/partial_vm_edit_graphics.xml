@@ -346,6 +346,13 @@
                 android:icon="@drawable/ic_monitor"
                 android:text="@string/create_vm_display_output" />
 
+            <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+                android:id="@+id/choose_display_blit_provider"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_connection"
+                android:text="@string/create_vm_display_blit_provider" />
+
             <LinearLayout
                 android:id="@+id/display_dpi_options"
                 android:layout_width="match_parent"

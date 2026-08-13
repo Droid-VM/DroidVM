@@ -259,6 +259,8 @@
     <string name="create_vm_gpu_mode">Graphics API</string>
     <string name="create_vm_gpu_provider">Host driver</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
+    <string name="create_vm_display_blit_provider">GPU-blit provider</string>
+    <string name="create_vm_display_blit_off">Off (CPU copy)</string>
     <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">Host pool size (MB)</string>

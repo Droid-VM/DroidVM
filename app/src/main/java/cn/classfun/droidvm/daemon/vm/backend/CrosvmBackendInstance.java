@@ -46,6 +46,7 @@ import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
@@ -126,6 +127,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
             prepareProcess(builder);
             applyGfxstreamEnv(builder);
+            applyDisplayBlitEnv(builder);
             if (uart != null) {
                 builder.preserveFd(uart.getOutputRemoteFd());
                 builder.preserveFd(uart.getInputRemoteFd());
@@ -741,6 +743,71 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         RunUtils.run("for p in /sys/module/udmabuf*/parameters/size_limit_mb; do " +
                 "echo %d > \"$p\"; done 2>/dev/null || true",
             item.optLong("gpu_udmabuf_limit_mb", 4096));
+    }
+
+    /**
+     * Host Vulkan provider for the native display's GPU blit ({@link GpuBlitProvider}) -- the
+     * scanout-dmabuf-to-SurfaceControl path. Only the accelerated scanout uses it: native display
+     * on the virtio-gpu backend (simplefb/VNC present through crosvm's CPU copy and never reach
+     * here). This is a separate axis from the render host driver ({@link #applyGfxstreamEnv}); the
+     * two can name the same turnip .so or differ.
+     *
+     * <p>TURNIP points the crosvm bridge at the bundled turnip. OFF -- and, until they are wired,
+     * PANVK/SYSTEM -- forces crosvm's CPU copy so a stale or hand-edited value degrades cleanly
+     * instead of half-loading a wrong driver. (SYSTEM will instead leave the library unset and let
+     * the bridge load the SoC driver once the capability probe that gates it exists.)
+     */
+    private void applyDisplayBlitEnv(@NonNull NativeProcess.Builder builder) {
+        var item = config.item;
+        if (!isNativeDisplayEnabled()) return;
+        if (optEnum(item, "display_backend", DisplayBackend.NONE) != DisplayBackend.VIRTIO_GPU)
+            return;
+        var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
+        switch (provider) {
+            case TURNIP: {
+                var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
+                if (new File(turnip).exists())
+                    builder.environment("CROSVM_DISPLAY_VULKAN_LIBRARY", turnip);
+                break;
+            }
+            case SYSTEM: {
+                // The SoC's stock Vulkan performs the blit. The bridge dlopens whatever it is
+                // pointed at as a hwvulkan HMI, and the vendor driver under /vendor/lib64/hw is one,
+                // so aim it there instead of turnip. The bridge's own extension probe drops to the
+                // CPU copy when the stock driver lacks raw-dmabuf import (as Qualcomm's does) or
+                // cannot be loaded -- so SYSTEM attempts the system Vulkan and degrades, it never
+                // forces the CPU path.
+                var sysVk = resolveSystemVulkanHal();
+                if (sysVk != null)
+                    builder.environment("CROSVM_DISPLAY_VULKAN_LIBRARY", sysVk);
+                break;
+            }
+            case OFF:
+            case PANVK:
+            default:
+                // OFF is explicit; PANVK is not built yet (and is bounced in the editor). Force the
+                // CPU copy rather than letting the bridge load the wrong driver.
+                builder.environment("GPU_DISPLAY_COPY_MODE", "cpu");
+                break;
+        }
+    }
+
+    /**
+     * The SoC's stock Vulkan hwvulkan HAL under {@code /vendor/lib64/hw} -- a real hwvulkan HMI the
+     * display bridge can dlopen -- or null if only a software rasteriser is present. Used by the
+     * SYSTEM {@link GpuBlitProvider}.
+     */
+    private static String resolveSystemVulkanHal() {
+        var files = new File("/vendor/lib64/hw").listFiles(
+            (d, name) -> name.startsWith("vulkan.") && name.endsWith(".so"));
+        if (files == null) return null;
+        for (var vf : files) {
+            var n = vf.getName();
+            // Skip the software fallbacks (lvp/swiftshader/pastel); we want the GPU driver.
+            if (n.contains("lvp") || n.contains("swiftshader") || n.contains("pastel")) continue;
+            return vf.getAbsolutePath();
+        }
+        return null;
     }
 
     private boolean isNativeDisplayEnabled() {

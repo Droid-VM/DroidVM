@@ -29,6 +29,7 @@ import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.DisplayOutput;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuProvider;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
@@ -80,6 +81,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private ChooseRowWidget chooseGpuProvider;
     private ChooseRowWidget chooseDisplayBackend;
     private ChooseRowWidget chooseDisplayOutput;
+    private ChooseRowWidget chooseDisplayBlitProvider;
     private TextInputEditText etDisplayWidth;
     private TextInputEditText etDisplayHeight;
     private TextInputEditText etDisplayRefreshRate;
@@ -132,6 +134,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swDisplayEnabled = view.findViewById(R.id.sw_display_enabled);
         chooseDisplayBackend = view.findViewById(R.id.choose_display_backend);
         chooseDisplayOutput = view.findViewById(R.id.choose_display_output);
+        chooseDisplayBlitProvider = view.findViewById(R.id.choose_display_blit_provider);
         displayOptions = view.findViewById(R.id.display_options);
         etDisplayWidth = view.findViewById(R.id.et_display_width);
         etDisplayHeight = view.findViewById(R.id.et_display_height);
@@ -207,6 +210,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseDisplayOutput.setOnValueChangedListener((o, n) -> {
             updateDisplayDpiVisibility();
             updateVncVisibility();
+        });
+        // GPU-blit provider for the native display's scanout composite -- a peer set of Vulkan
+        // drivers plus an Off (CPU copy) escape. TURNIP/SYSTEM/OFF are wired (SYSTEM points the
+        // bridge at the SoC's vendor Vulkan and degrades to the CPU copy if it lacks the extensions);
+        // only PANVK is not built yet, so it toasts + reverts like the render provider's PanVK.
+        chooseDisplayBlitProvider.configure(GpuBlitProvider.class, GpuBlitProvider.TURNIP);
+        chooseDisplayBlitProvider.setOnValueChangedListener((o, n) -> {
+            if (n == GpuBlitProvider.PANVK) {
+                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
+                    Toast.LENGTH_SHORT).show();
+                chooseDisplayBlitProvider.setSelectedItem(
+                    o instanceof GpuBlitProvider ? (GpuBlitProvider) o : GpuBlitProvider.TURNIP);
+            }
         });
         btnVncPasswordClear.setOnClickListener(v -> etVncPassword.setText(""));
         btnVncPasswordGenerate.setOnClickListener(v ->
@@ -382,6 +398,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // Native wins if both are set -- that is what crosvm does anyway (it keeps the first
         // display backend that opens and the Android display service is inserted first).
         chooseDisplayOutput.setSelectedItem(readDisplayOutput(config));
+        chooseDisplayBlitProvider.setSelectedItem(
+            optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP));
         updateGpuVisibility();
         updateDisplayVisibility();
         updateDisplayOutputVisibility();
@@ -485,7 +503,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     private boolean usesGuestPool() {
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        boolean drm2kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
+        // Read the mode only under virglrenderer: 2D clears the mode picker and reading it would
+        // throw "Items not set". drm2kgsl only exists as virglrenderer's NATIVE mode anyway.
+        boolean drm2kgsl = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
+            && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         return drm2kgsl || (gfxstream && swGpuUdmabuf.isChecked());
     }
 
@@ -523,8 +544,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         item.set("vnc_enabled", vncEnabled);
         if (gpuEnabled) {
             GpuBackend gb = chooseGpuBackend.getSelectedItem();
-            GpuMode gm = chooseGpuMode.getSelectedItem();
-            GpuProvider gp = chooseGpuProvider.getSelectedItem();
+            // 2D clears the mode/provider pickers, so reading them would throw "Items not set".
+            // Persist NONE for both in that case.
+            boolean accel = gb == GPU_GFXSTREAM || gb == GpuBackend.GPU_VIRGLRENDERER;
+            GpuMode gm = accel ? chooseGpuMode.getSelectedItem() : GpuMode.NONE;
+            GpuProvider gp = accel ? chooseGpuProvider.getSelectedItem() : GpuProvider.NONE;
             item.set("gpu_backend", gb);
             item.set("gpu_mode", gm);
             item.set("gpu_provider", gp);
@@ -545,6 +569,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (displayEnabled) {
             DisplayBackend displayBackend = chooseDisplayBackend.getSelectedItem();
             item.set("display_backend", displayBackend);
+            item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
             item.set("native_display_enabled",
                 displayOutput == DisplayOutput.NATIVE && isNativeDisplayAllowed());
             item.set("display_width", parseInt(getEditText(etDisplayWidth)));
@@ -580,18 +605,22 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var backend = chooseGpuBackend.getSelectedItem();
         if (backend == GPU_GFXSTREAM) {
             // gfxstream proxies Vulkan and nothing else here.
+            chooseGpuMode.setVisibility(VISIBLE);
             chooseGpuMode.setItems(GpuMode.VULKAN);
             chooseGpuMode.setSelectedItem(GpuMode.VULKAN);
         } else if (backend == GpuBackend.GPU_VIRGLRENDERER) {
             // Venus is listed but not compiled into this build; selecting it toasts and reverts,
             // the same treatment PanVK gets one row down.
+            chooseGpuMode.setVisibility(VISIBLE);
             chooseGpuMode.setItems(GpuMode.NATIVE, GpuMode.OPENGL, GpuMode.VULKAN);
             Object cur = chooseGpuMode.getSelectedItem();
             if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE)
                 chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
         } else {
-            // 2D has no acceleration to choose and no host driver to serve it.
-            chooseGpuMode.setItems();
+            // 2D has no acceleration to choose. setItems() rejects an empty list, so hide the row
+            // rather than clearing it; its stale items are never read for 2D (the reads below are
+            // all gated on the backend being gfxstream or virglrenderer).
+            chooseGpuMode.setVisibility(GONE);
         }
     }
 
@@ -601,12 +630,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var backend = chooseGpuBackend.getSelectedItem();
         boolean gfxstream = backend == GPU_GFXSTREAM;
         boolean twoD = backend != GPU_GFXSTREAM && backend != GpuBackend.GPU_VIRGLRENDERER;
-        GpuMode mode = chooseGpuMode.getSelectedItem();
         if (twoD) {
-            chooseGpuProvider.setItems();
+            // 2D has no host driver. setItems() rejects an empty list, so just hide the row (its
+            // stale items are never read for 2D). Bail before the mode read below, which would be
+            // reading the hidden mode picker.
             chooseGpuProvider.setVisibility(GONE);
             return;
         }
+        GpuMode mode = chooseGpuMode.getSelectedItem();
         if (gfxstream) {
             chooseGpuProvider.setItems(
                 GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK, GpuProvider.VK_SYSTEM);
@@ -687,9 +718,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private void updateDisplayDpiVisibility() {
         DisplayBackend backend = chooseDisplayBackend.getSelectedItem();
         DisplayOutput output = chooseDisplayOutput.getSelectedItem();
-        displayDpiOptions.setVisibility(
-            backend == DisplayBackend.VIRTIO_GPU && output == DisplayOutput.NATIVE
-                ? VISIBLE : GONE);
+        // The GPU-blit provider and the DPI rows share a trigger: both are meaningful only for the
+        // accelerated scanout, i.e. virtio-gpu presented on the native display. VNC and simplefb
+        // composite through crosvm's CPU copy, which ignores both.
+        boolean accelScanout =
+            backend == DisplayBackend.VIRTIO_GPU && output == DisplayOutput.NATIVE;
+        displayDpiOptions.setVisibility(accelScanout ? VISIBLE : GONE);
+        chooseDisplayBlitProvider.setVisibility(accelScanout ? VISIBLE : GONE);
     }
 
     private void updateVncVisibility() {
@@ -710,7 +745,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The DRM native context has two: a guest pool every BO is allocated from, and a small
         // host pool left holding only the per-context msm shmem rings. None of gfxstream's other
         // plumbing applies -- vram-limit and the fusion size gate have gfxstream-only consumers.
-        boolean drm2kgsl = !gfxstream && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
+        // Read the mode only under virglrenderer: 2D clears the mode picker and reading it would
+        // throw "Items not set". drm2kgsl only exists as virglrenderer's NATIVE mode anyway.
+        boolean drm2kgsl = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
+            && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
         vramSettings.setVisibility(gfxstream || drm2kgsl ? VISIBLE : GONE);
         tilGpuDrm2KgslPoolMb.setVisibility(drm2kgsl ? VISIBLE : GONE);
