@@ -569,7 +569,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     item.optLong("display_width", 1280),
                     item.optLong("display_height", 720)));
                 gpuArg.append(fmt(",refresh-rate=%d",
-                    item.optLong("display_refresh_rate", 60)));
+                    item.optLong("display_refresh_rate", 120)));
                 gpuArg.append(fmt(",dpi=[%d,%d]]]",
                     item.optLong("display_dpi_h", 160),
                     item.optLong("display_dpi_v", 160)));

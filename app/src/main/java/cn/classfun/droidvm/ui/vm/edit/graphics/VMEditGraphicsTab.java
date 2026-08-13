@@ -363,7 +363,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
         etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
         etDisplayHeight.setText(String.valueOf(item.optLong("display_height", 720)));
-        etDisplayRefreshRate.setText(String.valueOf(item.optLong("display_refresh_rate", 60)));
+        etDisplayRefreshRate.setText(String.valueOf(item.optLong("display_refresh_rate", 120)));
         etDisplayDpiH.setText(String.valueOf(item.optLong("display_dpi_h", 160)));
         etDisplayDpiV.setText(String.valueOf(item.optLong("display_dpi_v", 160)));
         swVncPasswordAuth.setChecked(item.optBoolean("vnc_password_auth", false));
