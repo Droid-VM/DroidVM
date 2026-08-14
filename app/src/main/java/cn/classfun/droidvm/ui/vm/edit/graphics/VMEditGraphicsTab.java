@@ -21,6 +21,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.natives.VulkanBlitProbe;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -164,17 +165,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // Acceleration decides which host drivers make sense and which memory knobs exist,
         // so it drives both of the rows under it.
         chooseGpuMode.setOnValueChangedListener((o, n) -> {
-            // Vulkan on virglrenderer means venus, which is not compiled into this build --
-            // selecting it would produce a VM with a capset nothing serves. Same treatment as
-            // PanVK below: say so and put the row back.
-            if (n == GpuMode.VULKAN
-                && chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER) {
-                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
-                    Toast.LENGTH_SHORT).show();
-                chooseGpuMode.setSelectedItem(
-                    o instanceof GpuMode && o != GpuMode.VULKAN ? (GpuMode) o : GpuMode.OPENGL);
-                return;
-            }
+            // Vulkan on virglrenderer is venus (guest Vulkan proxied to the host over virtio-gpu);
+            // it is wired now, so this is just a normal mode change like NATIVE/OPENGL.
             updateGpuProviderOptions();
             updateVramAllocVisibility();
         });
@@ -222,6 +214,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                     Toast.LENGTH_SHORT).show();
                 chooseDisplayBlitProvider.setSelectedItem(
                     o instanceof GpuBlitProvider ? (GpuBlitProvider) o : GpuBlitProvider.TURNIP);
+            } else if (n == GpuBlitProvider.SYSTEM) {
+                // The system driver is a peer, gated by the same rule as the others: it is usable
+                // only if it exposes the blit's extensions. Probe the real driver and, if it is
+                // short, say which -- the choice is still allowed (crosvm then degrades to a CPU
+                // copy), the user just gets told instead of quietly getting the fallback.
+                warnIfSystemBlitIncapable();
             }
         });
         btnVncPasswordClear.setOnClickListener(v -> etVncPassword.setText(""));
@@ -387,7 +385,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // Restore each saved choice only if the backend still offers it; otherwise keep the
         // default updateGpuModeOptions()/updateGpuProviderOptions() just picked.
         boolean gfx = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        if (gpuMode != GpuMode.NONE && (gfx == (gpuMode == GpuMode.VULKAN)))
+        // gfxstream only offers VULKAN; virglrenderer offers OPENGL/NATIVE/VULKAN(venus). Restore
+        // any mode the current backend actually lists, or the picker keeps the default and a saved
+        // venus VM silently reloads as something else.
+        boolean modeOk = gfx ? (gpuMode == GpuMode.VULKAN)
+            : (gpuMode == GpuMode.OPENGL || gpuMode == GpuMode.NATIVE || gpuMode == GpuMode.VULKAN);
+        if (gpuMode != GpuMode.NONE && modeOk)
             chooseGpuMode.setSelectedItem(gpuMode);
         updateGpuProviderOptions();
         if (gpuProvider != GpuProvider.NONE && gfx == isVulkanProvider(gpuProvider))
@@ -507,7 +510,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // throw "Items not set". drm2kgsl only exists as virglrenderer's NATIVE mode anyway.
         boolean drm2kgsl = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
             && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
-        return drm2kgsl || (gfxstream && swGpuUdmabuf.isChecked());
+        // Venus (virglrenderer + VULKAN) allocates its BOs from the same guest pool.
+        boolean venus = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
+            && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN;
+        return drm2kgsl || venus || (gfxstream && swGpuUdmabuf.isChecked());
     }
 
     /**
@@ -609,12 +615,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             chooseGpuMode.setItems(GpuMode.VULKAN);
             chooseGpuMode.setSelectedItem(GpuMode.VULKAN);
         } else if (backend == GpuBackend.GPU_VIRGLRENDERER) {
-            // Venus is listed but not compiled into this build; selecting it toasts and reverts,
-            // the same treatment PanVK gets one row down.
+            // virglrenderer serves all three: OPENGL (host GL), NATIVE (drm2kgsl), VULKAN (venus).
             chooseGpuMode.setVisibility(VISIBLE);
             chooseGpuMode.setItems(GpuMode.NATIVE, GpuMode.OPENGL, GpuMode.VULKAN);
             Object cur = chooseGpuMode.getSelectedItem();
-            if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE)
+            if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE && cur != GpuMode.VULKAN)
                 chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
         } else {
             // 2D has no acceleration to choose. setItems() rejects an empty list, so hide the row
@@ -653,9 +658,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // driver the host answers with, and it is the key the launcher branches on.
             chooseGpuProvider.setItems(GpuProvider.DRM2KGSL);
             chooseGpuProvider.setSelectedItem(GpuProvider.DRM2KGSL);
+        } else if (mode == GpuMode.VULKAN) {
+            // Venus is the one host driver for Vulkan-on-virglrenderer; the row stays for symmetry
+            // with the other modes (and is the key the launcher branches on).
+            chooseGpuProvider.setItems(GpuProvider.VENUS);
+            chooseGpuProvider.setSelectedItem(GpuProvider.VENUS);
         }
         chooseGpuProvider.setVisibility(
-            gfxstream || mode == GpuMode.OPENGL || mode == GpuMode.NATIVE ? VISIBLE : GONE);
+            gfxstream || mode == GpuMode.OPENGL || mode == GpuMode.NATIVE
+                || mode == GpuMode.VULKAN ? VISIBLE : GONE);
     }
 
     // The single value the daemon still reads. Every (mode, provider) pair the UI can produce
@@ -671,6 +682,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             case VK_SYSTEM: return GpuApi.VULKAN_SYSTEM;
             case VK_TURNIP: return GpuApi.VULKAN_TURNIP;
             case VK_PANVK:  return GpuApi.VULKAN_PANVK;
+            case VENUS:     return GpuApi.VULKAN;
             default:        return mode == GpuMode.VULKAN ? GpuApi.VULKAN : GpuApi.NONE;
         }
     }
@@ -727,6 +739,22 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseDisplayBlitProvider.setVisibility(accelScanout ? VISIBLE : GONE);
     }
 
+    // Probing Vulkan touches a driver, so do it off the UI thread and report once via a hint.
+    // SYSTEM stays selected regardless of the outcome -- a miss just means crosvm will fall back
+    // to a CPU copy, which we tell the user about instead of letting it happen silently. A null
+    // result (no Vulkan / no device to ask) is treated as "unknown" and says nothing.
+    private void warnIfSystemBlitIncapable() {
+        new Thread(() -> {
+            String[] missing = VulkanBlitProbe.missingBlitExtensions();
+            if (missing == null || missing.length == 0) return;
+            view.post(() -> {
+                if (chooseDisplayBlitProvider.getSelectedItem() == GpuBlitProvider.SYSTEM)
+                    showHint(parent.getString(R.string.display_blit_system_missing_ext,
+                        String.join("\n  ", missing)));
+            });
+        }, "vkprobe-blit").start();
+    }
+
     private void updateVncVisibility() {
         DisplayOutput output = chooseDisplayOutput.getSelectedItem();
         vncOptions.setVisibility(output == DisplayOutput.VNC ? VISIBLE : GONE);
@@ -749,15 +777,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // throw "Items not set". drm2kgsl only exists as virglrenderer's NATIVE mode anyway.
         boolean drm2kgsl = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
             && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
+        // Venus (virglrenderer + VULKAN) also allocates every BO from the guest pool; its host
+        // pool (venus-host-mb) uses the daemon default, so it needs no host-pool field of its own.
+        boolean venus = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
+            && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
-        vramSettings.setVisibility(gfxstream || drm2kgsl ? VISIBLE : GONE);
+        vramSettings.setVisibility(gfxstream || drm2kgsl || venus ? VISIBLE : GONE);
         tilGpuDrm2KgslPoolMb.setVisibility(drm2kgsl ? VISIBLE : GONE);
         swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
         tilGpuHostPoolMb.setVisibility(gfxstream ? VISIBLE : GONE);
         // The guest-allocated pool is the same region and the same flag for both renderers -- the
         // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
         // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
-        boolean guestAlloc = udmabuf || drm2kgsl;
+        boolean guestAlloc = udmabuf || drm2kgsl || venus;
         tilGpuGuestPoolMb.setVisibility(guestAlloc ? VISIBLE : GONE);
         tilGpuGuestPreallocMb.setVisibility(guestAlloc ? VISIBLE : GONE);
         tilGpuGuestStepMb.setVisibility(guestAlloc ? VISIBLE : GONE);

@@ -205,6 +205,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 boolean drm2kgslGpu = item.optBoolean("gpu_enabled", false)
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
                     && effectiveGpuMode(item) == GpuMode.NATIVE;
+                boolean venusGpu = item.optBoolean("gpu_enabled", false)
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
+                    && effectiveGpuMode(item) == GpuMode.VULKAN;
                 // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
                 // it follows from --runtime-share / --pre-alloc / --gpu vm-accept below. The old
                 // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
@@ -255,6 +258,22 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
                         preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
+                    appendGuestPoolOptions(preAlloc, item, guestPool);
+                    if (preAlloc.length() > 0) {
+                        args.add("--pre-alloc");
+                        args.add(preAlloc.toString());
+                    }
+                }
+                // Venus host pool: the host-committed Vulkan device memory (venus-host-mb ->
+                // VenusPool). BOs still come from the shared guest pool (gpu-guest-mb), the same
+                // region/flag drm2kgsl and gfxstream guest-alloc use -- the guest driver keeps one
+                // allocator and cannot tell the renderers apart.
+                if (venusGpu) {
+                    long venusHostPool = item.optLong("gpu_venus_pool_mb", 16);
+                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    var preAlloc = new StringBuilder();
+                    if (venusHostPool > 0)
+                        preAlloc.append(fmt("venus-host-mb=%d", venusHostPool));
                     appendGuestPoolOptions(preAlloc, item, guestPool);
                     if (preAlloc.length() > 0) {
                         args.add("--pre-alloc");
@@ -632,6 +651,21 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 gpuArg.append(",udmabuf=true");
                 gpuArg.append(fmt(",pci-bar-size=%d",
                     item.optLong("gpu_pci_bar_size", 0x100000000L)));
+            } else if (effectiveGpuMode(item) == GpuMode.VULKAN) {
+                // Venus: virglrenderer's Vulkan proxy (capset venus, guest-allocated blobs).
+                // virgl2 MUST stay in the list -- with "venus" alone the virgl renderer is never
+                // initialised (NO_VIRGL) and the first CREATE_2D comes back ErrInvalidResourceId,
+                // a black screen. vulkan=true maps to use_venus on the virgl path; the venus capset
+                // also forces use_venus and use_guest_vram host-side, so this is belt-and-suspenders.
+                gpuArg.append(",context-types=virgl2:venus");
+                gpuArg.append(",vulkan=true,egl=true,gles=true");
+                // udmabuf gates VIRTIO_GPU_F_CREATE_GUEST_HANDLE, the guest-alloc blob path venus
+                // uses (guest owns the pool, hands the host dma-bufs) -- same contract as drm2kgsl.
+                // No external-blob: create_gpu_device forces it from is_sandboxed||fixed_blob_mapping
+                // (false under --disable-sandbox), so passing the CLI key would be inert.
+                gpuArg.append(",udmabuf=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
             } else {
                 gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
                 switch (api) {
@@ -720,16 +754,24 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
         if (!item.optBoolean("gpu_enabled", false)) return;
-        if (optEnum(item, "gpu_backend", GpuBackend.NONE) != GpuBackend.GPU_GFXSTREAM) return;
-        // Advertise a device-local memory type to the guest. The folio budget
+        var backend = optEnum(item, "gpu_backend", GpuBackend.NONE);
+        boolean gfxstream = backend == GpuBackend.GPU_GFXSTREAM;
+        // Venus is Vulkan-on-virglrenderer: it drives the host GPU through the same host turnip
+        // and the same guest-alloc udmabuf blobs as gfxstream, so it needs this env too.
+        boolean venus = backend == GpuBackend.GPU_VIRGLRENDERER
+            && effectiveGpuMode(item) == GpuMode.VULKAN;
+        if (!gfxstream && !venus) return;
+        // gfxstream-only: advertise a device-local memory type to the guest. The folio budget
         // (vram-limit) and Gunyah RingBlob pin (gunyah-pvm) are on the --gpu line.
-        builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
-        // Host Vulkan driver selected by gpu_api. VULKAN_SYSTEM (and the not-yet-wired
-        // VULKAN_PANVK) use the SoC's stock Vulkan HAL -- leave ANDROID_EMU_VK_LOADER_PATH
-        // unset. Otherwise point gfxstream at the bundled turnip ICD (falls back to the
-        // system HAL if the file is missing).
+        if (gfxstream)
+            builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
+        // Host Vulkan driver. gfxstream follows gpu_api: VULKAN_SYSTEM / VULKAN_PANVK use the
+        // SoC's stock HAL (leave ANDROID_EMU_VK_LOADER_PATH unset), otherwise the bundled turnip
+        // ICD. Venus has no host-driver sub-choice on the current SoCs -- always turnip. Either
+        // way the env falls back to the system HAL if the turnip file is missing.
         var api = optEnum(item, "gpu_api", GpuApi.NONE);
-        boolean systemDriver = api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK;
+        boolean systemDriver = gfxstream
+            && (api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK);
         if (!systemDriver) {
             var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
             if (new File(turnip).exists()) {

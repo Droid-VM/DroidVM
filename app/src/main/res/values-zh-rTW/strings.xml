@@ -254,11 +254,13 @@
     <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
     <string name="create_vm_gpu_mode_native">Native Context</string>
     <string name="create_vm_gpu_provider_drm2kgsl">DRM to KGSL</string>
+    <string name="create_vm_gpu_provider_venus">Venus</string>
     <string name="create_vm_gpu_mode">圖形 API</string>
     <string name="create_vm_gpu_provider">主機驅動</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>
     <string name="create_vm_display_blit_provider">GPU 合成驅動</string>
     <string name="create_vm_display_blit_off">關閉（CPU 拷貝）</string>
+    <string name="display_blit_system_missing_ext">系統 Vulkan 驅動缺少 GPU 合成所需的擴展：\n  %1$s\n原生顯示將回退到 CPU 拷貝。</string>
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驅動尚未實現</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">主機池大小 (MB)</string>

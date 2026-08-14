@@ -41,7 +41,11 @@ public enum GpuProvider implements StringEnum {
     // The DRM backend for GpuMode.NATIVE. virglrenderer receives the msm wire protocol and
     // re-synthesises it as KGSL ioctls against the host's /dev/kgsl-3d0; the guest never sees
     // a KGSL device of its own. Selects --gpu context-types=virgl2:drm.
-    DRM2KGSL(7, "drm2kgsl", R.string.create_vm_gpu_provider_drm2kgsl);
+    DRM2KGSL(7, "drm2kgsl", R.string.create_vm_gpu_provider_drm2kgsl),
+    // The one entry for GpuMode.VULKAN on virglrenderer: venus proxies the guest's Vulkan to the
+    // host over virtio-gpu (capset venus, guest-allocated blobs). Selects
+    // --gpu context-types=virgl2:venus; the host driver is always turnip on the current SoCs.
+    VENUS(8, "venus", R.string.create_vm_gpu_provider_venus);
 
     private final int value;
     private final String name;

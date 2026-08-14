@@ -256,11 +256,13 @@
     <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
     <string name="create_vm_gpu_mode_native">Native Context</string>
     <string name="create_vm_gpu_provider_drm2kgsl">DRM to KGSL</string>
+    <string name="create_vm_gpu_provider_venus">Venus</string>
     <string name="create_vm_gpu_mode">Graphics API</string>
     <string name="create_vm_gpu_provider">Host driver</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
     <string name="create_vm_display_blit_provider">GPU-blit provider</string>
     <string name="create_vm_display_blit_off">Off (CPU copy)</string>
+    <string name="display_blit_system_missing_ext">The system Vulkan driver lacks extensions the GPU blit needs:\n  %1$s\nThe native display will fall back to a CPU copy.</string>
     <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
     <string name="create_vm_gpu_host_pool_mb">Host pool size (MB)</string>
