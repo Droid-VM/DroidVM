@@ -264,12 +264,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                         args.add(preAlloc.toString());
                     }
                 }
-                // Venus host pool: the host-committed Vulkan device memory (venus-host-mb ->
-                // VenusPool). BOs still come from the shared guest pool (gpu-guest-mb), the same
-                // region/flag drm2kgsl and gfxstream guest-alloc use -- the guest driver keeps one
-                // allocator and cannot tell the renderers apart.
+                // Venus host pool: the venus command-stream transport shmems (per-instance ring +
+                // CS/reply chunks) live here (venus-host-mb -> VenusPool). vkr sub-allocates every
+                // blob_id==0 shmem from this pre-shared region and the guest maps pool_base+offset
+                // with no runtime SHARE. venus's real VkDeviceMemory is separately guest-alloc and
+                // comes from the shared guest pool (gpu-guest-mb) -- the same region/flag drm2kgsl
+                // and gfxstream guest-alloc use; the guest driver keeps one allocator and cannot
+                // tell the renderers apart. Default sized for the KDE+vkmark transport peak (cs
+                // pool alone is >=8M/instance): too small forces a per-blob memfd fallback ->
+                // runtime SHARE, which SoC-resets the fragile sm8650 (8gen3) RM.
                 if (venusGpu) {
-                    long venusHostPool = item.optLong("gpu_venus_pool_mb", 16);
+                    long venusHostPool = item.optLong("gpu_venus_pool_mb", 256);
                     long guestPool = item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (venusHostPool > 0)

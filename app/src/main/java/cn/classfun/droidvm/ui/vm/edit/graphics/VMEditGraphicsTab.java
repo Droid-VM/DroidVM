@@ -59,7 +59,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View vramSettings;
     private View tilGpuDrm2KgslPoolMb;
     private View tilGpuHostPoolMb;
+    private View tilGpuVenusPoolMb;
     private TextInputEditText etGpuDrm2KgslPoolMb;
+    private TextInputEditText etGpuVenusPoolMb;
     private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
@@ -121,8 +123,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         tilGpuGuestPoolMb = view.findViewById(R.id.til_gpu_guest_pool_mb);
         tilGpuDrm2KgslPoolMb = view.findViewById(R.id.til_gpu_drm2kgsl_pool_mb);
         tilGpuHostPoolMb = view.findViewById(R.id.til_gpu_host_pool_mb);
+        tilGpuVenusPoolMb = view.findViewById(R.id.til_gpu_venus_pool_mb);
         etGpuDrm2KgslPoolMb = view.findViewById(R.id.et_gpu_drm2kgsl_pool_mb);
         etGpuHostPoolMb = view.findViewById(R.id.et_gpu_host_pool_mb);
+        etGpuVenusPoolMb = view.findViewById(R.id.et_gpu_venus_pool_mb);
         etGpuVramQuotaMb = view.findViewById(R.id.et_gpu_vram_quota_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
         tilGpuGuestPreallocMb = view.findViewById(R.id.til_gpu_guest_prealloc_mb);
@@ -346,6 +350,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // what the dynamic-VRAM switch below governs. So a pool that is too small costs speed,
         // not correctness -- 64 MiB leaves ~46 MiB of that fast path once the rings are in.
         etGpuHostPoolMb.setText(String.valueOf(item.optLong("gpu_host_pool_mb", 64)));
+        // venus's holds its per-instance transport shmems (ring 128K + CS pool >=8M + reply pool
+        // >=1M); vkr sub-allocates them here and the guest maps pool-relative with no runtime SHARE.
+        // Bigger avoids a memfd fallback under KDE's several Vulkan instances; but on a small-
+        // reservoir device (e.g. the 8gen3's 5.5 GB cap) it competes with guest RAM + the guest
+        // pool, so it is exposed here to tune per device rather than hard-wired to the daemon default.
+        etGpuVenusPoolMb.setText(String.valueOf(item.optLong("gpu_venus_pool_mb", 256)));
         // A quota, not an allocation: crosvm meters host-visible memory against this rather
         // than reserving any. Only read when guest-alloc is off.
         etGpuVramQuotaMb.setText(String.valueOf(item.optLong("gpu_vram_quota_mb", 2048)));
@@ -564,6 +574,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
             item.set("gpu_drm2kgsl_pool_mb", parseInt(getEditText(etGpuDrm2KgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
+            item.set("gpu_venus_pool_mb", parseInt(getEditText(etGpuVenusPoolMb)));
             item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
             item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
             item.set("gpu_guest_prealloc_mb", parseInt(getEditText(etGpuGuestPreallocMb)));
@@ -778,14 +789,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         boolean drm2kgsl = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
             && chooseGpuMode.getSelectedItem() == GpuMode.NATIVE;
         // Venus (virglrenderer + VULKAN) also allocates every BO from the guest pool; its host
-        // pool (venus-host-mb) uses the daemon default, so it needs no host-pool field of its own.
+        // pool (venus-host-mb) holds the venus transport shmems and is tunable via its own field.
         boolean venus = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
             && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN;
         boolean udmabuf = gfxstream && swGpuUdmabuf.isChecked();
         vramSettings.setVisibility(gfxstream || drm2kgsl || venus ? VISIBLE : GONE);
+        // The three host pools each hold only a renderer's command-stream/transport buffers, so the
+        // UI labels them all "command buffer pool size"; exactly one is shown for the active mode.
         tilGpuDrm2KgslPoolMb.setVisibility(drm2kgsl ? VISIBLE : GONE);
         swGpuUdmabuf.setVisibility(gfxstream ? VISIBLE : GONE);
         tilGpuHostPoolMb.setVisibility(gfxstream ? VISIBLE : GONE);
+        tilGpuVenusPoolMb.setVisibility(venus ? VISIBLE : GONE);
         // The guest-allocated pool is the same region and the same flag for both renderers -- the
         // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
         // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
