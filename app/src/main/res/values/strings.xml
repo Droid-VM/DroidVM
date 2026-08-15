@@ -256,7 +256,6 @@
     <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
     <string name="create_vm_gpu_mode_native">Native Context</string>
     <string name="create_vm_gpu_provider_drm2kgsl">DRM to KGSL</string>
-    <string name="create_vm_gpu_provider_venus">Venus</string>
     <string name="create_vm_gpu_mode">Graphics API</string>
     <string name="create_vm_gpu_provider">Host driver</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>

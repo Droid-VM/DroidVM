@@ -254,7 +254,6 @@
     <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
     <string name="create_vm_gpu_mode_native">Native Context</string>
     <string name="create_vm_gpu_provider_drm2kgsl">DRM to KGSL</string>
-    <string name="create_vm_gpu_provider_venus">Venus</string>
     <string name="create_vm_gpu_mode">圖形 API</string>
     <string name="create_vm_gpu_provider">主機驅動</string>
     <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>

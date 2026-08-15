@@ -751,17 +751,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         ));
     }
 
-    /** True iff the per-VM crosvm command will reference native-display input sockets. */
     /**
-     * gfxstream needs its host-visible folio/blob env and a raised udmabuf import
-     * cap. No-op unless the GPU backend is gfxstream.
+     * The host-Vulkan renderers (gfxstream, and venus on virglrenderer) need their host ICD
+     * selected, gfxstream its host-visible folio/blob env, and both a raised udmabuf import cap.
+     * No-op for OpenGL, Native and 2D.
      */
     private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
         if (!item.optBoolean("gpu_enabled", false)) return;
         var backend = optEnum(item, "gpu_backend", GpuBackend.NONE);
         boolean gfxstream = backend == GpuBackend.GPU_GFXSTREAM;
-        // Venus is Vulkan-on-virglrenderer: it drives the host GPU through the same host turnip
+        // Venus is Vulkan-on-virglrenderer: it drives the host GPU through the same host ICD
         // and the same guest-alloc udmabuf blobs as gfxstream, so it needs this env too.
         boolean venus = backend == GpuBackend.GPU_VIRGLRENDERER
             && effectiveGpuMode(item) == GpuMode.VULKAN;
@@ -770,13 +770,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // (vram-limit) and Gunyah RingBlob pin (gunyah-pvm) are on the --gpu line.
         if (gfxstream)
             builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
-        // Host Vulkan driver. gfxstream follows gpu_api: VULKAN_SYSTEM / VULKAN_PANVK use the
-        // SoC's stock HAL (leave ANDROID_EMU_VK_LOADER_PATH unset), otherwise the bundled turnip
-        // ICD. Venus has no host-driver sub-choice on the current SoCs -- always turnip. Either
-        // way the env falls back to the system HAL if the turnip file is missing.
+        // Host Vulkan driver, for gfxstream and venus alike (both dlopen ANDROID_EMU_VK_LOADER_PATH
+        // ahead of the system loader: gfxstream's VulkanDispatch, venus's vkr_library). It follows
+        // gpu_api, which the editor derives from the provider row: VULKAN_SYSTEM / VULKAN_PANVK use
+        // the SoC's stock HAL (leave the env unset so the system loader picks the vendor ICD),
+        // anything else -- VULKAN_TURNIP, or plain VULKAN from a pre-provider config -- the
+        // bundled turnip. Either way the env falls back to the system HAL if the turnip file is
+        // missing.
         var api = optEnum(item, "gpu_api", GpuApi.NONE);
-        boolean systemDriver = gfxstream
-            && (api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK);
+        boolean systemDriver = api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK;
         if (!systemDriver) {
             var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
             if (new File(turnip).exists()) {

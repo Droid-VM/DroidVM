@@ -170,7 +170,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // so it drives both of the rows under it.
         chooseGpuMode.setOnValueChangedListener((o, n) -> {
             // Vulkan on virglrenderer is venus (guest Vulkan proxied to the host over virtio-gpu);
-            // it is wired now, so this is just a normal mode change like NATIVE/OPENGL.
+            // its provider row is the host ICD, same as gfxstream's, so this is just a normal mode
+            // change like NATIVE/OPENGL.
             updateGpuProviderOptions();
             updateVramAllocVisibility();
         });
@@ -403,7 +404,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (gpuMode != GpuMode.NONE && modeOk)
             chooseGpuMode.setSelectedItem(gpuMode);
         updateGpuProviderOptions();
-        if (gpuProvider != GpuProvider.NONE && gfx == isVulkanProvider(gpuProvider))
+        // The VK_* providers belong to VULKAN mode on either renderer (gfxstream, or venus on
+        // virglrenderer); everything else is virglrenderer-only. Restore only what the row lists.
+        // (Read the mode picker only under virglrenderer: 2D leaves it unset.)
+        boolean vkMode = gfx
+            || (chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
+                && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN);
+        if (gpuProvider != GpuProvider.NONE && vkMode == isVulkanProvider(gpuProvider))
             chooseGpuProvider.setSelectedItem(gpuProvider);
         if (displayBackend != DisplayBackend.NONE)
             chooseDisplayBackend.setSelectedItem(displayBackend);
@@ -614,10 +621,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // What the selected renderer can actually proxy.
     //
     // gfxstream is Vulkan-only here (its GLES and composer capsets are not used, and the guest
-    // reaches GL through zink on top of Vulkan). virglrenderer offers OpenGL (capset virgl2)
-    // and Native (capset drm). Its third mode, Vulkan via venus, is deliberately absent: this
-    // build's libvirglrenderer.so has no venus symbols at all, so offering it could only
-    // produce a VM that fails to start.
+    // reaches GL through zink on top of Vulkan). virglrenderer offers OpenGL (capset virgl2),
+    // Native (capset drm) and Vulkan (capset venus -- "Vulkan on virglrenderer" is venus by
+    // definition, so the mode row is where venus lives; the provider row below picks its ICD).
     private void updateGpuModeOptions() {
         var backend = chooseGpuBackend.getSelectedItem();
         if (backend == GPU_GFXSTREAM) {
@@ -654,7 +660,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             return;
         }
         GpuMode mode = chooseGpuMode.getSelectedItem();
-        if (gfxstream) {
+        if (gfxstream || mode == GpuMode.VULKAN) {
+            // Host Vulkan ICD. gfxstream is always in this mode; on virglrenderer it is venus.
+            // Both dlopen whatever ANDROID_EMU_VK_LOADER_PATH names (or the system loader when it
+            // is unset), so the choice is identical: bundled turnip, PanVK, or the SoC's stock HAL.
             chooseGpuProvider.setItems(
                 GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK, GpuProvider.VK_SYSTEM);
             if (!isVulkanProvider(chooseGpuProvider.getSelectedItem()))
@@ -669,11 +678,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // driver the host answers with, and it is the key the launcher branches on.
             chooseGpuProvider.setItems(GpuProvider.DRM2KGSL);
             chooseGpuProvider.setSelectedItem(GpuProvider.DRM2KGSL);
-        } else if (mode == GpuMode.VULKAN) {
-            // Venus is the one host driver for Vulkan-on-virglrenderer; the row stays for symmetry
-            // with the other modes (and is the key the launcher branches on).
-            chooseGpuProvider.setItems(GpuProvider.VENUS);
-            chooseGpuProvider.setSelectedItem(GpuProvider.VENUS);
         }
         chooseGpuProvider.setVisibility(
             gfxstream || mode == GpuMode.OPENGL || mode == GpuMode.NATIVE
@@ -690,10 +694,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             case EGL:       return GpuApi.EGL;
             case GLES:      return GpuApi.OPENGLES;
 
+            // VULKAN mode on either renderer: gfxstream and venus both read the host ICD choice
+            // from these three (CrosvmBackendInstance.applyGfxstreamEnv).
             case VK_SYSTEM: return GpuApi.VULKAN_SYSTEM;
             case VK_TURNIP: return GpuApi.VULKAN_TURNIP;
             case VK_PANVK:  return GpuApi.VULKAN_PANVK;
-            case VENUS:     return GpuApi.VULKAN;
             default:        return mode == GpuMode.VULKAN ? GpuApi.VULKAN : GpuApi.NONE;
         }
     }
