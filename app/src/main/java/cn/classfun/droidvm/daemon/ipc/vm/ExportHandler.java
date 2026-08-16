@@ -8,6 +8,7 @@ import cn.classfun.droidvm.daemon.server.ClientRequest;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.RequestHandler;
 import cn.classfun.droidvm.daemon.vm.pkg.VMExportTask;
+import cn.classfun.droidvm.lib.pkg.PackageConstants;
 
 @AutoService(RequestHandler.class)
 public final class ExportHandler extends RequestHandler {
@@ -25,6 +26,12 @@ public final class ExportHandler extends RequestHandler {
             throw new RequestException("missing vm_id");
         if (destPath.isEmpty())
             throw new RequestException("missing dest_path");
+        var volumeSize = params.optLong("volume_size", 0);
+        if (volumeSize > 0 && volumeSize < PackageConstants.MIN_VOLUME_SIZE)
+            throw new RequestException(String.format(
+                "volume_size too small: %d (min %d)",
+                volumeSize, PackageConstants.MIN_VOLUME_SIZE
+            ));
         var store = request.getContext().getExportTaskStore();
         var server = request.getClient().getServer();
         var task = new VMExportTask(server, params);

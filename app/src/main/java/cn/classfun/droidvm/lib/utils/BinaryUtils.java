@@ -8,6 +8,7 @@ import androidx.annotation.NonNull;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
@@ -41,6 +42,15 @@ public class BinaryUtils {
         while (rem > 0) {
             int n = (int) Math.min(ZERO.length, rem);
             raf.write(ZERO, 0, n);
+            rem -= n;
+        }
+    }
+
+    public static void writeZero(@NonNull OutputStream out, long count) throws IOException {
+        long rem = count;
+        while (rem > 0) {
+            int n = (int) Math.min(ZERO.length, rem);
+            out.write(ZERO, 0, n);
             rem -= n;
         }
     }

@@ -59,6 +59,16 @@ public final class VMExportUtils {
         int manifestSize,
         long dataSize
     ) throws IOException {
+        return buildHeader(manifest, manifestSize, dataSize, 0);
+    }
+
+    @NonNull
+    public static byte[] buildHeader(
+        @NonNull PackageManifest manifest,
+        int manifestSize,
+        long dataSize,
+        int volumeCount
+    ) throws IOException {
         var hdr = new byte[PackageConstants.HEADER_SIZE];
         var magic = PackageConstants.MAGIC.getBytes(UTF_8);
         System.arraycopy(magic, 0, hdr, 0, magic.length);
@@ -66,6 +76,7 @@ public final class VMExportUtils {
         putUInt16LE(hdr, 8, BuildConfig.VERSION_CODE);
         putUInt16LE(hdr, 10, manifestSize);
         putUInt16LE(hdr, 12, manifest.compression.type);
+        putUInt16LE(hdr, 14, volumeCount);
         putInt64LE(hdr, 16, dataSize);
         return hdr;
     }
