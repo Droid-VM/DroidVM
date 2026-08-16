@@ -298,6 +298,11 @@
     <string name="edit_vm_uefi_firmware_builtin">内置 EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">选择 UEFI 固件</string>
     <string name="edit_vm_uefi_firmware_hint">自定义固件仅对 QEMU 后端生效\ncrosvm 始终使用内置 EDK2\nUEFI 引导 Linux 适配中,尚不可用;如需引导 Linux,请选择 Linux 内核引导方式</string>
+    <string name="edit_vm_uefi_vars">UEFI 变量(留空 = 内置 EDK2 变量)</string>
+    <string name="edit_vm_uefi_vars_browse_title">选择 UEFI 变量文件</string>
+    <string name="edit_vm_uefi_vars_too_large">对于 crosvm,pflash 镜像大小不能超过 %1$d MiB</string>
+    <string name="edit_vm_uefi_vars_enabled">启用 UEFI 变量(pflash)</string>
+    <string name="edit_vm_uefi_vars_enabled_subtitle">挂载 UEFI 变量存储。启用后,存储分区中不可再选择 PFLASH 总线。</string>
     <string name="edit_vm_kernel_source">内核来源</string>
     <string name="edit_vm_kernel_source_image">磁盘镜像</string>
     <string name="edit_vm_kernel_source_manual">手动指定</string>
