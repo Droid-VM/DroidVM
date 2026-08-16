@@ -55,6 +55,16 @@ public final class PackageInput implements AutoCloseable {
 
     @NonNull
     public static PackageInput open(@NonNull InputStream raw) throws Exception {
+        return open(raw, -1);
+    }
+
+    /**
+     * Reads just the header and manifest for preview, without setting up the
+     * data/decompression stream. Safe on a metadata master (whose bytes after
+     * the manifest are the volume index, not compressed data).
+     */
+    @NonNull
+    public static PackageManifest peekManifest(@NonNull InputStream raw) throws Exception {
         var pkgHeader = PackageHeader.fromStream(raw);
         var manifest = PackageManifest.fromStream(raw, pkgHeader);
         if (pkgHeader.manifestVersion != manifest.manifestVersion)
@@ -63,6 +73,30 @@ public final class PackageInput implements AutoCloseable {
             throw new IOException("vmpkg app_version_code mismatch");
         if (pkgHeader.compression != manifest.compression.type)
             throw new IOException("vmpkg compression mismatch");
+        return manifest;
+    }
+
+    /**
+     * Opens a package, optionally overriding the data-region size. Multi-volume
+     * packages write a placeholder {@code dataSize} of 0 in the inline header
+     * (it is only known after streaming) and carry the real value in the volume
+     * trailer; pass it here as {@code dataSizeOverride}. Use -1 for the legacy
+     * single-file layout that patches its header in place.
+     */
+    @NonNull
+    public static PackageInput open(
+        @NonNull InputStream raw,
+        long dataSizeOverride
+    ) throws Exception {
+        var pkgHeader = PackageHeader.fromStream(raw);
+        var manifest = PackageManifest.fromStream(raw, pkgHeader);
+        if (pkgHeader.manifestVersion != manifest.manifestVersion)
+            throw new IOException("vmpkg manifest_version mismatch");
+        if (pkgHeader.appVersionCode != manifest.appVersionCode)
+            throw new IOException("vmpkg app_version_code mismatch");
+        if (pkgHeader.compression != manifest.compression.type)
+            throw new IOException("vmpkg compression mismatch");
+        if (dataSizeOverride >= 0) pkgHeader.dataSize = dataSizeOverride;
         long pos = alignUp(PackageConstants.HEADER_SIZE) + pkgHeader.manifestSize;
         readZeroPadding(raw, alignUpStrict(pos) - pos);
         var stream = new LimitedInputStream(raw, pkgHeader.dataSize);
