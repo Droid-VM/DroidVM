@@ -84,7 +84,35 @@ final class DisplayProvider {
             Log.w(TAG, "display service died - connection lost");
             onConnected.accept(false);
             displayService = null;
+            // The display service lives in crosvm. When the guest reboots (or crosvm otherwise
+            // restarts) the daemon relaunches crosvm, which registers a NEW display service under
+            // the same name -- but nothing re-fetches it, so the activity sat on "waiting for the
+            // VM screen" until the user closed and reopened it (seen on every provisioning reboot).
+            // Re-arm: the surface we hold is still valid, so mark it for re-delivery and poll for
+            // the new binder the same way the first attach did. shutdown() has already stopped
+            // the executor when the activity is going away, so a real teardown does not re-poll.
+            if (executor.isShutdown()) {
+                needsSend = false;
+                return;
+            }
             needsSend = false;
+            cursorSurfaceSent = false;
+            hasSavedFrame = false;
+            if (cursorStream != null) {
+                cursorStream.close();
+                cursorStream = null;
+            }
+            // Do NOT hand the old Surface to the new crosvm. Its BufferQueue still carries the
+            // state the dead producer left behind (buffers dequeued and never returned): the CPU
+            // console path can still post to it, but the GPU-blit scanout path silently stops --
+            // observed as the early-boot console frozen on screen with a live cursor. Closing and
+            // reopening the activity fixed it because that creates fresh surfaces, so do exactly
+            // that here: bounce both SurfaceViews so surfaceDestroyed/surfaceCreated run and the
+            // usual send-once-per-surface path delivers brand-new surfaces once the binder is back.
+            recreateSurface(mainView);
+            if (cursorView != null) recreateSurface(cursorView);
+            Log.i(TAG, "re-fetching the display binder for the restarted VM (fresh surfaces)");
+            fetchBinder();
         });
 
         mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
@@ -96,6 +124,26 @@ final class DisplayProvider {
             needsSend = true;
         }
         fetchBinder();
+    }
+
+    /* Tear down and re-create a SurfaceView's surface (fresh BufferQueue). The main view runs with
+     * SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT, so visibility does not govern the surface (a GONE/VISIBLE
+     * bounce was seen to do nothing, or to destroy the surface tens of seconds later and never bring
+     * it back). Detaching the view from its parent and re-adding it is what the lifecycle actually
+     * follows: surfaceDestroyed fires on detach and the next traversal creates a brand-new surface
+     * (surfaceCreated -> the usual send-once-per-surface path delivers it once the binder is back). */
+    private void recreateSurface(@NonNull SurfaceView view) {
+        var parent = view.getParent();
+        if (!(parent instanceof android.view.ViewGroup)) {
+            Log.w(TAG, "recreateSurface: view has no ViewGroup parent");
+            return;
+        }
+        var group = (android.view.ViewGroup) parent;
+        int idx = group.indexOfChild(view);
+        var lp = view.getLayoutParams();
+        Log.i(TAG, "recreateSurface: detaching and re-attaching " + view.getClass().getSimpleName());
+        group.removeView(view);
+        group.addView(view, idx, lp);
     }
 
     private void fetchBinder() {
