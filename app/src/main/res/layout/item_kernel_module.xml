@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?><!--
   Two rows, two anchors each, so neither row crowds at a phone dialog's width: the long
   auto-load control pairs with the name up top, the short load/unload button with the
-  status line below. The why-button is outlined rather than plain text so it reads as a
-  control and not as part of the status line next to it.
+  status line below. Both rows are ShrinkToFitRow: in a dialog too narrow for a row's
+  natural width (the English status row already overflows at 360dp; a long name plus the
+  Auto-load control overflows the top row too), the whole row scales down uniformly (name
+  and switch together) so the name stays one line and nothing clips or collapses, rather
+  than the name wrapping to two lines while the switch keeps full size. Each row's
+  weighted Space is what pins its right-hand control to the edge when there IS room; under
+  scaling that Space collapses and the row packs tight before shrinking. The why-button is
+  outlined rather than plain text so it reads as a control, not part of the status line.
 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -22,21 +28,27 @@
         android:paddingHorizontal="14dp"
         android:paddingVertical="10dp">
 
-        <LinearLayout
+        <cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- One line: the row scales the whole line down before the name would wrap,
+                 so wrap_content here measures the name's full single-line width. -->
             <TextView
                 android:id="@+id/km_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                tools:text="Gunyah Host Share" />
+
+            <Space
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:ellipsize="end"
-                android:maxLines="2"
-                android:textAppearance="?attr/textAppearanceTitleMedium"
-                tools:text="gunyah_host_share_gki_6.6" />
+                android:layout_weight="1" />
 
             <LinearLayout
                 android:id="@+id/km_auto_row"
@@ -61,9 +73,9 @@
 
             </LinearLayout>
 
-        </LinearLayout>
+        </cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow>
 
-        <LinearLayout
+        <cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
@@ -118,7 +130,7 @@
                 android:minHeight="40dp"
                 tools:text="@string/kernel_module_load" />
 
-        </LinearLayout>
+        </cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow>
 
     </LinearLayout>
 

@@ -36,11 +36,18 @@ import cn.classfun.droidvm.lib.data.SocIdentity;
  * { "version": 1,
  *   "modules": {
  *     "gunyah_host_share": { "soc_vendor": ["qualcomm"] },
- *     "mtk_whatever":      { "soc_vendor": ["mediatek"], "soc_model_prefix": ["MT69"] } } }
+ *     "mtk_whatever":      { "soc_vendor": ["mediatek"], "soc_model_prefix": ["MT69"] } },
+ *   "names": {
+ *     "gunyah_host_share": "Gunyah Host Share" } }
  * </pre>
  * The key is a module-name <b>prefix</b> (so {@code udmabuf} covers {@code udmabuf_gki_6.6}) and
  * the longest matching key wins. Within a field the values are alternatives (OR); across fields
  * every field must pass (AND). An empty rule matches everything.
+ *
+ * <p>{@code names} maps the same prefixes to the human title the module's card shows
+ * ({@link #displayName}). It is a top-level section, not a rule field, on purpose: an unknown
+ * field <em>inside</em> a rule makes the rule fail (below), so an older app reading a newer
+ * file would stop listing every named module -- whereas it never looks at extra top-level keys.
  *
  * <p>Supported fields: {@code soc_vendor} (tokens from {@link SocIdentity}), {@code soc_model}
  * (exact, case-insensitive), {@code soc_model_prefix}. <b>A field this app does not know makes the
@@ -65,6 +72,10 @@ public final class KernelModuleMatch {
     private static volatile JSONObject deviceRules;
     @Nullable
     private static volatile JSONObject builtinRules;
+    @Nullable
+    private static volatile JSONObject deviceNames;
+    @Nullable
+    private static volatile JSONObject builtinNames;
     private static volatile boolean loadTried;
 
     private KernelModuleMatch() {
@@ -74,8 +85,12 @@ public final class KernelModuleMatch {
     static synchronized void preload(@NonNull Context ctx) {
         if (loadTried) return;
         loadTried = true;
-        builtinRules = parse(readAsset(ctx));
-        deviceRules = parse(readDeviceFile());
+        var builtin = parse(readAsset(ctx));
+        var device = parse(readDeviceFile());
+        builtinRules = builtin == null ? null : builtin.optJSONObject("modules");
+        deviceRules = device == null ? null : device.optJSONObject("modules");
+        builtinNames = builtin == null ? null : builtin.optJSONObject("names");
+        deviceNames = device == null ? null : device.optJSONObject("names");
         SocIdentity.vendor(); // warm the cache while we are off the main thread anyway
     }
 
@@ -108,11 +123,40 @@ public final class KernelModuleMatch {
         return allowsHugepage() || !KernelModuleManager.list(ctx).isEmpty();
     }
 
+    /**
+     * Human title for this module from the files' {@code names} sections, resolved like the
+     * rules (longest prefix, device file first), or null when neither file names it -- the
+     * caller then falls back to something derived from the module name itself.
+     */
+    @Nullable
+    static String displayName(@NonNull String moduleName) {
+        var fromDevice = longestPrefixString(deviceNames, moduleName);
+        return fromDevice != null ? fromDevice : longestPrefixString(builtinNames, moduleName);
+    }
+
     /** Longest-prefix rule for this module: device file first, then the app's built-in. */
     @Nullable
     private static JSONObject ruleFor(@NonNull String moduleName) {
         var fromDevice = longestPrefix(deviceRules, moduleName);
         return fromDevice != null ? fromDevice : longestPrefix(builtinRules, moduleName);
+    }
+
+    @Nullable
+    private static String longestPrefixString(@Nullable JSONObject names, @NonNull String name) {
+        if (names == null) return null;
+        String best = null;
+        int bestLen = -1;
+        for (var it = names.keys(); it.hasNext(); ) {
+            var key = it.next();
+            if (key.length() > bestLen && name.startsWith(key)) {
+                var value = names.optString(key);
+                if (!value.isEmpty()) {
+                    best = value;
+                    bestLen = key.length();
+                }
+            }
+        }
+        return best;
     }
 
     @Nullable
@@ -178,7 +222,7 @@ public final class KernelModuleMatch {
     private static JSONObject parse(@Nullable String json) {
         if (json == null) return null;
         try {
-            return new JSONObject(json).optJSONObject("modules");
+            return new JSONObject(json);
         } catch (Exception e) {
             Log.w(TAG, "unparseable match rules", e);
             return null;

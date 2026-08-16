@@ -51,15 +51,29 @@ public final class KernelModuleManager {
     }
 
     public static final class Module {
-        public final String name;   // normalized module name, e.g. "gunyah_share_66"
-        public final String path;   // absolute .ko path for this device's KMI
+        public final String name;    // normalized module name, e.g. "gunyah_host_share_gki_6.6"
+        public final String display; // human title for the card; name stays the load/prefs key
+        public final String path;    // absolute .ko path for this device's KMI
         public final boolean loaded;
 
-        Module(@NonNull String name, @NonNull String path, boolean loaded) {
+        Module(@NonNull String name, @NonNull String display, @NonNull String path,
+               boolean loaded) {
             this.name = name;
+            this.display = display;
             this.path = path;
             this.loaded = loaded;
         }
+    }
+
+    // The per-KMI suffix disambiguates the .ko files and /sys/module entries, nothing more.
+    // The list header already states the KMI, so a module nobody named still displays without it.
+    private static final Pattern GKI_SUFFIX = Pattern.compile("_gki_\\d+\\.\\d+$");
+
+    /** Card title: the {@code names} entry from match.json, else the name minus its KMI tag. */
+    @NonNull
+    private static String displayNameFor(@NonNull String name) {
+        var explicit = KernelModuleMatch.displayName(name);
+        return explicit != null ? explicit : GKI_SUFFIX.matcher(name).replaceFirst("");
     }
 
     /** The {@code modules/<kmi>} dir whose name embeds the running kernel's major.minor, else null. */
@@ -122,7 +136,7 @@ public final class KernelModuleManager {
             boolean isLoaded = loaded.contains(name);
             // Already loaded -- however it got there, autostart is answerable for it now.
             if (isLoaded) VERIFIED.add(name);
-            out.add(new Module(name, ko.getAbsolutePath(), isLoaded));
+            out.add(new Module(name, displayNameFor(name), ko.getAbsolutePath(), isLoaded));
         }
         return out;
     }

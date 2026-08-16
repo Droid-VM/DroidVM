@@ -109,9 +109,9 @@ public final class KernelModuleListController {
         Button toggle = card.findViewById(R.id.km_toggle);
         MaterialSwitch autostart = card.findViewById(R.id.km_autostart);
 
-        name.setText(mod.name);
+        name.setText(mod.display);
         bindStatus(card, mod.loaded);
-        bindWhy(card, mod.name, KernelModuleDescriptions.hasModulePage(mod.name),
+        bindWhy(card, mod.display, KernelModuleDescriptions.hasModulePage(mod.name),
             () -> KernelModuleDescriptions.modulePage(ctx, mod.name));
 
         toggle.setText(mod.loaded ? R.string.kernel_module_unload : R.string.kernel_module_load);

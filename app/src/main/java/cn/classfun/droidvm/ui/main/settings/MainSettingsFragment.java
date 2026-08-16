@@ -452,7 +452,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     }
 
     private void showKernelModules() {
-        new KernelModuleDialog(requireContext()).show();
+        KernelModuleDialog.show(getChildFragmentManager());
     }
 
     private void exportConfig() {
