@@ -128,6 +128,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             prepareProcess(builder);
             applyGfxstreamEnv(builder);
             applyDisplayBlitEnv(builder);
+            applyGpuRtPrioEnv(builder);
             if (uart != null) {
                 builder.preserveFd(uart.getOutputRemoteFd());
                 builder.preserveFd(uart.getInputRemoteFd());
@@ -749,6 +750,21 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             "absolute-mouse[path=%s]",
             NativeDisplay.inputSocketPath(serviceName, NativeDisplay.TABLET)
         ));
+    }
+
+    // crosvm can promote the virtio-gpu worker to SCHED_FIFO (CROSVM_GPU_RT_PRIO). On gfxstream its
+    // per-context render threads inherit that policy and, spin-waiting on the guest command ring,
+    // can starve the normal-priority vCPU that feeds them -- a priority inversion that caps the
+    // native-display present rate. So RT is opt-in and off by default: the graphics tab's "GPU worker
+    // real-time scheduling" switch (in the GPU Worker Cpuset section) stores gpu_rt_prio ("97" on /
+    // "" off); pass it through only when set so crosvm leaves scheduling normal otherwise.
+    private void applyGpuRtPrioEnv(@NonNull NativeProcess.Builder builder) {
+        var item = config.item;
+        if (!item.optBoolean("gpu_enabled", false)) return;
+        // gpu_rt_prio is the SCHED_FIFO level as a string, "" (unset) by default. Empty means leave
+        // CROSVM_GPU_RT_PRIO unset so crosvm applies no real-time scheduling (RT is opt-in).
+        String prio = item.optString("gpu_rt_prio", "");
+        if (!prio.isEmpty()) builder.environment("CROSVM_GPU_RT_PRIO", prio);
     }
 
     /**

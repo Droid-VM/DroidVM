@@ -586,6 +586,18 @@
 
         </LinearLayout>
 
+        <!-- The virtio-gpu worker runs SCHED_FIFO when this is on; on gfxstream its per-context
+             render threads all inherit the same priority and, confined to the worker cpuset
+             above, contend for those cores and can spin-starve the vCPUs (priority inversion ->
+             low native-display present fps). Off (the default) leaves them on normal scheduling
+             for a smoother desktop; on trades that for raw render throughput. -->
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_gpu_rt_prio"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_application_cog"
+            android:text="@string/create_vm_gpu_rt_prio" />
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
 </LinearLayout>

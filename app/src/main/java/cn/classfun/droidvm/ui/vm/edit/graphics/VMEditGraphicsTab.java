@@ -65,6 +65,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View dynamicVramOptions;
     private View tilGpuGuestPoolMb;
     private SwitchRowWidget swGpuUdmabuf;
+    private SwitchRowWidget swGpuRtPrio;
     private SwitchRowWidget swGpuDynamicVram;
     private TextInputEditText etGpuHostPoolMb;
     private TextInputEditText etGpuVramQuotaMb;
@@ -117,6 +118,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuProvider = view.findViewById(R.id.choose_gpu_provider);
         gpuOptions = view.findViewById(R.id.gpu_options);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
+        swGpuRtPrio = view.findViewById(R.id.sw_gpu_rt_prio);
         vramSettings = view.findViewById(R.id.vram_settings);
         swGpuDynamicVram = view.findViewById(R.id.sw_gpu_dynamic_vram);
         dynamicVramOptions = view.findViewById(R.id.dynamic_vram_options);
@@ -336,6 +338,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var item = config.item;
         swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", true));
+        // SCHED_FIFO on the GPU worker; gpu_rt_prio holds the level as a string ("" by default),
+        // and "" means "do not set RT at all". Off (the default) -> normal scheduling, which avoids
+        // the gfxstream render-thread priority inversion that starves the present path.
+        swGpuRtPrio.setChecked(!item.optString("gpu_rt_prio", "").isEmpty());
         // The two host pools hold very different things, so they are sized very differently.
         //
         // The DRM route's host pool holds only the per-context msm shmem rings: 16 KiB each,
@@ -579,6 +585,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // exactly recoverable from the pair.
             item.set("gpu_api", toLegacyApi(gm, gp));
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
+            item.set("gpu_rt_prio", swGpuRtPrio.isChecked() ? "97" : "");
             item.set("gpu_drm2kgsl_pool_mb", parseInt(getEditText(etGpuDrm2KgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_venus_pool_mb", parseInt(getEditText(etGpuVenusPoolMb)));

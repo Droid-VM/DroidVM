@@ -262,6 +262,7 @@
     <string name="display_blit_system_missing_ext">系统 Vulkan 驱动缺少 GPU 合成所需的扩展：\n  %1$s\n原生显示将回退到 CPU 拷贝。</string>
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驱动尚未实现</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
+    <string name="create_vm_gpu_rt_prio">GPU worker 实时调度 (SCHED_FIFO 97)</string>
     <string name="create_vm_gpu_host_pool_mb">命令缓冲池大小 (MB)</string>
     <string name="create_vm_gpu_drm2kgsl_pool_mb">命令缓冲池大小 (MB)</string>
     <string name="create_vm_gpu_venus_pool_mb">命令缓冲池大小 (MB)</string>
