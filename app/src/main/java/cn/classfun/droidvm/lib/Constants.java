@@ -18,6 +18,9 @@ public final class Constants {
     public static final String PATH_BUILTIN_INITRD = pathJoin(DATA_DIR, "/usr/share/droidvm/initramfs.img");
     public static final String PATH_EDK2_FIRMWARE = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-gunyah.fd");
     public static final String PATH_EDK2_QEMU_FIRMWARE = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-qemu.fd");
+    public static final String PATH_EDK2_VARS = pathJoin(DATA_DIR, "/usr/share/droidvm/edk2-gunyah.vars.fd");
+    /** crosvm arm64 pflash window: AARCH64_PLATFORM_MMIO_SIZE (8 MiB). */
+    public static final long PFLASH_MAX_SIZE = 8L * 1024 * 1024;
     public static final String GITHUB_ISSUE_URL = "https://github.com/Droid-VM/DroidVM/issues";
     // droidvm + daemon are CMake-built and shipped as APK assets. The
     // third-party daemons (gvswitch/pbridge/bridgedhcp/netbox) and lbx now

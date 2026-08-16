@@ -4,6 +4,7 @@ import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
+import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_VARS;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.SIMPLEFB;
 import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.VIRTIO_GPU;
@@ -230,10 +231,22 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (boot.uefi) {
             // crosvm has no custom-firmware support; always builtin EDK2
             args.add(PATH_EDK2_FIRMWARE);
+            if (boot.varsEnabled) {
+                var vars = boot.vars.isEmpty() ? PATH_EDK2_VARS : boot.vars;
+                args.add("--pflash");
+                args.add(fmt("path=%s,block_size=%d", vars, pflashBlockSize(vars)));
+            }
         } else if (!boot.kernel.isEmpty()) {
             args.add(boot.kernel);
         }
         return args;
+    }
+
+    private static long pflashBlockSize(@NonNull String path) {
+        long size = new File(path).length();
+        for (long blockSize : new long[]{262144, 65536, 4096})
+            if (size > 0 && size % blockSize == 0) return blockSize;
+        return 262144;
     }
 
     private void buildDiskCommand(@NonNull List<String> args) {
@@ -257,10 +270,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case PMEM:
                     if (readonly) arg.append(",ro=true");
                     args.add("--pmem");
-                    args.add(arg.toString());
-                    break;
-                case PFLASH:
-                    args.add("--pflash");
                     args.add(arg.toString());
                     break;
                 case CDROM:

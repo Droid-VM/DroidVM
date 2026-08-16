@@ -4,6 +4,7 @@ import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_QEMU_FIRMWARE;
+import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_VARS;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
@@ -190,6 +191,11 @@ public final class QemuBackendInstance extends VMBackendInstance {
         if (boot.uefi) {
             args.add("-bios");
             args.add(boot.firmware.isEmpty() ? PATH_EDK2_QEMU_FIRMWARE : boot.firmware);
+            if (boot.varsEnabled) {
+                var vars = boot.vars.isEmpty() ? PATH_EDK2_VARS : boot.vars;
+                args.add("-drive");
+                args.add(fmt("file=%s,if=pflash,format=raw", vars));
+            }
         }
         if (!boot.kernel.isEmpty()) {
             args.add("-kernel");

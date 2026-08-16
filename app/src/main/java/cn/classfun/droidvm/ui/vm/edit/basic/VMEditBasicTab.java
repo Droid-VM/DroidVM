@@ -241,4 +241,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     public ProtectedVM getCurrentProtectedVm() {
         return chooseProtectedVm.getSelectedItem();
     }
+
+    /** The backend as currently selected */
+    @NonNull
+    public VMBackend getCurrentBackend() {
+        var backend = chooseBackend.<VMBackend>getSelectedItem();
+        return backend == null ? VMBackend.DEFAULT : backend;
+    }
 }

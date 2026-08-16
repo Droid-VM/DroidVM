@@ -1,6 +1,7 @@
 package cn.classfun.droidvm.ui.vm.edit.storage;
 
 import static android.app.Activity.RESULT_OK;
+import static cn.classfun.droidvm.lib.Constants.PFLASH_MAX_SIZE;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFilePath;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
@@ -14,15 +15,22 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.io.File;
 import java.util.HashSet;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.disk.DiskBus;
+import cn.classfun.droidvm.lib.store.enums.Enums;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
+import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
+import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
+import cn.classfun.droidvm.ui.vm.edit.boot.VMEditBootTab;
 import cn.classfun.droidvm.ui.vm.edit.storage.dir.VMSharedDirEditAdapter;
 import cn.classfun.droidvm.ui.vm.edit.storage.disk.VMDiskEditAdapter;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
@@ -53,8 +61,22 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         diskAdapter = listDisks.setAdapter(VMDiskEditAdapter.class);
         diskAdapter.setOnBrowseFileListener(this::diskAdapterOnBrowseFile);
         diskAdapter.setOnImportOrCreateListener(this::diskAdapterOnImportOrCreate);
+        // no PFLASH while the boot tab's UEFI vars pflash is enabled
+        diskAdapter.setUefiVarsEnabledProvider(() -> {
+            try {
+                var boot = (VMEditBootTab) parent.getTab(VMEditTab.TAB_BOOT);
+                return boot == null || boot.isVarsEnabledLive();
+            } catch (Exception e) {
+                return true;
+            }
+        });
         sharedDirAdapter = listSharedDirs.setAdapter(VMSharedDirEditAdapter.class);
         sharedDirAdapter.setOnBrowseListener(this::sharedDirAdapterOnBrowse);
+    }
+
+    // Refresh disk rows; PFLASH availability may have changed.
+    public void refreshDisks() {
+        if (diskAdapter != null) diskAdapter.notifyDataSetChanged();
     }
 
     private void diskAdapterOnImportOrCreate(int pos) {
@@ -128,9 +150,18 @@ public final class VMEditStorageTab extends VMEditBaseTab {
 
     @Override
     public boolean validateInput(@NonNull VMStore store) {
-        for (var disk : diskAdapter.getItems())
-            if (!checkFilePath(disk.getValue().optString("path", ""), true))
+        var crosvm = currentBackend() == VMBackend.CROSVM;
+        for (var disk : diskAdapter.getItems()) {
+            var d = disk.getValue();
+            var path = d.optString("path", "");
+            if (!checkFilePath(path, true))
                 return showValidateFailed(R.string.edit_vm_target_disk_path_invalid);
+            // crosvm-only pflash size limit
+            if (crosvm && Enums.optEnum(d, "bus", DiskBus.VIRTIO) == DiskBus.PFLASH
+                && new File(path).length() > PFLASH_MAX_SIZE)
+                return showValidateFailed(parent.getString(
+                    R.string.edit_vm_uefi_vars_too_large, PFLASH_MAX_SIZE / (1024 * 1024)));
+        }
         var set = new HashSet<String>();
         for (var dir : sharedDirAdapter.getItems()) {
             var d = dir.getValue();
@@ -144,6 +175,17 @@ public final class VMEditStorageTab extends VMEditBaseTab {
             set.add(tag);
         }
         return true;
+    }
+
+    /** The backend as currently selected in the basic tab (before save). */
+    @NonNull
+    private VMBackend currentBackend() {
+        try {
+            var basic = (VMEditBasicTab) parent.getTab(VMEditTab.TAB_BASIC);
+            if (basic != null) return basic.getCurrentBackend();
+        } catch (Exception ignored) {
+        }
+        return VMBackend.DEFAULT;
     }
 
     @Override
