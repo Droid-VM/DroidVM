@@ -13,11 +13,13 @@ import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
+import android.hardware.display.DisplayManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
+import android.view.Display;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MenuItem;
@@ -30,6 +32,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -41,6 +44,7 @@ import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.json.JSONObject;
@@ -58,7 +62,9 @@ import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
 import cn.classfun.droidvm.ui.vm.display.base.KeyboardMode;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayPresentation;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayTouchPadPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
@@ -84,12 +90,15 @@ import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TouchScaleCalculato
  */
 // ImeInsetsExempt: the display area handles the IME inset itself (root insets listener below);
 // without the exemption the app-wide ImeInsetsApplier would pad the content view a second time.
-public final class VMNativeDisplayActivity extends AppCompatActivity implements ImeInsetsExempt {
+public final class VMNativeDisplayActivity extends AppCompatActivity
+    implements ImeInsetsExempt, DisplayManager.DisplayListener {
     private static final String TAG = "VMNativeDisplay";
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
+    /** Open the display picker as soon as we are connected, i.e. launch straight into casting. */
+    public static final String EXTRA_START_ON_EXTERNAL = "start_on_external";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     // Converts committed IME text into key events (handles Shift for upper-case/symbols).
@@ -105,18 +114,17 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private FrameLayout displayContainer;
     private SurfaceView surfaceView;
     private SurfaceView cursorView;
+    private DisplayTouchPadPanel touchpadPanel;
 
-    // Last viewport transform, mirrored so the cursor overlay can be placed without asking the
-    // controller to recompute it. Written only by onViewportChanged, read only on the main thread.
-    private float vpBaseW, vpBaseH, vpViewScale = 1f, vpOffsetX, vpOffsetY;
+    // Places the cursor overlay over THIS device's scanout. The Presentation owns a second one for
+    // the external display, because the two areas have unrelated sizes and viewport transforms.
+    private final CursorOverlayPlacer cursorPlacer = new CursorOverlayPlacer();
 
     // True while a finger is on the container in relative-pointer mode. This is the gate for
     // viewport follow: a cursor move from a REMOTE DESKTOP session is byte-identical to one the
     // user made -- the position stream cannot tell them apart -- so only the input layer, which
     // knows whether this device is currently driving, may decide to pan.
     private boolean pointerDriveActive = false;
-    private int lastCursorX = -1;
-    private int lastCursorY = -1;
     private NativeKeyboardEditText keyboardInput;
     private FloatingActionButton fabMenu;
     private MaterialButton btnFullscreen;
@@ -129,11 +137,21 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private int guestWidth = 1280;
     private int guestHeight = 720;
 
-    private DisplaySource displaySource;
+    private NativeSurfaceSource displaySource;
     private InputForwarder inputForwarder;
     private DirectInputSink directSink;
     private NativeExtraKeysPanel nativeExtraKeys;
     private boolean connected = false;
+
+    // External-display casting. While `presentation` is non-null the guest scanout lives over there
+    // and this device is a touchpad; the VM session itself is untouched by the move.
+    private DisplayManager displayManager;
+    private NativeDisplayPresentation presentation;
+    // Pointer mode to restore when casting stops: casting forces MOUSE (a touchpad is relative), and
+    // the user's own choice must survive the round trip without being persisted over.
+    private InputMode preCastInputMode;
+    private boolean castResolutionWarned = false;
+    private boolean startOnExternal = false;
     // Pointer input mode, shared with the VNC path via the "display_input_mode" pref; applied to the
     // InputForwarder so on-screen touches route to the multi-touch / mouse / tablet virtio device.
     private InputMode inputMode = InputMode.TOUCH;
@@ -236,7 +254,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         vmId = orEmpty(intent.getStringExtra(EXTRA_VM_ID));
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
+        startOnExternal = intent.getBooleanExtra(EXTRA_START_ON_EXTERNAL, false);
         vmKey = NativeDisplay.serviceNameFromId(vmId);
+
+        displayManager = getSystemService(DisplayManager.class);
+        if (displayManager != null) displayManager.registerDisplayListener(this, mainHandler);
 
         bindViews();
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
@@ -289,10 +311,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
             surfaceView, guestWidth, guestHeight,
             () -> {
                 var svc = displayAttach.getService();
-        // Hardware cursor: give crosvm a Surface for the guest's cursor plane and follow the
-        // positions it reports. Both are no-ops on a guest that never uses the cursor plane.
-        displaySource.setCursorView(cursorView);
-        displaySource.setCursorListener(this::onGuestCursorMoved);
                 if (svc == null) return null;
                 try {
                     return svc.waitForDisplayBinder(vmKey);
@@ -307,6 +325,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                     guestWidth = width;
                     guestHeight = height;
                     viewport.setContentSize(width, height);
+                    cursorPlacer.setGuestSize(width, height);
+                    if (presentation != null) presentation.setContentSize(width, height);
                     // Keep the status-bar resolution label in step with a live resize.
                     if (connected)
                         setStatus(fmt(getString(R.string.native_display_connected),
@@ -318,7 +338,18 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                     onDisplayStateChanged(state);
                 }
             });
+        // Hardware cursor: give crosvm a Surface for the guest's cursor plane and follow the
+        // positions it reports. Both are no-ops on a guest that never uses the cursor plane.
+        displaySource.setCursorView(cursorView);
+        displaySource.setCursorListener(this::onGuestCursorMoved);
         displaySource.start();
+
+        // Launched as "native display on external screen": now that a scanout exists, offer the
+        // picker. Deferred to here because retarget needs the provider to be live.
+        if (startOnExternal) {
+            startOnExternal = false;
+            mainHandler.post(this::promptCastToExternal);
+        }
     }
 
     private void onDisplayStateChanged(@NonNull DisplaySource.State state) {
@@ -343,6 +374,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         displayContainer = findViewById(R.id.display_container);
         cursorView = findViewById(R.id.cursor_view);
         surfaceView = findViewById(R.id.surface_view);
+        touchpadPanel = findViewById(R.id.touchpad_panel);
         keyboardInput = findViewById(R.id.keyboard_input);
         fabMenu = findViewById(R.id.fab_menu);
         btnFullscreen = findViewById(R.id.btn_fullscreen);
@@ -434,6 +466,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         });
         var listener = new DragTouchListener(this, this::showFabMenu);
         fabMenu.setOnTouchListener(listener);
+        setupTouchpad();
+        cursorPlacer.setCursorView(cursorView);
+        cursorPlacer.setGuestSize(guestWidth, guestHeight);
     }
 
     // Soft keyboards that commit text (instead of sending key events) land here; translate each
@@ -476,6 +511,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     // zoom transform is applied - Android inverse-maps them.) MOUSE/TABLET decline here so the
     // event bubbles up to the container.
     private boolean onSurfaceTouch(View v, MotionEvent event) {
+        // Casting: the scanout is on the external display and this view is hidden. Absolute touch
+        // would map onto a rectangle the user cannot see, so the touchpad panel owns input instead.
+        if (presentation != null) return false;
         if (inputMode != InputMode.TOUCH) return false;
         if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
         if (isMouseButtonTouch(event)) return true;
@@ -487,6 +525,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     // MOUSE/TABLET gesture surface: the whole container is active; the translator pins gestures
     // that carry guest coordinates to the rendered surface rect.
     private boolean onContainerTouch(View v, MotionEvent event) {
+        // Casting: the touchpad panel covers the container and handles pointer input itself.
+        if (presentation != null) return false;
         if (inputMode == InputMode.TOUCH) return false;
         if (inputForwarder == null || gestureTranslator == null) return false;
         if (isMouseButtonTouch(event)) return true;
@@ -520,61 +560,174 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
      * must NOT drag this device's view around under someone else's hand.
      */
     private void onGuestCursorMoved(int gx, int gy) {
-        // crosvm sends u32::MAX,MAX when the guest hides its pointer (UPDATE_CURSOR resource_id=0,
-        // which is what switching to a text console does). Without acting on it the overlay keeps
-        // showing the last cursor image on a console that should have none. A real position is a
-        // framebuffer coordinate, so this value can never be a genuine one.
-        if (gx == -1 && gy == -1) {   // u32::MAX arrives as -1 in Java's signed int
-            lastCursorX = -1;
-            lastCursorY = -1;
-            if (cursorView != null) {
-                cursorView.setVisibility(GONE);
-            }
+        // While casting, the pointer belongs to the external display's overlay; this device shows a
+        // touchpad and has no scanout to draw a cursor over.
+        if (presentation != null) {
+            presentation.onGuestCursorMoved(gx, gy);
             return;
         }
-        lastCursorX = gx;
-        lastCursorY = gy;
-        positionCursorOverlay();
-        if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null) {
+        cursorPlacer.onCursorMoved(gx, gy);
+        if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null
+            && cursorPlacer.hasPosition()) {
             viewport.panToShowContentPoint(gx, gy, CURSOR_FOLLOW_MARGIN_PX);
         }
     }
 
-    /**
-     * Put the 64x64 cursor overlay where the guest says its pointer is.
-     *
-     * Same transform the scanout gets: content is centred in the container, scaled about its
-     * centre, then displaced by the pan offset. The overlay is scaled too -- the guest's cursor is
-     * in guest pixels, so at 2x zoom it has to double like everything else, or the pointer shrinks
-     * relative to what it is pointing at. Pivot goes to (0,0) so scaling grows the image away from
-     * the hotspot corner instead of around its middle.
-     */
-    private void positionCursorOverlay() {
-        if (cursorView == null || vpBaseW <= 0 || guestWidth <= 0 || guestHeight <= 0) {
-            return;
-        }
-        if (lastCursorX < 0) {
-            return; // no position yet
-        }
-        View area = (View) surfaceView.getParent();
-        if (area == null || area.getWidth() <= 0) {
-            return;
-        }
-        float vx = lastCursorX * vpBaseW / guestWidth;
-        float vy = lastCursorY * vpBaseH / guestHeight;
-        float cx = area.getWidth() / 2f + vpOffsetX + (vx - vpBaseW / 2f) * vpViewScale;
-        float cy = area.getHeight() / 2f + vpOffsetY + (vy - vpBaseH / 2f) * vpViewScale;
-        float pxPerGuestPx = (vpBaseW / (float) guestWidth) * vpViewScale;
+    // ---- External display casting ----------------------------------------------------------
 
-        cursorView.setPivotX(0f);
-        cursorView.setPivotY(0f);
-        cursorView.setScaleX(pxPerGuestPx);
-        cursorView.setScaleY(pxPerGuestPx);
-        cursorView.setTranslationX(cx);
-        cursorView.setTranslationY(cy);
-        if (cursorView.getVisibility() != VISIBLE) {
-            cursorView.setVisibility(VISIBLE);
+    /** Picks a display and starts casting. Reuses the VNC path's selection dialog verbatim. */
+    private void promptCastToExternal() {
+        if (isFinishing()) return;
+        DisplayPresentation.showDisplaySelectionDialog(this, disp -> {
+            if (disp != null) startCast(disp);
+        });
+    }
+
+    /**
+     * Move the guest scanout onto {@code display}. crosvm keeps rendering into the same kind of
+     * Surface, just one whose layer SurfaceFlinger composites onto the external display, so there is
+     * no re-encode and nothing for the daemon or crosvm to know about.
+     */
+    private void startCast(@NonNull Display display) {
+        if (presentation != null || displaySource == null) return;
+        var pres = new NativeDisplayPresentation(this, display, guestWidth, guestHeight);
+        try {
+            pres.show();
+        } catch (Exception e) {
+            Log.w(TAG, "presentation show failed", e);
+            new MaterialAlertDialogBuilder(this)
+                .setTitle(R.string.display_start_failed)
+                .setMessage(e.getMessage())
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+            return;
         }
+        presentation = pres;
+        // crosvm is about to stop rendering into this device's cursor surface, so whatever it holds
+        // becomes stale: hide it rather than float a dead pointer image over the touchpad. Note the
+        // overlay stays hidden after casting stops until the guest next moves its pointer -- the
+        // scanout has saveFrame/drawSavedFrame to replay a frame across a re-attach, but the cursor
+        // plane has no equivalent in the AIDL, so there is nothing to redraw from.
+        cursorPlacer.reset();
+        displaySource.retarget(pres.getScanoutView(), pres.getCursorView());
+
+        surfaceView.setVisibility(GONE);
+        touchpadPanel.setVisibility(VISIBLE);
+        // A touchpad is inherently relative, so force MOUSE and remember what to restore. Not
+        // persisted: this is a consequence of casting, not a preference the user expressed.
+        preCastInputMode = inputMode;
+        applyCastInputMode(InputMode.MOUSE);
+        setStatus(fmt(getString(R.string.native_display_casting), display.getName()),
+            R.color.vnc_status_connected);
+        warnIfGuestSmallerThan(display);
+    }
+
+    /** Bring the scanout back to this device and put the touchpad away. */
+    private void stopCast() {
+        if (presentation == null) return;
+        if (displaySource != null) displaySource.retarget(surfaceView, cursorView);
+        try {
+            presentation.dismiss();
+        } catch (Exception e) {
+            Log.w(TAG, "presentation dismiss failed", e);
+        }
+        presentation = null;
+        castResolutionWarned = false;
+
+        touchpadPanel.setVisibility(GONE);
+        surfaceView.setVisibility(VISIBLE);
+        if (preCastInputMode != null) {
+            applyCastInputMode(preCastInputMode);
+            preCastInputMode = null;
+        }
+        if (connected) {
+            setStatus(fmt(getString(R.string.native_display_connected), guestWidth, guestHeight),
+                R.color.vnc_status_connected);
+        }
+    }
+
+    // Same routing as setInputModeTo but without persisting: a cast-driven mode change is temporary
+    // and must not overwrite the user's stored choice.
+    private void applyCastInputMode(@NonNull InputMode mode) {
+        inputMode = mode;
+        if (inputForwarder != null) inputForwarder.setInputMode(mode);
+        if (gestureTranslator != null) {
+            gestureTranslator.setAbsolute(mode == InputMode.TABLET);
+            gestureTranslator.reset();
+        }
+    }
+
+    /**
+     * There is no guest-resize channel on this path (crosvm's display binder is pull-only), so a
+     * guest smaller than the external display gets upscaled by the letterbox fit. Say so once
+     * instead of leaving the user wondering why a 4K TV looks soft.
+     */
+    private void warnIfGuestSmallerThan(@NonNull Display display) {
+        if (castResolutionWarned) return;
+        var mode = display.getMode();
+        int dw = mode != null ? mode.getPhysicalWidth() : 0;
+        int dh = mode != null ? mode.getPhysicalHeight() : 0;
+        if (dw <= 0 || dh <= 0 || (guestWidth >= dw && guestHeight >= dh)) return;
+        castResolutionWarned = true;
+        Toast.makeText(this, fmt(getString(R.string.native_display_cast_resolution_hint),
+            guestWidth, guestHeight, dw, dh), Toast.LENGTH_LONG).show();
+    }
+
+    // Wires the touchpad to the same InputForwarder the on-screen display uses. Relative motion and
+    // buttons map straight onto the guest's virtio relative-mouse device.
+    private void setupTouchpad() {
+        touchpadPanel.setTouchPadListener(new DisplayTouchPadPanel.TouchPadListener() {
+            @Override
+            public void onCursorMove(float dx, float dy) {
+                if (inputForwarder == null) return;
+                mouseRemX += dx;
+                mouseRemY += dy;
+                int idx = (int) mouseRemX, idy = (int) mouseRemY;
+                if (idx == 0 && idy == 0) return;
+                mouseRemX -= idx;
+                mouseRemY -= idy;
+                inputForwarder.sendMouseMove(idx, idy);
+            }
+
+            @Override
+            public void onTap() {
+                if (inputForwarder == null) return;
+                inputForwarder.sendPointerButton(EvdevEncoder.BTN_LEFT, true);
+                inputForwarder.sendPointerButton(EvdevEncoder.BTN_LEFT, false);
+            }
+
+            @Override
+            public void onScroll(boolean up) {
+                if (inputForwarder != null) inputForwarder.sendScroll(up ? 1 : -1, 0);
+            }
+
+            @Override
+            public void onMouseButton(DisplayTouchPadPanel.Buttons button, boolean pressed) {
+                if (inputForwarder == null) return;
+                short btn = button == DisplayTouchPadPanel.Buttons.RIGHT ? EvdevEncoder.BTN_RIGHT
+                    : button == DisplayTouchPadPanel.Buttons.MIDDLE ? EvdevEncoder.BTN_MIDDLE
+                    : EvdevEncoder.BTN_LEFT;
+                inputForwarder.sendPointerButton(btn, pressed);
+            }
+        });
+        touchpadPanel.getTouchpadArea().setOnClickListener(v -> toggleSoftKeyboard());
+    }
+
+    @Override
+    public void onDisplayAdded(int displayId) {
+    }
+
+    @Override
+    public void onDisplayChanged(int displayId) {
+    }
+
+    @Override
+    public void onDisplayRemoved(int displayId) {
+        if (presentation == null || presentation.getDisplayId() != displayId) return;
+        // Unlike the VNC presentation activity (which finishes), fall back to this device's screen:
+        // the VM session is untouched by losing the external display, so there is nothing to end.
+        stopCast();
+        Toast.makeText(this, R.string.display_lost, Toast.LENGTH_SHORT).show();
     }
 
     // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with the
@@ -738,12 +891,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
                     surfaceView.setScaleY(viewScale);
                     surfaceView.setTranslationX(offsetX);
                     surfaceView.setTranslationY(offsetY);
-                    vpBaseW = baseW;
-                    vpBaseH = baseH;
-                    vpViewScale = viewScale;
-                    vpOffsetX = offsetX;
-                    vpOffsetY = offsetY;
-                    positionCursorOverlay();
+                    cursorPlacer.setViewport(baseW, baseH, viewScale, offsetX, offsetY);
                 }
 
                 @Override
@@ -849,9 +997,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
+        var castItem = popup.getMenu().findItem(R.id.menu_cast_external);
+        if (castItem != null) {
+            castItem.setTitle(presentation == null
+                ? R.string.native_display_cast_start : R.string.native_display_cast_stop);
+        }
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
-        header.addView(buildInputModeHeader(popup));
+        // No pointer-mode selector while casting: the touchpad is relative-only, so offering
+        // touch/tablet would present choices that cannot take effect.
+        if (presentation == null) header.addView(buildInputModeHeader(popup));
         header.addView(DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
             popup::dismiss));
@@ -902,6 +1057,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         } else if (id == R.id.menu_rotate) {
             toggleOrientation();
             return true;
+        } else if (id == R.id.menu_cast_external) {
+            if (presentation == null) promptCastToExternal();
+            else stopCast();
+            return true;
         }
         return false;
     }
@@ -945,6 +1104,20 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (displayManager != null) {
+            displayManager.unregisterDisplayListener(this);
+            displayManager = null;
+        }
+        // Dismiss before the source shuts down: the Presentation's window (and the Surface crosvm
+        // holds) must not outlive this activity.
+        if (presentation != null) {
+            try {
+                presentation.dismiss();
+            } catch (Exception e) {
+                Log.w(TAG, "presentation dismiss on destroy failed", e);
+            }
+            presentation = null;
+        }
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;

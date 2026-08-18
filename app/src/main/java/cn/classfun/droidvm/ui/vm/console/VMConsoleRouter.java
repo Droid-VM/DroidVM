@@ -91,6 +91,23 @@ public final class VMConsoleRouter {
         ctx.startActivity(intent);
     }
 
+    /**
+     * Native display, launching straight into the external-display picker. Same activity as
+     * {@link #openNative}: casting only moves the scanout Surface to another display, so there is
+     * no separate session to set up.
+     */
+    public static void openNativeExt(@NonNull Context ctx, @NonNull UUID vmId,
+                                     @NonNull VMConfig config) {
+        var item = config.item;
+        var intent = new Intent(ctx, VMNativeDisplayActivity.class);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_ID, vmId.toString());
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, config.getName());
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_START_ON_EXTERNAL, true);
+        ctx.startActivity(intent);
+    }
+
     public static void openVnc(@NonNull Context ctx, @NonNull UUID vmId, @NonNull VMConfig config) {
         var intent = new Intent(ctx, VMVncDisplayActivity.class);
         intent.putExtra(BaseVncActivity.EXTRA_VM_ID, vmId.toString());

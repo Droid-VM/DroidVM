@@ -87,6 +87,17 @@
             android:layout_gravity="top|start"
             android:visibility="gone" />
 
+        <!-- Shown only while casting to an external display. The guest scanout is over there, so
+             this device has nothing to point AT: the panel turns it into a relative touchpad
+             (drag = move, tap = click, two-finger/scroll bar = wheel, three buttons) wired to the
+             same InputForwarder. Shared with the VNC external-display path. -->
+        <cn.classfun.droidvm.ui.vm.display.base.DisplayTouchPadPanel
+            android:id="@+id/touchpad_panel"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
         <!-- Editor that hosts the IME; SurfaceView is an unreliable keyboard target. Kept visually
              imperceptible (1px, transparent text/background, no cursor) rather than alpha=0, because
              some ROMs (e.g. OPlus) refuse to show the keyboard for a fully invisible editor. -->

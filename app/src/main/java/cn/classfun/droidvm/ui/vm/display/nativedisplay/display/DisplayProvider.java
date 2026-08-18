@@ -32,6 +32,11 @@ import java.util.function.Supplier;
  *  - setSurface is called AT MOST ONCE per surface lifetime (surfaceCreated -> surfaceDestroyed).
  *    Layout-driven surfaceChanged must NOT re-call it (crosvm throws if called twice).
  *  - surfaceDestroyed -> save frame + removeSurface; the next surfaceCreated starts a new session.
+ *
+ * The scanout target is not fixed for the provider's lifetime: {@link #retarget} moves it to a
+ * SurfaceView on another Android display (external-screen casting). crosvm is indifferent to which
+ * display the consumer layer lives on -- a Surface is just a BufferQueue producer handle -- so
+ * casting is a pure consumer-side re-attach that needs no daemon or crosvm involvement.
  */
 final class DisplayProvider {
     private static final String TAG = "NativeDisplayProvider";
@@ -48,7 +53,8 @@ final class DisplayProvider {
     /** virtio-gpu's cursor plane size; a smaller cursor image lands in its top-left. */
     static final int CURSOR_PLANE_PX = 64;
 
-    private final SurfaceView mainView;
+    // Not final: retarget() moves the scanout to a SurfaceView on another display.
+    private SurfaceView mainView;
     private int width;
     private int height;
     private final Supplier<IBinder> binderProvider;
@@ -62,11 +68,19 @@ final class DisplayProvider {
     // All fields below touched only on the main thread.
     private ICrosvmAndroidDisplayService displayService;
     private boolean needsSend = false;
+    // Whether crosvm currently HOLDS our scanout surface. Distinct from !needsSend, which only says
+    // "nothing pending": retarget() has to know whether a removeSurface is owed before handing over
+    // a different surface, and during a move both flags are briefly false.
+    private boolean surfaceAttached = false;
     private boolean hasSavedFrame = false;
     private CursorPositionStream cursorStream;
     private CursorPositionStream.Listener cursorListener;
     private SurfaceView cursorView;
     private boolean cursorSurfaceSent = false;
+    // Held so retarget() can detach them from the outgoing views' holders; a callback left attached
+    // would fire surfaceDestroyed later and remove the surface crosvm has just been given.
+    private final Callback mainCallback = new Callback();
+    private SurfaceHolder.Callback cursorCallback;
 
     private final IBinder.DeathRecipient deathRecipient;
 
@@ -88,7 +102,7 @@ final class DisplayProvider {
         });
 
         mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
-        mainView.getHolder().addCallback(new Callback());
+        mainView.getHolder().addCallback(mainCallback);
 
         var surface = mainView.getHolder().getSurface();
         if (surface != null && surface.isValid()) {
@@ -227,6 +241,7 @@ final class DisplayProvider {
 
     private void markSent() {
         needsSend = false;
+        surfaceAttached = true;
         Log.i(TAG, "main surface sent");
         if (hasSavedFrame && displayService != null) {
             // The surface was recreated (e.g. rotation/fullscreen). Repaint the captured frame so
@@ -255,22 +270,84 @@ final class DisplayProvider {
         @Override
         public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
             needsSend = false;
+            releaseMainSurface();
+        }
+    }
+
+    /**
+     * Hand the scanout surface back to crosvm: save the frame (so a lazy-redraw guest compositor
+     * doesn't leave the next surface black) then remove it. No-op unless crosvm actually holds one.
+     */
+    private void releaseMainSurface() {
+        if (!surfaceAttached) return;
+        surfaceAttached = false;
+        var svc = displayService;
+        if (svc == null) return;
+        try {
+            svc.saveFrameForSurface(false);
+            hasSavedFrame = true;
+        } catch (Exception e) {
+            Log.w(TAG, "saveFrameForSurface failed", e);
+        }
+        try {
+            svc.removeSurface(false);
+        } catch (DeadObjectException e) {
+            Log.w(TAG, "display service already dead on surfaceDestroyed");
+        } catch (RemoteException e) {
+            Log.e(TAG, "removeSurface failed", e);
+        }
+    }
+
+    /**
+     * Move the guest scanout (and hardware cursor plane) onto a different pair of SurfaceViews,
+     * typically ones living in a {@code Presentation} on an external display.
+     *
+     * Ordering is the whole point of this method. crosvm throws if setSurface arrives while it still
+     * holds a surface, and the outgoing views' surfaceDestroyed fires asynchronously (whenever the
+     * old hierarchy gets around to detaching), so it cannot be relied on to have run first. So:
+     * detach the callbacks (a detached callback can no longer remove the NEW surface behind our
+     * back), release the old surfaces synchronously, and only then attach and send the new ones.
+     *
+     * @param newCursor may be null to drop cursor-plane delivery for this target.
+     */
+    void retarget(@NonNull SurfaceView newMain, SurfaceView newCursor) {
+        if (newMain == mainView) return;
+        mainView.getHolder().removeCallback(mainCallback);
+        releaseMainSurface();
+        detachCursorView();
+
+        mainView = newMain;
+        needsSend = true;
+        newMain.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        newMain.getHolder().addCallback(mainCallback);
+        newMain.getHolder().setFixedSize(width, height);
+        // An already-live surface gets no surfaceCreated, so send it here; markSent replays the
+        // saved frame either way.
+        var surface = newMain.getHolder().getSurface();
+        if (surface != null && surface.isValid()) trySendSurface(newMain.getHolder());
+
+        setCursorView(newCursor);
+    }
+
+    // Drops the cursor plane: detach our callback and take the surface back off crosvm. Leaving it
+    // attached would let the old view's surfaceDestroyed remove the new target's cursor surface.
+    private void detachCursorView() {
+        if (cursorView != null && cursorCallback != null) {
+            cursorView.getHolder().removeCallback(cursorCallback);
+        }
+        if (cursorSurfaceSent) {
+            cursorSurfaceSent = false;
             var svc = displayService;
-            if (svc == null) return;
-            try {
-                svc.saveFrameForSurface(false);
-                hasSavedFrame = true;
-            } catch (Exception e) {
-                Log.w(TAG, "saveFrameForSurface failed", e);
-            }
-            try {
-                svc.removeSurface(false);
-            } catch (DeadObjectException e) {
-                Log.w(TAG, "display service already dead on surfaceDestroyed");
-            } catch (RemoteException e) {
-                Log.e(TAG, "removeSurface failed", e);
+            if (svc != null) {
+                try {
+                    svc.removeSurface(true);
+                } catch (Exception e) {
+                    Log.w(TAG, "removeSurface(cursor) on retarget failed", e);
+                }
             }
         }
+        cursorView = null;
+        cursorCallback = null;
     }
 
     /**
@@ -302,6 +379,10 @@ final class DisplayProvider {
      * plane unconditionally, so without this they have no visible pointer at all.
      */
     void setCursorView(SurfaceView view) {
+        if (view == cursorView) {
+            return;
+        }
+        detachCursorView();
         cursorView = view;
         if (view == null) {
             return;
@@ -311,7 +392,7 @@ final class DisplayProvider {
         view.setZOrderMediaOverlay(true);
         view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
         view.getHolder().setFixedSize(CURSOR_PLANE_PX, CURSOR_PLANE_PX);
-        view.getHolder().addCallback(new SurfaceHolder.Callback() {
+        cursorCallback = new SurfaceHolder.Callback() {
             @Override public void surfaceCreated(@NonNull SurfaceHolder h) {
                 cursorSurfaceSent = false;
                 trySendCursorSurface(h);
@@ -321,6 +402,7 @@ final class DisplayProvider {
                 trySendCursorSurface(h);
             }
             @Override public void surfaceDestroyed(@NonNull SurfaceHolder h) {
+                if (!cursorSurfaceSent) return;
                 cursorSurfaceSent = false;
                 var svc = displayService;
                 if (svc == null) return;
@@ -330,7 +412,8 @@ final class DisplayProvider {
                     Log.w(TAG, "removeSurface(cursor) failed", e);
                 }
             }
-        });
+        };
+        view.getHolder().addCallback(cursorCallback);
         trySendCursorSurface(view.getHolder());
     }
 

@@ -37,6 +37,18 @@ public final class NativeSurfaceSource implements DisplaySource {
     }
 
     /**
+     * Move the guest scanout and cursor plane onto another pair of SurfaceViews -- used to cast onto
+     * an external display, where they live in a {@code Presentation}. Call on the main thread.
+     *
+     * Deliberately NOT on {@link DisplaySource}: re-attaching a live surface is specific to handing
+     * crosvm an Android Surface, and the VNC source (which copies frames into a bitmap view) has no
+     * equivalent notion to implement.
+     */
+    public void retarget(@NonNull SurfaceView scanoutView, SurfaceView cursorView) {
+        provider.retarget(scanoutView, cursorView);
+    }
+
+    /**
      * Follow the guest cursor. Positions are GUEST framebuffer coordinates, delivered on the main
      * thread, and arrive only on this display path -- the VNC path has no such channel.
      *

@@ -142,6 +142,7 @@
     <string name="vm_info_console_vnc_select">VNC Console</string>
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
     <string name="vm_info_console_native_select">Native Display</string>
+    <string name="vm_info_console_native_ext_select">Native Display on external Display</string>
 
     <string name="vm_info_logs">Logs</string>
     <string name="vm_info_logs_no_logs">No logs available.</string>
@@ -982,6 +983,10 @@
     <string name="native_display_waiting">Waiting for VM display...</string>
     <string name="native_display_connected">Connected - %1$dx%2$d</string>
     <string name="native_display_failed">Failed to start native display</string>
+    <string name="native_display_cast_start">Cast to external display</string>
+    <string name="native_display_cast_stop">Stop casting</string>
+    <string name="native_display_casting">Casting to %1$s - touchpad</string>
+    <string name="native_display_cast_resolution_hint">Guest is %1$dx%2$d, display is %3$dx%4$d - the image is scaled up. Set the VM display resolution to match and restart it for a native fit.</string>
 
     <string name="vnc_menu_keyboard">Soft Keyboard</string>
     <string name="vnc_menu_extra_keys">Extra Keys</string>

@@ -139,6 +139,7 @@
     <string name="vm_info_console_text_select">文字控制台 %1$s</string>
     <string name="vm_info_console_vnc_select">VNC 控制台</string>
     <string name="vm_info_console_native_select">原生显示</string>
+    <string name="vm_info_console_native_ext_select">外部显示器的原生显示</string>
     <string name="vm_info_console_vnc_ext_select">外部显示器的 VNC</string>
 
     <string name="vm_info_logs">日志</string>
@@ -940,6 +941,10 @@
     <string name="native_display_waiting">正在等待虚拟机画面…</string>
     <string name="native_display_connected">已连接 - %1$dx%2$d</string>
     <string name="native_display_failed">原生显示启动失败</string>
+    <string name="native_display_cast_start">投到外接屏</string>
+    <string name="native_display_cast_stop">停止投屏</string>
+    <string name="native_display_casting">正在投到 %1$s - 触控板</string>
+    <string name="native_display_cast_resolution_hint">客户机为 %1$dx%2$d，显示器为 %3$dx%4$d，画面被放大。把虚拟机显示分辨率改成一致并重启，即可原生铺满。</string>
 
     <string name="vnc_menu_keyboard">软键盘</string>
     <string name="vnc_menu_extra_keys">额外按键</string>

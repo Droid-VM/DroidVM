@@ -79,6 +79,9 @@ public final class ConsoleButton {
             names.add("native");
             titles.add(parent.getString(R.string.vm_info_console_native_select));
             icons.add(R.drawable.ic_monitor);
+            names.add("native-ext");
+            titles.add(parent.getString(R.string.vm_info_console_native_ext_select));
+            icons.add(R.drawable.ic_monitor);
         }
         if (hasVnc) {
             names.add("vnc");
@@ -101,6 +104,8 @@ public final class ConsoleButton {
             var selected = names.get(which);
             if (selected.equals("native")) {
                 openNativeDisplay();
+            } else if (selected.equals("native-ext")) {
+                openNativeExtDisplay();
             } else if (selected.equals("vnc")) {
                 openVncDisplay();
             } else if (selected.equals("vnc-ext")) {
@@ -123,6 +128,11 @@ public final class ConsoleButton {
     private void openNativeDisplay() {
         if (parent.config == null) return;
         VMConsoleRouter.openNative(parent, parent.vmId, parent.config);
+    }
+
+    private void openNativeExtDisplay() {
+        if (parent.config == null) return;
+        VMConsoleRouter.openNativeExt(parent, parent.vmId, parent.config);
     }
 
     private void openVncDisplay() {

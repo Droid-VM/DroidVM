@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    Guest scanout on an external display. Mirrors the display_container part of
+    activity_vm_native_display.xml: crosvm renders straight into surface_view, and cursor_view
+    carries the virtio-gpu cursor plane composited on top.
+
+    No chrome of any kind: while casting, the phone activity keeps the toolbar, status bar, extra
+    keys and soft keyboard, and this window is only guest pixels.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/presentation_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <SurfaceView
+        android:id="@+id/surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center" />
+
+    <!-- 64x64 is virtio-gpu's cursor plane size; a smaller cursor image arrives in the top-left
+         with the rest transparent. Positioned from the guest's own cursor stream by
+         CursorOverlayPlacer, so layout_gravity is only the origin translation is applied from. -->
+    <SurfaceView
+        android:id="@+id/cursor_view"
+        android:layout_width="64px"
+        android:layout_height="64px"
+        android:layout_gravity="top|start"
+        android:visibility="gone" />
+
+</FrameLayout>
