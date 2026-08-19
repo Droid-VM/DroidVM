@@ -214,6 +214,18 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
                 // every gfxstream-on-Gunyah VM fail to start with "unknown field `blob_mode`".
                 args.add("gunyah");
+                // The guest-alloc pool buys the host access to buffers the guest allocated, which
+                // in an ordinary protected VM it does not otherwise have. When the host can
+                // already reach the guest's RAM -- an unprotected VM, or a pseudo-unprotected one
+                // whose window is shared back before the payload runs -- the pool is memory taken
+                // from the guest to solve a problem that is not happening, and virtio-gpu with no
+                // pool node to find allocates from system RAM instead, which the host can read
+                // for the same reason. The editor hides the field in those modes; a config from
+                // the daemon API, or one saved before switching mode, still arrives with a size
+                // in it, so it is zeroed here rather than trusted.
+                var pvm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
+                boolean hostVisibleRam = pvm == ProtectedVM.PROTECTED_NORMAL
+                    || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
                 // Dynamic memory sharing: the guest returns folios at runtime instead of pinning
                 // them up front; hugepage-threshold-kb selects which allocations take the
                 // hugepage share path.
@@ -235,7 +247,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                         Log.w(TAG, "dynamic vram without gunyah_dynamic_share: host-visible "
                             + "allocations past the pre-alloc pool have nowhere to go");
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
-                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
                         var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
                         if (udmabuf)
@@ -255,7 +267,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // host-allocating path this host no longer implements.
                 if (drm2kgslGpu) {
                     long drmHostPool = item.optLong("gpu_drm2kgsl_pool_mb", 0);
-                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
                         preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
@@ -276,7 +288,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // runtime SHARE, which SoC-resets the fragile sm8650 (8gen3) RM.
                 if (venusGpu) {
                     long venusHostPool = item.optLong("gpu_venus_pool_mb", 256);
-                    long guestPool = item.optLong("gpu_guest_pool_mb", 0);
+                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (venusHostPool > 0)
                         preAlloc.append(fmt("venus-host-mb=%d", venusHostPool));

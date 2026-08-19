@@ -129,7 +129,9 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
         swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
+        chooseProtectedVm.setOnValueChangedListener((oldValue, newValue) -> updateProtectedVisibility());
         updateGunyahVisibility();
+        updateProtectedVisibility();
         initCpuTopology();
         try {
             var socModel = QcomChipName.getCurrentSoC();
@@ -189,6 +191,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         }
         loadCpuTopology(item);
         updateGunyahVisibility();
+        updateProtectedVisibility();
     }
 
     private void loadCpuTopology(@NonNull DataItem item) {
@@ -233,6 +236,24 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     // Gunyah dynamic memory sharing is a hypervisor-level memory-sharing mechanism (the GPU is
     // just its first user), so it sits with the other lend/share options rather than in the
     // graphics tab where it used to live.
+    /**
+     * Show the SWIOTLB size only where a VM can use one.
+     *
+     * A bounce pool exists because the hypervisor has taken the guest's memory away from the
+     * host: virtio has to hand the host buffers it can still reach. An unprotected VM never lost
+     * that access, and a pseudo-unprotected one gets it back before the payload runs, so in both
+     * the field would ask for memory nothing would ever bounce through -- and in the second it
+     * would actively hurt, putting a restricted-dma-pool node in the tree of a guest kernel that
+     * was never built to honour one. The backend ignores the stored value in those modes; this
+     * keeps the field from claiming otherwise.
+     */
+    private void updateProtectedVisibility() {
+        var pvm = chooseProtectedVm.getSelectedItem();
+        boolean bounces = pvm == ProtectedVM.PROTECTED_PROTECTED
+            || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+        inputSwiotlb.setVisibility(bounces ? VISIBLE : GONE);
+    }
+
     private void updateGunyahVisibility() {
         boolean enabled = swGunyahDynamicShare.isChecked();
         gunyahDynamicShareOptions.setVisibility(enabled ? VISIBLE : GONE);
