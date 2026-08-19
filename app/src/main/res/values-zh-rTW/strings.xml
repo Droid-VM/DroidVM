@@ -201,6 +201,7 @@
     <string name="create_vm_protected_normal">普通</string>
     <string name="create_vm_protected_protected">保護</string>
     <string name="create_vm_protected_without_firmware">無韌體保護</string>
+    <string name="create_vm_protected_pseudo_unprotected">保護,記憶體主機可見</string>
     <string name="create_vm_category_extra_options">額外選項</string>
     <string name="create_vm_extra_option_hint">額外選項（每行一個）</string>
     <string name="create_vm_environment_variables_hint">環境變數（KEY=VALUE，每行一個）</string>
