@@ -34,6 +34,7 @@ import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuProvider;
+import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
@@ -52,6 +53,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private static final int VNC_PASSWORD_LENGTH = 8;
     /** Set while loadConfig() is applying stored values, so enforcement stays silent. */
     private boolean loadingConfig = false;
+    /** The config this tab was loaded with; the protection mode is read back out of it. */
+    @Nullable
+    private VMConfig loadedConfig;
     private View gpuOptions;
     private View displayOptions;
     private View displayDpiOptions;
@@ -360,6 +364,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
+        loadedConfig = config;
         loadingConfig = true;
         try {
             loadConfigLocked(config);
@@ -583,6 +588,55 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         boolean venus = chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
             && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN;
         return drm2kgsl || venus || (gfxstream && swGpuUdmabuf.isChecked());
+    }
+
+    /** Whether the VRAM block applies at all: gfxstream (either alloc path), drm2kgsl or venus. */
+    private boolean usesVramSettings() {
+        boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
+        return gfxstream || usesGuestPool();
+    }
+
+    /**
+     * Whether the guest pool grows at runtime: guest-alloc with the dynamic-vram switch on. Off
+     * means the whole pool is SHARE'd at boot (prealloc = pool, step 0, no grants), which is
+     * what saveConfig() writes and what crosvm's own defaults produce for the three keys.
+     */
+    private boolean isGuestPoolDynamic() {
+        return usesGuestPool() && swGpuDynamicVram.isChecked();
+    }
+
+    @Override
+    public void onTabShown() {
+        // The protection mode is chosen on the basic tab, and it decides whether the guest-alloc
+        // pool is offered at all. Nothing tells this tab when that changes, so ask on the way in.
+        updateVramAllocVisibility();
+    }
+
+    /**
+     * Whether the host can reach this VM's RAM without being handed it.
+     *
+     * The guest-alloc pool is a region the host is given access to so that buffers the guest
+     * allocates are reachable at all -- in an ordinary protected VM they otherwise are not. An
+     * unprotected VM never had that problem, and a pseudo-unprotected one has its whole RAM
+     * shared back to the host before the payload runs, so in both the pool is a slice of memory
+     * carved out of the guest to solve something that is not happening. virtio-gpu with no pool
+     * to find falls back to allocating from system RAM, which is the stock behaviour and works
+     * here for exactly the same reason.
+     *
+     * Live from the basic tab so a just-changed selection counts, then the stored config, then
+     * the backend default -- the same order {@code VMEditBootTab.isProtectedVm} reads it in.
+     */
+    private boolean hostVisibleRam() {
+        ProtectedVM pvm = null;
+        try {
+            var basic = (VMEditBasicTab) parent.getTab(VMEditTab.TAB_BASIC);
+            pvm = basic.getCurrentProtectedVm();
+        } catch (Exception ignored) {
+        }
+        if (pvm == null && loadedConfig != null)
+            pvm = optEnum(loadedConfig.item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
+        if (pvm == null) pvm = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+        return pvm == ProtectedVM.PROTECTED_NORMAL || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
     }
 
     /**
@@ -882,14 +936,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The guest-allocated pool is the same region and the same flag for both renderers -- the
         // guest driver keeps one allocator -- so it is offered wherever guest-alloc is in use:
         // gfxstream with udmabuf on, and the DRM native context always (every BO comes from it).
-        boolean guestAlloc = udmabuf || drm2kgsl || venus;
+        boolean guestAlloc = (udmabuf || drm2kgsl || venus) && !hostVisibleRam();
         tilGpuGuestPoolMb.setVisibility(guestAlloc ? VISIBLE : GONE);
-        tilGpuGuestPreallocMb.setVisibility(guestAlloc ? VISIBLE : GONE);
-        tilGpuGuestStepMb.setVisibility(guestAlloc ? VISIBLE : GONE);
-        tilGpuGuestMaxGrants.setVisibility(guestAlloc ? VISIBLE : GONE);
         boolean hostAlloc = gfxstream && !udmabuf;
-        swGpuDynamicVram.setVisibility(hostAlloc ? VISIBLE : GONE);
+        // One of the two is always true whenever the VRAM block itself is shown, so the switch
+        // sits under the pool sizes on every path.
+        swGpuDynamicVram.setVisibility(hostAlloc || guestAlloc ? VISIBLE : GONE);
         dynamicVramOptions.setVisibility(
-            hostAlloc && swGpuDynamicVram.isChecked() ? VISIBLE : GONE);
+            (hostAlloc || guestAlloc) && swGpuDynamicVram.isChecked() ? VISIBLE : GONE);
+        dynamicVramHostOptions.setVisibility(hostAlloc ? VISIBLE : GONE);
+        dynamicVramGuestOptions.setVisibility(guestAlloc ? VISIBLE : GONE);
     }
 }
