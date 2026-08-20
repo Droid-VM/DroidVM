@@ -586,7 +586,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * the renderer, so fall back to the same migration the editor shows. Reading {@code gpu_api}
      * directly is what this replaces: a VM configured through the new rows stores
      * {@code gpu_mode=native} and no longer sets {@code gpu_api=drm2kgsl}, so the drm2kgsl branch below
-     * would silently not fire and the VM would come up without context-types=virgl2:drm.
+     * would silently not fire and the VM would come up without context-types=drm.
      */
     @NonNull
     private static GpuMode effectiveGpuMode(@NonNull DataItem item) {
@@ -664,10 +664,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // translates the msm protocol to KGSL ioctls, so nothing is remoted at the
                 // GL/VK level and the host exposes no Vulkan capset.
                 //
-                // virgl2 MUST stay in the list. With "drm" alone the virgl renderer is never
-                // initialised (NO_VIRGL) and the very first CREATE_2D comes back
-                // ComponentError(22) -- a black screen with nothing else to go on.
-                gpuArg.append(",context-types=virgl2:drm");
+                // Only the DRM capset is advertised. rutabaga now keeps vrend (classic 2D
+                // resources: fbcon, dumb buffers, llvmpipe scanout) initialised for every
+                // virglrenderer configuration, so "drm" alone no longer fails the first
+                // CREATE_2D. Not advertising VIRGL2 matters for a stock guest: with it, stock
+                // Mesa picks host-GL virgl and our CPU-copy scanout cannot read those frames
+                // back (black until the guest additions + mesa-guest-drm2kgsl are installed);
+                // without it stock Mesa falls back to llvmpipe, which displays fine.
+                gpuArg.append(",context-types=drm");
                 // No external-blob: create_gpu_device overwrites it with
                 // `is_sandboxed || fixed_blob_mapping` regardless of what the CLI said, so
                 // passing it would only suggest it does something.
@@ -682,11 +686,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     item.optLong("gpu_pci_bar_size", 0x100000000L)));
             } else if (effectiveGpuMode(item) == GpuMode.VULKAN) {
                 // Venus: virglrenderer's Vulkan proxy (capset venus, guest-allocated blobs).
-                // virgl2 MUST stay in the list -- with "venus" alone the virgl renderer is never
-                // initialised (NO_VIRGL) and the first CREATE_2D comes back ErrInvalidResourceId,
-                // a black screen. vulkan=true maps to use_venus on the virgl path; the venus capset
-                // also forces use_venus and use_guest_vram host-side, so this is belt-and-suspenders.
-                gpuArg.append(",context-types=virgl2:venus");
+                // Only the venus capset is advertised (see the drm branch above: rutabaga keeps
+                // vrend initialised for the classic 2D path regardless, and not advertising
+                // VIRGL2 keeps a stock guest on llvmpipe instead of an unreadable host-GL
+                // virgl). vulkan=true maps to use_venus on the virgl path; the venus capset also
+                // forces use_venus and use_guest_vram host-side, so this is belt-and-suspenders.
+                gpuArg.append(",context-types=venus");
                 gpuArg.append(",vulkan=true,egl=true,gles=true");
                 // udmabuf gates VIRTIO_GPU_F_CREATE_GUEST_HANDLE, the guest-alloc blob path venus
                 // uses (guest owns the pool, hands the host dma-bufs) -- same contract as drm2kgsl.
