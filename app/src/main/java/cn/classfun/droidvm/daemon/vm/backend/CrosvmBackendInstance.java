@@ -783,16 +783,32 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     // crosvm can promote the virtio-gpu worker to SCHED_FIFO (CROSVM_GPU_RT_PRIO). On gfxstream its
     // per-context render threads inherit that policy and, spin-waiting on the guest command ring,
     // can starve the normal-priority vCPU that feeds them -- a priority inversion that caps the
-    // native-display present rate. So RT is opt-in and off by default: the graphics tab's "GPU worker
-    // real-time scheduling" switch (in the GPU Worker Cpuset section) stores gpu_rt_prio ("97" on /
-    // "" off); pass it through only when set so crosvm leaves scheduling normal otherwise.
+    // native-display present rate. So RT is opt-in and off by default: the graphics tab's
+    // "real-time scheduling" switch (inside the GPU Worker Cpuset section) stores gpu_rt_prio
+    // ("97" on / "" off); pass it through only when set so crosvm leaves scheduling normal
+    // otherwise.
+    //
+    // Requires the cpuset: RT confined to the picked cores trades vCPU latency for render
+    // throughput on those cores, which is the point of the switch. RT with no cpuset is a
+    // different thing entirely -- FIFO 97 threads eligible for every host core, above everything
+    // else Android is running -- so it is refused rather than silently applied. Called after
+    // prepareGpuCgroup(), whose gpuCgroupPath is non-null only once the cpuset exists, holds
+    // cores and is about to be handed to crosvm.
     private void applyGpuRtPrioEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
         if (!item.optBoolean("gpu_enabled", false)) return;
         // gpu_rt_prio is the SCHED_FIFO level as a string, "" (unset) by default. Empty means leave
         // CROSVM_GPU_RT_PRIO unset so crosvm applies no real-time scheduling (RT is opt-in).
         String prio = item.optString("gpu_rt_prio", "");
-        if (!prio.isEmpty()) builder.environment("CROSVM_GPU_RT_PRIO", prio);
+        if (prio.isEmpty()) return;
+        // The editor cannot save this combination; a config built straight through the daemon
+        // API can still carry it, as can one whose cpuset setup soft-failed (no root, bad path).
+        if (gpuCgroupPath == null) {
+            Log.w(TAG, "gpu_rt_prio set without a GPU worker cpuset; skipping real-time "
+                + "scheduling rather than leaving FIFO GPU threads free on every core");
+            return;
+        }
+        builder.environment("CROSVM_GPU_RT_PRIO", prio);
     }
 
     /**

@@ -239,6 +239,7 @@
     <string name="create_vm_error_cpu_clusters_overlap">Cluster overlap at vCPU %s</string>
     <string name="create_vm_error_gpu_cgroup_path">GPU cgroup path must be absolute</string>
     <string name="create_vm_error_gpu_cgroup_cpus_empty">Select at least one core for the GPU worker</string>
+    <string name="create_vm_error_gpu_rt_prio_needs_cpuset">Real-time scheduling needs cpuset cores: unconfined, it can starve the phone.</string>
     <string name="create_vm_category_gpu">Graphics Accelerator</string>
     <string name="create_vm_gpu_enabled">Enable GPU</string>
     <string name="create_vm_gpu_backend">Renderer</string>
@@ -265,7 +266,7 @@
     <string name="display_blit_system_missing_ext">The system Vulkan driver lacks extensions the GPU blit needs:\n  %1$s\nThe native display will fall back to a CPU copy.</string>
     <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
-    <string name="create_vm_gpu_rt_prio">GPU worker real-time scheduling (SCHED_FIFO 97)</string>
+    <string name="create_vm_gpu_rt_prio">Real-time scheduling</string>
     <string name="create_vm_gpu_host_pool_mb">Command buffer pool size (MB)</string>
     <string name="create_vm_gpu_drm2kgsl_pool_mb">Command buffer pool size (MB)</string>
     <string name="create_vm_gpu_venus_pool_mb">Command buffer pool size (MB)</string>

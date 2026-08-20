@@ -584,19 +584,22 @@
                 android:icon="@drawable/ic_cpu"
                 android:text="@string/create_vm_gpu_cgroup_cpus" />
 
-        </LinearLayout>
+            <!-- The virtio-gpu worker runs SCHED_FIFO when this is on; on gfxstream its
+                 per-context render threads all inherit the same priority. It belongs inside the
+                 cpuset block, as a peer of the core picker rather than a sibling of the block,
+                 because the two only make sense together: confined to the picked cores, RT
+                 threads contend for those and can spin-starve the vCPUs (priority inversion ->
+                 low native-display present fps), which is a tradeoff; unconfined, the same
+                 threads are free to take every core at a priority above everything else on the
+                 phone, which is not. Off (the default) leaves them on normal scheduling. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_gpu_rt_prio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_application_cog"
+                android:text="@string/create_vm_gpu_rt_prio" />
 
-        <!-- The virtio-gpu worker runs SCHED_FIFO when this is on; on gfxstream its per-context
-             render threads all inherit the same priority and, confined to the worker cpuset
-             above, contend for those cores and can spin-starve the vCPUs (priority inversion ->
-             low native-display present fps). Off (the default) leaves them on normal scheduling
-             for a smoother desktop; on trades that for raw render throughput. -->
-        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-            android:id="@+id/sw_gpu_rt_prio"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:icon="@drawable/ic_application_cog"
-            android:text="@string/create_vm_gpu_rt_prio" />
+        </LinearLayout>
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 

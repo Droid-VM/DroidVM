@@ -237,6 +237,7 @@
     <string name="create_vm_error_cpu_clusters_overlap">cluster 中 vCPU %s 重複出現</string>
     <string name="create_vm_error_gpu_cgroup_path">GPU cgroup 路徑必須為絕對路徑</string>
     <string name="create_vm_error_gpu_cgroup_cpus_empty">請至少選取一個核心給 GPU Worker</string>
+    <string name="create_vm_error_gpu_rt_prio_needs_cpuset">即時排程需要先選取 cpuset 核心，否則會佔滿所有核心餓死其他程序。</string>
     <string name="create_vm_category_gpu">圖形加速器</string>
     <string name="create_vm_gpu_enabled">啟用GPU</string>
     <string name="create_vm_gpu_backend">渲染器</string>
@@ -263,7 +264,7 @@
     <string name="display_blit_system_missing_ext">系統 Vulkan 驅動缺少 GPU 合成所需的擴展：\n  %1$s\n原生顯示將回退到 CPU 拷貝。</string>
     <string name="create_vm_gpu_api_not_implemented">此 GPU 驅動尚未實現</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
-    <string name="create_vm_gpu_rt_prio">GPU worker 即時排程 (SCHED_FIFO 97)</string>
+    <string name="create_vm_gpu_rt_prio">即時排程</string>
     <string name="create_vm_gpu_host_pool_mb">命令緩衝池大小 (MB)</string>
     <string name="create_vm_gpu_drm2kgsl_pool_mb">命令緩衝池大小 (MB)</string>
     <string name="create_vm_gpu_venus_pool_mb">命令緩衝池大小 (MB)</string>

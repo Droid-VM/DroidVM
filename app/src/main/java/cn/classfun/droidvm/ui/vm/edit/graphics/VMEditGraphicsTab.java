@@ -271,6 +271,22 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             updateGpuCgroupVisibility();
         });
         rowGpuCgroupCpus.setOnClickListener(v -> showGpuCpusPicker());
+        // RT is only offered on top of a cpuset with cores in it. The switch is inside the
+        // cpuset block, so it is already hidden when the block is off; this catches the one
+        // reachable gap -- the block on, but every core cleared in the picker.
+        //
+        // Not while loading: loadConfig() restores this switch before the cpuset rows below it,
+        // so the guard would see an empty core list for every VM and clear a legitimately stored
+        // RT setting. The updateGpuCgroupVisibility() at the end of the load enforces the same
+        // rule once both halves are in place.
+        swGpuRtPrio.setOnCheckedChangeListener(() -> {
+            if (loadingConfig) return;
+            if (swGpuRtPrio.isChecked() && !hasGpuCgroupCpus()) {
+                swGpuRtPrio.setChecked(false);
+                showHint(parent.getString(
+                    R.string.create_vm_error_gpu_rt_prio_needs_cpuset));
+            }
+        });
         // Unconditionally, so the row always carries a value label ("none selected"
         // when empty) rather than a bare title with a blank right-hand side.
         setGpuCgroupCpus(gpuCgroupCpus);
@@ -278,7 +294,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     }
 
     private void updateGpuCgroupVisibility() {
-        gpuCgroupOptions.setVisibility(swGpuCgroup.isChecked() ? VISIBLE : GONE);
+        boolean enabled = swGpuCgroup.isChecked();
+        gpuCgroupOptions.setVisibility(enabled ? VISIBLE : GONE);
+        // RT lives inside the block, so turning the cpuset off hides it. Clear it rather than
+        // leaving a checked-but-invisible switch: without the cpuset, SCHED_FIFO 97 GPU threads
+        // are free to take every host core above everything else on the phone. Same for a
+        // stored config that has RT on with the block on but no cores named -- the cpuset would
+        // never be set up (the daemon skips an empty cpus list), so the confinement is absent.
+        if (!enabled || !hasGpuCgroupCpus()) swGpuRtPrio.setChecked(false);
+    }
+
+    /** Whether the cpuset actually names cores; RT is refused without them. */
+    private boolean hasGpuCgroupCpus() {
+        return !gpuCgroupCpus.trim().isEmpty();
     }
 
     private void showGpuCpusPicker() {
@@ -286,6 +314,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             parent, R.string.create_vm_gpu_cgroup_cpus, gpuCgroupCpus,
             picked -> {
                 setGpuCgroupCpus(picked);
+                // Clearing the last core takes RT down with it, for the same reason the switch
+                // refuses to come up without cores.
+                if (!hasGpuCgroupCpus() && swGpuRtPrio.isChecked()) {
+                    swGpuRtPrio.setChecked(false);
+                    showHint(parent.getString(
+                        R.string.create_vm_error_gpu_rt_prio_needs_cpuset));
+                }
                 warnOnGpuCgroupOverlap();
             });
     }
@@ -340,7 +375,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", true));
         // SCHED_FIFO on the GPU worker; gpu_rt_prio holds the level as a string ("" by default),
         // and "" means "do not set RT at all". Off (the default) -> normal scheduling, which avoids
-        // the gfxstream render-thread priority inversion that starves the present path.
+        // the gfxstream render-thread priority inversion that starves the present path. The cpuset
+        // rows are restored at the end of this method; updateGpuCgroupVisibility() there clears
+        // this again if the config carries RT without a cpuset to confine it.
         swGpuRtPrio.setChecked(!item.optString("gpu_rt_prio", "").isEmpty());
         // The two host pools hold very different things, so they are sized very differently.
         //
@@ -585,15 +622,31 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // exactly recoverable from the pair.
             item.set("gpu_api", toLegacyApi(gm, gp));
             item.set("gpu_udmabuf", swGpuUdmabuf.isChecked());
-            item.set("gpu_rt_prio", swGpuRtPrio.isChecked() ? "97" : "");
+            // "97" only with a cpuset holding cores under it -- the editor cannot produce any
+            // other combination, and writing "" for the rest keeps a config that was edited with
+            // the cpuset turned off from carrying unconfined RT forward.
+            boolean rtPrio = swGpuRtPrio.isChecked()
+                && swGpuCgroup.isChecked() && hasGpuCgroupCpus();
+            item.set("gpu_rt_prio", rtPrio ? "97" : "");
             item.set("gpu_drm2kgsl_pool_mb", parseInt(getEditText(etGpuDrm2KgslPoolMb)));
             item.set("gpu_host_pool_mb", parseInt(getEditText(etGpuHostPoolMb)));
             item.set("gpu_venus_pool_mb", parseInt(getEditText(etGpuVenusPoolMb)));
             item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
-            item.set("gpu_guest_pool_mb", parseInt(getEditText(etGpuGuestPoolMb)));
-            item.set("gpu_guest_prealloc_mb", parseInt(getEditText(etGpuGuestPreallocMb)));
-            item.set("gpu_guest_step_mb", parseInt(getEditText(etGpuGuestStepMb)));
-            item.set("gpu_guest_max_grants", parseInt(getEditText(etGpuGuestMaxGrants)));
+            int guestPool = parseInt(getEditText(etGpuGuestPoolMb));
+            item.set("gpu_guest_pool_mb", guestPool);
+            // With dynamic vram off over a guest pool the growth knobs collapse to "fully
+            // pre-shared": preallocate the whole pool, no step, no grants. That is also what an
+            // older daemon assumes when the keys are absent, so the stored config stays honest
+            // even though the fields keep their last typed values while hidden.
+            if (isGuestPoolDynamic()) {
+                item.set("gpu_guest_prealloc_mb", parseInt(getEditText(etGpuGuestPreallocMb)));
+                item.set("gpu_guest_step_mb", parseInt(getEditText(etGpuGuestStepMb)));
+                item.set("gpu_guest_max_grants", parseInt(getEditText(etGpuGuestMaxGrants)));
+            } else {
+                item.set("gpu_guest_prealloc_mb", guestPool);
+                item.set("gpu_guest_step_mb", 0);
+                item.set("gpu_guest_max_grants", 0);
+            }
             item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
             item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
         }
