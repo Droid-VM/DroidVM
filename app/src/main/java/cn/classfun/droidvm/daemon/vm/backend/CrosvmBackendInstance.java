@@ -154,7 +154,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
 
     /**
      * Appends the guest-owned VRAM pool settings. Older configs only have the total pool size;
-     * their defaults keep the whole pool preallocated and leave dynamic grants disabled.
+     * their defaults keep the whole pool preallocated and leave dynamic grants disabled. The
+     * editor writes exactly those values (prealloc = pool, step 0, no grants) whenever its
+     * dynamic-vram switch is off over a guest pool, so a non-zero step here means the user
+     * asked for runtime growth. Only called under Gunyah.
      */
     private static void appendGuestPoolOptions(
         @NonNull StringBuilder preAlloc,
@@ -162,12 +165,19 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         long guestPool
     ) {
         if (guestPool <= 0) return;
+        long step = item.optLong("gpu_guest_step_mb", 0);
+        // Same situation as the host-alloc dynamic-vram warning in buildCommand(): the editor
+        // refuses this combination, a config built straight through the daemon API can still
+        // reach here. Each growth grant is a runtime SHARE (one memparcel), which on Gunyah needs
+        // the module and accept transport that dynamic sharing brings up. Boot anyway, but say so.
+        if (step > 0 && !item.optBoolean("gunyah_dynamic_share", false))
+            Log.w(TAG, "guest pool step without gunyah_dynamic_share: the pool cannot grow "
+                + "past its preallocation");
         if (preAlloc.length() > 0) preAlloc.append(',');
         preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
         preAlloc.append(fmt(",gpu-guest-prealloc-mb=%d",
             item.optLong("gpu_guest_prealloc_mb", guestPool)));
-        preAlloc.append(fmt(",gpu-guest-step-mb=%d",
-            item.optLong("gpu_guest_step_mb", 0)));
+        preAlloc.append(fmt(",gpu-guest-step-mb=%d", step));
         preAlloc.append(fmt(",gpu-guest-max-grants=%d",
             item.optLong("gpu_guest_max_grants", 0)));
     }

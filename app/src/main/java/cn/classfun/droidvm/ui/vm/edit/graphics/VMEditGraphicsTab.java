@@ -16,6 +16,7 @@ import android.view.View;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
@@ -70,9 +71,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private TextInputEditText etGpuHostPoolMb;
     private TextInputEditText etGpuVramQuotaMb;
     private TextInputEditText etGpuGuestPoolMb;
-    private View tilGpuGuestPreallocMb;
-    private View tilGpuGuestStepMb;
-    private View tilGpuGuestMaxGrants;
+    private View dynamicVramHostOptions;
+    private View dynamicVramGuestOptions;
     private TextInputEditText etGpuGuestPreallocMb;
     private TextInputEditText etGpuGuestStepMb;
     private TextInputEditText etGpuGuestMaxGrants;
@@ -131,9 +131,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuVenusPoolMb = view.findViewById(R.id.et_gpu_venus_pool_mb);
         etGpuVramQuotaMb = view.findViewById(R.id.et_gpu_vram_quota_mb);
         etGpuGuestPoolMb = view.findViewById(R.id.et_gpu_guest_pool_mb);
-        tilGpuGuestPreallocMb = view.findViewById(R.id.til_gpu_guest_prealloc_mb);
-        tilGpuGuestStepMb = view.findViewById(R.id.til_gpu_guest_step_mb);
-        tilGpuGuestMaxGrants = view.findViewById(R.id.til_gpu_guest_max_grants);
+        dynamicVramHostOptions = view.findViewById(R.id.dynamic_vram_host_options);
+        dynamicVramGuestOptions = view.findViewById(R.id.dynamic_vram_guest_options);
         etGpuGuestPreallocMb = view.findViewById(R.id.et_gpu_guest_prealloc_mb);
         etGpuGuestStepMb = view.findViewById(R.id.et_gpu_guest_step_mb);
         etGpuGuestMaxGrants = view.findViewById(R.id.et_gpu_guest_max_grants);
@@ -409,7 +408,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.optLong("gpu_guest_prealloc_mb", guestPool)));
         etGpuGuestStepMb.setText(String.valueOf(item.optLong("gpu_guest_step_mb", 0)));
         etGpuGuestMaxGrants.setText(String.valueOf(item.optLong("gpu_guest_max_grants", 0)));
-        // Defaults to on: before it had a switch, a vram limit was always handed to crosvm.
+        // Defaults to on: before it had a switch, a vram limit was always handed to crosvm. Over
+        // a guest pool "on" just exposes the three growth fields above -- their own defaults
+        // (prealloc = pool, step 0) still describe a fully pre-shared pool, so an older config
+        // loads with the same behaviour it had. The listener drops it back to off when dynamic
+        // sharing is not available to this VM.
         swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
         etGpuPoolBlobMaxKb.setText(String.valueOf(item.optLong("gpu_pool_blob_max_kb", 4096)));
         swDisplayEnabled.setChecked(item.optBoolean("display_enabled", false));
@@ -514,21 +517,28 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuVramQuotaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
-        if (!checkInputField(etGpuGuestPreallocMb, false, 0, 65536)) return false;
-        if (!checkInputField(etGpuGuestStepMb, false, 0, 65536)) return false;
-        if (!checkInputField(etGpuGuestMaxGrants, false, 0, 65536)) return false;
         if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
-        if (!validateGuestPoolOptions()) return false;
+        // The growth fields are only read (and only shown) with dynamic vram on over a guest
+        // pool; otherwise saveConfig() writes the fully pre-shared values in their place, so a
+        // stale entry in a hidden field must not block the save.
+        if (isGuestPoolDynamic()) {
+            if (!checkInputField(etGpuGuestPreallocMb, false, 0, 65536)) return false;
+            if (!checkInputField(etGpuGuestStepMb, false, 0, 65536)) return false;
+            if (!checkInputField(etGpuGuestMaxGrants, false, 0, 65536)) return false;
+            if (!validateGuestPoolOptions()) return false;
+        }
         DisplayOutput displayOutput = chooseDisplayOutput.getSelectedItem();
         if (displayOutput == DisplayOutput.VNC
             && !checkInputField(etVncPort, true, 1024, 65535)) return false;
         if (parent.get("backend", VMBackend.DEFAULT) != VMBackend.CROSVM
             && displayOutput == DisplayOutput.NATIVE)
             return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
-        // Dynamic vram grows host-visible memory by sharing it at runtime, so it needs the
-        // dynamic-sharing mechanism underneath. (Guest-alloc does not: it hands the host
-        // dma-bufs out of the guest pool, which is shared once at boot.)
-        if (swGpuEnabled.isChecked() && !swGpuUdmabuf.isChecked()
+        // Dynamic vram shares memory in at runtime on both paths -- host-visible memory past
+        // the pre-alloc pool with host-alloc, the guest pool's growth grants (one memparcel per
+        // step) with guest-alloc -- so either way it needs the dynamic-sharing mechanism
+        // underneath. The switch refuses to turn on without it; this catches sharing being
+        // turned off in the basic tab afterwards.
+        if (swGpuEnabled.isChecked() && usesVramSettings()
             && swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable())
             return showValidateFailed(dynamicVramNeedsSharingMessage());
         if (swGpuCgroup.isChecked()) {
@@ -542,7 +552,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     }
 
     private boolean validateGuestPoolOptions() {
-        if (!usesGuestPool()) return true;
         int guestPool = parseInt(getEditText(etGpuGuestPoolMb));
         int prealloc = parseInt(getEditText(etGpuGuestPreallocMb));
         int step = parseInt(getEditText(etGpuGuestStepMb));
@@ -844,6 +853,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     // (gpu_guest_pool_mb); otherwise host-visible memory is shared in at runtime, metered
     // against gpu_vram_quota_mb.
     // The host pool stays visible in both modes.
+    //
+    // The dynamic-vram switch is offered on both paths and gates a different set of fields on
+    // each: host-alloc grows host-visible memory past the pre-alloc pool (quota + fusion gate);
+    // guest-alloc grows the guest pool past its boot preallocation (prealloc / step / max
+    // grants). Both are runtime SHARE, so both need dynamic memory sharing underneath.
     private void updateVramAllocVisibility() {
         boolean gfxstream = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
         // The DRM native context has two: a guest pool every BO is allocated from, and a small

@@ -146,59 +146,6 @@
 
                     </com.google.android.material.textfield.TextInputLayout>
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_guest_prealloc_mb"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="8dp"
-                        android:hint="@string/create_vm_gpu_guest_prealloc_mb">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_guest_prealloc_mb"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:text="1024"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_guest_step_mb"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginBottom="8dp"
-                        android:hint="@string/create_vm_gpu_guest_step_mb">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_guest_step_mb"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:text="0"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_guest_max_grants"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/create_vm_gpu_guest_max_grants">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_guest_max_grants"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:text="0"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                    </com.google.android.material.textfield.TextInputLayout>
-
                 </LinearLayout>
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
@@ -218,40 +165,114 @@
                     android:layout_marginBottom="8dp"
                     android:orientation="vertical">
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_vram_quota_mb"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    <!-- Host-alloc (gfxstream without udmabuf): host-visible memory past the
+                         pre-alloc pool is runtime-SHARE'd, metered against the quota. -->
+                    <LinearLayout
+                        android:id="@+id/dynamic_vram_host_options"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginBottom="8dp"
-                        android:hint="@string/create_vm_gpu_vram_quota_mb">
+                        android:orientation="vertical">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_vram_quota_mb"
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_gpu_vram_quota_mb"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:text="2048"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+                            android:layout_marginBottom="8dp"
+                            android:hint="@string/create_vm_gpu_vram_quota_mb">
 
-                    </com.google.android.material.textfield.TextInputLayout>
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gpu_vram_quota_mb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:text="2048"
+                                tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_gpu_pool_blob_max_kb"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_gpu_pool_blob_max_kb"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="@string/create_vm_gpu_pool_blob_max_kb">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gpu_pool_blob_max_kb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:text="4096"
+                                tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                    </LinearLayout>
+
+                    <!-- Guest-alloc (udmabuf / drm2kgsl / venus): the guest pool is declared at
+                         its full size but only the preallocation is SHARE'd at boot; the guest
+                         grows and shrinks the rest at runtime, one memparcel per step. -->
+                    <LinearLayout
+                        android:id="@+id/dynamic_vram_guest_options"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="@string/create_vm_gpu_pool_blob_max_kb">
+                        android:orientation="vertical">
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_gpu_pool_blob_max_kb"
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_gpu_guest_prealloc_mb"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="number"
-                            android:text="4096"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+                            android:layout_marginBottom="8dp"
+                            android:hint="@string/create_vm_gpu_guest_prealloc_mb">
 
-                    </com.google.android.material.textfield.TextInputLayout>
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gpu_guest_prealloc_mb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:text="1024"
+                                tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_gpu_guest_step_mb"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginBottom="8dp"
+                            android:hint="@string/create_vm_gpu_guest_step_mb">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gpu_guest_step_mb"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:text="0"
+                                tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_gpu_guest_max_grants"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="@string/create_vm_gpu_guest_max_grants">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_gpu_guest_max_grants"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="number"
+                                android:text="0"
+                                tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                    </LinearLayout>
 
                 </LinearLayout>
 
