@@ -1269,4 +1269,8 @@
     <string name="kernel_module_why">為什麼需要？</string>
     <string name="kernel_module_manage">管理</string>
     <string name="setup_kmod_desc"><![CDATA[DroidVM 需要這些主機內核模組，缺少它們 VM 可能無法開機或無法使用 GPU 加速。模組仍在開發中，無法保證穩定性，可能會導致手機重啟：請先嘗試載入，確認沒問題後再開啟隨 daemon 自動載入。若遇到任何問題，請<a href="https://github.com/Droid-VM/DroidVM/issues">提交 Issue</a>。每張卡片都有各模組的用途說明。]]></string>
+    <string name="vm_hugepage_short_title">大頁保留區不足</string>
+    <string name="vm_hugepage_short_message">大頁保留區目前剩 %1$d MB，這台虛擬機大約需要 %2$d MB，差 %3$d MB。\n\n上一台虛擬機結束後，保留區通常兩秒左右就會補回來。現在就開機的話，Hypervisor 只能改拿一般記憶體，而那必須先從 CMA 搬出來；在記憶體吃緊的手機上，這一步曾造成整台停住數分鐘、甚至直接重開機。\n\n通常等一下再開就好了。</string>
+    <string name="vm_hugepage_short_settings">前往大頁設定</string>
+    <string name="vm_hugepage_short_start_anyway">仍要啟動</string>
 </resources>

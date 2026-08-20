@@ -1312,4 +1312,8 @@
     <string name="kernel_module_manage">Manage</string>
     <string name="kernel_module_hugepage_name" translatable="false">GH-Hugepage-Reserve</string>
     <string name="setup_kmod_desc"><![CDATA[DroidVM needs these host kernel modules; without them VMs may fail to boot or lose GPU acceleration. The modules are still under development — stability is not guaranteed, and they may cause the phone to reboot: try loading them first, and enable load-with-daemon only after they prove stable. If you hit any problem, please <a href="https://github.com/Droid-VM/DroidVM/issues">file an issue</a>. Each card explains why its module is needed.]]></string>
+    <string name="vm_hugepage_short_title">Huge-page reserve is short</string>
+    <string name="vm_hugepage_short_message">The huge-page reserve has %1$d MB free, but this VM needs about %2$d MB — %3$d MB short.\n\nThe reserve normally refills a couple of seconds after another VM exits. Starting now makes the hypervisor take ordinary memory instead, which it has to migrate out of CMA first; on a phone with nothing spare that has stalled the whole system for minutes, or rebooted it.\n\nWaiting a moment and starting again usually clears it.</string>
+    <string name="vm_hugepage_short_settings">Huge-page settings</string>
+    <string name="vm_hugepage_short_start_anyway">Start anyway</string>
 </resources>

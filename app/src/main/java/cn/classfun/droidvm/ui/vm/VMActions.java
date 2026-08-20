@@ -45,6 +45,8 @@ import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.tree.DiskTree;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
+import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
+import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
@@ -77,13 +79,66 @@ public final class VMActions {
         @Nullable ConvertLauncher convertLauncher
     ) {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
-        // image attached writable (writing would corrupt its overlays - any backend), and
-        // compressed clusters (crosvm boots to I/O errors). Each prompts with its fix and
-        // chains to the next; everything else starts normally.
+        // image attached writable (writing would corrupt its overlays - any backend),
+        // compressed clusters (crosvm boots to I/O errors), and a huge-page reserve too small
+        // to back this VM. Each prompts with its fix and chains to the next; everything else
+        // starts normally.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
             () -> guardLockedParents(config, mainHandler, ui,
                 () -> guardCompressedDisks(config, mainHandler, ui, convertLauncher,
-                    () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole))));
+                    () -> guardHugePagePool(config, mainHandler, ui,
+                        () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole)))));
+    }
+
+    /**
+     * Pre-start check: can the huge-page reserve back this VM right now?
+     *
+     * <p>When it cannot, the memory crosvm hands the hypervisor comes from ordinary movable
+     * memory instead of the reserve's isolated folios, and handing that over means migrating it
+     * out of CMA first -- which on a tight phone has stalled the whole host for minutes or reset
+     * it outright. The pool refills a couple of seconds after a VM exits, so the usual cause is
+     * simply starting again too soon, and the usual fix is to wait a moment and retry.
+     *
+     * <p>Foreground starts ask rather than wait: someone is looking at the screen, and they may
+     * well know something we do not (a smaller VM about to be shut down, a deliberate
+     * experiment). Background starts wait instead -- see {@code PoolPreflight.waitForPool}.
+     */
+    private static void guardHugePagePool(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Runnable proceed
+    ) {
+        runOnPool(() -> {
+            var status = PoolPreflight.check(config.item);
+            if (status.isEnough()) {
+                mainHandler.post(proceed);
+                return;
+            }
+            mainHandler.post(() -> promptHugePageShort(ui, status, proceed));
+        });
+    }
+
+    private static void promptHugePageShort(
+        @NonNull UIContext ui,
+        @NonNull PoolPreflight.Status status,
+        @NonNull Runnable proceed
+    ) {
+        if (!ui.isAlive()) {
+            // Nobody to ask: the start was requested, so honour it.
+            proceed.run();
+            return;
+        }
+        var ctx = ui.getContext();
+        new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.vm_hugepage_short_title)
+            .setMessage(ctx.getString(R.string.vm_hugepage_short_message,
+                status.availMb(), status.neededMb(), status.shortMb()))
+            .setPositiveButton(R.string.vm_hugepage_short_settings, (d, w) ->
+                ctx.startActivity(new Intent(ctx, HugePageActivity.class)))
+            .setNeutralButton(R.string.vm_hugepage_short_start_anyway, (d, w) -> proceed.run())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     private static void startAfterGuard(
