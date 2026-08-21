@@ -39,6 +39,24 @@ public final class PoolPreflight {
     /** The reserve deals in 2 MB pages; every count here is in those. */
     public static final long PAGE_MB = 2;
 
+    /**
+     * The waiting policy for a start nobody is watching -- auto-start at daemon boot, and the
+     * relaunch that follows a guest reboot. Ten looks a second apart, asking the module to fetch
+     * more half way through, and start anyway at the end. See {@link #waitForPool}.
+     */
+    public static final int BACKGROUND_ATTEMPTS = 10;
+    public static final long BACKGROUND_INTERVAL_MS = 1000;
+    public static final int BACKGROUND_ACQUIRE_AT = 5;
+
+    /**
+     * The same policy, with more room, for the relaunch after a guest reboot. That start races
+     * the reserve taking back the memory the same VM has only just released, and measured on
+     * device that takes about ten seconds (drm2kgsl: enough again at ~9 s, full at ~16 s; venus:
+     * enough at ~9 s, full at ~13 s) -- too close to the ten of a plain background start to leave
+     * it there. Twice the measured worst case, and still bounded.
+     */
+    public static final int RELAUNCH_ATTEMPTS = 20;
+
     private PoolPreflight() {
     }
 
@@ -136,6 +154,11 @@ public final class PoolPreflight {
      *
      * @return true if the pool covered the VM before the attempts ran out
      */
+    /** {@link #waitForPool} with the shared background policy. */
+    public static boolean waitForPool(@NonNull DataItem item) {
+        return waitForPool(item, BACKGROUND_ATTEMPTS, BACKGROUND_INTERVAL_MS, BACKGROUND_ACQUIRE_AT);
+    }
+
     public static boolean waitForPool(@NonNull DataItem item, int attempts, long sleepMs, int acquireAt) {
         var status = check(item);
         if (!status.applicable || status.isEnough())
@@ -143,7 +166,7 @@ public final class PoolPreflight {
         Log.i(TAG, fmt("waiting for the huge-page reserve: %s", status));
         for (int i = 1; i <= attempts; i++) {
             if (i == acquireAt) {
-                Log.i(TAG, "reserve still short at attempt " + i + "; asking it to acquire");
+                Log.i(TAG, fmt("reserve still short at attempt %d; asking it to acquire", i));
                 acquire(2);
             }
             try {

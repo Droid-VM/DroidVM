@@ -27,15 +27,8 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
 public final class VMInstanceStore extends DataStore<VMInstance> {
-    /** Background-start wait for the huge-page reserve: 10 looks, one second apart. */
-    private static final int AUTO_UP_POOL_ATTEMPTS = 10;
-    private static final long AUTO_UP_POOL_INTERVAL_MS = 1000;
-    /** One acquire, half way in -- a reserve that will not fill does not fill on the second ask. */
-    private static final int AUTO_UP_POOL_ACQUIRE_AT = 5;
-
     private static final String TAG = "VMInstanceStore";
     public final ServerContext context;
-    volatile VMInstance.VMEventCallback eventCallback = null;
     NetworkInstanceStore networkStore;
 
     public VMInstanceStore(@NonNull ServerContext context) {
@@ -46,7 +39,7 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     }
 
     public void setEventCallback(@Nullable VMInstance.VMEventCallback cb) {
-        this.eventCallback = cb;
+        context.vmEventCallback = cb;
     }
 
     public void setNetworkStore(@Nullable NetworkInstanceStore networkStore) {
@@ -161,8 +154,7 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
             // ask the module to go and fetch more. If it never gets there we start regardless:
             // an auto-start that silently does not happen is worse than a slow one, and the VMM
             // checks again at the point where it actually hands the memory over.
-            PoolPreflight.waitForPool(inst.item, AUTO_UP_POOL_ATTEMPTS,
-                AUTO_UP_POOL_INTERVAL_MS, AUTO_UP_POOL_ACQUIRE_AT);
+            PoolPreflight.waitForPool(inst.item);
             Log.i(TAG, fmt("Auto-starting VM %s [%s]", inst.getName(), id));
             if (!inst.start())
                 Log.w(TAG, fmt("Failed to auto-start VM %s [%s]", inst.getName(), id));
