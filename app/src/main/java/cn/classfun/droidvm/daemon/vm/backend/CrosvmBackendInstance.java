@@ -387,7 +387,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var socName = HostSocName.get();
         if (socName != null) {
             args.add("--smbios");
-            args.add("processor-version=" + socName);
+            args.add(fmt("processor-version=%s", socName));
         }
         buildDiskCommand(args);
         buildNetCommand(args);
@@ -456,10 +456,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var ec = RunUtils.escapedString(cpus);
         var eq = RunUtils.escapedString(parent);
         // Shell.cmd feeds the whole string to the persistent root shell; newlines work.
-        var script =
-            "p=" + ep + "\n" +
-            "c=" + ec + "\n" +
-            "q=" + eq + "\n" +
+        // The three paths go in as shell variables, so the body below stays a plain
+        // literal instead of interleaving quoting with concatenation.
+        var script = fmt(
+            "p=%s\n" +
+            "c=%s\n" +
+            "q=%s\n" +
             "mkdir -p \"$p\" || exit 1\n" +
             // mems first: some kernels validate cpus against a non-empty mems
             "for n in mems cpuset.mems; do\n" +
@@ -473,7 +475,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             "  if [ -e \"$p/$n\" ]; then echo \"$c\" > \"$p/$n\"; fi\n" +
             "done\n" +
             // Last line output verifies the write; also becomes the script exit code
-            "cat \"$p/cpus\" 2>/dev/null || cat \"$p/cpuset.cpus\" 2>/dev/null";
+            "cat \"$p/cpus\" 2>/dev/null || cat \"$p/cpuset.cpus\" 2>/dev/null",
+            ep, ec, eq);
         var result = RunUtils.run(script);
         if (!result.isSuccess() || result.getOutString().trim().isEmpty()) {
             Log.e(TAG, fmt("Failed to set up gpuworker cpuset at %s (cpus=%s): %s",
@@ -622,7 +625,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             if (isGfxstream) {
                 gpuArg.append(",context-types=gfxstream-vulkan");
             }
-            if (useDisplay && backend == VIRTIO_GPU) {
+            // Geometry goes to the GPU device whichever of the two produces the picture. With
+            // display_backend=simplefb the guest may still display through virtio-gpu -- the
+            // firmware does, and so does any OS with the driver -- and the VMM's simplefb bridge
+            // hands its frames to this same device rather than opening a display of its own. A
+            // GPU device with no displays= falls back to crosvm's built-in default (1280x1024),
+            // which is what the guest is then told through EDID and display-info: a VM configured
+            // for 1400x1050 came up at 1280x1024, and a Linux guest picks a mode from that.
+            if (useDisplay && (backend == VIRTIO_GPU || backend == SIMPLEFB)) {
                 gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
                     item.optLong("display_width", 1280),
                     item.optLong("display_height", 720)));
