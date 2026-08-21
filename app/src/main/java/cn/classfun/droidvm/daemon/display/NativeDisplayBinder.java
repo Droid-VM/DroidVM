@@ -18,6 +18,7 @@ import java.lang.reflect.Method;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.lib.store.vm.VMState;
 
 /**
  * Daemon-hosted native-display broker. The daemon already runs as root, so it does both jobs the
@@ -35,6 +36,12 @@ import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
  */
 public final class NativeDisplayBinder {
     private static final String TAG = "NativeDisplayBinder";
+
+    /** Service-name prefix built by {@link NativeDisplay#serviceNameFromId}. */
+    private static final String NAME_PREFIX = "droidvm_disp_";
+    /** How long one lookup keeps looking, and how often it looks. */
+    private static final long WAIT_TOTAL_MS = 5000;
+    private static final long WAIT_POLL_MS = 200;
 
     private static INativeDisplayRootService.Stub binder;
 
@@ -54,7 +61,7 @@ public final class NativeDisplayBinder {
         return new INativeDisplayRootService.Stub() {
             @Override
             public IBinder waitForDisplayBinder(String serviceName) {
-                return doWaitForDisplayBinder(serviceName);
+                return doWaitForDisplayBinder(ctx, serviceName);
             }
 
             @Override
@@ -96,32 +103,64 @@ public final class NativeDisplayBinder {
         }
     }
 
-    private static IBinder waitForServiceWithTimeout(@NonNull String name, long timeoutMs) {
-        var holder = new IBinder[1];
-        var t = new Thread(() -> holder[0] = smCall("waitForService", name), fmt("WaitSvc-%s", name));
-        t.setDaemon(true);
-        t.start();
-        try {
-            t.join(timeoutMs);
-        } catch (InterruptedException ignored) {
+    /**
+     * Look for [name] until it turns up or [WAIT_TOTAL_MS] passes.
+     *
+     * Polls {@code checkService} rather than calling {@code waitForService}, which blocks until
+     * the service appears and cannot be cancelled. A caller-side timeout around it does not stop
+     * it: the thread carrying it stays blocked for the life of the process, and while it waits,
+     * servicemanager's client logs a line a second, from every thread. For a VM that has stopped
+     * -- the display console left open after the VM exits, retrying -- the service never appears
+     * at all, so every attempt leaked another permanently-waiting, permanently-logging thread.
+     * Measured: 315884 log lines and 77 MB of daemon.log in four minutes, ending with the daemon
+     * dying and taking a different, running VM's crosvm down with it.
+     */
+    private static IBinder pollForService(@NonNull String name) {
+        long deadline = System.nanoTime() + WAIT_TOTAL_MS * 1_000_000L;
+        while (System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(WAIT_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+            var binder = smCall("checkService", name);
+            if (binder != null) return binder;
         }
-        return holder[0];
+        return null;
     }
 
-    private static IBinder doWaitForDisplayBinder(@NonNull String serviceName) {
-        Log.i(TAG, fmt("waitForDisplayBinder('%s')", serviceName));
+    /**
+     * Whether the VM behind [serviceName] is in a state where crosvm could still register it.
+     *
+     * A stopped VM will never register, so waiting for it is time the caller spends learning
+     * nothing -- and the caller is a console that retries. Unknown names are not ours to judge,
+     * so they wait as before.
+     */
+    private static boolean vmCouldRegister(@NonNull ServerContext ctx, @NonNull String serviceName) {
+        if (!serviceName.startsWith(NAME_PREFIX)) return true;
+        var inst = ctx.getVMs().findById(serviceName.substring(NAME_PREFIX.length()));
+        if (inst == null) return true;
+        var state = inst.getState();
+        return state == VMState.RUNNING || state == VMState.STARTING || state == VMState.REBOOTING;
+    }
+
+    private static IBinder doWaitForDisplayBinder(@NonNull ServerContext ctx,
+                                                  @NonNull String serviceName) {
         var direct = smCall("checkService", serviceName);
-        if (direct != null) {
-            Log.i(TAG, "OK: got display binder directly from ServiceManager");
-            return direct;
+        if (direct != null) return direct;
+        if (!vmCouldRegister(ctx, serviceName)) {
+            Log.i(TAG, fmt("'%s': VM not running, nothing to wait for", serviceName));
+            return null;
         }
-        Log.i(TAG, "Not found, waiting up to 5s...");
-        var waited = waitForServiceWithTimeout(serviceName, 5000L);
+        Log.i(TAG, fmt("waitForDisplayBinder('%s'): not registered yet, looking for %d ms",
+            serviceName, WAIT_TOTAL_MS));
+        var waited = pollForService(serviceName);
         if (waited != null) {
-            Log.i(TAG, "OK: got display binder via waitForService");
+            Log.i(TAG, "OK: got display binder");
             return waited;
         }
-        Log.e(TAG, fmt("'%s' not found - is crosvm running with "
+        Log.w(TAG, fmt("'%s' not found - is crosvm running with "
             + "--android-display-service %s?", serviceName, serviceName));
         return null;
     }

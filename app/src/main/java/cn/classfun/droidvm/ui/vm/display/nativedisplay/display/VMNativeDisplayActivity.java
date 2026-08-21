@@ -45,9 +45,13 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
 import org.json.JSONObject;
 
+import java.util.UUID;
+
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
+import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
@@ -85,7 +89,8 @@ import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TouchScaleCalculato
  */
 // ImeInsetsExempt: the display area handles the IME inset itself (root insets listener below);
 // without the exemption the app-wide ImeInsetsApplier would pad the content view a second time.
-public final class VMNativeDisplayActivity extends AppCompatActivity implements ImeInsetsExempt {
+public final class VMNativeDisplayActivity extends AppCompatActivity
+    implements ImeInsetsExempt, ForegroundCallback {
     private static final String TAG = "VMNativeDisplay";
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
@@ -927,6 +932,63 @@ public final class VMNativeDisplayActivity extends AppCompatActivity implements 
         setRequestedOrientation(landscape
             ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+    }
+
+    /**
+     * Registry key for the VM-event callback, unique per instance.
+     *
+     * Not the tag: this activity is recreated (the orientation flip on entry does it), and the
+     * incoming instance's onStart() runs before the outgoing one's onStop() -- so a key shared by
+     * both has the one leaving unregister the one arriving, and the console then never hears that
+     * its VM exited.
+     */
+    private final String eventKey =
+        TAG + "@" + Integer.toHexString(System.identityHashCode(this));
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        var handler = ((DroidVMApp) getApplication()).getVMEventHandler();
+        if (handler != null) handler.addForegroundCallback(eventKey, this);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        var handler = ((DroidVMApp) getApplication()).getVMEventHandler();
+        if (handler != null) handler.removeForegroundCallback(eventKey);
+    }
+
+    /**
+     * The VM this console is attached to has gone. Close with it: what is left otherwise is a
+     * console that cannot reconnect, retrying a display service that will never be registered
+     * again (which used to cost the daemon dearly -- see NativeDisplayBinder).
+     *
+     * This is the exit event, not the absence of a crosvm process, and the difference is the
+     * point: a VM waiting for the huge-page reserve -- after a start, or between a guest reboot
+     * and its relaunch -- has no process either, and must not be mistaken for one that is gone.
+     * The daemon fires "rebooting" for that case and holds the exit event back until the VM
+     * really is not coming back, so there is nothing to second-guess here.
+     *
+     * A VM that crashed is the one case worth staying open for. VMEventHandler answers a non-zero
+     * exit by putting up the exit dialog -- the tail of the log, and a way into the full one --
+     * on whatever activity is in front, and closing that activity out from under it would take
+     * the explanation with it. So the console holds; the user closes it after reading. The toast
+     * is that handler's job either way, so there is none here.
+     */
+    @Override
+    public void onVMExited(UUID id, String vmName, int exitCode, JSONObject data) {
+        if (id == null || !id.toString().equals(vmId)) return;
+        if (exitCode != 0) {
+            Log.i(TAG, fmt("VM exited with %d -- keeping the console up for the exit dialog",
+                exitCode));
+            return;
+        }
+        mainHandler.post(() -> {
+            if (isFinishing()) return;
+            Log.i(TAG, "VM stopped; closing the display");
+            finish();
+        });
     }
 
     @Override

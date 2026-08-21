@@ -20,6 +20,7 @@ import androidx.annotation.NonNull;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -35,9 +36,21 @@ import java.util.function.Supplier;
  */
 final class DisplayProvider {
     private static final String TAG = "NativeDisplayProvider";
-    // Stop polling for the display binder after this many 1s rounds (the daemon-side
-    // waitForService already blocks up to 5s each), so a dead broker doesn't spin forever.
-    private static final int MAX_BINDER_ATTEMPTS = 30;
+    // Keep looking for the display binder for as long as this console is open, backing off from
+    // BINDER_RETRY_MIN_MS to BINDER_RETRY_MAX_MS between rounds.
+    //
+    // There used to be a cap of 30 rounds, because each round could cost the daemon a leaked,
+    // permanently-blocked thread (see NativeDisplayBinder) and spinning was genuinely expensive.
+    // It no longer is -- a round is one cheap ServiceManager lookup, answered instantly when the
+    // VM is not running -- and a cap is the wrong shape anyway: the thing being waited for is a
+    // guest booting, which has no upper bound. A guest that took longer than the cap left the
+    // console blank for the rest of its life with nothing left to retry it.
+    //
+    // Two things end the wait instead of a counter: the binder turning up, and the console
+    // closing (shutdown() interrupts this thread). A VM that exits while the console is open
+    // closes the console itself, so "the VM is never coming back" ends it too.
+    private static final long BINDER_RETRY_MIN_MS = 1000;
+    private static final long BINDER_RETRY_MAX_MS = 5000;
     // Interval for re-reading the guest display size. crosvm's binder is pull-only (no resize
     // push callback, and SELinux blocks crosvm from calling back into an untrusted_app), so the
     // receiver polls the single source of truth -- getDisplayConfig() reflects the current scanout
@@ -69,6 +82,8 @@ final class DisplayProvider {
     private boolean cursorSurfaceSent = false;
 
     private final IBinder.DeathRecipient deathRecipient;
+    /** One binder hunt at a time: both the death path and surfaceCreated ask for one. */
+    private final AtomicBoolean fetching = new AtomicBoolean();
 
     DisplayProvider(@NonNull SurfaceView mainView, int width, int height,
                     @NonNull Supplier<IBinder> binderProvider,
@@ -141,40 +156,47 @@ final class DisplayProvider {
         var group = (android.view.ViewGroup) parent;
         int idx = group.indexOfChild(view);
         var lp = view.getLayoutParams();
-        Log.i(TAG, "recreateSurface: detaching and re-attaching " + view.getClass().getSimpleName());
+        Log.i(TAG, fmt("recreateSurface: detaching and re-attaching %s",
+            view.getClass().getSimpleName()));
         group.removeView(view);
         group.addView(view, idx, lp);
     }
 
     private void fetchBinder() {
+        if (!fetching.compareAndSet(false, true)) return;
         executor.submit(() -> {
-            IBinder binder = null;
-            int attempts = 0;
-            while (!Thread.currentThread().isInterrupted() && attempts < MAX_BINDER_ATTEMPTS) {
-                try {
-                    binder = binderProvider.get();
-                } catch (Exception e) {
-                    Log.e(TAG, "binderProvider threw", e);
-                    binder = null;
+            try {
+                long backoff = BINDER_RETRY_MIN_MS;
+                int rounds = 0;
+                while (!Thread.currentThread().isInterrupted()) {
+                    IBinder binder;
+                    try {
+                        binder = binderProvider.get();
+                    } catch (Exception e) {
+                        Log.e(TAG, "binderProvider threw", e);
+                        binder = null;
+                    }
+                    if (binder != null) {
+                        final IBinder got = binder;
+                        mainHandler.post(() -> onBinderReady(got));
+                        return;
+                    }
+                    // One line early and then one a minute: a slow guest is normal and must not
+                    // be the reason a log is unreadable.
+                    if (rounds == 0 || rounds % 60 == 0)
+                        Log.i(TAG, fmt("display binder not there yet (round %d)", rounds + 1));
+                    rounds++;
+                    try {
+                        Thread.sleep(backoff);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    backoff = Math.min(backoff * 2, BINDER_RETRY_MAX_MS);
                 }
-                if (binder != null) break;
-                attempts++;
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+            } finally {
+                fetching.set(false);
             }
-            final IBinder got = binder;
-            if (got == null) {
-                // Give up rather than poll forever: the daemon broker may have died (the supplier
-                // returns null once rootService is dropped), so the display can't be reached.
-                Log.e(TAG, fmt("display binder unavailable after %d attempts", MAX_BINDER_ATTEMPTS));
-                mainHandler.post(() -> onConnected.accept(false));
-                return;
-            }
-            mainHandler.post(() -> onBinderReady(got));
         });
     }
 
