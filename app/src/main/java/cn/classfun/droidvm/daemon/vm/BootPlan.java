@@ -60,6 +60,11 @@ public final class BootPlan {
     /** Custom UEFI firmware path; empty = builtin (QEMU honors, crosvm ignores). */
     @NonNull
     public final String firmware;
+    /** Custom UEFI vars path; empty = builtin EDK2 vars. */
+    @NonNull
+    public final String vars;
+    /** Whether the UEFI vars pflash is attached. */
+    public final boolean varsEnabled;
     @NonNull
     public final String kernel;
     @NonNull
@@ -73,12 +78,14 @@ public final class BootPlan {
     public final boolean entryFallback;
 
     private BootPlan(
-        boolean uefi, @NonNull String firmware, @NonNull String kernel,
-        @NonNull String initrd, @NonNull String cmdline,
-        @Nullable String entryTitle, boolean entryFallback
+        boolean uefi, @NonNull String firmware, @NonNull String vars,
+        boolean varsEnabled, @NonNull String kernel, @NonNull String initrd,
+        @NonNull String cmdline, @Nullable String entryTitle, boolean entryFallback
     ) {
         this.uefi = uefi;
         this.firmware = firmware;
+        this.vars = vars;
+        this.varsEnabled = varsEnabled;
         this.kernel = kernel;
         this.initrd = initrd;
         this.cmdline = cmdline;
@@ -116,14 +123,18 @@ public final class BootPlan {
         if (BootConfig.BUILTIN_ENTRY_KEY.equals(entryOverrideId))
             return resolveBuiltin(config, boot);
         if (boot.getProtocol() == BootConfig.Protocol.UEFI)
-            return new BootPlan(true, boot.getUefiFirmware(), "", "", "", null, false);
+            return new BootPlan(
+                true, boot.getUefiFirmware(), boot.getUefiVars(),
+                boot.isUefiVarsEnabled(), "", "", "", null, false
+            );
         if (boot.getLinuxSource() == BootConfig.LinuxSource.MANUAL) {
             var kernel = boot.getKernel();
             // pre-boot{} configs stored the EDK2 path as the kernel
             if (kernel.equals(PATH_EDK2_FIRMWARE))
-                return new BootPlan(true, "", "", "", "", null, false);
+                return new BootPlan(true, "", "", false, "", "", "", null, false);
             return new BootPlan(
-                false, "", kernel, boot.getInitrd(), boot.getCmdline(), null, false
+                false, "", "", false, kernel, boot.getInitrd(),
+                boot.getCmdline(), null, false
             );
         }
         return resolveImage(config, boot, entryOverrideId);
@@ -142,7 +153,7 @@ public final class BootPlan {
     private static BootPlan resolveBuiltin(
         @NonNull VMConfig config, @NonNull BootConfig boot) {
         return new BootPlan(
-            false, "", PATH_BUILTIN_KERNEL, PATH_BUILTIN_INITRD,
+            false, "", "", false, PATH_BUILTIN_KERNEL, PATH_BUILTIN_INITRD,
             builtinCmdline(config, boot), "DroidVM built-in kernel", false
         );
     }
@@ -214,7 +225,7 @@ public final class BootPlan {
         var initrd = new File(cacheDir, "initrd");
         var title = optStr(entry, "title");
         return new BootPlan(
-            false, "",
+            false, "", "", false,
             new File(cacheDir, "kernel").getAbsolutePath(),
             initrd.exists() ? initrd.getAbsolutePath() : "",
             cmdline,

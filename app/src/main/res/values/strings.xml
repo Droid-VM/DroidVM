@@ -300,6 +300,11 @@
     <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
     <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2\nBooting Linux via UEFI is still being adapted and is not usable yet -- to boot Linux, choose the Linux kernel boot protocol</string>
+    <string name="edit_vm_uefi_vars">UEFI vars (empty = built-in EDK2 vars)</string>
+    <string name="edit_vm_uefi_vars_browse_title">Select UEFI vars</string>
+    <string name="edit_vm_uefi_vars_too_large">For crosvm, pflash image size must not exceed %1$d MiB</string>
+    <string name="edit_vm_uefi_vars_enabled">Enable UEFI vars (pflash)</string>
+    <string name="edit_vm_uefi_vars_enabled_subtitle">Attach the UEFI variable store. While enabled, the PFLASH bus is unavailable in the storage section.</string>
     <string name="edit_vm_kernel_source">Kernel source</string>
     <string name="edit_vm_kernel_source_image">Disk image</string>
     <string name="edit_vm_kernel_source_manual">Manual</string>

@@ -36,6 +36,25 @@
             app:ti_iconButtonHint="@string/edit_vm_disk_browse"
             app:ti_iconButtonIcon="@drawable/ic_open_in" />
 
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_uefi_vars_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_nav_disk"
+            android:text="@string/edit_vm_uefi_vars_enabled"
+            android:subtitle="@string/edit_vm_uefi_vars_enabled_subtitle" />
+
+        <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+            android:id="@+id/input_uefi_vars"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_uefi_vars"
+            android:icon="@drawable/ic_nav_disk"
+            android:inputType="text"
+            app:ti_iconButtonHint="@string/edit_vm_disk_browse"
+            app:ti_iconButtonIcon="@drawable/ic_open_in" />
+
         <TextView
             android:id="@+id/tv_uefi_hint"
             android:layout_width="match_parent"

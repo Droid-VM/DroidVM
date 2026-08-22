@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.enums.Enums;
@@ -25,8 +26,14 @@ import cn.classfun.droidvm.ui.main.disk.DiskAdapter;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
 public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolder> {
+    @FunctionalInterface
+    public interface UefiVarsEnabledProvider {
+        boolean isEnabled();
+    }
+
     private OnItemClickListener browseFileListener;
     private OnItemClickListener importOrCreateListener;
+    private UefiVarsEnabledProvider uefiVarsEnabledProvider = () -> true;
     private boolean readonlyChanged = false;
     private boolean updatingViews = false;
 
@@ -45,6 +52,35 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
 
     public void setOnImportOrCreateListener(OnItemClickListener l) {
         this.importOrCreateListener = l;
+    }
+
+    public void setUefiVarsEnabledProvider(@NonNull UefiVarsEnabledProvider provider) {
+        this.uefiVarsEnabledProvider = provider;
+    }
+
+    private boolean pflashAllowed(int position) {
+        if (uefiVarsEnabledProvider.isEnabled()) return false;
+        for (int i = 0; i < items.size(); i++) {
+            if (i == position) continue;
+            var d = items.get(i);
+            if (d.is(DataItem.Type.OBJECT)
+                && Enums.optEnum(d, "bus", DiskBus.VIRTIO) == DiskBus.PFLASH)
+                return false;
+        }
+        return true;
+    }
+
+    @NonNull
+    private DiskBus[] busOptions(int position) {
+        if (!pflashAllowed(position))
+            return new DiskBus[]{DiskBus.VIRTIO, DiskBus.SCSI, DiskBus.PMEM, DiskBus.CDROM};
+        return new DiskBus[]{DiskBus.VIRTIO, DiskBus.SCSI, DiskBus.PMEM, DiskBus.CDROM, DiskBus.PFLASH};
+    }
+
+    private static boolean containsPflash(@NonNull DiskBus[] options) {
+        for (var bus : options)
+            if (bus == DiskBus.PFLASH) return true;
+        return false;
     }
 
     public void setPathAt(int position, String path) {
@@ -98,7 +134,15 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         holder.unbindWatcher();
         holder.etPath.setText(disk.optString("path", ""));
         holder.switchReadonly.setChecked(disk.optBoolean("readonly", false));
-        holder.btnBus.configure(DiskBus.class, Enums.optEnum(disk, "bus", DiskBus.VIRTIO));
+        // unselectable PFLASH and fallback to VIRTIO.
+        var bus = Enums.optEnum(disk, "bus", DiskBus.VIRTIO);
+        var options = busOptions(position);
+        if (bus == DiskBus.PFLASH && !containsPflash(options)) {
+            bus = DiskBus.VIRTIO;
+            if (!updatingViews) disk.set("bus", bus);
+        }
+        holder.btnBus.setItems(options);
+        holder.btnBus.setSelectedItem(bus);
         holder.btnBus.setOnValueChangedListener((oldVal, newVal) -> {
             if (updatingViews) return;
             int pos = holder.getBindingAdapterPosition();
@@ -108,7 +152,14 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
             if (!readonlyChanged)
                 item.set("readonly", newVal == DiskBus.CDROM);
             try {
-                notifyItemChanged(pos);
+                // PFLASH exclusivity changes other rows' options, so a
+                // PFLASH switch needs a full refresh; any other
+                // bus change only affects this row.
+                if (oldVal == DiskBus.PFLASH || newVal == DiskBus.PFLASH) {
+                    notifyDataSetChanged();
+                } else {
+                    notifyItemChanged(pos);
+                }
             } catch (Exception ignored) {
             }
         });
@@ -135,8 +186,14 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         });
         holder.btnDelete.setOnClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
-            if (pos != RecyclerView.NO_POSITION)
+            if (pos != RecyclerView.NO_POSITION) {
                 removeItem(pos);
+                // re-enable PFLASH for the remaining rows if it was the only one
+                try {
+                    notifyDataSetChanged();
+                } catch (Exception ignored) {
+                }
+            }
         });
     }
 
