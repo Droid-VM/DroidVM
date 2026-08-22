@@ -2,6 +2,7 @@ package cn.classfun.droidvm.ui.vm.edit.boot;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
+import static cn.classfun.droidvm.lib.Constants.PFLASH_MAX_SIZE;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
 import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
 import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_INITRD;
@@ -31,6 +32,7 @@ import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.materialswitch.MaterialSwitch;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
 
@@ -38,6 +40,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.CopyableField;
@@ -63,6 +66,8 @@ public final class VMEditBootTab extends VMEditBaseTab {
     private DropdownRowWidget ddProtocol;
     private CollapsibleContainer containerUefi;
     private TextInputRowWidget inputUefiFirmware;
+    private SwitchRowWidget swUefiVarsEnabled;
+    private TextInputRowWidget inputUefiVars;
     private CollapsibleContainer containerKernel;
     private DropdownRowWidget ddSource;
     private View layoutImage;
@@ -105,6 +110,8 @@ public final class VMEditBootTab extends VMEditBaseTab {
         ddProtocol = view.findViewById(R.id.dd_boot_protocol);
         containerUefi = view.findViewById(R.id.container_uefi);
         inputUefiFirmware = view.findViewById(R.id.input_uefi_firmware);
+        swUefiVarsEnabled = view.findViewById(R.id.sw_uefi_vars_enabled);
+        inputUefiVars = view.findViewById(R.id.input_uefi_vars);
         containerKernel = view.findViewById(R.id.container_kernel);
         ddSource = view.findViewById(R.id.dd_kernel_source);
         layoutImage = view.findViewById(R.id.layout_kernel_image);
@@ -157,6 +164,11 @@ public final class VMEditBootTab extends VMEditBaseTab {
             if (isImageMode() && scanned == null) rescan();
         });
         inputUefiFirmware.setIconButtonOnClickListener(this::showFirmwareBrowseDialog);
+        inputUefiVars.setIconButtonOnClickListener(this::showVarsBrowseDialog);
+        swUefiVarsEnabled.setOnCheckedChangeListener((btn, checked) -> {
+            inputUefiVars.setVisibility(checked ? VISIBLE : GONE);
+            refreshStoragePflash();
+        });
         inputKernel.setIconButtonOnClickListener(this::showKernelBrowseDialog);
         inputInitrd.setIconButtonOnClickListener(this::showInitrdBrowseDialog);
         btnRescan.setOnClickListener(v -> rescan());
@@ -192,6 +204,30 @@ public final class VMEditBootTab extends VMEditBaseTab {
             && source == BootConfig.LinuxSource.IMAGE;
     }
 
+    /** Live value of the UEFI vars (pflash) enable switch. */
+    public boolean isVarsEnabledLive() {
+        return protocol == BootConfig.Protocol.UEFI
+            && swUefiVarsEnabled != null && swUefiVarsEnabled.isChecked();
+    }
+
+    /** Re-render the storage tab's disk list so PFLASH availability updates. */
+    private void refreshStoragePflash() {
+        try {
+            var storage = (VMEditStorageTab) parent.getTab(VMEditTab.TAB_STORAGE);
+            if (storage != null) storage.refreshDisks();
+        } catch (Exception ignored) {
+        }
+    }
+    /** The backend as currently selected in the basic tab (before save). */
+    @NonNull
+    private VMBackend currentBackend() {
+        try {
+            var basic = (VMEditBasicTab) parent.getTab(VMEditTab.TAB_BASIC);
+            if (basic != null) return basic.getCurrentBackend();
+        } catch (Exception ignored) {
+        }
+        return VMBackend.DEFAULT;
+    }
     private void applyVisibility() {
         boolean uefi = protocol == BootConfig.Protocol.UEFI;
         containerUefi.setVisibility(uefi ? VISIBLE : GONE);
@@ -199,6 +235,9 @@ public final class VMEditBootTab extends VMEditBaseTab {
         boolean image = source == BootConfig.LinuxSource.IMAGE;
         layoutImage.setVisibility(image ? VISIBLE : GONE);
         layoutManual.setVisibility(image ? GONE : VISIBLE);
+        if (uefi) {
+            inputUefiVars.setVisibility(isVarsEnabledLive() ? VISIBLE : GONE);
+        }
     }
 
     @Override
@@ -210,6 +249,8 @@ public final class VMEditBootTab extends VMEditBaseTab {
         ddProtocol.setText(protocol.getDisplayString(parent));
         ddSource.setText(source.getDisplayString(parent));
         inputUefiFirmware.setTextAndMoveCursor(boot.getUefiFirmware());
+        swUefiVarsEnabled.setChecked(boot.isUefiVarsEnabled());
+        inputUefiVars.setTextAndMoveCursor(boot.getUefiVars());
         inputKernel.setTextAndMoveCursor(boot.getKernel());
         inputInitrd.setTextAndMoveCursor(boot.getInitrd());
         bootDiskIndex = boot.getImageDisk();
@@ -233,6 +274,21 @@ public final class VMEditBootTab extends VMEditBaseTab {
             if (!firmware.isEmpty() && !checkFilePath(firmware, true)) {
                 inputUefiFirmware.setError(parent.getString(R.string.create_vm_error_path_invalid));
                 return false;
+            }
+            var vars = inputUefiVars.getText();
+            inputUefiVars.setError(null);
+            if (isVarsEnabledLive() && !vars.isEmpty()) {
+                if (!checkFilePath(vars, true)) {
+                    inputUefiVars.setError(parent.getString(R.string.create_vm_error_path_invalid));
+                    return false;
+                }
+                // crosvm-only pflash size limit
+                if (currentBackend() == VMBackend.CROSVM
+                    && new File(vars).length() > PFLASH_MAX_SIZE) {
+                    inputUefiVars.setError(parent.getString(
+                        R.string.edit_vm_uefi_vars_too_large, PFLASH_MAX_SIZE / (1024 * 1024)));
+                    return false;
+                }
             }
             return true;
         }
@@ -271,6 +327,8 @@ public final class VMEditBootTab extends VMEditBaseTab {
         var boot = BootConfig.of(config);
         boot.setProtocol(protocol);
         boot.setUefiFirmware(inputUefiFirmware.getText());
+        boot.setUefiVarsEnabled(isVarsEnabledLive());
+        boot.setUefiVars(inputUefiVars.getText());
         boot.setLinuxSource(source);
         boot.setKernel(inputKernel.getText());
         boot.setInitrd(inputInitrd.getText());
@@ -583,6 +641,29 @@ public final class VMEditBootTab extends VMEditBaseTab {
         MenuDialogBuilder.showSimple(
             parent,
             R.string.edit_vm_uefi_firmware_browse_title,
+            R.menu.menu_vm_firmware_browse,
+            listener
+        );
+    }
+
+    private void showVarsBrowseDialog() {
+        MenuItem.OnMenuItemClickListener listener = item -> {
+            var id = item.getItemId();
+            if (id == R.id.menu_firmware_builtin) {
+                inputUefiVars.setText("");
+            } else if (id == R.id.menu_firmware_external) {
+                parent.currentPicker = uri -> {
+                    if (uri != null)
+                        inputUefiVars.setTextAndMoveCursor(resolveUriPath(parent, uri));
+                    parent.currentPicker = null;
+                };
+                parent.filePickerLauncher.launch(new String[]{"*/*"});
+            }
+            return true;
+        };
+        MenuDialogBuilder.showSimple(
+            parent,
+            R.string.edit_vm_uefi_vars_browse_title,
             R.menu.menu_vm_firmware_browse,
             listener
         );

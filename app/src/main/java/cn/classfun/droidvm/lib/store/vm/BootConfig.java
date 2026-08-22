@@ -17,7 +17,7 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  * <pre>
  * boot: {
  *   protocol: "uefi" | "linux",
- *   uefi:  { firmware },                       // empty = builtin EDK2
+ *   uefi:  { firmware, vars },                 // empty = builtin EDK2
  *   linux: {
  *     source: "manual" | "image",
  *     kernel, initrd, cmdline,                 // manual-source fields
@@ -134,6 +134,25 @@ public final class BootConfig {
 
     public void setUefiFirmware(@NonNull String firmware) {
         uefi().set("firmware", firmware);
+    }
+
+    /** Custom UEFI vars path; empty = builtin EDK2 vars. */
+    @NonNull
+    public String getUefiVars() {
+        return uefi().optString("vars", "");
+    }
+
+    public void setUefiVars(@NonNull String vars) {
+        uefi().set("vars", vars);
+    }
+
+    /** Whether the UEFI vars pflash is attached; off = no pflash. */
+    public boolean isUefiVarsEnabled() {
+        return uefi().optBoolean("vars_enabled", true);
+    }
+
+    public void setUefiVarsEnabled(boolean enabled) {
+        uefi().set("vars_enabled", enabled);
     }
 
     // --- linux branch ---
