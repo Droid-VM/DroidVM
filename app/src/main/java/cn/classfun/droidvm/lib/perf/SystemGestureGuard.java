@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.perf;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -65,11 +67,11 @@ public final class SystemGestureGuard {
                 // value to restore, so the restore list only grows from a clean slate.
                 if (!suppressed.isEmpty()) return;
                 for (String key : KEYS) {
-                    RunResult get = shell.runQuiet("settings get system " + key);
+                    RunResult get = shell.runQuiet(fmt("settings get system %s", key));
                     if (!get.isSuccess() || !"1".equals(get.getOutString())) continue;
-                    if (shell.runQuiet("settings put system " + key + " 0").isSuccess()) {
+                    if (shell.runQuiet(fmt("settings put system %s 0", key)).isSuccess()) {
                         suppressed.add(key);
-                        Log.i(TAG, "suppressed host gesture: " + key);
+                        Log.i(TAG, fmt("suppressed host gesture: %s", key));
                     }
                 }
             }
@@ -82,8 +84,8 @@ public final class SystemGestureGuard {
             RunContext shell = RootRunContext.getContext();
             synchronized (suppressed) {
                 for (String key : suppressed) {
-                    shell.runQuiet("settings put system " + key + " 1");
-                    Log.i(TAG, "restored host gesture: " + key);
+                    shell.runQuiet(fmt("settings put system %s 1", key));
+                    Log.i(TAG, fmt("restored host gesture: %s", key));
                 }
                 suppressed.clear();
             }

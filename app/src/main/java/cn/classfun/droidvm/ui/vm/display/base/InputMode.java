@@ -14,12 +14,12 @@ import cn.classfun.droidvm.R;
  * touches into guest input:
  *
  * <ul>
- *   <li>{@link #TOUCH} — absolute multi-touch: fingers map straight to guest coordinates, multiple
+ *   <li>{@link #TOUCH} -- absolute multi-touch: fingers map straight to guest coordinates, multiple
  *       contacts preserved (the default; what a touchscreen guest expects).</li>
- *   <li>{@link #MOUSE} — relative pointer: drags become REL_X/REL_Y deltas with button/wheel
+ *   <li>{@link #MOUSE} -- relative pointer: drags become REL_X/REL_Y deltas with button/wheel
  *       emulation. Android has no absolute-mouse concept, so this is the only faithful mouse path
  *       for guests that want relative motion (FPS games, desktops with pointer acceleration).</li>
- *   <li>{@link #TABLET} — absolute single pointer (stylus/graphics-tablet): one contact mapped to
+ *   <li>{@link #TABLET} -- absolute single pointer (stylus/graphics-tablet): one contact mapped to
  *       absolute guest coordinates, no multi-finger gestures.</li>
  * </ul>
  *

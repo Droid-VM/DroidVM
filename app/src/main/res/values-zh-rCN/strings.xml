@@ -198,21 +198,26 @@
     <string name="create_vm_prepare_lend_mthp_disabled">禁用</string>
     <string name="create_vm_prepare_lend_mthp_single">单次 (整块借出)</string>
     <string name="create_vm_prepare_lend_mthp_chunked">分块 (≤256MiB)</string>
-    <string name="create_vm_protected_normal">普通</string>
+    <string name="create_vm_protected_normal">非保护</string>
     <string name="create_vm_protected_protected">保护</string>
     <string name="create_vm_protected_without_firmware">无固件保护</string>
-    <string name="create_vm_protected_pseudo_unprotected">保护,内存主机可见</string>
+    <string name="create_vm_protected_pseudo_unprotected">伪非保护</string>
     <string name="create_vm_category_extra_options">额外选项</string>
     <string name="create_vm_extra_option_hint">额外选项（每行一个）</string>
     <string name="create_vm_environment_variables_hint">环境变量（KEY=VALUE，每行一个）</string>
 
     <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
     <string name="create_vm_cpu_affinity_title">vCPU 亲和性</string>
-    <string name="create_vm_cpu_affinity">每 vCPU 宿主核亲和性</string>
+    <string name="create_vm_cpu_affinity">绑定 vCPU 到宿主核心</string>
     <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
     <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
     <string name="create_vm_cpu_affinity_unbound">不绑定</string>
     <string name="create_vm_cpu_affinity_cores_fmt">%d 个核心</string>
+    <string name="create_vm_cpu_affinity_advanced">高级模式</string>
+    <string name="create_vm_cpu_affinity_simple_vcpus">vCPU 核心数</string>
+    <string name="create_vm_cpu_affinity_simple_empty">至少要勾选一颗宿主核心。</string>
+    <string name="create_vm_cpu_affinity_discard_title">离开高级模式？</string>
+    <string name="create_vm_cpu_affinity_discard_message">简易模式只能让一颗 vCPU 绑定专属的一颗宿主核心。转换后只会留下 %1$d 颗 vCPU（CPU %2$s）；多余的核心、未绑定的 vCPU，以及手动的 capacity/cluster 设置都会被舍弃。</string>
     <string name="create_vm_cpu_affinity_section_vcpus">vCPU 到宿主核心</string>
     <string name="create_vm_cpu_affinity_section_topology">客户机拓扑</string>
     <string name="create_vm_cpu_topology_auto">自动推导 Capacity 和 Cluster</string>
@@ -305,6 +310,7 @@
     <string name="create_vm_tab_storage">存储</string>
     <string name="create_vm_tab_network">网络</string>
     <string name="create_vm_tab_graphics">图形</string>
+    <string name="create_vm_tab_peripheral">外设</string>
     <string name="create_vm_network_label">网桥网络</string>
     <string name="create_vm_network_none">无</string>
     <string name="edit_vm_net_add">添加网络</string>
@@ -464,6 +470,11 @@
     <string name="settings_category_update">更新</string>
     <string name="settings_auto_check_update_title">自动检查更新</string>
     <string name="settings_auto_check_update_summary">启动应用时自动检查更新</string>
+    <string name="key_desc_tab">Tab 键</string>
+    <string name="key_desc_backspace">退格键</string>
+    <string name="key_desc_win">Windows 键</string>
+    <string name="key_desc_shift">Shift 键</string>
+    <string name="key_desc_enter">Enter 键</string>
     <string name="settings_check_update_title">检查更新</string>
     <string name="settings_check_update_summary">立即检查新版本</string>
     <string name="settings_check_update_checking">正在检查更新\u2026</string>
@@ -1273,4 +1284,35 @@
     <string name="vm_hugepage_short_message">大页保留区目前剩 %1$d MB，这台虚拟机大约需要 %2$d MB，差 %3$d MB。\n\n上一台虚拟机结束后，保留区通常两秒左右就会补回来。现在就开机的话，Hypervisor 只能改拿普通内存，而那必须先从 CMA 迁移出来；在内存吃紧的手机上，这一步曾造成整机停住数分钟、甚至直接重启。\n\n通常等一下再开就好了。</string>
     <string name="vm_hugepage_short_settings">前往大页设置</string>
     <string name="vm_hugepage_short_start_anyway">仍要启动</string>
+
+    <string name="create_vm_category_peripheral">外设</string>
+    <string name="edit_vm_peripheral_empty">没有外设</string>
+    <string name="edit_vm_peripheral_add">添加外设</string>
+    <string name="edit_vm_peripheral_add_title">外设类型</string>
+    <string name="edit_vm_peripheral_type">外设类型</string>
+    <string name="edit_vm_peripheral_type_speaker">扬声器</string>
+    <string name="edit_vm_peripheral_type_microphone">麦克风</string>
+    <string name="edit_vm_peripheral_delete">移除外设</string>
+    <string name="edit_vm_peripheral_host_device">主机设备</string>
+    <string name="edit_vm_peripheral_host_default">跟随系统</string>
+    <string name="edit_vm_peripheral_host_missing">当前未连接，VM 会改用系统默认路由。</string>
+    <string name="edit_vm_peripheral_host_missing_item">%1$s（未连接）</string>
+    <string name="edit_vm_peripheral_pick_output">播放到</string>
+    <string name="edit_vm_peripheral_pick_input">录音来源</string>
+    <string name="edit_vm_peripheral_duplicate_host">有两个同类型的外设指向同一个主机设备。</string>
+    <string name="edit_vm_peripheral_note">音频外设在客户机中会组成一张 virtio-snd 声卡。指定主机设备需要 crosvm 后端；QEMU 一律跟随系统路由。</string>
+    <string name="audio_device_builtin_speaker">扬声器</string>
+    <string name="audio_device_builtin_earpiece">听筒</string>
+    <string name="audio_device_builtin_mic">内置麦克风</string>
+    <string name="audio_device_wired_headset">有线耳麦</string>
+    <string name="audio_device_wired_headphones">有线耳机</string>
+    <string name="audio_device_bluetooth">蓝牙音频</string>
+    <string name="audio_device_bluetooth_sco">蓝牙通话音频</string>
+    <string name="audio_device_usb">USB 音频</string>
+    <string name="audio_device_hdmi">HDMI</string>
+    <string name="audio_device_line">线路输出</string>
+    <string name="record_audio_permission_title">允许使用麦克风？</string>
+    <string name="record_audio_permission_message">这台 VM 加了麦克风，运行期间会录取手机的麦克风。允许麦克风权限，客户机才听得到。</string>
+    <string name="record_audio_permission_allow">继续</string>
+    <string name="record_audio_permission_skip">暂时不要</string>
 </resources>

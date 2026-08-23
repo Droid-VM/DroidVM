@@ -32,11 +32,13 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
+import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
+import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -49,12 +51,14 @@ import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -400,6 +404,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (isInputBridgeNeeded()) {
             buildInputDevicesCommand(args);
         }
+        buildPeripheralCommand(args);
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
@@ -991,6 +996,75 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         vncArg.append(",input=tablet");
         args.add("--vnc-server");
         args.add(vncArg.toString());
+    }
+
+    /**
+     * Audio peripherals become one virtio-snd card on the aaudio backend: every SPEAKER row is
+     * an output PCM device, every MICROPHONE row an input one, in list order. The host endpoint
+     * each was pinned to is stored as a stable descriptor, so it is resolved to a live
+     * AudioDeviceInfo id here, at start, rather than at edit time.
+     *
+     * <p>Nothing is emitted when the VM has no audio peripherals -- and note that crosvm's
+     * default backend is {@code null}, i.e. silence, so {@code backend=aaudio} has to be spelled
+     * out even on a build that has no other backend compiled in.</p>
+     */
+    private void buildPeripheralCommand(@NonNull List<String> args) {
+        var peripherals = VMPeripheralConfig.listOf(config.item);
+        if (peripherals.isEmpty()) return;
+        var outputs = new ArrayList<VMPeripheralConfig>();
+        var inputs = new ArrayList<VMPeripheralConfig>();
+        for (var peripheral : peripherals) {
+            // Matched by kind, not by "everything that is not an input": a peripheral type
+            // added later that is not audio at all must not silently become a speaker.
+            if (peripheral.getType() == PeripheralType.SPEAKER) outputs.add(peripheral);
+            else if (peripheral.getType() == PeripheralType.MICROPHONE) inputs.add(peripheral);
+        }
+        if (outputs.isEmpty() && inputs.isEmpty()) return;
+        var arg = new StringBuilder("backend=aaudio");
+        arg.append(fmt(",capture=%b", !inputs.isEmpty()));
+        arg.append(fmt(",num_output_devices=%d", outputs.size()));
+        arg.append(fmt(",num_input_devices=%d", inputs.size()));
+        appendDeviceConfig(arg, "output_device_config", outputs);
+        appendDeviceConfig(arg, "input_device_config", inputs);
+        args.add("--virtio-snd");
+        args.add(arg.toString());
+    }
+
+    /** {@code <key>=[[device_id=N],[device_id=M]]}, one bracket group per PCM device. */
+    private void appendDeviceConfig(
+        @NonNull StringBuilder arg,
+        @NonNull String key,
+        @NonNull List<VMPeripheralConfig> peripherals
+    ) {
+        if (peripherals.isEmpty()) return;
+        arg.append(',').append(key).append("=[");
+        for (int i = 0; i < peripherals.size(); i++) {
+            if (i > 0) arg.append(',');
+            var peripheral = peripherals.get(i);
+            arg.append(fmt("[device_id=%d]", resolveHostDevice(peripheral)));
+        }
+        arg.append(']');
+    }
+
+    /**
+     * Live AAudio device id for one peripheral's stored host endpoint, or 0
+     * (AAUDIO_UNSPECIFIED) when it asked to follow the system or names something that is not
+     * connected right now. Needs the daemon's system context to reach AudioManager; without one
+     * every stream falls back to the platform's own routing.
+     */
+    private int resolveHostDevice(@NonNull VMPeripheralConfig peripheral) {
+        var key = peripheral.getHostDevice();
+        if (key.isEmpty()) return HostAudioDevices.DEVICE_UNSPECIFIED;
+        var sys = DaemonSystemContext.get();
+        if (sys == null) {
+            Log.w(TAG, fmt("no system context; %s falls back to default audio routing", key));
+            return HostAudioDevices.DEVICE_UNSPECIFIED;
+        }
+        int id = HostAudioDevices.resolve(sys, peripheral.getType().isInput(), key);
+        Log.i(TAG, fmt("%s peripheral -> host device %s (id=%d)",
+            peripheral.getType() == PeripheralType.MICROPHONE ? "microphone" : "speaker",
+            key, id));
+        return id;
     }
 
     private void buildSerialCommand(@NonNull List<String> args) {

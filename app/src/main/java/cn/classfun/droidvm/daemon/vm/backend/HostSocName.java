@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm.backend;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.util.Log;
 
 import androidx.annotation.Nullable;
@@ -45,7 +47,7 @@ public final class HostSocName {
                 if (name != null && !name.trim().isEmpty())
                     cached = name.trim();
             }
-            Log.i(TAG, "host SoC name: " + cached);
+            Log.i(TAG, fmt("host SoC name: %s", cached));
         } catch (Throwable t) {
             Log.w(TAG, "failed to resolve host SoC name", t);
         }

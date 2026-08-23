@@ -60,8 +60,8 @@ final class KernelModuleDescriptions {
     static synchronized void preload(@NonNull Context ctx) {
         if (loadTried) return;
         loadTried = true;
-        css = readAsset(ctx, ASSET_DIR + "/style.css");
-        var hugepage = readAsset(ctx, ASSET_DIR + "/" + HUGEPAGE_PAGE + ".html");
+        css = readAsset(ctx, fmt("%s/style.css", ASSET_DIR));
+        var hugepage = readAsset(ctx, fmt("%s/%s.html", ASSET_DIR, HUGEPAGE_PAGE));
         if (hugepage != null) PAGES.put(HUGEPAGE_PAGE, hugepage);
         var files = new File(DESCR_DIR).listFiles((d, n) -> n.endsWith(".html"));
         if (files == null) return; // prebuilts not extracted yet -- why-buttons just stay hidden
@@ -130,29 +130,29 @@ final class KernelModuleDescriptions {
         boolean dark = isDark(ctx);
         int ink = dark ? 0xFFE2E2E6 : 0xFF1A1C1E;
         int paper = dark ? 0xFF1A1C1E : 0xFFFDFCFF;
-        var injected = "<style>" + (css == null ? "" : css) + "</style>\n"
-            + "<style>\n"
-            + ":root{\n"
-            + colorVar(ctx, "--surface", com.google.android.material.R.attr.colorSurface, paper)
-            + colorVar(ctx, "--on-surface", com.google.android.material.R.attr.colorOnSurface, ink)
-            + colorVar(ctx, "--on-surface-variant",
-                       com.google.android.material.R.attr.colorOnSurfaceVariant, ink)
-            + colorVar(ctx, "--surface-variant",
-                       com.google.android.material.R.attr.colorSurfaceVariant, paper)
-            + colorVar(ctx, "--primary", androidx.appcompat.R.attr.colorPrimary, ink)
-            + colorVar(ctx, "--error", androidx.appcompat.R.attr.colorError, ink)
-            + colorVar(ctx, "--outline", com.google.android.material.R.attr.colorOutline, ink)
-            + fmt("color-scheme:%s;\n}\n", dark ? "dark" : "light")
-            + ".i18n{display:none}\n"
-            + fmt(".i18n[data-lang=\"%s\"]{display:block}\n", pageLang(ctx, rawHtml))
+        var injected = new StringBuilder("<style>");
+        injected.append(css == null ? "" : css)
+            .append("</style>\n<style>\n:root{\n")
+            .append(colorVar(ctx, "--surface", com.google.android.material.R.attr.colorSurface, paper))
+            .append(colorVar(ctx, "--on-surface", com.google.android.material.R.attr.colorOnSurface, ink))
+            .append(colorVar(ctx, "--on-surface-variant",
+                com.google.android.material.R.attr.colorOnSurfaceVariant, ink))
+            .append(colorVar(ctx, "--surface-variant",
+                com.google.android.material.R.attr.colorSurfaceVariant, paper))
+            .append(colorVar(ctx, "--primary", androidx.appcompat.R.attr.colorPrimary, ink))
+            .append(colorVar(ctx, "--error", androidx.appcompat.R.attr.colorError, ink))
+            .append(colorVar(ctx, "--outline", com.google.android.material.R.attr.colorOutline, ink))
+            .append(fmt("color-scheme:%s;\n}\n", dark ? "dark" : "light"))
+            .append(".i18n{display:none}\n")
+            .append(fmt(".i18n[data-lang=\"%s\"]{display:block}\n", pageLang(ctx, rawHtml)))
             // The stylesheet rules a divider between language blocks, for the all-languages
             // browser view. Here only one is shown, and an adjacent-sibling selector still
             // matches across the hidden ones -- leaving a stray rule above the page. Same
             // selector, not a plainer one: two classes outrank one whatever the order.
-            + ".i18n + .i18n{margin-top:0;padding-top:0;border-top:none}\n"
-            + "</style>";
+            .append(".i18n + .i18n{margin-top:0;padding-top:0;border-top:none}\n")
+            .append("</style>");
         var html = CSS_LINK.matcher(rawHtml).replaceFirst(java.util.regex.Matcher
-            .quoteReplacement(injected));
+            .quoteReplacement(injected.toString()));
         // Structural dark-mode branching for anything colours alone cannot express.
         return html.replaceFirst("<html", fmt("<html data-theme=\"%s\"", dark ? "dark" : "light"));
     }

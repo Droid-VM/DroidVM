@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.action;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.bulletList;
+
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
@@ -175,7 +177,7 @@ public final class DiskActionDialog {
                 var runningNames = runningFamilyVms(store, self);
                 if (!runningNames.isEmpty()) {
                     fail(context.getString(R.string.disk_family_vm_running,
-                        "\n- " + String.join("\n- ", runningNames)));
+                        bulletList(runningNames)));
                     return;
                 }
                 int childCount = store.childrenOf(self.getId()).size();
@@ -188,7 +190,7 @@ public final class DiskActionDialog {
                 if (!repoints.isEmpty())
                     message.append(context.getString(
                         R.string.disk_merge_confirm_vms,
-                        "\n- " + String.join("\n- ", repoints), parent.getName()));
+                        bulletList(repoints), parent.getName()));
                 if (extraNote != null) message.append(extraNote);
                 mainLooper.post(() -> new MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.disk_merge)
@@ -236,7 +238,7 @@ public final class DiskActionDialog {
                 var runningNames = runningFamilyVms(store, self);
                 if (!runningNames.isEmpty()) {
                     fail(context.getString(R.string.disk_family_vm_running,
-                        "\n- " + String.join("\n- ", runningNames)));
+                        bulletList(runningNames)));
                     return;
                 }
                 var message = context.getString(
@@ -587,7 +589,7 @@ public final class DiskActionDialog {
             var runningNames = runningVmsAttaching(paths);
             if (!runningNames.isEmpty()) {
                 fail(context.getString(R.string.disk_family_vm_running,
-                    "\n- " + String.join("\n- ", runningNames)));
+                    bulletList(runningNames)));
                 return;
             }
             mainLooper.post(() ->

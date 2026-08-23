@@ -43,8 +43,22 @@ public abstract class CardItemAdapter<
     }
 
     public final void createItem() {
-        items.append(DataItem.newObject());
+        appendItem(DataItem.newObject());
+    }
+
+    /** Appends one prepared item, for adapters whose rows are not blank to begin with. */
+    protected final void appendItem(@NonNull DataItem item) {
+        items.append(item);
         notifyItemInserted(items.size() - 1);
+    }
+
+    /**
+     * The list's + button was pressed, with {@code anchor} the button itself. Appends one blank
+     * item; adapters whose rows need something decided first (a type, a target) override this
+     * and call {@link #appendItem} once they have it.
+     */
+    public void onAddRequested(@NonNull View anchor) {
+        createItem();
     }
 
     public final void removeItem(int position) {

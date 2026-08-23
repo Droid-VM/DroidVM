@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.main.settings;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
@@ -87,7 +89,8 @@ public final class KernelModuleManager {
             // Match the version as a whole "-<major.minor>" token, not a substring: a plain
             // contains() would let a 6.1 kernel match an "android16-6.12" dir ("6.12" contains
             // "6.1"). Require the char after the version to be a non-digit or end-of-name.
-            var tok = Pattern.compile(Pattern.quote("-" + mmver) + "(\\D|$)");
+            var quoted = Pattern.quote(fmt("-%s", mmver));
+            var tok = Pattern.compile(fmt("%s(\\D|$)", quoted));
             for (var d : subs)
                 if (tok.matcher(d.getName()).find()) return d;
         }

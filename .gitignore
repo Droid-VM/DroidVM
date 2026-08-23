@@ -28,3 +28,7 @@ local.properties
 # Terminal font: build.sh fetches the ~2.3MB Maple Mono NL NF TTF on first
 # build; only the OFL license text under app/src/main/assets/fonts is committed.
 /app/src/main/assets/fonts/*.ttf
+
+# Python bytecode from the scripts/ci checks.
+__pycache__/
+*.pyc

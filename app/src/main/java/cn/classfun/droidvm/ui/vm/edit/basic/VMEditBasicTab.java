@@ -29,6 +29,7 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.QcomChipName;
 import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementDraft;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
@@ -219,18 +220,22 @@ public final class VMEditBasicTab extends VMEditBaseTab {
      * Opens the affinity editor for the vCPU count as currently entered. Reading
      * the count here rather than tracking edits is the point of the dialog: the
      * row list cannot disagree with the field.
+     *
+     * <p>The count travels back the same way, because the dialog's simple mode
+     * derives it from the host cores that were checked -- one vCPU each.
      */
     private void showAffinityDialog() {
-        new VMCpuAffinityDialog(
-            parent, currentVcpuCount(), affinity, cpuTopologyAuto,
-            manualCapacity, manualClusters,
-            (newAffinity, auto, capacity, clusters) -> {
-                affinity.clear();
-                affinity.putAll(newAffinity);
-                cpuTopologyAuto = auto;
-                manualCapacity = capacity;
-                manualClusters = clusters;
-            });
+        var draft = new CpuPlacementDraft(affinity, currentVcpuCount(),
+            cpuTopologyAuto, manualCapacity, manualClusters);
+        new VMCpuAffinityDialog(parent, draft, accepted -> {
+            affinity.clear();
+            affinity.putAll(accepted.affinity);
+            cpuTopologyAuto = accepted.auto;
+            manualCapacity = accepted.manualCapacity;
+            manualClusters = accepted.manualClusters;
+            if (accepted.vcpuCount != currentVcpuCount())
+                inputCpu.setValue(accepted.vcpuCount);
+        });
     }
 
     // Gunyah dynamic memory sharing is a hypervisor-level memory-sharing mechanism (the GPU is

@@ -200,21 +200,26 @@
     <string name="create_vm_prepare_lend_mthp_disabled">Disabled</string>
     <string name="create_vm_prepare_lend_mthp_single">Single (whole region)</string>
     <string name="create_vm_prepare_lend_mthp_chunked">Chunked (&#8804;256MiB)</string>
-    <string name="create_vm_protected_normal">Normal</string>
+    <string name="create_vm_protected_normal">Unprotected</string>
     <string name="create_vm_protected_protected">Protected</string>
     <string name="create_vm_protected_without_firmware">Protected without firmware</string>
-    <string name="create_vm_protected_pseudo_unprotected">Protected, host-visible RAM</string>
+    <string name="create_vm_protected_pseudo_unprotected">Pseudo Unprotected</string>
     <string name="create_vm_category_extra_options">Extra Options</string>
     <string name="create_vm_extra_option_hint">Extra arguments (one per line)</string>
     <string name="create_vm_environment_variables_hint">Environment variables (KEY=VALUE, one per line)</string>
 
     <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
     <string name="create_vm_cpu_affinity_title">vCPU Affinity</string>
-    <string name="create_vm_cpu_affinity">Per-vCPU Host Affinity</string>
+    <string name="create_vm_cpu_affinity">Bind vCPUs to host cores</string>
     <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
     <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
     <string name="create_vm_cpu_affinity_unbound">Not bound</string>
     <string name="create_vm_cpu_affinity_cores_fmt">%d cores</string>
+    <string name="create_vm_cpu_affinity_advanced">Advanced mode</string>
+    <string name="create_vm_cpu_affinity_simple_vcpus">vCPU cores</string>
+    <string name="create_vm_cpu_affinity_simple_empty">Check at least one host core.</string>
+    <string name="create_vm_cpu_affinity_discard_title">Leave advanced mode?</string>
+    <string name="create_vm_cpu_affinity_discard_message">Simple mode can only bind one vCPU to one host core of its own. What survives is %1$d vCPU on CPU %2$s; extra cores, unbound vCPUs and manual capacity/cluster values are discarded.</string>
     <string name="create_vm_cpu_affinity_section_vcpus">vCPU to host cores</string>
     <string name="create_vm_cpu_affinity_section_topology">Guest topology</string>
     <string name="create_vm_cpu_topology_auto">Auto-derive Capacity &amp; Cluster</string>
@@ -235,7 +240,7 @@
     <string name="create_vm_gpu_cgroup_cpus_none">None selected</string>
     <string name="create_vm_error_cpu_affinity_vcpu_oob">vCPU index out of range (must be &lt; CPU count)</string>
     <string name="create_vm_error_cpu_affinity_host_oob">Host core %d not found on this device</string>
-    <string name="create_vm_error_cpu_capacity_invalid">Invalid capacity (expected vcpu=1..1024,…)</string>
+    <string name="create_vm_error_cpu_capacity_invalid">Invalid capacity (expected vcpu=1..1024,&#8230;)</string>
     <string name="create_vm_error_cpu_clusters_overlap">Cluster overlap at vCPU %s</string>
     <string name="create_vm_error_gpu_cgroup_path">GPU cgroup path must be absolute</string>
     <string name="create_vm_error_gpu_cgroup_cpus_empty">Select at least one core for the GPU worker</string>
@@ -307,6 +312,7 @@
     <string name="create_vm_tab_storage">Storage</string>
     <string name="create_vm_tab_network">Network</string>
     <string name="create_vm_tab_graphics">Graphics</string>
+    <string name="create_vm_tab_peripheral">Peripheral</string>
     <string name="create_vm_network_label">Bridge Network</string>
     <string name="create_vm_network_none">None</string>
     <string name="edit_vm_net_add">Add Network</string>
@@ -538,7 +544,7 @@
     <string name="vm_locked_disk_readonly_start">Read-only &amp; start</string>
     <string name="disk_overlay_create_message">Create an overlay image based on %1$s. The base becomes locked (read-only) while overlays exist.</string>
     <string name="disk_overlay_name_hint">File name</string>
-    <string name="disk_overlay_advanced">Advanced…</string>
+    <string name="disk_overlay_advanced">Advanced&#8230;</string>
     <string name="disk_overlay_depth_error">Overlay chain depth limit reached (%1$d)</string>
     <string name="disk_overlay_vm_running">These VMs are using the base disk; shut them down first:%1$s</string>
     <string name="disk_overlay_vm_choice_title">Base disk is in use</string>
@@ -1296,24 +1302,55 @@
     <string name="vmpkg_import_invalid">Not a valid vmpkg: %1$s</string>
     <string name="kernel_module_title">Kernel Modules</string>
     <string name="kernel_module_subtitle">Load host kernel modules, and load them with the daemon</string>
-    <string name="kernel_module_loading">Loading…</string>
+    <string name="kernel_module_loading">Loading&#8230;</string>
     <string name="kernel_module_none">No modules available</string>
     <string name="kernel_module_loaded">Loaded</string>
     <string name="kernel_module_unloaded">Not loaded</string>
     <string name="kernel_module_load">Load</string>
     <string name="kernel_module_unload">Unload</string>
     <string name="kernel_module_autostart">Auto-load</string>
-    <string name="kernel_module_autostart_needs_load">Load it once first — auto-load is only offered for a module that has loaded on this device</string>
-    <string name="kernel_module_working">Working…</string>
+    <string name="kernel_module_autostart_needs_load">Load it once first &#8212; auto-load is only offered for a module that has loaded on this device</string>
+    <string name="kernel_module_working">Working&#8230;</string>
     <string name="kernel_module_ok">Done</string>
     <string name="kernel_module_fail">Failed</string>
     <string name="kernel_module_kmi">KMI: %1$s</string>
     <string name="kernel_module_why">Why needed?</string>
     <string name="kernel_module_manage">Manage</string>
     <string name="kernel_module_hugepage_name" translatable="false">GH-Hugepage-Reserve</string>
-    <string name="setup_kmod_desc"><![CDATA[DroidVM needs these host kernel modules; without them VMs may fail to boot or lose GPU acceleration. The modules are still under development — stability is not guaranteed, and they may cause the phone to reboot: try loading them first, and enable load-with-daemon only after they prove stable. If you hit any problem, please <a href="https://github.com/Droid-VM/DroidVM/issues">file an issue</a>. Each card explains why its module is needed.]]></string>
+    <string name="setup_kmod_desc"><![CDATA[DroidVM needs these host kernel modules; without them VMs may fail to boot or lose GPU acceleration. The modules are still under development &#8212; stability is not guaranteed, and they may cause the phone to reboot: try loading them first, and enable load-with-daemon only after they prove stable. If you hit any problem, please <a href="https://github.com/Droid-VM/DroidVM/issues">file an issue</a>. Each card explains why its module is needed.]]></string>
     <string name="vm_hugepage_short_title">Huge-page reserve is short</string>
-    <string name="vm_hugepage_short_message">The huge-page reserve has %1$d MB free, but this VM needs about %2$d MB — %3$d MB short.\n\nThe reserve normally refills a couple of seconds after another VM exits. Starting now makes the hypervisor take ordinary memory instead, which it has to migrate out of CMA first; on a phone with nothing spare that has stalled the whole system for minutes, or rebooted it.\n\nWaiting a moment and starting again usually clears it.</string>
+    <string name="vm_hugepage_short_message">The huge-page reserve has %1$d MB free, but this VM needs about %2$d MB &#8212; %3$d MB short.\n\nThe reserve normally refills a couple of seconds after another VM exits. Starting now makes the hypervisor take ordinary memory instead, which it has to migrate out of CMA first; on a phone with nothing spare that has stalled the whole system for minutes, or rebooted it.\n\nWaiting a moment and starting again usually clears it.</string>
     <string name="vm_hugepage_short_settings">Huge-page settings</string>
     <string name="vm_hugepage_short_start_anyway">Start anyway</string>
+
+    <string name="create_vm_category_peripheral">Peripherals</string>
+    <string name="edit_vm_peripheral_empty">No peripherals</string>
+    <string name="edit_vm_peripheral_add">Add peripheral</string>
+    <string name="edit_vm_peripheral_add_title">Peripheral type</string>
+    <string name="edit_vm_peripheral_type">Peripheral type</string>
+    <string name="edit_vm_peripheral_type_speaker">Speaker</string>
+    <string name="edit_vm_peripheral_type_microphone">Microphone</string>
+    <string name="edit_vm_peripheral_delete">Remove peripheral</string>
+    <string name="edit_vm_peripheral_host_device">Host device</string>
+    <string name="edit_vm_peripheral_host_default">Follow system</string>
+    <string name="edit_vm_peripheral_host_missing">Not connected right now; the VM will follow the system routing.</string>
+    <string name="edit_vm_peripheral_host_missing_item">%1$s (not connected)</string>
+    <string name="edit_vm_peripheral_pick_output">Play through</string>
+    <string name="edit_vm_peripheral_pick_input">Record from</string>
+    <string name="edit_vm_peripheral_duplicate_host">Two peripherals of the same type point at one host device.</string>
+    <string name="edit_vm_peripheral_note">Audio peripherals become one virtio-snd card in the guest. Host device selection needs the crosvm backend; QEMU always follows the system routing.</string>
+    <string name="audio_device_builtin_speaker">Speaker</string>
+    <string name="audio_device_builtin_earpiece">Earpiece</string>
+    <string name="audio_device_builtin_mic">Built-in microphone</string>
+    <string name="audio_device_wired_headset">Wired headset</string>
+    <string name="audio_device_wired_headphones">Wired headphones</string>
+    <string name="audio_device_bluetooth">Bluetooth audio</string>
+    <string name="audio_device_bluetooth_sco">Bluetooth call audio</string>
+    <string name="audio_device_usb">USB audio</string>
+    <string name="audio_device_hdmi">HDMI</string>
+    <string name="audio_device_line">Line out</string>
+    <string name="record_audio_permission_title">Allow microphone access?</string>
+    <string name="record_audio_permission_message">This VM is being given a microphone, which records from the phone\'s mic while the VM runs. Allow microphone access so the guest can hear it.</string>
+    <string name="record_audio_permission_allow">Continue</string>
+    <string name="record_audio_permission_skip">Not now</string>
 </resources>

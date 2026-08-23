@@ -30,106 +30,151 @@
             android:orientation="vertical"
             android:visibility="gone">
 
-            <!-- Collapsible, because the row list below can reach 64 entries and
-                 folding it is the only way to reach the topology section without
-                 a long scroll. Its 72dp header indent lands on the same column as
-                 the row titles inside it. -->
-            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+            <!-- Mode switch, not a stored setting: which side is shown on open is
+                 read back off the placement itself (see VMCpuAffinityDialog). -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_cpu_affinity_advanced"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/create_vm_cpu_affinity_section_vcpus">
+                android:icon="@drawable/ic_wrench"
+                android:text="@string/create_vm_cpu_affinity_advanced" />
 
-                <!-- One row per vCPU, added in Java. -->
-                <LinearLayout
-                    android:id="@+id/vcpu_rows_container"
+            <!-- Simple mode: one checkbox per host core, one vCPU per checked
+                 core. No topology section: with a 1:1 binding the derived
+                 capacity and clusters mirror the host, which is what auto does. -->
+            <LinearLayout
+                android:id="@+id/cpu_affinity_simple"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/row_cpu_affinity_simple_summary"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_cpu"
+                    android:text="@string/create_vm_cpu_affinity_simple_vcpus" />
+
+                <!-- One checkbox per host core, added in Java. -->
+                <LinearLayout
+                    android:id="@+id/host_core_rows_container"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="12dp"
                     android:orientation="vertical" />
 
-            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+            </LinearLayout>
 
-            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+            <LinearLayout
+                android:id="@+id/cpu_affinity_advanced"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/create_vm_cpu_affinity_section_topology">
+                android:orientation="vertical"
+                android:visibility="gone">
 
-                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-                    android:id="@+id/sw_cpu_topology_auto"
+                <!-- Collapsible, because the row list below can reach 64 entries and
+                     folding it is the only way to reach the topology section without
+                     a long scroll. Its 72dp header indent lands on the same column as
+                     the row titles inside it. -->
+                <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:checked="true"
-                    android:icon="@drawable/ic_refresh_auto"
-                    android:text="@string/create_vm_cpu_topology_auto" />
+                    android:title="@string/create_vm_cpu_affinity_section_vcpus">
 
-                <!-- Read-only preview of the derived values; shown when auto is on. -->
-                <LinearLayout
-                    android:id="@+id/cpu_topology_auto_preview"
+                    <!-- One row per vCPU, added in Java. -->
+                    <LinearLayout
+                        android:id="@+id/vcpu_rows_container"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+                <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical"
-                    android:visibility="gone">
+                    android:title="@string/create_vm_cpu_affinity_section_topology">
 
-                    <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
-                        android:id="@+id/row_cpu_capacity_preview"
+                    <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                        android:id="@+id/sw_cpu_topology_auto"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:icon="@drawable/ic_speedometer"
-                        android:text="@string/create_vm_cpu_capacity" />
+                        android:checked="true"
+                        android:icon="@drawable/ic_refresh_auto"
+                        android:text="@string/create_vm_cpu_topology_auto" />
 
-                    <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
-                        android:id="@+id/row_cpu_cluster_preview"
+                    <!-- Read-only preview of the derived values; shown when auto is on. -->
+                    <LinearLayout
+                        android:id="@+id/cpu_topology_auto_preview"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:icon="@drawable/ic_card_multiple"
-                        android:text="@string/create_vm_cpu_cluster" />
+                        android:orientation="vertical"
+                        android:visibility="gone">
 
-                </LinearLayout>
-
-                <!-- Manual capacity / cluster inputs; shown when auto is off. -->
-                <LinearLayout
-                    android:id="@+id/cpu_topology_manual"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:layout_marginEnd="12dp"
-                    android:orientation="vertical"
-                    android:visibility="gone">
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_cpu_capacity"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/create_vm_cpu_capacity_hint">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_cpu_capacity"
+                        <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                            android:id="@+id/row_cpu_capacity_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="text"
-                            android:textSize="14sp" />
+                            android:icon="@drawable/ic_speedometer"
+                            android:text="@string/create_vm_cpu_capacity" />
 
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_cpu_clusters"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="@string/create_vm_cpu_clusters_hint">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_cpu_clusters"
+                        <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                            android:id="@+id/row_cpu_cluster_preview"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:inputType="text"
-                            android:textSize="14sp" />
+                            android:icon="@drawable/ic_card_multiple"
+                            android:text="@string/create_vm_cpu_cluster" />
 
-                    </com.google.android.material.textfield.TextInputLayout>
+                    </LinearLayout>
 
-                </LinearLayout>
+                    <!-- Manual capacity / cluster inputs; shown when auto is off. -->
+                    <LinearLayout
+                        android:id="@+id/cpu_topology_manual"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="12dp"
+                        android:layout_marginEnd="12dp"
+                        android:orientation="vertical"
+                        android:visibility="gone">
 
-            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_cpu_capacity"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="@string/create_vm_cpu_capacity_hint">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_cpu_capacity"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:textSize="14sp" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                        <com.google.android.material.textfield.TextInputLayout
+                            android:id="@+id/til_cpu_clusters"
+                            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:hint="@string/create_vm_cpu_clusters_hint">
+
+                            <com.google.android.material.textfield.TextInputEditText
+                                android:id="@+id/et_cpu_clusters"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:inputType="text"
+                                android:textSize="14sp" />
+
+                        </com.google.android.material.textfield.TextInputLayout>
+
+                    </LinearLayout>
+
+                </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            </LinearLayout>
 
         </LinearLayout>
 

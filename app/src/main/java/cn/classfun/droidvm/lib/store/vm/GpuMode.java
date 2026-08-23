@@ -16,12 +16,12 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  * component decides how much of the guest's graphics work crosses the boundary.
  *
  * <ul>
- *   <li>{@link #OPENGL} — GL calls are proxied. Guest runs mesa's virgl gallium driver;
+ *   <li>{@link #OPENGL} -- GL calls are proxied. Guest runs mesa's virgl gallium driver;
  *       virglrenderer replays the command stream on a host GL context. Capset virgl2.
- *   <li>{@link #VULKAN} — Vulkan calls are proxied. On gfxstream that is its Vulkan
+ *   <li>{@link #VULKAN} -- Vulkan calls are proxied. On gfxstream that is its Vulkan
  *       component (capset gfxstream-vulkan); on virglrenderer it is venus (capset venus). Either
  *       way the host side needs an ICD, which is what {@link GpuProvider}'s VK_* row picks.
- *   <li>{@link #NATIVE} — only kernel ioctls are proxied. The guest runs its REAL driver
+ *   <li>{@link #NATIVE} -- only kernel ioctls are proxied. The guest runs its REAL driver
  *       (turnip over vdrm here) and the host translates the DRM uAPI. Capset drm; which DRM
  *       backend answers is a property of the device, KGSL on Adreno.
  * </ul>

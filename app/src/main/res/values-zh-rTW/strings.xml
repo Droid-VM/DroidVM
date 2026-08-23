@@ -198,21 +198,26 @@
     <string name="create_vm_prepare_lend_mthp_disabled">停用</string>
     <string name="create_vm_prepare_lend_mthp_single">單次 (整塊借出)</string>
     <string name="create_vm_prepare_lend_mthp_chunked">分塊 (≤256MiB)</string>
-    <string name="create_vm_protected_normal">普通</string>
+    <string name="create_vm_protected_normal">非保護</string>
     <string name="create_vm_protected_protected">保護</string>
     <string name="create_vm_protected_without_firmware">無韌體保護</string>
-    <string name="create_vm_protected_pseudo_unprotected">保護,記憶體主機可見</string>
+    <string name="create_vm_protected_pseudo_unprotected">偽非保護</string>
     <string name="create_vm_category_extra_options">額外選項</string>
     <string name="create_vm_extra_option_hint">額外選項（每行一個）</string>
     <string name="create_vm_environment_variables_hint">環境變數（KEY=VALUE，每行一個）</string>
 
     <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
     <string name="create_vm_cpu_affinity_title">vCPU 親和性</string>
-    <string name="create_vm_cpu_affinity">每 vCPU 宿主核心親和性</string>
+    <string name="create_vm_cpu_affinity">綁定 vCPU 到宿主核心</string>
     <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
     <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
     <string name="create_vm_cpu_affinity_unbound">不綁定</string>
     <string name="create_vm_cpu_affinity_cores_fmt">%d 個核心</string>
+    <string name="create_vm_cpu_affinity_advanced">進階模式</string>
+    <string name="create_vm_cpu_affinity_simple_vcpus">vCPU 核心數</string>
+    <string name="create_vm_cpu_affinity_simple_empty">至少要勾選一顆宿主核心。</string>
+    <string name="create_vm_cpu_affinity_discard_title">離開進階模式？</string>
+    <string name="create_vm_cpu_affinity_discard_message">簡易模式只能讓一顆 vCPU 綁定專屬的一顆宿主核心。轉換後只會留下 %1$d 顆 vCPU（CPU %2$s）；多餘的核心、未綁定的 vCPU，以及手動的 capacity/cluster 設定都會被捨棄。</string>
     <string name="create_vm_cpu_affinity_section_vcpus">vCPU 對應宿主核心</string>
     <string name="create_vm_cpu_affinity_section_topology">客戶機拓撲</string>
     <string name="create_vm_cpu_topology_auto">自動推導 Capacity 與 Cluster</string>
@@ -305,6 +310,7 @@
     <string name="create_vm_tab_storage">儲存</string>
     <string name="create_vm_tab_network">網路</string>
     <string name="create_vm_tab_graphics">圖形</string>
+    <string name="create_vm_tab_peripheral">外設</string>
     <string name="create_vm_network_label">網橋網路</string>
     <string name="create_vm_network_none">無</string>
     <string name="edit_vm_net_add">新增網路</string>
@@ -464,6 +470,11 @@
     <string name="settings_category_update">更新</string>
     <string name="settings_auto_check_update_title">自動檢查更新</string>
     <string name="settings_auto_check_update_summary">啟動應用時自動檢查更新</string>
+    <string name="key_desc_tab">Tab 鍵</string>
+    <string name="key_desc_backspace">退格鍵</string>
+    <string name="key_desc_win">Windows 鍵</string>
+    <string name="key_desc_shift">Shift 鍵</string>
+    <string name="key_desc_enter">Enter 鍵</string>
     <string name="settings_check_update_title">檢查更新</string>
     <string name="settings_check_update_summary">立即檢查新版本</string>
     <string name="settings_check_update_checking">正在檢查更新\u2026</string>
@@ -1273,4 +1284,35 @@
     <string name="vm_hugepage_short_message">大頁保留區目前剩 %1$d MB，這台虛擬機大約需要 %2$d MB，差 %3$d MB。\n\n上一台虛擬機結束後，保留區通常兩秒左右就會補回來。現在就開機的話，Hypervisor 只能改拿一般記憶體，而那必須先從 CMA 搬出來；在記憶體吃緊的手機上，這一步曾造成整台停住數分鐘、甚至直接重開機。\n\n通常等一下再開就好了。</string>
     <string name="vm_hugepage_short_settings">前往大頁設定</string>
     <string name="vm_hugepage_short_start_anyway">仍要啟動</string>
+
+    <string name="create_vm_category_peripheral">外設</string>
+    <string name="edit_vm_peripheral_empty">沒有外設</string>
+    <string name="edit_vm_peripheral_add">新增外設</string>
+    <string name="edit_vm_peripheral_add_title">外設類型</string>
+    <string name="edit_vm_peripheral_type">外設類型</string>
+    <string name="edit_vm_peripheral_type_speaker">喇叭</string>
+    <string name="edit_vm_peripheral_type_microphone">麥克風</string>
+    <string name="edit_vm_peripheral_delete">移除外設</string>
+    <string name="edit_vm_peripheral_host_device">主機裝置</string>
+    <string name="edit_vm_peripheral_host_default">跟隨系統</string>
+    <string name="edit_vm_peripheral_host_missing">目前未連接，VM 會改用系統預設路由。</string>
+    <string name="edit_vm_peripheral_host_missing_item">%1$s（未連接）</string>
+    <string name="edit_vm_peripheral_pick_output">播放到</string>
+    <string name="edit_vm_peripheral_pick_input">錄音來源</string>
+    <string name="edit_vm_peripheral_duplicate_host">有兩個同類型的外設指向同一個主機裝置。</string>
+    <string name="edit_vm_peripheral_note">音訊外設在客體中會組成一張 virtio-snd 音效卡。指定主機裝置需要 crosvm 後端；QEMU 一律跟隨系統路由。</string>
+    <string name="audio_device_builtin_speaker">喇叭</string>
+    <string name="audio_device_builtin_earpiece">聽筒</string>
+    <string name="audio_device_builtin_mic">內建麥克風</string>
+    <string name="audio_device_wired_headset">有線耳麥</string>
+    <string name="audio_device_wired_headphones">有線耳機</string>
+    <string name="audio_device_bluetooth">藍牙音訊</string>
+    <string name="audio_device_bluetooth_sco">藍牙通話音訊</string>
+    <string name="audio_device_usb">USB 音訊</string>
+    <string name="audio_device_hdmi">HDMI</string>
+    <string name="audio_device_line">線路輸出</string>
+    <string name="record_audio_permission_title">允許使用麥克風？</string>
+    <string name="record_audio_permission_message">這台 VM 加了麥克風，執行期間會錄取手機的麥克風。允許麥克風權限，客體才聽得到。</string>
+    <string name="record_audio_permission_allow">繼續</string>
+    <string name="record_audio_permission_skip">暫時不要</string>
 </resources>

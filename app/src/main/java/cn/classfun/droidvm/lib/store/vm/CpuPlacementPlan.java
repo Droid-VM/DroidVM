@@ -8,6 +8,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import androidx.annotation.NonNull;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +158,73 @@ public final class CpuPlacementPlan {
                 .append(CpuUtils.compactRanges(joinCsv(entry.getValue())));
         }
         return sb.toString();
+    }
+
+    /**
+     * True when {@code affinity} is exactly what the editor's simple mode can
+     * express: every vCPU below {@code vcpuCount} bound to one host core of its
+     * own, no core shared, and nothing bound past the count. A vCPU floating
+     * over several cores, an unbound vCPU or two vCPUs on one core all need the
+     * per-vCPU editor to be described, and answer false here.
+     */
+    public static boolean isOneToOne(
+        @NonNull Map<Integer, List<Integer>> affinity, int vcpuCount
+    ) {
+        if (vcpuCount <= 0 || affinity.size() != vcpuCount) return false;
+        var hosts = new TreeSet<Integer>();
+        for (int vcpu = 0; vcpu < vcpuCount; vcpu++) {
+            var bound = affinity.get(vcpu);
+            if (bound == null || bound.size() != 1) return false;
+            if (!hosts.add(bound.get(0))) return false;
+        }
+        return true;
+    }
+
+    /**
+     * The 1:1 map over {@code hostCores}: lowest core index becomes vCPU 0, the
+     * next vCPU 1, and so on. Inverse of {@link #oneToOneHosts}.
+     */
+    @NonNull
+    public static Map<Integer, List<Integer>> oneToOne(@NonNull Collection<Integer> hostCores) {
+        var out = new TreeMap<Integer, List<Integer>>();
+        int vcpu = 0;
+        for (var host : new TreeSet<>(hostCores))
+            out.put(vcpu++, new ArrayList<>(List.of(host)));
+        return out;
+    }
+
+    /**
+     * The host cores a 1:1 map pins, ascending; empty when the map is not 1:1
+     * over {@code vcpuCount} vCPUs.
+     */
+    @NonNull
+    public static List<Integer> oneToOneHosts(
+        @NonNull Map<Integer, List<Integer>> affinity, int vcpuCount
+    ) {
+        if (!isOneToOne(affinity, vcpuCount)) return new ArrayList<>();
+        var hosts = new TreeSet<Integer>();
+        for (var bound : affinity.values()) hosts.add(bound.get(0));
+        return new ArrayList<>(hosts);
+    }
+
+    /**
+     * The 1:1 selection closest to an arbitrary map, for the advanced-to-simple
+     * switch: each vCPU in turn keeps the lowest core it is bound to that an
+     * earlier vCPU has not already claimed; its remaining cores, and a vCPU left
+     * with nothing to claim, are dropped. Ascending, so the result can be handed
+     * straight to {@link #oneToOne} -- which is why the vCPU a core ends up on
+     * need not be the one it came from.
+     */
+    @NonNull
+    public static List<Integer> flattenToOneToOne(
+        @NonNull Map<Integer, List<Integer>> affinity
+    ) {
+        var taken = new TreeSet<Integer>();
+        for (var entry : new TreeMap<>(affinity).entrySet()) {
+            for (var host : entry.getValue())
+                if (taken.add(host)) break;
+        }
+        return new ArrayList<>(taken);
     }
 
     // --- capacity ---

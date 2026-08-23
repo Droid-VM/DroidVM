@@ -11,8 +11,8 @@ import androidx.annotation.NonNull;
  * bar is backend-agnostic:
  *
  * <ul>
- *   <li>VNC — maps to {@code VncClient}: Android key codes to X11 keysyms, pointer to RFB events.</li>
- *   <li>Native — maps to {@code InputForwarder}/{@code EvdevEncoder}: key codes to Linux evdev
+ *   <li>VNC -- maps to {@code VncClient}: Android key codes to X11 keysyms, pointer to RFB events.</li>
+ *   <li>Native -- maps to {@code InputForwarder}/{@code EvdevEncoder}: key codes to Linux evdev
  *       scan codes, pointer to the mode-appropriate virtio-input device.</li>
  * </ul>
  *

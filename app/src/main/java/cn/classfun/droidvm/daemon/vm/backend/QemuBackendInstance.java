@@ -42,11 +42,13 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class QemuBackendInstance extends VMBackendInstance {
@@ -371,9 +373,27 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
     }
 
+    /**
+     * One virtio-sound-pci card on QEMU's aaudio driver, present when the VM has any audio
+     * peripheral.
+     *
+     * <p>Only the on/off decision is plumbed here. Which host endpoint a peripheral was pinned
+     * to is crosvm-only -- QEMU's aaudio driver opens whatever the platform routes to -- and so
+     * is the per-direction stream count, which would need device properties this prebuilt QEMU
+     * has not been verified to have. A config that predates the peripheral tab still works
+     * through the old {@code audio_enabled} key, which also stays available as an override.</p>
+     */
     private void buildAudioCommand(@NonNull List<String> args) {
-        var displayEnabled = config.item.optBoolean("display_enabled", false);
-        if (!config.item.optBoolean("audio_enabled", displayEnabled)) return;
+        boolean anyAudio = false;
+        for (var peripheral : VMPeripheralConfig.listOf(config.item)) {
+            var type = peripheral.getType();
+            if (type == PeripheralType.SPEAKER || type == PeripheralType.MICROPHONE)
+                anyAudio = true;
+        }
+        if (!anyAudio) {
+            var displayEnabled = config.item.optBoolean("display_enabled", false);
+            if (!config.item.optBoolean("audio_enabled", displayEnabled)) return;
+        }
         args.add("-audiodev");
         args.add("aaudio,id=snd0");
         args.add("-device");

@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.main.settings;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
@@ -100,7 +102,7 @@ public final class KernelModuleMatch {
         if (rule == null) {
             // Every shipped module has a rule (the build refuses otherwise), so this is a .ko we
             // know nothing about. Saying no keeps a stray file out of a list whose buttons insmod.
-            Log.w(TAG, "no match rule for " + moduleName + "; not listing it");
+            Log.w(TAG, fmt("no match rule for %s; not listing it", moduleName));
             return false;
         }
         return eval(rule, moduleName);
@@ -193,8 +195,8 @@ public final class KernelModuleMatch {
                 case "comment":
                     break;
                 default:
-                    Log.w(TAG, "rule for " + moduleName + " uses unknown field '" + field
-                        + "'; this app cannot judge it, so not listing the module");
+                    Log.w(TAG, fmt("rule for %s uses unknown field '%s'; this app cannot"
+                        + " judge it, so not listing the module", moduleName, field));
                     return false;
             }
         }

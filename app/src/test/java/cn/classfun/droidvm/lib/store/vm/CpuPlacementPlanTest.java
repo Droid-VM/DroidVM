@@ -1,6 +1,7 @@
 package cn.classfun.droidvm.lib.store.vm;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -168,6 +169,71 @@ public class CpuPlacementPlanTest {
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
+    }
+
+    // --- simple vs advanced mode in the affinity editor ---
+
+    /** What the editor opens simple mode for: one vCPU, one core of its own. */
+    @Test
+    public void oneToOneRecognisesTheSimpleModeShape() {
+        var affinity = CpuPlacementPlan.parseAffinity("0=0:1=1:2=2");
+        assertTrue(CpuPlacementPlan.isOneToOne(affinity, 3));
+        assertEquals(List.of(0, 1, 2), CpuPlacementPlan.oneToOneHosts(affinity, 3));
+    }
+
+    /** Host cores need not be contiguous, or start at 0, to stay 1:1. */
+    @Test
+    public void oneToOneAcceptsAnyDistinctCores() {
+        var affinity = CpuPlacementPlan.parseAffinity("0=4:1=7");
+        assertTrue(CpuPlacementPlan.isOneToOne(affinity, 2));
+        assertEquals(List.of(4, 7), CpuPlacementPlan.oneToOneHosts(affinity, 2));
+    }
+
+    /** Everything simple mode cannot say, and so has to open advanced for. */
+    @Test
+    public void oneToOneRejectsWhatSimpleModeCannotSay() {
+        // A vCPU floating over two cores.
+        assertFalse(CpuPlacementPlan.isOneToOne(
+            CpuPlacementPlan.parseAffinity("0=4,5:1=6"), 2));
+        // Two vCPUs sharing a core.
+        assertFalse(CpuPlacementPlan.isOneToOne(
+            CpuPlacementPlan.parseAffinity("0=4:1=4"), 2));
+        // A vCPU with no binding at all.
+        assertFalse(CpuPlacementPlan.isOneToOne(
+            CpuPlacementPlan.parseAffinity("0=0:2=2"), 3));
+        // Bound vCPUs the count no longer covers.
+        assertFalse(CpuPlacementPlan.isOneToOne(
+            CpuPlacementPlan.parseAffinity("0=0:1=1:2=2"), 2));
+        // Nothing pinned is not 1:1 either; the dialog treats it separately.
+        assertFalse(CpuPlacementPlan.isOneToOne(new TreeMap<>(), 2));
+        assertTrue(CpuPlacementPlan.oneToOneHosts(
+            CpuPlacementPlan.parseAffinity("0=4,5:1=6"), 2).isEmpty());
+    }
+
+    /** Checking cores in simple mode: core order decides the vCPU numbering. */
+    @Test
+    public void oneToOneBuildsTheMapFromCheckedCores() {
+        var affinity = CpuPlacementPlan.oneToOne(List.of(7, 4, 5));
+        assertEquals("0=4:1=5:2=7", CpuPlacementPlan.formatAffinity(affinity));
+        assertTrue(CpuPlacementPlan.isOneToOne(affinity, 3));
+    }
+
+    /**
+     * Advanced to simple: each vCPU keeps the lowest core no earlier vCPU took,
+     * and the rest of its cores are dropped.
+     */
+    @Test
+    public void flattenKeepsOneCorePerVcpu() {
+        assertEquals(List.of(4, 6),
+            CpuPlacementPlan.flattenToOneToOne(
+                CpuPlacementPlan.parseAffinity("0=4,5:1=6")));
+        // A vCPU whose every core is already taken keeps nothing.
+        assertEquals(List.of(4),
+            CpuPlacementPlan.flattenToOneToOne(
+                CpuPlacementPlan.parseAffinity("0=4:1=4")));
+        // An already-1:1 map survives the trip unchanged.
+        var oneToOne = CpuPlacementPlan.parseAffinity("0=0:1=1:2=2");
+        assertEquals(List.of(0, 1, 2), CpuPlacementPlan.flattenToOneToOne(oneToOne));
     }
 
     /** Guards the map type the UI relies on for stable row ordering. */

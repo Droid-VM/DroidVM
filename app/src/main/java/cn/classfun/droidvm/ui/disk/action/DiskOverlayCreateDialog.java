@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.action;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.bulletList;
+
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
@@ -176,7 +178,7 @@ public final class DiskOverlayCreateDialog {
                 var running = runningNames(affected);
                 if (!running.isEmpty()) {
                     fail(context.getString(
-                        R.string.disk_overlay_vm_running, "\n- " + String.join("\n- ", running)));
+                        R.string.disk_overlay_vm_running, bulletList(running)));
                     return;
                 }
                 var names = new ArrayList<String>();
@@ -193,7 +195,7 @@ public final class DiskOverlayCreateDialog {
     // (default) or flip them read-only. Everything after runs unattended.
     private void askVmChoice(
         @NonNull String name, @NonNull String overlayPath, @NonNull List<String> vmNames) {
-        var list = "\n- " + String.join("\n- ", vmNames);
+        var list = bulletList(vmNames);
         new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.disk_overlay_vm_choice_title)
             .setMessage(context.getString(

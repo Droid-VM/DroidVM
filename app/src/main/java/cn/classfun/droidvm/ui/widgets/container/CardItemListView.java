@@ -65,7 +65,7 @@ public final class CardItemListView extends LinearLayout {
         updateEmptyState();
         addButton.setOnClickListener(v -> {
             if (adapter != null)
-                adapter.createItem();
+                adapter.onAddRequested(v);
         });
     }
 

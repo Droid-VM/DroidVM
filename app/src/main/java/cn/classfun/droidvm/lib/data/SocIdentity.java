@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.data;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
 
 import android.os.Build;
@@ -47,7 +49,7 @@ public final class SocIdentity {
     public static synchronized String vendor() {
         if (vendor == null) {
             vendor = detectVendor();
-            Log.i(TAG, "SoC vendor: " + vendor + " (model " + model() + ")");
+            Log.i(TAG, fmt("SoC vendor: %s (model %s)", vendor, model()));
         }
         return vendor;
     }
