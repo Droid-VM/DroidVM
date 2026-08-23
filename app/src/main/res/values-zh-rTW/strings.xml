@@ -323,6 +323,7 @@
     <string name="vm_info_port_forwards">埠轉發</string>
     <string name="vm_info_pf_none">暫無生效轉發</string>
     <string name="edit_vm_disk_path_hint">路徑</string>
+    <string name="edit_vm_disk_options_hint">crosvm 附加磁碟參數</string>
     <string name="edit_vm_disk_readonly">只讀</string>
     <string name="edit_vm_disk_bus">匯流排</string>
     <string name="edit_vm_disk_delete">移除磁碟</string>

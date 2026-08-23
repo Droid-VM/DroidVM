@@ -19,16 +19,19 @@ import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
 
 public final class VMDiskEditViewHolder extends RecyclerView.ViewHolder {
     final TextInputEditText etPath;
+    final TextInputEditText etOptions;
     final PickerButtonWidget btnBus;
     final MaterialSwitch switchReadonly;
     final ImageButton btnBrowse;
     final ImageButton btnDelete;
     final MaterialButton btnBranches;
     TextWatcher pathWatcher;
+    TextWatcher optionsWatcher;
 
     VMDiskEditViewHolder(@NonNull View itemView) {
         super(itemView);
         etPath = itemView.findViewById(R.id.et_disk_path);
+        etOptions = itemView.findViewById(R.id.et_disk_options);
         btnBus = itemView.findViewById(R.id.btn_bus);
         switchReadonly = itemView.findViewById(R.id.switch_readonly);
         btnBrowse = itemView.findViewById(R.id.btn_browse);
@@ -36,10 +39,14 @@ public final class VMDiskEditViewHolder extends RecyclerView.ViewHolder {
         btnBranches = itemView.findViewById(R.id.btn_branches);
     }
 
-    void unbindWatcher() {
+    void unbindWatchers() {
         if (pathWatcher != null) {
             etPath.removeTextChangedListener(pathWatcher);
             pathWatcher = null;
+        }
+        if (optionsWatcher != null) {
+            etOptions.removeTextChangedListener(optionsWatcher);
+            optionsWatcher = null;
         }
     }
 }

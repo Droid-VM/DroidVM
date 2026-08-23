@@ -153,9 +153,10 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     @Override
     public void onBindViewHolder(@NonNull VMDiskEditViewHolder holder, int position) {
         var disk = items.get(position);
-        holder.unbindWatcher();
+        holder.unbindWatchers();
         var path = disk.optString("path", "");
         holder.etPath.setText(path);
+        holder.etOptions.setText(disk.optString("options", ""));
         boolean locked = isLockedPath(path);
         if (locked && !disk.optBoolean("readonly", false))
             disk.set("readonly", true);
@@ -184,6 +185,15 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
             }
         };
         holder.etPath.addTextChangedListener(holder.pathWatcher);
+        holder.optionsWatcher = new SimpleTextWatcher() {
+            @Override
+            public void afterTextChanged(Editable s) {
+                int pos = holder.getBindingAdapterPosition();
+                if (pos != RecyclerView.NO_POSITION)
+                    items.get(pos).set("options", s.toString().trim());
+            }
+        };
+        holder.etOptions.addTextChangedListener(holder.optionsWatcher);
         holder.switchReadonly.setOnCheckedChangeListener((btn, checked) -> {
             if (updatingViews) return;
             int pos = holder.getBindingAdapterPosition();

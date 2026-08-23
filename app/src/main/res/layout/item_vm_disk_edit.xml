@@ -117,7 +117,24 @@
 
         </LinearLayout>
 
+        <com.google.android.material.textfield.TextInputLayout
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/edit_vm_disk_options_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_disk_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text|textNoSuggestions"
+                android:maxLines="1"
+                android:textSize="14sp"
+                tools:ignore="DuplicateSpeakableTextCheck,TextContrastCheck,VisualLintTextFieldSize" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
     </LinearLayout>
 
 </com.google.android.material.card.MaterialCardView>
-

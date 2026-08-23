@@ -325,6 +325,7 @@
     <string name="vm_info_port_forwards">Port Forwarding</string>
     <string name="vm_info_pf_none">No active forwards</string>
     <string name="edit_vm_disk_path_hint">Path</string>
+    <string name="edit_vm_disk_options_hint">Additional crosvm disk parameters</string>
     <string name="edit_vm_disk_readonly">Read-only</string>
     <string name="edit_vm_disk_bus">Bus</string>
     <string name="edit_vm_disk_delete">Remove disk</string>

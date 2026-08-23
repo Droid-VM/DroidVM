@@ -26,7 +26,10 @@ import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
@@ -434,35 +437,66 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var readonly = disk.optBoolean("readonly", false);
             var bus = optEnum(disk, "bus", DiskBus.VIRTIO);
             var arg = new StringBuilder(path);
+            var optionKeys = new HashSet<String>();
             switch (bus) {
                 case SCSI:
-                    arg.append(",lock=false");
-                    if (readonly) arg.append(",ro=true");
+                    appendDiskOption(arg, optionKeys, "lock=false");
+                    if (readonly) appendDiskOption(arg, optionKeys, "ro=true");
+                    appendDiskOptions(arg, optionKeys, disk.optString("options", ""));
                     args.add("--scsi-block");
                     args.add(arg.toString());
                     break;
                 case PMEM:
-                    if (readonly) arg.append(",ro=true");
+                    if (readonly) appendDiskOption(arg, optionKeys, "ro=true");
+                    appendDiskOptions(arg, optionKeys, disk.optString("options", ""));
                     args.add("--pmem");
                     args.add(arg.toString());
                     break;
                 case PFLASH:
+                    appendDiskOptions(arg, optionKeys, disk.optString("options", ""));
                     args.add("--pflash");
                     args.add(arg.toString());
                     break;
                 case CDROM:
+                    appendDiskOption(arg, optionKeys, "ro=true");
+                    appendDiskOption(arg, optionKeys, "type=cdrom");
+                    appendDiskOption(arg, optionKeys, "lock=false");
+                    appendDiskOptions(arg, optionKeys, disk.optString("options", ""));
                     args.add("--scsi-block");
-                    arg.append(",ro=true,type=cdrom,lock=false");
                     args.add(arg.toString());
                     break;
                 case VIRTIO:
-                    arg.append(",lock=false");
-                    if (readonly) arg.append(",ro=true");
+                    appendDiskOption(arg, optionKeys, "lock=false");
+                    if (readonly) appendDiskOption(arg, optionKeys, "ro=true");
+                    appendDiskOptions(arg, optionKeys, disk.optString("options", ""));
                     args.add("--block");
                     args.add(arg.toString());
                     break;
             }
         }
+    }
+
+    private static void appendDiskOptions(
+        @NonNull StringBuilder arg,
+        @NonNull Set<String> optionKeys,
+        @NonNull String options
+    ) {
+        for (var option : options.split(","))
+            appendDiskOption(arg, optionKeys, option);
+    }
+
+    private static void appendDiskOption(
+        @NonNull StringBuilder arg,
+        @NonNull Set<String> optionKeys,
+        @NonNull String option
+    ) {
+        option = option.trim();
+        if (option.isEmpty()) return;
+        var separator = option.indexOf('=');
+        var key = (separator < 0 ? option : option.substring(0, separator)).trim()
+            .toLowerCase(Locale.ROOT);
+        if (key.isEmpty() || !optionKeys.add(key)) return;
+        arg.append(',').append(option);
     }
 
     private void buildNetCommand(@NonNull List<String> args) {
