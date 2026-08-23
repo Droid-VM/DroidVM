@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One host endpoint on a virtio-snd card: a direction and the device it is pinned to.
+
+  What the endpoints of a card share (the buffer depth, and what to do about an underrun) is not
+  here: those describe the device's queues rather than any one endpoint, so they live once on the
+  card above.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+        android:id="@+id/btn_sound_mode"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:title="@string/edit_vm_sound_mode"
+        app:pb_mode="dialog" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_peripheral_host"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="0dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
+        android:minWidth="72dp"
+        android:text="@string/edit_vm_peripheral_host_default"
+        android:textSize="12sp"
+        tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_endpoint_remove"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_marginStart="4dp"
+        android:contentDescription="@string/edit_vm_sound_endpoint_remove"
+        app:icon="@drawable/ic_close"
+        app:iconSize="18dp"
+        tools:ignore="TouchTargetSizeCheck" />
+
+</LinearLayout>

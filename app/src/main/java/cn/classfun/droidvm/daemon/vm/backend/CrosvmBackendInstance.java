@@ -16,6 +16,7 @@ import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
 
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
@@ -29,6 +30,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
@@ -38,6 +40,7 @@ import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
+import cn.classfun.droidvm.daemon.audio.HostAudioTable;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.utils.RunUtils;
@@ -52,6 +55,7 @@ import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
+import cn.classfun.droidvm.lib.store.vm.SoundMode;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
@@ -570,19 +574,49 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var path = dir.optString("path", "");
             var tag = dir.optString("tag", "");
             if (path.isEmpty() || tag.isEmpty()) continue;
-            var type = optEnum(dir, "type", SharedDirType.FS);
+            // Only virtio-fs is wired up. The editor forces it, but a hand-edited vms.json can
+            // still say p9 -- and that is not a degraded mode, it is a VM that will not start:
+            // crosvm's 9p config accepts `ascii_casefold` and nothing else, so every key below
+            // makes the whole `--shared-dir` argument fail to parse.
+            if (optEnum(dir, "type", SharedDirType.FS) != SharedDirType.FS)
+                Log.w(TAG, fmt("Shared dir '%s': 9P is not implemented, using virtio-fs", tag));
+            // `dax` is deliberately absent: the fs device gates DAX on cfg!(target_arch =
+            // "x86_64"), so on this platform the key would only describe something that cannot
+            // happen.
             var cache = optEnum(dir, "cache", SharedDirCache.AUTO);
-            args.add("--shared-dir");
-            args.add(fmt(
-                "%s:%s:type=%s:cache=%s:timeout=%d:writeback=%s:dax=%s:posix_acl=%s",
+            var arg = new StringBuilder(fmt(
+                "%s:%s:type=fs:cache=%s:timeout=%d:writeback=%s:posix_acl=%s",
                 path, tag,
-                type.name().toLowerCase(),
                 cache.name().toLowerCase(),
                 dir.optLong("timeout", 5),
                 dir.optBoolean("writeback", false),
-                dir.optBoolean("dax", false),
                 dir.optBoolean("posix_acl", true)
             ));
+            // Root access off -- the default -- means the file server serves as the app rather
+            // than as the VMM. crosvm forks and pivot_roots this device either way; these keys
+            // only decide who it is once it gets there. Left as root it reaches every file root
+            // can, which under /storage/emulated/0 is every other app's data as well.
+            if (!dir.optBoolean("root_access", false)) {
+                int uid = getAppUid();
+                var gids = uid > 0 ? AppGroups.resolve(uid) : null;
+                if (gids == null) {
+                    // Quietly serving as root instead would make the switch mean its opposite.
+                    // That is the one outcome worth losing a shared directory over.
+                    Log.e(TAG, fmt(
+                        "Shared dir '%s': cannot resolve the app identity (uid=%d); skipped. "
+                            + "Open DroidVM once, or turn on root access for this directory.",
+                        tag, uid
+                    ));
+                    continue;
+                }
+                // An Android app's primary group is its uid. Say so rather than leaving gid
+                // unset, which would leave the process in root's group with the app's uid.
+                arg.append(fmt(":uid=%d:gid=%d", uid, uid));
+                if (gids.length > 0)
+                    arg.append(fmt(":supp_gids=%s", AppGroups.join(gids)));
+            }
+            args.add("--shared-dir");
+            args.add(arg.toString());
         }
     }
 
@@ -999,73 +1033,156 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     /**
-     * Audio peripherals become one virtio-snd card on the aaudio backend: every SPEAKER row is
-     * an output PCM device, every MICROPHONE row an input one, in list order. The host endpoint
-     * each was pinned to is stored as a stable descriptor, so it is resolved to a live
-     * AudioDeviceInfo id here, at start, rather than at edit time.
+     * Attaches the VM's peripherals. One peripheral is one guest device.
      *
-     * <p>Nothing is emitted when the VM has no audio peripherals -- and note that crosvm's
-     * default backend is {@code null}, i.e. silence, so {@code backend=aaudio} has to be spelled
-     * out even on a build that has no other backend compiled in.</p>
+     * <p>A VIRTIO_SOUND peripheral is `--virtio-snd` with a `uid`: the audio has to leave
+     * the root process to be heard at all, because Android silences AAudio playback from uid 0
+     * outright and hands back zeroed buffers for capture. Measured on device with the same probe
+     * under different uids -- root muted both ways, shell, system and the app's own uid all fine.
+     * crosvm does the moving itself, re-execing its own `device snd` backend under that uid and
+     * reaching it over a socketpair. The daemon deliberately does not spawn that process: it did
+     * once, and every part of doing so -- `su`, a rendezvous socket to wait for, a pid to kill on
+     * teardown -- was a way to get it wrong.</p>
+     *
+     * <p>INTEL_HDA is accepted by the model and skipped here: crosvm emulates no HDA controller,
+     * and starting a VM that claims hardware nothing can serve is worse than starting without
+     * it. The UI says the same thing on the row.</p>
      */
     private void buildPeripheralCommand(@NonNull List<String> args) {
         var peripherals = VMPeripheralConfig.listOf(config.item);
-        if (peripherals.isEmpty()) return;
-        var outputs = new ArrayList<VMPeripheralConfig>();
-        var inputs = new ArrayList<VMPeripheralConfig>();
+        int appUid = getAppUid();
         for (var peripheral : peripherals) {
-            // Matched by kind, not by "everything that is not an input": a peripheral type
-            // added later that is not audio at all must not silently become a speaker.
-            if (peripheral.getType() == PeripheralType.SPEAKER) outputs.add(peripheral);
-            else if (peripheral.getType() == PeripheralType.MICROPHONE) inputs.add(peripheral);
+            var type = peripheral.getType();
+            if (type != PeripheralType.VIRTIO_SOUND) {
+                Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
+                continue;
+            }
+            if (appUid <= 0) {
+                Log.e(TAG, "cannot resolve app uid; sound device skipped");
+                continue;
+            }
+            if (peripheral.getEndpoints().isEmpty()) {
+                // A card with no endpoints is a device the guest would enumerate and find
+                // nothing behind, which is worse than not offering it.
+                Log.w(TAG, "virtio-snd card has no endpoints; skipped");
+                continue;
+            }
+            args.add("--virtio-snd");
+            args.add(buildSoundConfig(peripheral, appUid));
         }
-        if (outputs.isEmpty() && inputs.isEmpty()) return;
-        var arg = new StringBuilder("backend=aaudio");
-        arg.append(fmt(",capture=%b", !inputs.isEmpty()));
-        arg.append(fmt(",num_output_devices=%d", outputs.size()));
-        arg.append(fmt(",num_input_devices=%d", inputs.size()));
-        appendDeviceConfig(arg, "output_device_config", outputs);
-        appendDeviceConfig(arg, "input_device_config", inputs);
-        args.add("--virtio-snd");
-        args.add(arg.toString());
-    }
-
-    /** {@code <key>=[[device_id=N],[device_id=M]]}, one bracket group per PCM device. */
-    private void appendDeviceConfig(
-        @NonNull StringBuilder arg,
-        @NonNull String key,
-        @NonNull List<VMPeripheralConfig> peripherals
-    ) {
-        if (peripherals.isEmpty()) return;
-        arg.append(',').append(key).append("=[");
-        for (int i = 0; i < peripherals.size(); i++) {
-            if (i > 0) arg.append(',');
-            var peripheral = peripherals.get(i);
-            arg.append(fmt("[device_id=%d]", resolveHostDevice(peripheral)));
-        }
-        arg.append(']');
     }
 
     /**
-     * Live AAudio device id for one peripheral's stored host endpoint, or 0
-     * (AAUDIO_UNSPECIFIED) when it asked to follow the system or names something that is not
-     * connected right now. Needs the daemon's system context to reach AudioManager; without one
-     * every stream falls back to the platform's own routing.
+     * The `--virtio-snd` configuration for one peripheral.
+     *
+     * <p>The `uid` is what makes this audible at all. Android decides whether a stream can be
+     * heard from the uid that opened it and silences uid 0 in both directions, and crosvm runs as
+     * root -- so crosvm re-execs itself under this uid and serves the device over a socketpair.
+     * Using the app's own uid rather than any other non-root one is what makes Android attribute
+     * the audio, and the microphone indicator, to DroidVM instead of to an anonymous process.</p>
      */
-    private int resolveHostDevice(@NonNull VMPeripheralConfig peripheral) {
-        var key = peripheral.getHostDevice();
+    @NonNull
+    private String buildSoundConfig(@NonNull VMPeripheralConfig peripheral, int appUid) {
+        var endpoints = peripheral.getEndpoints();
+        var outputs = new ArrayList<VMPeripheralConfig.Endpoint>();
+        var inputs = new ArrayList<VMPeripheralConfig.Endpoint>();
+        for (var endpoint : endpoints) {
+            (endpoint.getMode().isInput() ? inputs : outputs).add(endpoint);
+        }
+
+        var cfg = new StringBuilder("backend=aaudio");
+        // capture= is the card's own flag for whether it has any input at all.
+        cfg.append(fmt(",capture=%b", !inputs.isEmpty()));
+        cfg.append(fmt(",num_output_devices=%d", outputs.size()));
+        cfg.append(fmt(",num_input_devices=%d", inputs.size()));
+        // The endpoints go over by name, not by number. A number is only what the platform calls
+        // an endpoint today: reconnect a headset and it has a different one, while the name is
+        // unchanged -- so crosvm looks each one up in the table for itself, every time it opens a
+        // stream, and finds a returning device without being told.
+        cfg.append(fmt(",device_table=%s", HostAudioTable.PATH));
+        appendEndpoints(cfg, "output_device_config", outputs);
+        appendEndpoints(cfg, "input_device_config", inputs);
+        // Shared by every endpoint on the card, because they describe the device's queues rather
+        // than any one endpoint: one underrun policy, one buffer depth. Separate cards keep their
+        // own.
+        cfg.append(fmt(",underrun=%s", peripheral.getUnderrun().name().toLowerCase()));
+        // The latency knob. crosvm publishes it in the device's vendor config block; a driver
+        // that does not read the block keeps its own default, which is why this can be a hint.
+        cfg.append(fmt(",guest_outstanding_packets=%d", peripheral.getBuffer().getPackets()));
+        // Same field name as --shared-dir and --pmem-ext2 use for the process a device runs as.
+        // No supplementary groups: the VMM's are root's, and audio needs none -- recording was
+        // measured working with an empty group list.
+        cfg.append(fmt(",uid=%d", appUid));
+        Log.i(TAG, fmt("sound device: %s", cfg));
+        return cfg.toString();
+    }
+
+    /**
+     * Appends one direction's endpoints as a list of per-device settings.
+     *
+     * <p>Their order here is their `hda_fn_nid` on the other side, which is what ties a stream to
+     * the endpoint it belongs to -- so it has to match the order the counts were taken in.</p>
+     */
+    private void appendEndpoints(
+        @NonNull StringBuilder cfg, @NonNull String field,
+        @NonNull List<VMPeripheralConfig.Endpoint> endpoints
+    ) {
+        if (endpoints.isEmpty()) return;
+        cfg.append(fmt(",%s=[", field));
+        for (int i = 0; i < endpoints.size(); i++) {
+            var endpoint = endpoints.get(i);
+            // An unset field is what older configs stored for "follow the platform"; it names the
+            // same endpoint now, so everything downstream sees a device rather than an absence.
+            var hostKey = endpoint.getHostDevice();
+            if (hostKey.isEmpty()) hostKey = HostAudioDevices.SYSTEM_DEFAULT_KEY;
+            // Quoted, because a key is TYPE|address and the bar would otherwise read as a
+            // separator to the option parser.
+            cfg.append(fmt("%s[host_device=\"%s\"]", i == 0 ? "" : ",", hostKey));
+            // Only to say in the log which endpoint that name means right now.
+            resolveHostDevice(hostKey, endpoint.getMode().isInput(), endpoint.getMode());
+        }
+        cfg.append("]");
+    }
+
+    /** The app's uid, which the daemon can reach through its system context. */
+    private int getAppUid() {
+        try {
+            var sys = DaemonSystemContext.get();
+            if (sys != null) {
+                return sys.getPackageManager()
+                    .getApplicationInfo(BuildConfig.APPLICATION_ID, 0).uid;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "package manager lookup failed; falling back to the data dir owner", t);
+        }
+        // Fallback: the data directory belongs to the app uid by construction.
+        try {
+            return android.system.Os.stat(DATA_DIR).st_uid;
+        } catch (Throwable t) {
+            Log.w(TAG, "stat of the data dir failed", t);
+            return -1;
+        }
+    }
+
+    /**
+     * Live AAudio device id for a stored host endpoint, or 0 (AAUDIO_UNSPECIFIED) when it asked
+     * to follow the system or names something that is not connected right now. The ids are
+     * per-boot, which is why the config stores a descriptor and this happens at start.
+     */
+    private int resolveHostDevice(
+        @NonNull String key, boolean input, @NonNull SoundMode mode
+    ) {
         if (key.isEmpty()) return HostAudioDevices.DEVICE_UNSPECIFIED;
         var sys = DaemonSystemContext.get();
         if (sys == null) {
             Log.w(TAG, fmt("no system context; %s falls back to default audio routing", key));
             return HostAudioDevices.DEVICE_UNSPECIFIED;
         }
-        int id = HostAudioDevices.resolve(sys, peripheral.getType().isInput(), key);
-        Log.i(TAG, fmt("%s peripheral -> host device %s (id=%d)",
-            peripheral.getType() == PeripheralType.MICROPHONE ? "microphone" : "speaker",
-            key, id));
+        int id = HostAudioDevices.resolve(sys, input, key);
+        Log.i(TAG, fmt("%s -> host device %s (id=%d)", mode, key, id));
         return id;
     }
+
 
     private void buildSerialCommand(@NonNull List<String> args) {
         if (uart == null) return;

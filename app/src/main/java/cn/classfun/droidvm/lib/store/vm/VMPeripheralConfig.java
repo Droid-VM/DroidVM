@@ -12,13 +12,13 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.enums.Enums;
 
 /**
- * Wrapper over one entry of a VM config's "peripherals" array.
+ * Wrapper over one entry of a VM config's "peripherals" array -- one entry, one guest device.
  *
- * <p>The host endpoint is stored as the stable descriptor {@code host_device}
- * ({@code "<TYPE>|<address>"}, see {@code HostAudioDevices}) rather than the numeric
- * AudioDeviceInfo id: those ids are handed out per boot and would point at a different -- or
- * absent -- endpoint the next time the phone comes up. {@code host_label} is only kept so the
- * row can still name a device that is currently unplugged.</p>
+ * <p>Host endpoints are stored as the stable descriptor from {@code HostAudioDevices}
+ * ({@code "<TYPE>|<address>"}) rather than the numeric AudioDeviceInfo id, because those ids are
+ * handed out per boot: the same number means a different endpoint, or none, after a reboot or a
+ * pairing. The label alongside it is only so a row can still name a device that is currently
+ * unplugged. Resolution to a live id happens in the daemon at VM start.</p>
  */
 public final class VMPeripheralConfig {
     public final DataItem item;
@@ -29,18 +29,120 @@ public final class VMPeripheralConfig {
 
     @NonNull
     public PeripheralType getType() {
-        return Enums.optEnum(item, "type", PeripheralType.SPEAKER);
+        return Enums.optEnum(item, "type", PeripheralType.VIRTIO_SOUND);
     }
 
     public void setType(@NonNull PeripheralType type) {
         item.set("type", type);
     }
 
-    /** Stable host-device descriptor, or "" for "whatever the host would route to anyway". */
+    // ---- virtio-snd ----
+
+    /**
+     * One host endpoint on the card: a direction, and the host device it is pinned to.
+     *
+     * <p>A card can carry several. What is shared between them lives on the card -- the buffer
+     * depth and what to do about an underrun are properties of the device's queues, not of any
+     * one endpoint -- and what distinguishes them lives here.</p>
+     */
+    public static final class Endpoint {
+        public final DataItem item;
+
+        Endpoint(@NonNull DataItem item) {
+            this.item = item;
+        }
+
+        @NonNull
+        public SoundMode getMode() {
+            return Enums.optEnum(item, "mode", SoundMode.SPEAKER);
+        }
+
+        public void setMode(@NonNull SoundMode mode) {
+            item.set("mode", mode);
+        }
+
+        /** Stable host-device descriptor; see {@code HostAudioDevices.keyOf}. */
+        @NonNull
+        public String getHostDevice() {
+            var v = item.opt("host_device", (DataItem) null);
+            return v == null ? "" : v.asString();
+        }
+
+        @NonNull
+        public String getHostLabel() {
+            var v = item.opt("host_label", (DataItem) null);
+            return v == null ? "" : v.asString();
+        }
+
+        public void setHostDevice(@NonNull String key, @NonNull String label) {
+            item.set("host_device", key);
+            item.set("host_label", label);
+        }
+    }
+
+    /** The card's endpoints, in the order they are shown and numbered. */
+    @NonNull
+    public List<Endpoint> getEndpoints() {
+        var out = new ArrayList<Endpoint>();
+        var list = item.opt("endpoints", (DataItem) null);
+        if (list == null) return out;
+        for (int i = 0; i < list.size(); i++) {
+            out.add(new Endpoint(list.opt(i, DataItem.newObject())));
+        }
+        return out;
+    }
+
+    /** Appends an endpoint and returns it. */
+    @NonNull
+    public Endpoint addEndpoint() {
+        var list = item.opt("endpoints", (DataItem) null);
+        if (list == null) {
+            list = DataItem.newArray();
+            item.set("endpoints", list);
+        }
+        var endpoint = DataItem.newObject();
+        list.append(endpoint);
+        return new Endpoint(endpoint);
+    }
+
+    public void removeEndpoint(int index) {
+        var list = item.opt("endpoints", (DataItem) null);
+        if (list == null || index < 0 || index >= list.size()) return;
+        list.remove(index);
+    }
+
+    @NonNull
+    public SoundBuffer getBuffer() {
+        return Enums.optEnum(item, "buffer", SoundBuffer.NORMAL);
+    }
+
+    public void setBuffer(@NonNull SoundBuffer buffer) {
+        item.set("buffer", buffer);
+    }
+
+    @NonNull
+    public SoundUnderrun getUnderrun() {
+        return Enums.optEnum(item, "underrun", SoundUnderrun.SILENCE);
+    }
+
+    public void setUnderrun(@NonNull SoundUnderrun underrun) {
+        item.set("underrun", underrun);
+    }
+
+    // ---- host endpoints ----
+
+    /**
+     * Stable host-device descriptor for the single endpoint of a one-direction device, or ""
+     * for "whatever the host would route to anyway".
+     */
     @NonNull
     public String getHostDevice() {
-        var key = item.optString("host_device", "");
-        return key == null ? "" : key;
+        return str("host_device");
+    }
+
+    @NonNull
+    public String getHostLabel() {
+        return str("host_label");
     }
 
     public void setHostDevice(@NonNull String key, @NonNull String label) {
@@ -48,11 +150,42 @@ public final class VMPeripheralConfig {
         item.set("host_label", label);
     }
 
-    /** Last known display name of the host device; may be stale or empty. */
+    /** Output endpoint of a device that carries both directions (Intel HDA). */
     @NonNull
-    public String getHostLabel() {
-        var label = item.optString("host_label", "");
-        return label == null ? "" : label;
+    public String getHostOutDevice() {
+        return str("host_out_device");
+    }
+
+    @NonNull
+    public String getHostOutLabel() {
+        return str("host_out_label");
+    }
+
+    public void setHostOutDevice(@NonNull String key, @NonNull String label) {
+        item.set("host_out_device", key);
+        item.set("host_out_label", label);
+    }
+
+    /** Input endpoint of a device that carries both directions (Intel HDA). */
+    @NonNull
+    public String getHostInDevice() {
+        return str("host_in_device");
+    }
+
+    @NonNull
+    public String getHostInLabel() {
+        return str("host_in_label");
+    }
+
+    public void setHostInDevice(@NonNull String key, @NonNull String label) {
+        item.set("host_in_device", key);
+        item.set("host_in_label", label);
+    }
+
+    @NonNull
+    private String str(@NonNull String key) {
+        var v = item.optString(key, "");
+        return v == null ? "" : v;
     }
 
     /** Wraps every entry of {@code config}'s "peripherals" array, in order. */

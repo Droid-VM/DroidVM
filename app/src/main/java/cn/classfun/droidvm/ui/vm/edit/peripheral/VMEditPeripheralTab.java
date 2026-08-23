@@ -4,13 +4,17 @@
 package cn.classfun.droidvm.ui.vm.edit.peripheral;
 
 import static java.util.Objects.requireNonNull;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import java.util.ArrayList;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.data.HostAudioDevices;
+import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -56,17 +60,23 @@ public final class VMEditPeripheralTab extends VMEditBaseTab {
 
     @Override
     public boolean validateInput(@NonNull VMStore store) {
-        var peripherals = VMPeripheralConfig.listOf(wrap());
-        // Two rows on the same host endpoint would open two AAudio streams onto it: allowed by
-        // the platform, but never what someone meant to configure.
-        for (int i = 0; i < peripherals.size(); i++) {
-            var key = peripherals.get(i).getHostDevice();
-            if (key.isEmpty()) continue;
-            for (int j = 0; j < i; j++) {
-                var other = peripherals.get(j);
-                if (other.getType() == peripherals.get(i).getType()
-                    && other.getHostDevice().equals(key))
+        // Two endpoints pointed at one host device in the same direction would open two AAudio
+        // streams onto it: allowed by the platform, but never what someone meant to configure.
+        // The direction is part of the identity, so a microphone and a speaker cannot collide.
+        // Checked across every card, not within one: two cards aimed at the same speaker is the
+        // same mistake as one card aimed at it twice.
+        var seen = new ArrayList<String>();
+        for (var peripheral : VMPeripheralConfig.listOf(wrap())) {
+            if (peripheral.getType() != PeripheralType.VIRTIO_SOUND) continue;
+            for (var endpoint : peripheral.getEndpoints()) {
+                var key = endpoint.getHostDevice();
+                // Unset, or the platform's own routing, can be chosen as often as one likes:
+                // it does not name a device, so there is nothing to collide over.
+                if (key.isEmpty() || HostAudioDevices.SYSTEM_DEFAULT_KEY.equals(key)) continue;
+                var identity = fmt("%s|%s", endpoint.getMode().isInput() ? "in" : "out", key);
+                if (seen.contains(identity))
                     return showValidateFailed(R.string.edit_vm_peripheral_duplicate_host);
+                seen.add(identity);
             }
         }
         return true;

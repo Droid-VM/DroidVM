@@ -377,17 +377,18 @@ public final class QemuBackendInstance extends VMBackendInstance {
      * One virtio-sound-pci card on QEMU's aaudio driver, present when the VM has any audio
      * peripheral.
      *
-     * <p>Only the on/off decision is plumbed here. Which host endpoint a peripheral was pinned
-     * to is crosvm-only -- QEMU's aaudio driver opens whatever the platform routes to -- and so
-     * is the per-direction stream count, which would need device properties this prebuilt QEMU
-     * has not been verified to have. A config that predates the peripheral tab still works
-     * through the old {@code audio_enabled} key, which also stays available as an override.</p>
+     * <p>Only the on/off decision is plumbed here. The mode, host endpoint, buffer and underrun
+     * settings of a VirtIO Sound peripheral are all crosvm-side concepts -- QEMU's aaudio driver
+     * opens whatever the platform routes to, in one process, as whatever uid QEMU runs as -- so
+     * they are ignored rather than half-honoured. Intel HDA is ignored here too, even though
+     * this QEMU does emulate one: wiring it would be a separate piece of work with its own
+     * verification. A config that predates the peripheral tab still works through the old
+     * {@code audio_enabled} key, which also stays available as an override.</p>
      */
     private void buildAudioCommand(@NonNull List<String> args) {
         boolean anyAudio = false;
         for (var peripheral : VMPeripheralConfig.listOf(config.item)) {
-            var type = peripheral.getType();
-            if (type == PeripheralType.SPEAKER || type == PeripheralType.MICROPHONE)
+            if (peripheral.getType() == PeripheralType.VIRTIO_SOUND)
                 anyAudio = true;
         }
         if (!anyAudio) {

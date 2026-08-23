@@ -35,6 +35,23 @@ public final class HostAudioDevices {
     /** AAUDIO_UNSPECIFIED: let the platform route the stream itself. */
     public static final int DEVICE_UNSPECIFIED = 0;
 
+    /**
+     * The endpoint that means "whatever the platform would route to", named rather than left
+     * blank.
+     *
+     * <p>An unset field said the same thing until now, and saying it by omission turned out to
+     * be worse in every direction: the config held a device with nothing in it, the command line
+     * carried an entry with no fields, and the option parser has no use for either. It also
+     * cannot be told apart from a field nobody filled in.</p>
+     *
+     * <p>It is shaped like any other key so nothing has to special-case it -- and it appears in
+     * the published device table against id 0, which is `AAUDIO_DEVICE_UNSPECIFIED`, so
+     * resolving it produces the platform's own routing by the ordinary path rather than by an
+     * exception to it. `DEFAULT` is not an AudioDeviceInfo type name, so a real endpoint can
+     * never collide with it.</p>
+     */
+    public static final String SYSTEM_DEFAULT_KEY = "DEFAULT|system default";
+
     /** One live host endpoint. */
     public static final class Entry {
         /** Stable descriptor stored in the VM config; see {@link #keyOf}. */
@@ -78,17 +95,92 @@ public final class HostAudioDevices {
     }
 
     /**
+     * The same endpoints as {@link #list}, as {@code id -> key} pairs and nothing else.
+     *
+     * <p>Separate from {@code list} because that one builds a label for the picker, and a label
+     * needs the app's string resources. The daemon's context has none -- asking it for one throws
+     * {@code Resources$NotFoundException} -- and it has no use for a label anyway: it is
+     * publishing the endpoints for crosvm to match against, not showing them to anyone.</p>
+     */
+    @NonNull
+    public static List<int[]> idsAndKeys(@NonNull Context context, boolean input,
+                                         @NonNull List<String> keysOut) {
+        var ids = new ArrayList<int[]>();
+        var devices = query(context, input);
+        if (devices == null) return ids;
+        for (var device : devices) {
+            if (!isSelectable(device, input)) continue;
+            var key = keyOf(device);
+            if (keysOut.contains(key)) continue;
+            keysOut.add(key);
+            ids.add(new int[] { device.getId() });
+        }
+        return ids;
+    }
+
+    /**
      * Live AudioDeviceInfo id for a stored key, or {@link #DEVICE_UNSPECIFIED} when the key is
      * empty (follow the platform) or names a device that is not currently present.
      */
     public static int resolve(@NonNull Context context, boolean input, @Nullable String key) {
-        if (key == null || key.isEmpty()) return DEVICE_UNSPECIFIED;
+        // "" is what older configs stored for the same thing.
+        if (key == null || key.isEmpty() || SYSTEM_DEFAULT_KEY.equals(key)) {
+            return DEVICE_UNSPECIFIED;
+        }
         var devices = query(context, input);
         if (devices == null) return DEVICE_UNSPECIFIED;
         for (var device : devices)
             if (keyOf(device).equals(key)) return device.getId();
         Log.w(TAG, fmt("host audio device %s is not present; falling back to default routing", key));
         return DEVICE_UNSPECIFIED;
+    }
+
+    /**
+     * Separates the endpoint's name from what the stream is for.
+     *
+     * <p>An address already contains most of the punctuation worth choosing: a Bluetooth address
+     * is a MAC with colons, a USB one looks like {@code card=1;device=0}. So the separator has to
+     * be something none of them use.</p>
+     */
+    public static final char ATTR_SEPARATOR = '#';
+
+    /** The part of a stored key that names the endpoint, without what it is to be used for. */
+    @NonNull
+    public static String deviceOf(@NonNull String key) {
+        int at = key.indexOf(ATTR_SEPARATOR);
+        return at < 0 ? key : key.substring(0, at);
+    }
+
+    /** The {@code attr=value,...} part of a stored key, or "" when it carries none. */
+    @NonNull
+    public static String attrsOf(@NonNull String key) {
+        int at = key.indexOf(ATTR_SEPARATOR);
+        return at < 0 ? "" : key.substring(at + 1);
+    }
+
+    /** One attribute out of the {@code attr=value,...} part, or "" when it is not set. */
+    @NonNull
+    public static String attrOf(@NonNull String key, @NonNull String name) {
+        for (var pair : attrsOf(key).split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && pair.substring(0, eq).trim().equals(name)) {
+                return pair.substring(eq + 1).trim();
+            }
+        }
+        return "";
+    }
+
+    /** Rebuilds a key from an endpoint and its attributes; empty attributes are left out. */
+    @NonNull
+    public static String withAttrs(@NonNull String device, @NonNull List<String> names,
+                                   @NonNull List<String> values) {
+        var parts = new ArrayList<String>();
+        for (int i = 0; i < names.size() && i < values.size(); i++) {
+            if (!values.get(i).isEmpty()) {
+                parts.add(fmt("%s=%s", names.get(i), values.get(i)));
+            }
+        }
+        return parts.isEmpty() ? device : device + ATTR_SEPARATOR + String.join(",", parts);
     }
 
     /**
