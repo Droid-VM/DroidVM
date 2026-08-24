@@ -46,7 +46,8 @@ public final class VMConsoleRouter {
             openVnc(ctx, vmId, config);
             return;
         }
-        // Serial console: ask the daemon which streams exist, prefer uart then stdio.
+        // Serial console: ask the daemon which streams exist. Prefer a real guest serial port
+        // (the app-console serial streams, or QEMU's legacy "uart") over the process stdio.
         DaemonConnection.getInstance().buildRequest("vm_console_list")
             .put("vm_id", vmId.toString())
             .onResponse(resp -> {
@@ -59,7 +60,13 @@ public final class VMConsoleRouter {
                         if (!n.isEmpty()) names.add(n);
                     }
                     if (names.contains("uart")) stream = "uart";
-                    else if (names.contains("stdio")) stream = "stdio";
+                    if (stream == null)
+                        for (var n : names)
+                            if (n.matches("(serial|sbsa|vcon)[0-9]+")) {
+                                stream = n;
+                                break;
+                            }
+                    if (stream == null && names.contains("stdio")) stream = "stdio";
                 }
                 if (stream == null) return;
                 final var s = stream;

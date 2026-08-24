@@ -65,7 +65,10 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_STREAM = "stream";
     public static final String EXTRA_LOGS = "logs";
-    private static final String DEFAULT_STREAM = "uart";
+    // Every backend registers stdio; "uart" only exists on the QEMU backend these days, and
+    // the crosvm serial streams are named per port (serialN/sbsaN/vconN) so none is a safe
+    // universal fallback.
+    private static final String DEFAULT_STREAM = "stdio";
     private static final String PREFS_NAME = "droidvm_prefs";
     private static final String KEY_FONT_SIZE = "console_font_size";
     private static final float MIN_FONT_SIZE = 2;

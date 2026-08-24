@@ -31,6 +31,9 @@ public class VMConfig extends DataConfig {
         }
         migrateBoot();
         migrateNicForwards();
+        // Configs from before "serial_ports" implicitly meant "COM1 = app console, rest sinks";
+        // make that explicit so every reader sees the same list.
+        VMSerialConfig.ensureDefaults(item);
     }
 
     /**

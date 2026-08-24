@@ -31,4 +31,19 @@
         android:textColor="?attr/colorOnSurfaceVariant"
         android:textSize="12sp" />
 
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_serial">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_serial_ports"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_serial_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_serial_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
 </LinearLayout>
