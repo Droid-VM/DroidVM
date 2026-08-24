@@ -155,14 +155,21 @@ public final class HostAudioTable {
         // The platform's own routing, as an ordinary row against AAUDIO_DEVICE_UNSPECIFIED.
         // Listing it means "follow the platform" resolves through the same lookup as everything
         // else, instead of being an absence that every reader has to recognise separately.
-        text.append(fmt("%d\t%s\t%s\n", HostAudioDevices.DEVICE_UNSPECIFIED,
-            input ? "in" : "out", HostAudioDevices.SYSTEM_DEFAULT_KEY));
+        // Rate and channels are left at 0 -- following the platform means whatever it routes to
+        // today, and naming a format for it would be describing one particular device. The kind
+        // is knowable regardless: the direction decides it.
+        text.append(fmt("%d\t%s\t%s\t0\t0\t%d\n", HostAudioDevices.DEVICE_UNSPECIFIED,
+            input ? "in" : "out", HostAudioDevices.SYSTEM_DEFAULT_KEY, input ? 6 : 1));
         // Deliberately not HostAudioDevices.list: that builds a label for the picker, and a label
         // needs the app's string resources, which the daemon's context does not have.
         var keys = new java.util.ArrayList<String>();
         var ids = HostAudioDevices.idsAndKeys(context, input, keys);
         for (int i = 0; i < ids.size() && i < keys.size(); i++) {
-            text.append(fmt("%d\t%s\t%s\n", ids.get(i)[0], input ? "in" : "out", keys.get(i)));
+            var row = ids.get(i);
+            // id, direction, name, then what the endpoint itself is: native rate, channel count,
+            // and kind. A reader that only wants the id stops after the third column.
+            text.append(fmt("%d\t%s\t%s\t%d\t%d\t%d\n", row[0], input ? "in" : "out",
+                keys.get(i), row[1], row[2], row[3]));
         }
         return keys.size();
     }

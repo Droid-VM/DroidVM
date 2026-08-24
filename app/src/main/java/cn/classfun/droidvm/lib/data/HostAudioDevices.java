@@ -113,9 +113,61 @@ public final class HostAudioDevices {
             var key = keyOf(device);
             if (keysOut.contains(key)) continue;
             keysOut.add(key);
-            ids.add(new int[] { device.getId() });
+            ids.add(new int[] {
+                device.getId(), soleValue(device.getSampleRates()),
+                soleValue(device.getChannelCounts()), kindOf(device, input)
+            });
         }
         return ids;
+    }
+
+    /**
+     * The one value in a capability list, or 0 when there is more than one.
+     *
+     * <p>These lists say what an endpoint will accept, not what it runs at, and the two are only
+     * the same thing when there is a single entry. Picking a favourite out of several would be a
+     * guess, and a guessed hint is worse than none: the guest treats a hint as the format to
+     * default to, and would then default to something the platform converts. An empty list means
+     * the platform declined to say, which is the same answer.</p>
+     */
+    private static int soleValue(int[] values) {
+        return values != null && values.length == 1 ? values[0] : 0;
+    }
+
+    /**
+     * What kind of thing the endpoint is, in the numbering the guest driver uses: 1 speaker,
+     * 2 headphones, 3 headset, 4 line out, 5 digital, 6 microphone, 7 telephony.
+     *
+     * <p>This is what decides the name and icon Windows shows beside the endpoint, so an
+     * approximate answer is still much better than none.</p>
+     */
+    public static int kindOf(@NonNull AudioDeviceInfo device, boolean input) {
+        switch (device.getType()) {
+            case AudioDeviceInfo.TYPE_TELEPHONY:
+                return 7;
+            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
+                return 2;
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+            case AudioDeviceInfo.TYPE_USB_HEADSET:
+            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+            case AudioDeviceInfo.TYPE_BLE_HEADSET:
+                return 3;
+            case AudioDeviceInfo.TYPE_LINE_ANALOG:
+            case AudioDeviceInfo.TYPE_AUX_LINE:
+                return 4;
+            case AudioDeviceInfo.TYPE_HDMI:
+            case AudioDeviceInfo.TYPE_HDMI_ARC:
+            case AudioDeviceInfo.TYPE_LINE_DIGITAL:
+            case AudioDeviceInfo.TYPE_USB_DEVICE:
+            case AudioDeviceInfo.TYPE_USB_ACCESSORY:
+            case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
+            case AudioDeviceInfo.TYPE_BLE_SPEAKER:
+                return 5;
+            default:
+                // Everything left is a built-in transducer of one kind or the other, and which
+                // one is decided by the direction rather than by the type.
+                return input ? 6 : 1;
+        }
     }
 
     /**
@@ -233,9 +285,21 @@ public final class HostAudioDevices {
         }
     }
 
+    /**
+     * The echo reference: the output mix, fed back so a capture path can subtract it. Android
+     * exposes it in the device list but only opens it for system callers, so an endpoint pinned
+     * to it appears in the guest and never produces a sample -- measured: PREPARE comes back
+     * VIRTIO_SND_S_IO_ERR, "Failed to open stream".
+     *
+     * <p>By number because there is no public constant for it -- the SDK's list goes 25, 26, 27,
+     * 29 -- and a name that does not exist cannot be compiled against.</p>
+     */
+    private static final int TYPE_ECHO_REFERENCE = 28;
+
     /** Endpoints that make no sense as a VM's speaker or microphone. */
     private static boolean isSelectable(@NonNull AudioDeviceInfo device, boolean input) {
         switch (device.getType()) {
+            case TYPE_ECHO_REFERENCE:
             case AudioDeviceInfo.TYPE_TELEPHONY:
             case AudioDeviceInfo.TYPE_REMOTE_SUBMIX:
             case AudioDeviceInfo.TYPE_FM:
