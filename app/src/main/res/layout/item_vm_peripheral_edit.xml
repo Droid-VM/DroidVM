@@ -67,41 +67,63 @@
             android:visibility="gone"
             tools:visibility="visible" />
 
-        <!-- ===== VirtIO Sound: one direction, one endpoint ===== -->
+        <!-- ===== VirtIO Sound: one card, endpoints grouped by direction ===== -->
         <LinearLayout
             android:id="@+id/group_virtio_sound"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical">
 
-            <!-- One row per endpoint, filled in by the adapter. A card can carry several. -->
+            <!--
+              Playback endpoints above the rule, capture ones below it. A row carries no direction
+              of its own: which side of the rule it is on is its direction, and its label states
+              which. The rule stays put when a group is empty, so an empty half still reads as a
+              half rather than as a missing one.
+            -->
             <LinearLayout
-                android:id="@+id/sound_endpoints"
+                android:id="@+id/sound_out_endpoints"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_sound_endpoint_add"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="wrap_content"
-                android:layout_height="40dp"
-                android:text="@string/edit_vm_sound_endpoint_add"
-                android:textSize="12sp"
-                app:icon="@drawable/ic_add"
-                app:iconSize="18dp"
-                tools:ignore="TouchTargetSizeCheck" />
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="?attr/colorOutlineVariant" />
 
+            <LinearLayout
+                android:id="@+id/sound_in_endpoints"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- Adding an endpoint and the two card-wide settings: one row, because none of the
+                 three belongs to any endpoint above. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_sound_endpoint_add"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/edit_vm_sound_endpoint_add"
+                    android:textSize="12sp"
+                    app:icon="@drawable/ic_add"
+                    app:iconSize="18dp"
+                    tools:ignore="TouchTargetSizeCheck" />
 
                 <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
                     android:id="@+id/btn_sound_buffer"
                     android:layout_width="wrap_content"
                     android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
                     android:title="@string/edit_vm_sound_buffer"
                     app:pb_mode="dialog" />
 

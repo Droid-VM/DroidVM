@@ -25,7 +25,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final ImageButton btnDelete;
     // virtio-snd
     final View groupVirtioSound;
-    final LinearLayout soundEndpoints;
+    final LinearLayout soundOutEndpoints;
+    final LinearLayout soundInEndpoints;
     final MaterialButton btnAddEndpoint;
     final PickerButtonWidget btnBuffer;
     final PickerButtonWidget btnUnderrun;
@@ -42,7 +43,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         tvWarning = itemView.findViewById(R.id.tv_peripheral_warning);
         btnDelete = itemView.findViewById(R.id.btn_peripheral_delete);
         groupVirtioSound = itemView.findViewById(R.id.group_virtio_sound);
-        soundEndpoints = itemView.findViewById(R.id.sound_endpoints);
+        soundOutEndpoints = itemView.findViewById(R.id.sound_out_endpoints);
+        soundInEndpoints = itemView.findViewById(R.id.sound_in_endpoints);
         btnAddEndpoint = itemView.findViewById(R.id.btn_sound_endpoint_add);
         btnBuffer = itemView.findViewById(R.id.btn_sound_buffer);
         btnUnderrun = itemView.findViewById(R.id.btn_sound_underrun);

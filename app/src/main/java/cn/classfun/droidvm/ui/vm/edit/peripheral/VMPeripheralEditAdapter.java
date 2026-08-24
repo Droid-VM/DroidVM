@@ -13,7 +13,9 @@ import android.content.DialogInterface;
 import android.view.Menu;
 import android.view.View;
 import android.view.LayoutInflater;
+import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -34,22 +36,28 @@ import cn.classfun.droidvm.lib.store.vm.SoundBuffer;
 import cn.classfun.droidvm.lib.store.vm.SoundMode;
 import cn.classfun.droidvm.lib.store.vm.SoundPurpose;
 import cn.classfun.droidvm.lib.store.vm.SoundUnderrun;
-import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
 /**
  * The peripheral list's rows. The + button asks which device first, because the device decides
- * what the rest of the row means -- a virtio-snd card is one direction with one endpoint, an
- * Intel HDA codec is both directions on one card -- so the row shows one field group or the
- * other rather than a lowest common denominator.
+ * what the rest of the row means -- a virtio-snd card carries a list of endpoints grouped by
+ * direction, an Intel HDA codec carries exactly one of each -- so the row shows one field group
+ * or the other rather than a lowest common denominator.
  *
  * <p>Host endpoints come from what the phone reports right now ({@link HostAudioDevices}); the
  * row stores the stable descriptor, not the live id, and says so when the stored device is not
  * currently connected.</p>
  */
 public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralEditViewHolder> {
+    /**
+     * Endpoints one card may carry in one direction. The guest driver registers this many
+     * subdevices per direction and ignores the rest, so offering more would offer endpoints that
+     * never appear in the guest.
+     */
+    private static final int MAX_PER_DIRECTION = 4;
+
     /** Asks for RECORD_AUDIO before a capture-capable device is added; set by the tab. */
     private Consumer<Runnable> micPermissionGate;
     // What the phone reported last time we looked, so binding a row is not a binder call each
@@ -177,53 +185,78 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 new VMPeripheralConfig(items.get(pos)).setUnderrun((SoundUnderrun) newVal);
         });
 
-        bindEndpoints(holder, peripheral);
+        // Playback above the rule, capture below. A card with neither is legal and starts a card
+        // with no streams, which is why both groups go down to nothing.
+        bindEndpointGroup(holder, peripheral, SoundMode.SPEAKER, holder.soundOutEndpoints);
+        bindEndpointGroup(holder, peripheral, SoundMode.MICROPHONE, holder.soundInEndpoints);
 
+        // One button for both directions, which then asks which one. A row's direction cannot be
+        // changed afterwards, so this is the only place the question is asked.
+        boolean anyRoom = false;
+        for (var mode : SoundMode.values())
+            if (countOf(peripheral, mode) < MAX_PER_DIRECTION) anyRoom = true;
+        holder.btnAddEndpoint.setEnabled(anyRoom);
         holder.btnAddEndpoint.setOnClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
-            new VMPeripheralConfig(items.get(pos)).addEndpoint();
-            notifyItemChangedSafe(pos);
+            askDirectionAndAdd(new VMPeripheralConfig(items.get(pos)), pos);
         });
     }
 
-    /** Rebuilds the endpoint rows. There are a handful at most, so they are laid out directly. */
-    private void bindEndpoints(
-        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral
+    /**
+     * Asks which direction to add, then adds it. A direction that is already full is left out of
+     * the list rather than shown and refused.
+     */
+    private void askDirectionAndAdd(@NonNull VMPeripheralConfig peripheral, int pos) {
+        var modes = new ArrayList<SoundMode>();
+        var labels = new ArrayList<String>();
+        for (var mode : SoundMode.values()) {
+            if (countOf(peripheral, mode) >= MAX_PER_DIRECTION) continue;
+            modes.add(mode);
+            labels.add(context.getString(mode.getStringId()));
+        }
+        if (modes.isEmpty()) return;
+        new MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.edit_vm_sound_endpoint_add)
+            .setItems(labels.toArray(new String[0]), (dialog, which) -> {
+                var mode = modes.get(which);
+                Runnable append = () -> {
+                    var endpoint = peripheral.addEndpoint();
+                    endpoint.setMode(mode);
+                    endpoint.setHostDevice(HostAudioDevices.SYSTEM_DEFAULT_KEY, "");
+                    notifyItemChangedSafe(pos);
+                };
+                if (mode.isInput() && micPermissionGate != null) micPermissionGate.accept(append);
+                else append.run();
+            })
+            .show();
+    }
+
+    /**
+     * Rebuilds one direction's rows. There are a handful at most, so they are laid out directly.
+     *
+     * <p>Endpoints are stored as one list for the whole card, so a row's position in its group is
+     * not its position in the config; the stored index is what the row's buttons carry.</p>
+     */
+    private void bindEndpointGroup(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral,
+        @NonNull SoundMode mode, @NonNull LinearLayout container
     ) {
-        var container = holder.soundEndpoints;
         container.removeAllViews();
         var inflater = LayoutInflater.from(container.getContext());
         var endpoints = peripheral.getEndpoints();
+        boolean input = mode.isInput();
 
         for (int i = 0; i < endpoints.size(); i++) {
-            final int index = i;
             var endpoint = endpoints.get(i);
+            if (endpoint.getMode() != mode) continue;
+            final int index = i;
             var row = inflater.inflate(R.layout.item_sound_endpoint, container, false);
-            PickerButtonWidget btnMode = row.findViewById(R.id.btn_sound_mode);
+            TextView tvMode = row.findViewById(R.id.tv_endpoint_mode);
             MaterialButton btnHost = row.findViewById(R.id.btn_peripheral_host);
             MaterialButton btnRemove = row.findViewById(R.id.btn_endpoint_remove);
 
-            btnMode.configure(SoundMode.class, endpoint.getMode());
-            btnMode.setOnValueChangedListener((oldVal, newVal) -> {
-                int pos = holder.getBindingAdapterPosition();
-                if (pos == RecyclerView.NO_POSITION) return;
-                var cfg = new VMPeripheralConfig(items.get(pos));
-                if (index >= cfg.getEndpoints().size()) return;
-                var target = cfg.getEndpoints().get(index);
-                var mode = (SoundMode) newVal;
-                // The endpoint belongs to a direction; keeping the device across a switch would
-                // point a microphone at a speaker.
-                target.setHostDevice("", "");
-                Runnable apply = () -> {
-                    target.setMode(mode);
-                    notifyItemChangedSafe(pos);
-                };
-                if (mode.isInput() && micPermissionGate != null) micPermissionGate.accept(apply);
-                else apply.run();
-            });
-
-            boolean input = endpoint.getMode().isInput();
+            tvMode.setText(mode.getStringId());
             bindHostButton(holder, btnHost, endpoint.getHostDevice(), endpoint.getHostLabel(),
                 input);
             btnHost.setOnClickListener(v -> {
@@ -232,8 +265,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 var cfg = new VMPeripheralConfig(items.get(pos));
                 if (index >= cfg.getEndpoints().size()) return;
                 var target = cfg.getEndpoints().get(index);
-                showHostPicker(target.getMode().isInput(), target.getHostDevice(),
-                    target.getHostLabel(),
+                showHostPicker(input, target.getHostDevice(), target.getHostLabel(),
                     (key, label) -> {
                         target.setHostDevice(key, label);
                         notifyItemChangedSafe(pos);
@@ -249,6 +281,13 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
             container.addView(row);
         }
+    }
+
+    private static int countOf(@NonNull VMPeripheralConfig peripheral, @NonNull SoundMode mode) {
+        int n = 0;
+        for (var endpoint : peripheral.getEndpoints())
+            if (endpoint.getMode() == mode) n++;
+        return n;
     }
 
     private void bindIntelHda(

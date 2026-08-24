@@ -1341,7 +1341,6 @@
     <string name="edit_vm_peripheral_pick_output">Play through</string>
     <string name="edit_vm_peripheral_pick_input">Record from</string>
     <string name="edit_vm_peripheral_duplicate_host">Two peripherals of the same type point at one host device.</string>
-    <string name="edit_vm_peripheral_note">Audio peripherals become one virtio-snd card in the guest. Host device selection needs the crosvm backend; QEMU always follows the system routing.</string>
     <string name="audio_device_builtin_speaker">Speaker</string>
     <string name="audio_device_builtin_earpiece">Earpiece</string>
     <string name="audio_device_builtin_mic">Built-in microphone</string>
@@ -1360,7 +1359,7 @@
     <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
     <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
     <string name="edit_vm_peripheral_unavailable">No host backend for this device yet; it will be skipped when the VM starts.</string>
-    <string name="edit_vm_sound_endpoint_add">Add endpoint</string>
+    <string name="edit_vm_sound_endpoint_add">Add device</string>
     <string name="edit_vm_sound_endpoint_remove">Remove endpoint</string>
     <string name="edit_vm_sound_purpose_usage">Purpose</string>
     <string name="edit_vm_sound_purpose_content">Content</string>
@@ -1388,7 +1387,6 @@
     <string name="edit_vm_sound_preset_voice_communication">Call</string>
     <string name="edit_vm_sound_preset_unprocessed">Raw</string>
     <string name="edit_vm_sound_preset_voice_performance">Performance</string>
-    <string name="edit_vm_sound_mode">Mode</string>
     <string name="edit_vm_sound_mode_speaker">Speaker</string>
     <string name="edit_vm_sound_mode_microphone">Microphone</string>
     <string name="edit_vm_sound_buffer">Buffer</string>

@@ -92,13 +92,20 @@ public final class VMPeripheralConfig {
         return out;
     }
 
-    /** Appends an endpoint and returns it. */
+    /**
+     * Appends an endpoint and returns it.
+     *
+     * <p>The list is re-read after it is created rather than kept from the local variable:
+     * {@code set} stores a copy, so appending to the value that was handed to it would build a
+     * list nothing else can see -- which is what silently swallowed the first endpoint of every
+     * new card.</p>
+     */
     @NonNull
     public Endpoint addEndpoint() {
         var list = item.opt("endpoints", (DataItem) null);
-        if (list == null) {
-            list = DataItem.newArray();
-            item.set("endpoints", list);
+        if (list == null || !list.is(DataItem.Type.ARRAY)) {
+            item.set("endpoints", DataItem.newArray());
+            list = item.opt("endpoints", (DataItem) null);
         }
         var endpoint = DataItem.newObject();
         list.append(endpoint);

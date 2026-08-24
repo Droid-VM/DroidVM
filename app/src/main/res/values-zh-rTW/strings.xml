@@ -1303,7 +1303,6 @@
     <string name="edit_vm_peripheral_pick_output">播放到</string>
     <string name="edit_vm_peripheral_pick_input">錄音來源</string>
     <string name="edit_vm_peripheral_duplicate_host">有兩個同類型的外設指向同一個主機裝置。</string>
-    <string name="edit_vm_peripheral_note">音訊外設在客體中會組成一張 virtio-snd 音效卡。指定主機裝置需要 crosvm 後端；QEMU 一律跟隨系統路由。</string>
     <string name="audio_device_builtin_speaker">喇叭</string>
     <string name="audio_device_builtin_earpiece">聽筒</string>
     <string name="audio_device_builtin_mic">內建麥克風</string>
@@ -1322,7 +1321,7 @@
     <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
     <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
     <string name="edit_vm_peripheral_unavailable">主機端尚未支援這個裝置，VM 啟動時會略過。</string>
-    <string name="edit_vm_sound_endpoint_add">新增端點</string>
+    <string name="edit_vm_sound_endpoint_add">新增設備</string>
     <string name="edit_vm_sound_endpoint_remove">移除端點</string>
     <string name="edit_vm_sound_purpose_usage">用途</string>
     <string name="edit_vm_sound_purpose_content">內容類型</string>
@@ -1350,7 +1349,6 @@
     <string name="edit_vm_sound_preset_voice_communication">通訊</string>
     <string name="edit_vm_sound_preset_unprocessed">未處理</string>
     <string name="edit_vm_sound_preset_voice_performance">演出</string>
-    <string name="edit_vm_sound_mode">模式</string>
     <string name="edit_vm_sound_mode_speaker">喇叭</string>
     <string name="edit_vm_sound_mode_microphone">麥克風</string>
     <string name="edit_vm_sound_buffer">緩衝</string>

@@ -19,18 +19,6 @@
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
-    <TextView
-        android:id="@+id/tv_peripheral_note"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginStart="24dp"
-        android:layout_marginTop="4dp"
-        android:layout_marginEnd="24dp"
-        android:layout_marginBottom="16dp"
-        android:text="@string/edit_vm_peripheral_note"
-        android:textColor="?attr/colorOnSurfaceVariant"
-        android:textSize="12sp" />
-
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

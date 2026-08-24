@@ -25,15 +25,16 @@ public enum SoundUnderrun implements StringEnum {
     /**
      * Waveform Similarity Overlap-Add: searches for the best-matching window at each splice and
      * overlap-adds, rather than repeating one period unchanged. Costs more and does not lock to
-     * a single pitch, so a long hole does not turn into a held note. Not implemented.
+     * a single pitch, so a long hole does not turn into a held note.
      */
-    WSOLA(R.string.edit_vm_sound_underrun_wsola, false),
+    WSOLA(R.string.edit_vm_sound_underrun_wsola, true),
     /**
      * Linear-predictive extrapolation: fits an all-pole filter to the previous audio and excites
-     * it to continue the signal, rather than reusing samples. What VoIP codecs do. Not
-     * implemented.
+     * it to continue the signal, rather than reusing samples. What VoIP codecs do: the formants
+     * come from the filter, so what does get repeated is the excitation, which loops far less
+     * audibly than a waveform does.
      */
-    LPC(R.string.edit_vm_sound_underrun_lpc, false);
+    LPC(R.string.edit_vm_sound_underrun_lpc, true);
 
     private final int titleId;
     private final boolean implemented;
