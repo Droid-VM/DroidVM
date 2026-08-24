@@ -157,11 +157,13 @@ public final class VMSerialConfig {
             arr = config.opt(KEY, (DataItem) null);
         }
         var have = new boolean[SerialHardware.SERIAL.getMaxPorts() + 1];
+        var haveConsole = false;
         for (var iter : arr) {
             var port = new VMSerialConfig(iter.getValue());
             var num = port.getNum();
             if (port.getHardware() == SerialHardware.SERIAL
                 && num >= 1 && num < have.length) have[num] = true;
+            if (port.isConsole()) haveConsole = true;
         }
         for (int num = 1; num < have.length; num++) {
             if (have[num]) continue;
@@ -171,7 +173,9 @@ public final class VMSerialConfig {
             port.setHardware(SerialHardware.SERIAL);
             port.setNum(num);
             port.setBackend(num == 1 ? SerialBackend.APP_CONSOLE : SerialBackend.SINK);
-            if (num == 1) port.setConsole(true);
+            // The console is single-select: a config that already names one -- a shipped
+            // template whose SBSA carries it -- must not gain a second flag here.
+            if (num == 1 && !haveConsole) port.setConsole(true);
             port.setFixed(true);
         }
     }
