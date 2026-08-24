@@ -1090,7 +1090,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             (endpoint.getMode().isInput() ? inputs : outputs).add(endpoint);
         }
 
-        var cfg = new StringBuilder("backend=aaudio");
+        // A diagnostic escape hatch: with this marker present the card writes the periods it
+        // receives to stream-N.out instead of playing them, which is the only way to see what
+        // actually crossed the virtqueue rather than what everyone reports having sent. Gated on
+        // a file rather than a build so it can be turned off without shipping anything.
+        var dump = new java.io.File("/data/local/tmp/viosnd_dump");
+        var cfg = new StringBuilder(dump.exists() ? "backend=file" : "backend=aaudio");
+        if (dump.exists()) {
+            cfg.append(fmt(",playback_path=%s,playback_size=%d",
+                "/data/data/cn.classfun.droidvm/cache", 4 * 1024 * 1024));
+        }
         // capture= is the card's own flag for whether it has any input at all.
         cfg.append(fmt(",capture=%b", !inputs.isEmpty()));
         cfg.append(fmt(",num_output_devices=%d", outputs.size()));
