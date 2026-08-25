@@ -645,11 +645,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             }
             item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
             item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
-            // Which host Vulkan composites this renderer's frames into the native display's
-            // Surface. It is written with the rest of the renderer's settings because that is
-            // what it is one of -- a driver choice, alongside the render host driver above it.
-            item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
         }
+        // Which host Vulkan composites frames into the native display's Surface. Written outside
+        // the virtio-gpu block since the simplefb screen's GPU-copy path: it is the native sink's
+        // driver choice, and a simplefb-only VM loads it too (the daemon's env predicate is
+        // any-native-binding for the same reason).
+        item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP, swGpuCgroup.isChecked());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, gpuCgroupCpus.trim());
@@ -760,12 +761,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // describe. Greyed rather than hidden: it says what the switch above would turn on.
         setRowsEnabled(gpuOptions, gpuDevice);
         gpuOptions.setAlpha(gpuDevice ? 1f : 0.38f);
-        // The GPU blit is the accelerated scanout's composite step and nothing else's: the
-        // virtio-gpu screen exported natively. VNC and simplefb present through crosvm's CPU copy
-        // and never reach it, so the row would name a driver nothing loads.
-        boolean accelScanout = gpuDevice
-            && screenGpu0.getExporter() == DisplayExporter.NATIVE;
-        chooseDisplayBlitProvider.setVisibility(accelScanout ? VISIBLE : GONE);
+        // The GPU blit is the native sink's composite step, and since the simplefb screen's
+        // GPU-copy path landed it belongs to ANY natively exported screen, not just the
+        // accelerated one -- the bridge dlopens the same driver for its blit. VNC still never
+        // reaches it, so with no native binding the row would name a driver nothing loads.
+        boolean anyNativeExporter =
+            (gpuDevice && screenGpu0.getExporter() == DisplayExporter.NATIVE)
+            || (screenFb.isScreenEnabled() && screenFb.getExporter() == DisplayExporter.NATIVE);
+        chooseDisplayBlitProvider.setVisibility(anyNativeExporter ? VISIBLE : GONE);
     }
 
     /**
