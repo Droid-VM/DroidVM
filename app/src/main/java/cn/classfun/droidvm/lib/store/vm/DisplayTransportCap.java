@@ -150,18 +150,19 @@ public enum DisplayTransportCap implements StringEnum {
     /**
      * Whether this build can actually reach [cap] on this edge.
      *
-     * <p>Today: the native display has the CPU copy and the Vulkan blit, and zero copy is a later
-     * step; VNC has only the CPU copy, because nobody has written its GPU half or the hardware
-     * encoder behind it. Unimplemented rungs are still offered -- see the class comment -- so this
-     * is what decides which of them the picker refuses.</p>
+     * <p>Today both exporters have the CPU copy and the Vulkan blit: the VNC sink dlopens the same
+     * driver as the native one and blits into a headless target rather than into a Surface, which
+     * is the only part of it that differs. What is left unbuilt is the rung above each -- zero copy
+     * on the native display, the hardware encoder behind VNC's blit. Unimplemented rungs are still
+     * offered -- see the class comment -- so this is what decides which of them the picker
+     * refuses.</p>
      */
     public static boolean isImplemented(@NonNull DisplayExporter exporter,
                                         @NonNull DisplayTransportCap cap) {
         switch (exporter) {
             case NATIVE:
-                return cap == CPU || cap == GPU;
             case VNC:
-                return cap == CPU;
+                return cap == CPU || cap == GPU;
             default:
                 return false;
         }
@@ -194,8 +195,9 @@ public enum DisplayTransportCap implements StringEnum {
      *
      * <p>Only simplefb has the constraint, and only where the GPU copy is a rung this build can
      * actually climb -- see {@link #GPU_COPY_WIDTH_ALIGN}. Asking {@link #isImplemented} rather
-     * than naming the native display keeps it that way: when VNC's GPU half lands it imports the
-     * same dma-buf and inherits the same rule, without this having to be found and changed.</p>
+     * than naming the native display is what made VNC's GPU half inherit the rule the day it
+     * landed: it imports the same dma-buf under the same 64-byte pitch rule, and this condition
+     * did not have to be found and changed for the warning to start appearing there.</p>
      */
     public static boolean cpuFallbackFromWidth(@NonNull String screenId,
                                                @NonNull DisplayExporter exporter,

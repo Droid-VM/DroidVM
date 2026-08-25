@@ -81,24 +81,42 @@ public class DisplayTransportCapTest {
             DisplayTransportCap.unimplementedFor(GPU0, DisplayExporter.NATIVE));
         assertEquals(0,
             DisplayTransportCap.unimplementedFor(FB, DisplayExporter.NATIVE).length);
-        assertArrayEquals(
-            new DisplayTransportCap[]{DisplayTransportCap.GPU, DisplayTransportCap.GPU_HW},
-            DisplayTransportCap.unimplementedFor(GPU0, DisplayExporter.VNC));
+        // VNC's GPU copy landed, so what is left greyed on that ladder is the encoder above it --
+        // and it is greyed on both screens, since that rung is the exporter's rather than either
+        // screen's.
+        for (var screen : new String[]{GPU0, FB})
+            assertArrayEquals(new DisplayTransportCap[]{DisplayTransportCap.GPU_HW},
+                DisplayTransportCap.unimplementedFor(screen, DisplayExporter.VNC));
+    }
+
+    @Test
+    public void bothSinksBlitAndNeitherHasTheRungAboveItsOwn() {
+        // The two exporters reached the same rung by different routes -- one blits into a Surface,
+        // the other into a headless target -- so what separates them now is only what sits above:
+        // a lent render target on one side, a hardware encoder on the other, neither built.
+        for (var exporter : new DisplayExporter[]{DisplayExporter.NATIVE, DisplayExporter.VNC}) {
+            assertTrue(DisplayTransportCap.isImplemented(exporter, DisplayTransportCap.CPU));
+            assertTrue(DisplayTransportCap.isImplemented(exporter, DisplayTransportCap.GPU));
+        }
+        assertFalse(DisplayTransportCap.isImplemented(
+            DisplayExporter.NATIVE, DisplayTransportCap.ZERO));
+        assertFalse(DisplayTransportCap.isImplemented(
+            DisplayExporter.VNC, DisplayTransportCap.GPU_HW));
+        // A screen nobody watches has no edge, so there is nothing for a build to have reached.
+        for (var cap : DisplayTransportCap.values())
+            assertFalse(DisplayTransportCap.isImplemented(DisplayExporter.NONE, cap));
     }
 
     @Test
     public void theDefaultIsTheHighestRungThatActuallyWorks() {
         // Not the highest offered: defaulting every VM to a ceiling nothing can satisfy is a
         // promise the negotiation would quietly break. This one restricts nothing that works, and
-        // it rises on its own as the rungs land.
-        assertEquals(DisplayTransportCap.GPU,
-            DisplayTransportCap.defaultFor(GPU0, DisplayExporter.NATIVE));
-        assertEquals(DisplayTransportCap.GPU,
-            DisplayTransportCap.defaultFor(FB, DisplayExporter.NATIVE));
-        assertEquals(DisplayTransportCap.CPU,
-            DisplayTransportCap.defaultFor(GPU0, DisplayExporter.VNC));
-        assertEquals(DisplayTransportCap.CPU,
-            DisplayTransportCap.defaultFor(FB, DisplayExporter.VNC));
+        // it rises on its own as the rungs land -- which is exactly what VNC's did when its GPU
+        // half was built. Nothing here was edited to make that happen; the rule produced it.
+        for (var screen : new String[]{GPU0, FB})
+            for (var exporter : new DisplayExporter[]{DisplayExporter.NATIVE, DisplayExporter.VNC})
+                assertEquals(DisplayTransportCap.GPU,
+                    DisplayTransportCap.defaultFor(screen, exporter));
     }
 
     @Test
@@ -121,9 +139,24 @@ public class DisplayTransportCapTest {
         var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
         fb.setEnabled(true);
         fb.setExporter(DisplayExporter.VNC);
-        assertEquals(DisplayTransportCap.CPU, fb.getTransportCap());
+        assertEquals(DisplayTransportCap.GPU, fb.getTransportCap());
         fb.setExporter(DisplayExporter.NATIVE);
         assertEquals(DisplayTransportCap.GPU, fb.getTransportCap());
+    }
+
+    @Test
+    public void onlyTheUnsaidCeilingFollowsTheDefaultUp() {
+        // The default rising to the GPU rung is for screens that never named one. A config that
+        // says "cpu" said it on purpose -- to keep a screen off the blit -- and reads back the
+        // same after the rung above it was built, which is also what keeps the flag being written
+        // for it. Nothing rewrites the file, so this holds for a config saved by any older build.
+        var item = DataItem.newObject();
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        fb.setEnabled(true);
+        fb.setExporter(DisplayExporter.VNC);
+        fb.setTransportCap(DisplayTransportCap.CPU);
+        assertEquals(DisplayTransportCap.CPU, fb.getTransportCap());
+        assertTrue(emitsCap(fb));
     }
 
     @Test
@@ -136,8 +169,11 @@ public class DisplayTransportCapTest {
         gpu0.setExporter(DisplayExporter.NATIVE);
         gpu0.setTransportCap(DisplayTransportCap.ZERO);
         assertEquals(DisplayTransportCap.ZERO, gpu0.getTransportCap());
+        // Zero copy is a rung VNC's ladder does not have at all, so under that exporter the
+        // stored value is not a ceiling but a word from another ladder, and the answer is VNC's
+        // own default.
         gpu0.setExporter(DisplayExporter.VNC);
-        assertEquals(DisplayTransportCap.CPU, gpu0.getTransportCap());
+        assertEquals(DisplayTransportCap.GPU, gpu0.getTransportCap());
         gpu0.setExporter(DisplayExporter.NATIVE);
         assertEquals(DisplayTransportCap.ZERO, gpu0.getTransportCap());
     }
@@ -158,11 +194,14 @@ public class DisplayTransportCapTest {
         gpu0.setTransportCap(DisplayTransportCap.GPU);
         assertFalse(emitsCap(gpu0));
 
-        // A VNC binding caps at CPU by default, because that is the only rung its sink has, so it
-        // is the one ordinary configuration where the flag does get written out.
+        // A VNC binding no longer names one either: its sink reached the blit, so its default is
+        // the GPU rung and the flag it used to be written out with is gone from every default
+        // configuration. The flag is now what an explicit opt-out looks like, on either exporter.
         var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
         fb.setEnabled(true);
         fb.setExporter(DisplayExporter.VNC);
+        assertFalse(emitsCap(fb));
+        fb.setTransportCap(DisplayTransportCap.CPU);
         assertTrue(emitsCap(fb));
     }
 
@@ -172,34 +211,52 @@ public class DisplayTransportCapTest {
     }
 
     @Test
-    public void theBlitDriverIsPointedAtAnyNativeBinding() {
-        // CROSVM_DISPLAY_VULKAN_LIBRARY is process-wide and the bridge dlopens it for whichever
-        // screen reaches the native display, so the question it is set from is "has this VM a
-        // native binding", not "has the GPU screen one". The simplefb bridge does the same dma-buf
-        // import and the same blit; asking about gpu-0 left it with no driver to load, which is a
-        // CPU copy for a VM whose ceiling says otherwise.
+    public void theBlitDriverIsPointedAtAnyBindingThatCouldClimbToIt() {
+        // CROSVM_DISPLAY_VULKAN_LIBRARY is process-wide and both sinks dlopen it now -- the native
+        // bridge to blit into a Surface, the VNC sink into a headless target -- so the question it
+        // is set from is "could any binding this VM has blit", not "has this VM a native binding".
+        // Asking the narrower one left a VNC-only VM with no driver to load, which is a CPU copy
+        // for a config whose ceiling says otherwise.
         var item = DataItem.newObject();
-        assertFalse(VMScreenConfig.hasNativeExporter(item));
+        assertFalse(VMScreenConfig.hasGpuBlitBinding(item));
 
         var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
         fb.setEnabled(true);
         fb.setExporter(DisplayExporter.NATIVE);
-        assertTrue(VMScreenConfig.hasNativeExporter(item));
+        assertTrue(VMScreenConfig.hasGpuBlitBinding(item));
 
         // The switch is the device, so a binding on a screen the VM does not have is not one.
         fb.setEnabled(false);
-        assertFalse(VMScreenConfig.hasNativeExporter(item));
+        assertFalse(VMScreenConfig.hasGpuBlitBinding(item));
 
-        // VNC never reaches the bridge on either screen, and the GPU screen's own native binding
-        // still answers yes -- the widened question includes the one it used to ask.
+        // A VNC binding at its default ceiling is one of them, which is the whole change: this is
+        // the ordinary VM a new config comes up as.
         fb.setEnabled(true);
         fb.setExporter(DisplayExporter.VNC);
+        assertTrue(VMScreenConfig.hasGpuBlitBinding(item));
+
+        // Capped at the CPU copy on purpose, it is not: crosvm skips the blit outright there, so
+        // naming a driver would be describing a load that never happens.
+        fb.setTransportCap(DisplayTransportCap.CPU);
+        assertFalse(VMScreenConfig.hasGpuBlitBinding(item));
+
+        // One capped screen does not answer for the VM. The env is process-wide, so any one
+        // binding that could blit is enough to need it.
         var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
         gpu0.setEnabled(true);
         gpu0.setExporter(DisplayExporter.VNC);
-        assertFalse(VMScreenConfig.hasNativeExporter(item));
+        assertTrue(VMScreenConfig.hasGpuBlitBinding(item));
+
+        // A native binding answers yes whatever its ceiling says: the bridge is pointed at a
+        // driver it may not dlopen, which costs nothing, where the reverse mistake costs the GPU
+        // path in silence. So the widened question still contains the one it used to ask.
         gpu0.setExporter(DisplayExporter.NATIVE);
-        assertTrue(VMScreenConfig.hasNativeExporter(item));
+        gpu0.setTransportCap(DisplayTransportCap.CPU);
+        assertTrue(VMScreenConfig.hasGpuBlitBinding(item));
+
+        // And a screen nobody watches is not a binding at all, whatever ceiling it remembers.
+        gpu0.setExporter(DisplayExporter.NONE);
+        assertFalse(VMScreenConfig.hasGpuBlitBinding(item));
     }
 
     @Test
@@ -222,11 +279,18 @@ public class DisplayTransportCapTest {
         assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
             GPU0, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 1400));
 
-        // VNC has no GPU half to spend: that rung is offered and refused, so a ceiling naming it
-        // is already on the CPU copy for a reason the width has nothing to do with. Same for a
-        // screen nobody is watching, which has no edge for a transport to run along at all.
-        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+        // VNC's GPU half imports the same dma-buf under the same rule, so the warning appeared on
+        // that edge the moment the rung was implemented -- the condition asks isImplemented rather
+        // than naming the native display, and was not touched to make this true.
+        assertTrue(DisplayTransportCap.cpuFallbackFromWidth(
             FB, DisplayExporter.VNC, DisplayTransportCap.GPU, 1400));
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.VNC, DisplayTransportCap.GPU, 1408));
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.VNC, DisplayTransportCap.CPU, 1400));
+
+        // A screen nobody is watching has no edge for a transport to run along at all, so there is
+        // no rung for a width to cost it.
         assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
             FB, DisplayExporter.NONE, DisplayTransportCap.GPU, 1400));
 

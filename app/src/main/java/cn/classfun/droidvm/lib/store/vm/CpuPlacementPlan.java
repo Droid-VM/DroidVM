@@ -116,6 +116,21 @@ public final class CpuPlacementPlan {
         }
     }
 
+    /**
+     * Whether this VM's GPU worker cpuset should be built and named at all.
+     *
+     * <p>Two conditions, because the switch alone was never the whole question: what
+     * {@code --gpu-cgroup-path} moves into the cpuset is the virtio-gpu device's worker threads,
+     * and a VM without that device has none. Emitting it there handed crosvm a flag with nothing
+     * to put in the group and left a directory on the host that no thread would ever join. The
+     * editor says the same thing in its own way -- the rows live inside the renderer section, so
+     * they grey out with the device -- but the stored switch outlives that, both from a config
+     * written before the device was turned off and from a file edited by hand.</p>
+     */
+    public static boolean wantsGpuCgroup(@NonNull DataItem item) {
+        return item.optBoolean(KEY_GPU_CGROUP, false) && VMScreenConfig.hasGpuDevice(item);
+    }
+
     // --- affinity ---
 
     /**

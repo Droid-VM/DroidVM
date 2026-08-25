@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
 
 public class CpuPlacementPlanTest {
@@ -234,6 +235,41 @@ public class CpuPlacementPlanTest {
         // An already-1:1 map survives the trip unchanged.
         var oneToOne = CpuPlacementPlan.parseAffinity("0=0:1=1:2=2");
         assertEquals(List.of(0, 1, 2), CpuPlacementPlan.flattenToOneToOne(oneToOne));
+    }
+
+    /**
+     * The GPU worker cpuset needs a GPU worker. The switch used to be the whole gate, so a VM with
+     * no virtio-gpu device still had the directory made for it and still got
+     * {@code --gpu-cgroup-path} on the command line -- a group whose only members would have been
+     * the threads that device does not have.
+     */
+    @Test
+    public void theGpuCpusetNeedsTheDeviceAndNotJustTheSwitch() {
+        var item = DataItem.newObject();
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, true);
+        // The switch alone, with no screens object at all: the shape a config has before anything
+        // said whether this VM has the device.
+        assertFalse(CpuPlacementPlan.wantsGpuCgroup(item));
+
+        var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
+        gpu0.setEnabled(true);
+        assertTrue(CpuPlacementPlan.wantsGpuCgroup(item));
+
+        // The switch is still the user's answer, and it still comes first.
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, false);
+        assertFalse(CpuPlacementPlan.wantsGpuCgroup(item));
+
+        // The device going away takes the cpuset with it, without the stored switch being
+        // rewritten -- the editor greys the rows, but a config saved before that does not change.
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, true);
+        gpu0.setEnabled(false);
+        assertFalse(CpuPlacementPlan.wantsGpuCgroup(item));
+        assertTrue(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
+
+        // A simplefb screen is a display device, not the one with worker threads to pin.
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        fb.setEnabled(true);
+        assertFalse(CpuPlacementPlan.wantsGpuCgroup(item));
     }
 
     /** Guards the map type the UI relies on for stable row ordering. */

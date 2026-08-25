@@ -552,7 +552,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void prepareGpuCgroup() {
         gpuCgroupPath = null;
         var item = config.item;
-        if (!item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false)) return;
+        // The switch and the device both: the threads this cpuset exists to hold are the
+        // virtio-gpu device's workers, so with no device there is nobody to put in it.
+        if (!CpuPlacementPlan.wantsGpuCgroup(item)) return;
         var path = item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
             CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH).trim();
         var cpus = item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, "").trim();
@@ -1128,13 +1130,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     /**
-     * Host Vulkan provider for the native display's GPU blit ({@link GpuBlitProvider}) -- the
-     * dmabuf-to-SurfaceControl path. It belongs to the native display rather than to any one
-     * screen: the bridge does the same blit for the virtio-gpu scanout and for the simplefb
-     * framebuffer, so both need this pointed somewhere before either can use the GPU. (VNC has no
-     * GPU half at all yet and presents through crosvm's CPU copy.) This is a separate axis from
-     * the render host driver ({@link #applyGfxstreamEnv}); the two can name the same turnip .so or
-     * differ.
+     * Host Vulkan provider for the GPU blit ({@link GpuBlitProvider}) -- the dmabuf-import path
+     * every sink that does not memcpy goes through. It belongs to no one screen and to no one
+     * exporter: the same driver imports the virtio-gpu scanout and the simplefb framebuffer, and
+     * it is dlopened by the native bridge to blit into a Surface and by the VNC sink to blit into
+     * a headless target of its own. Any of those needs this pointed somewhere before it can use
+     * the GPU. This is a separate axis from the render host driver ({@link #applyGfxstreamEnv});
+     * the two can name the same turnip .so or differ.
      *
      * <p>TURNIP points the crosvm bridge at the bundled turnip. OFF -- and, until they are wired,
      * PANVK/SYSTEM -- forces crosvm's CPU copy so a stale or hand-edited value degrades cleanly
@@ -1143,12 +1145,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void applyDisplayBlitEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        // Any screen this VM actually has, bound to the native display -- not the GPU screen's
-        // binding in particular. The env var is process-wide, so it is set from whether that path
-        // exists at all, and it exists for the simplefb bridge just as much: it dlopens the same
-        // driver to import the framebuffer as a dma-buf and blit it. Gating on the GPU screen was
-        // the arbitration-era rule, from when simplefb had no display of its own to export.
-        if (!VMScreenConfig.hasNativeExporter(item)) return;
+        // Any binding this VM actually has whose transport could be a GPU one -- not the native
+        // display's in particular. The env var is process-wide, so it is set from whether that
+        // path exists at all, and it exists for the VNC sink just as much since it grew a blit of
+        // its own: same driver, same dma-buf import, a headless target instead of a Surface.
+        // Naming the native display here was the rule from when it was the only sink that blitted.
+        if (!VMScreenConfig.hasGpuBlitBinding(item)) return;
         var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
         switch (provider) {
             case TURNIP: {

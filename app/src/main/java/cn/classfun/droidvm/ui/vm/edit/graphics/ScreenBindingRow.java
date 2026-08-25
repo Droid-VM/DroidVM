@@ -194,6 +194,17 @@ final class ScreenBindingRow {
         return swEnabled.isChecked();
     }
 
+    /**
+     * Whether this row currently describes a binding the host might blit for -- the same question
+     * the daemon asks the stored config before it names a blit driver, asked of the live widgets
+     * so the row that names that driver appears while the user is still choosing.
+     */
+    boolean isGpuBlitBinding() {
+        var transport = currentTransport();
+        return swEnabled.isChecked() && transport != null
+            && VMScreenConfig.isGpuBlitBinding(getExporter(), transport);
+    }
+
     @NonNull
     DisplayExporter getExporter() {
         return chooseExporter.getSelectedItem();

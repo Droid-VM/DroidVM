@@ -354,18 +354,46 @@ public final class VMScreenConfig {
     }
 
     /**
-     * Whether anything this VM has is exported to the app's native display.
+     * Whether a binding to [exporter], capped at [ceiling], is one the host might blit for.
+     *
+     * <p>The two exporters answer differently, and it is not a leftover asymmetry. The native
+     * display's bridge is pointed at a driver whatever the ceiling says -- naming one for a VM
+     * that will not blit costs nothing, since a capped binding never dlopens it, while failing to
+     * name one costs the GPU path in silence. VNC's sink reaches the same driver only where its
+     * ceiling leaves the GPU rung available, because the CPU cap on a VNC binding is the one thing
+     * a user sets to mean "do not blit this screen at all".</p>
+     */
+    public static boolean isGpuBlitBinding(@NonNull DisplayExporter exporter,
+                                           @NonNull DisplayTransportCap ceiling) {
+        switch (exporter) {
+            case NATIVE:
+                return true;
+            case VNC:
+                return ceiling != DisplayTransportCap.CPU;
+            default:
+                return false;
+        }
+    }
+
+    /** This screen's own answer: the device is there, something is watching it, and it may blit. */
+    public boolean hasGpuBlitBinding() {
+        return isEnabled() && isGpuBlitBinding(getExporter(), getTransportCap());
+    }
+
+    /**
+     * Whether any screen this VM has could run a GPU pipeline to its exporter.
      *
      * <p>For the host-process settings that belong to that path rather than to one screen -- the
      * Vulkan library the display bridge dlopens is the one -- because an environment variable is
      * process-wide and cannot be set per screen even when the thing it configures runs per screen.
-     * Which is why the question has to be asked of all of them: the bridge does the same GPU blit
-     * for whichever screen reaches it, so a VM whose only native binding is simplefb's needs the
-     * env exactly as much as one whose only native binding is the GPU screen's.</p>
+     * Which is why the question has to be asked of all of them, and why it is not "has this VM a
+     * native binding": both sinks dlopen that same driver now, the VNC one to blit into a headless
+     * target instead of a Surface, so a VM whose only binding is a VNC screen at the GPU rung needs
+     * the env exactly as much as one exported natively.</p>
      */
-    public static boolean hasNativeExporter(@NonNull DataItem config) {
+    public static boolean hasGpuBlitBinding(@NonNull DataItem config) {
         for (var screen : boundOf(config))
-            if (screen.getExporter() == DisplayExporter.NATIVE) return true;
+            if (screen.hasGpuBlitBinding()) return true;
         return false;
     }
 

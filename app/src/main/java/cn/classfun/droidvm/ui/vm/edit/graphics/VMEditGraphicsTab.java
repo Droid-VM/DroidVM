@@ -761,14 +761,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // describe. Greyed rather than hidden: it says what the switch above would turn on.
         setRowsEnabled(gpuOptions, gpuDevice);
         gpuOptions.setAlpha(gpuDevice ? 1f : 0.38f);
-        // The GPU blit is the native sink's composite step, and since the simplefb screen's
-        // GPU-copy path landed it belongs to ANY natively exported screen, not just the
-        // accelerated one -- the bridge dlopens the same driver for its blit. VNC still never
-        // reaches it, so with no native binding the row would name a driver nothing loads.
-        boolean anyNativeExporter =
-            (gpuDevice && screenGpu0.getExporter() == DisplayExporter.NATIVE)
-            || (screenFb.isScreenEnabled() && screenFb.getExporter() == DisplayExporter.NATIVE);
-        chooseDisplayBlitProvider.setVisibility(anyNativeExporter ? VISIBLE : GONE);
+        // The GPU blit is no longer the native sink's step alone: the VNC sink dlopens the same
+        // driver for a headless blit of its own, so the row follows any binding that could climb
+        // to the GPU rung -- which for VNC means one whose ceiling has not been dropped to the CPU
+        // copy. With none of those, the row would name a driver nothing loads. It stays the same
+        // question the daemon's env predicate asks, asked of the live rows.
+        boolean anyBlitBinding = screenGpu0.isGpuBlitBinding() || screenFb.isGpuBlitBinding();
+        chooseDisplayBlitProvider.setVisibility(anyBlitBinding ? VISIBLE : GONE);
     }
 
     /**
