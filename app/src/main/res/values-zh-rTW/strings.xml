@@ -980,6 +980,7 @@
     <string name="vnc_display_connect_failed">無法連線到 VNC 伺服器</string>
     <string name="vnc_display_h264_active">H.264 串流</string>
     <string name="vnc_display_h264_fallback">已退回 RFB</string>
+    <string name="vnc_display_h264_unavailable">H.264 不可用（此裝置無編碼器）</string>
     <string name="vnc_display_fullscreen">全屏</string>
 
     <string name="native_display_title">原生顯示器</string>

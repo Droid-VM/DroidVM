@@ -2,6 +2,8 @@ package cn.classfun.droidvm.ui.vm.display.vnc.h264;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
@@ -129,10 +131,108 @@ public class H264StreamProtocolTest {
         assertTrue(e.getMessage(), e.getMessage().contains("guard"));
         assertThrows(IOException.class, () -> H264StreamProtocol.readFrame(
             stream(bytes(0xFF, 0xFF, 0xFF, 0xFF))));
-        // Zero is refused rather than skipped: no NAL unit is empty, so it says the parser and the
-        // stream disagree about where frames begin, and reading on would keep that quiet.
-        assertThrows(IOException.class,
-            () -> H264StreamProtocol.readFrame(stream(frameHeaderOnly(0))));
+    }
+
+    // ---- the heartbeat ----
+
+    @Test
+    public void aZeroLengthFrameIsAHeartbeatAndNotAPicture() throws IOException {
+        // This is the one meaning in the format that reversed. It used to be an error, on the
+        // reasoning that no NAL unit is empty; the host now writes exactly this every three
+        // seconds it has nothing else to say, and it is what a read timeout is measured against.
+        var beat = H264StreamProtocol.readFrame(stream(frameHeaderOnly(0)));
+        assertNotNull(beat);
+        assertEquals(0, beat.length);
+    }
+
+    @Test
+    public void heartbeatsDoNotDisturbTheFramesAroundThem() throws IOException {
+        // The beat is a frame in the framing and nothing in the stream: a reader that skipped it by
+        // consuming the wrong number of bytes would desynchronise here rather than at the beat.
+        var payload = bytes(0x00, 0x00, 0x00, 0x01, 0x65, 0x42);
+        var in = stream(concat(
+            header(640, 480), frameHeaderOnly(0), frame(payload), frameHeaderOnly(0)));
+        H264StreamProtocol.readHeader(in);
+        assertEquals(0, H264StreamProtocol.readFrame(in).length);
+        assertArrayEquals(payload, H264StreamProtocol.readFrame(in));
+        assertEquals(0, H264StreamProtocol.readFrame(in).length);
+        assertNull(H264StreamProtocol.readFrame(in));
+    }
+
+    // ---- refusals, and the token that decides whether to ask again ----
+
+    @Test
+    public void aRefusalIsAnAnswerRatherThanAStrangerOnThePort() {
+        var e = assertThrows(H264StreamProtocol.RefusedException.class,
+            () -> H264StreamProtocol.readHeader(stream(refusal("busy someone else has it"))));
+        assertEquals(H264StreamProtocol.Refusal.BUSY, e.refusal);
+        assertEquals("busy someone else has it", e.reason);
+        // The sentence is for a log; the console must not be reading meaning out of it.
+        assertTrue(e.getMessage(), e.getMessage().contains("busy someone else has it"));
+    }
+
+    @Test
+    public void onlyTheLeadingTokenDecidesWhetherToAskAgain() {
+        assertEquals(H264StreamProtocol.Refusal.NO_ENCODER, H264StreamProtocol.Refusal
+            .fromReason("no-encoder this device has no encoder we can use"));
+        assertEquals(H264StreamProtocol.Refusal.BUSY, H264StreamProtocol.Refusal
+            .fromReason("busy another client already has the stream"));
+        // A token with nothing after it is still a token.
+        assertEquals(H264StreamProtocol.Refusal.NO_ENCODER,
+            H264StreamProtocol.Refusal.fromReason("no-encoder"));
+        // A prefix is not the token, and neither is the token in the middle of a sentence: matching
+        // loosely is how "no-encoder-yet" would become permanent, or a reason that merely mentions
+        // being busy would stop a retry that should have happened.
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN,
+            H264StreamProtocol.Refusal.fromReason("no-encoder-yet, try later"));
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN,
+            H264StreamProtocol.Refusal.fromReason("the encoder is busy"));
+    }
+
+    @Test
+    public void aTokenThisBuildCannotReadIsTransient() {
+        // The safe default in the direction that costs a retry rather than a permanent downgrade:
+        // an unknown word is a newer host talking, and an old client that gave up on the strength
+        // of it would never find out.
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN,
+            H264StreamProtocol.Refusal.fromReason("resizing hold on"));
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN, H264StreamProtocol.Refusal.fromReason(""));
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN, H264StreamProtocol.Refusal.fromReason(null));
+        assertTrue(H264StreamProtocol.Refusal.NO_ENCODER.permanent);
+        assertFalse(H264StreamProtocol.Refusal.BUSY.permanent);
+        assertFalse(H264StreamProtocol.Refusal.UNKNOWN.permanent);
+    }
+
+    @Test
+    public void theReasonSurvivesAServerThatClosesInsteadOfTerminating() throws IOException {
+        // The server writes the sentence and hangs up. An unterminated reason is the whole reason,
+        // not a truncation -- reading it as one would throw away the only thing a refusal carries.
+        var raw = concat(bytes('D', 'V', 'H', 'X'), "no-encoder".getBytes("US-ASCII"));
+        var e = assertThrows(H264StreamProtocol.RefusedException.class,
+            () -> H264StreamProtocol.readHeader(stream(raw)));
+        assertEquals(H264StreamProtocol.Refusal.NO_ENCODER, e.refusal);
+    }
+
+    @Test
+    public void aRefusalWithNoTerminatorAtAllStillEnds() throws IOException {
+        // A reason bounded only by the sender's honesty is a read that never returns. The bound is
+        // a diagnostic one -- the sentence is on its way to a log and nothing else reads it.
+        var flood = new byte[H264StreamProtocol.MAX_REASON_BYTES * 4];
+        java.util.Arrays.fill(flood, (byte) 'x');
+        var e = assertThrows(H264StreamProtocol.RefusedException.class,
+            () -> H264StreamProtocol.readHeader(stream(concat(bytes('D', 'V', 'H', 'X'), flood))));
+        assertEquals(H264StreamProtocol.MAX_REASON_BYTES, e.reason.length());
+    }
+
+    @Test
+    public void aRefusalIsReadWholeEvenOffADribblingSocket() throws IOException {
+        // The magic and the reason are two reads on the same stream, so the same short-read hazard
+        // that the header has applies to telling a refusal apart from a header at all.
+        var in = dribble(refusal("no-encoder nothing to encode with"));
+        var e = assertThrows(H264StreamProtocol.RefusedException.class,
+            () -> H264StreamProtocol.readHeader(in));
+        assertEquals(H264StreamProtocol.Refusal.NO_ENCODER, e.refusal);
+        assertEquals("no-encoder nothing to encode with", e.reason);
     }
 
     @Test
@@ -179,6 +279,12 @@ public class H264StreamProtocolTest {
             'D', 'V', 'H', '2',
             (byte) (width & 0xFF), (byte) ((width >> 8) & 0xFF),
             (byte) (height & 0xFF), (byte) ((height >> 8) & 0xFF)};
+    }
+
+    /** What a server that will not serve this client writes instead of a header. */
+    private static byte[] refusal(String reason) {
+        var text = reason.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        return concat(bytes('D', 'V', 'H', 'X'), text, new byte[]{0});
     }
 
     private static byte[] frameHeaderOnly(long length) {

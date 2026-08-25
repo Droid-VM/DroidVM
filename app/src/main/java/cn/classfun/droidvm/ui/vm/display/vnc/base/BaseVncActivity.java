@@ -56,6 +56,7 @@ import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ConsolePipeline;
+import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
 
 public abstract class BaseVncActivity extends AppCompatActivity implements ImeInsetsExempt {
@@ -117,9 +118,14 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
      * painting the screen instead. See {@link #setRfbUpdatesSuppressed}.
      */
     private volatile boolean rfbUpdatesSuppressed = false;
-    /** The decoder view, when this activity's layout has one; null leaves the console RFB-only. */
+    /** The decoder view, when this console has one; null leaves it RFB-only. */
     protected TextureView h264View;
     private H264ConsolePipeline h264;
+    /** Whether and when to ask for the H.264 stream again. See {@link H264ProbePolicy}. */
+    private final H264ProbePolicy h264Probe = new H264ProbePolicy();
+    private final Runnable h264Reprobe = this::probeH264;
+    /** Whether this console is on screen, and so whether a decoder could get a Surface at all. */
+    private boolean h264Foreground = true;
     /** What {@link #setStatus} last put in the status line, and the note appended to it. */
     private String statusText = "";
     private String statusNote = "";
@@ -208,14 +214,18 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         // the H.264 path tears itself down and the console falls back to RFB while it is away.
         // Coming back is therefore the other moment worth probing: without this the upgrade would
         // be lost for the rest of the session by the ordinary act of switching apps.
-        if (h264 != null && !h264.isRunning() && h264Port > 0 && fbWidth > 0)
-            h264.start(vncHost, h264Port);
+        h264Foreground = true;
+        probeH264();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
         GamePerfHint.exitGameplay(this);
+        // Stops the retry ladder from spending the server's one client slot on a console nobody is
+        // looking at: a probe that succeeds here gets five seconds of a decoder waiting for a
+        // Surface that the detached window is not going to produce, and then fails anyway.
+        h264Foreground = false;
     }
 
     @Override
@@ -255,11 +265,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         tvConnectingMessage = findViewById(R.id.tv_connecting_message);
         overlayConnecting = findViewById(R.id.overlay_connecting);
         ivDisplay = findViewById(R.id.iv_display);
-        // Null for a layout that has no decoder view, which is how a console opts out of the H.264
-        // path entirely: nothing else in here has to be told about it.
-        h264View = findViewById(R.id.texture_h264);
-        if (h264View != null)
-            h264 = new H264ConsolePipeline(h264View, mainHandler, new H264Listener());
+        // Null for a layout that has no decoder view of its own, which is both how a console opts
+        // out of the H.264 path entirely and how the presentation defers the question until it
+        // knows which display it is putting the picture on.
+        setH264View(findViewById(R.id.texture_h264));
         extraKeysPanel = findViewById(R.id.extra_keys_panel);
         onBindExtraViews();
     }
@@ -508,16 +517,77 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
      */
     private void restartH264() {
         if (h264 == null || isFinishing() || isDestroyed()) return;
+        mainHandler.removeCallbacks(h264Reprobe);
         h264.stop();
-        // Not gated on `running`: this runs off the framebuffer callback, which libvncclient makes
-        // while it is still inside rfbInitClient -- so the flag the message loop sets afterwards
-        // may not be up yet, and gating on it would skip the probe for exactly the first
-        // framebuffer, the one every connection has.
-        if (h264Port > 0) h264.start(vncHost, h264Port);
+        // Through the same gate as every other attempt, and notably not gated on `running`: this
+        // runs off the framebuffer callback, which libvncclient makes while it is still inside
+        // rfbInitClient -- so the flag the message loop sets afterwards may not be up yet, and
+        // gating on it would skip the probe for exactly the first framebuffer, the one every
+        // connection has. The framebuffer size, which is set by then, says the same thing honestly.
+        probeH264();
+    }
+
+    /**
+     * Asks for the stream again, if asking could work. The retry ladder's other end.
+     *
+     * <p>Every condition here is a way for the answer to be "not now" rather than "not ever", which
+     * is why none of them touch the policy: a probe skipped is not a probe failed, and burning a
+     * rung of the backoff on a console that is merely in the background would leave the ladder at
+     * fifteen seconds by the time anybody looked at it again.</p>
+     */
+    protected void probeH264() {
+        if (h264 == null || h264Port <= 0 || h264Probe.isGivenUp()) return;
+        if (isFinishing() || isDestroyed() || !h264Foreground) return;
+        // No picture yet means no RFB session to upgrade -- and the port in hand may belong to the
+        // one that just ended.
+        if (fbWidth <= 0 || h264.isRunning()) return;
+        h264.start(vncHost, h264Port);
+    }
+
+    /**
+     * Books the next attempt after a stream ended or a probe failed, and settles whether there will
+     * be one at all.
+     *
+     * <p>The policy is advanced before any of the reasons this console might not post the retry,
+     * because {@link H264ProbePolicy#isGivenUp} is what the status note is written from: a refusal
+     * that is never classified is a refusal the user is never told about.</p>
+     */
+    private void scheduleH264Reprobe(@NonNull Exception cause) {
+        mainHandler.removeCallbacks(h264Reprobe);
+        var delay = h264Probe.nextDelayMs(cause);
+        if (delay == H264ProbePolicy.STOP) {
+            Log.i(TAG, "H.264 will not be asked for again while this console is open");
+            return;
+        }
+        if (h264 == null || h264Port <= 0 || isFinishing() || isDestroyed()) return;
+        Log.i(TAG, fmt("asking the H.264 side channel again in %dms", delay));
+        mainHandler.postDelayed(h264Reprobe, delay);
+    }
+
+    /**
+     * Binds the view the decoder draws into, or unbinds it with null.
+     *
+     * <p>Here rather than only in {@link #bindViews} because one console's decoder surface is not
+     * in its own layout: the presentation puts the guest's picture on another display entirely, in
+     * a window that does not exist until a display has been chosen and can be dismissed and rebuilt
+     * while the console stays open. Rebinding is a whole new pipeline, since the view a pipeline
+     * draws into is the one thing about it that cannot change underneath.</p>
+     *
+     * <p>Binding does not probe. The caller decides when, because the one caller that binds late
+     * does so from inside the framebuffer callback that is about to reconnect the channel anyway,
+     * and two connects a millisecond apart is how a server with one client slot gets told it is
+     * busy by the client it just accepted.</p>
+     */
+    protected void setH264View(@Nullable TextureView view) {
+        if (h264View == view) return;
+        stopH264();
+        h264View = view;
+        h264 = view == null ? null : new H264ConsolePipeline(view, mainHandler, new H264Listener());
     }
 
     /** Takes the H.264 path down and makes sure RFB is drawing again. */
     private void stopH264() {
+        mainHandler.removeCallbacks(h264Reprobe);
         if (h264 != null) h264.stop();
         setRfbUpdatesSuppressed(false);
     }
@@ -554,29 +624,51 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     private final class H264Listener implements H264ConsolePipeline.Listener {
         @Override
         public void onStreamLive(int width, int height) {
+            mainHandler.removeCallbacks(h264Reprobe);
+            h264Probe.onLive();
             setRfbUpdatesSuppressed(true);
             setStatusNote(getString(R.string.vnc_display_h264_active));
-            onH264StreamChanged(true);
+            onH264StreamChanged(true, width, height);
         }
 
         @Override
         public void onStreamGone(boolean wasLive, @Nullable Exception cause) {
             setRfbUpdatesSuppressed(false);
-            // Only a stream that was actually on screen has a fallback to report. A probe that
-            // found nothing listening is the ordinary case for a VM whose host has no encoder
-            // standing behind the port, and saying "fell back to RFB" for it would describe a
-            // downgrade that never happened.
-            setStatusNote(wasLive ? getString(R.string.vnc_display_h264_fallback) : null);
-            onH264StreamChanged(false);
+            onH264StreamChanged(false, 0, 0);
+            if (cause == null) {
+                // Closed on purpose -- the console going away, or a resize about to reconnect.
+                // Nothing to report and nothing to retry: whoever asked for it will ask again.
+                setStatusNote(null);
+                return;
+            }
+            // Before the note, because whether this was the last attempt is part of what the note
+            // has to say.
+            scheduleH264Reprobe(cause);
+            if (wasLive) {
+                // A downgrade the user watched happen, and the only one worth naming as one.
+                setStatusNote(getString(R.string.vnc_display_h264_fallback));
+            } else if (h264Probe.isGivenUp()) {
+                // Refused before there was ever a picture, for a reason that will not change. This
+                // used to be silent -- the note was gated on having been live -- which meant the
+                // one case where the console can never do better was also the one case it said
+                // nothing about. It is a final state, so it is said once and left up.
+                setStatusNote(getString(R.string.vnc_display_h264_unavailable));
+            } else {
+                // Transient, and a retry is already booked. Saying so every few seconds would be
+                // noise about a thing that has never been on screen.
+                setStatusNote(null);
+            }
         }
     }
 
     /**
      * Hook for subclasses that have to move something when the decoder view appears or goes away.
-     * The default console has nothing to do here -- the two views share one geometry.
+     * The default console has nothing to do here -- the two views share one geometry, written by
+     * the same viewport controller. [width] and [height] are the stream's, and zero when it is not
+     * live, for the console whose decoder view has to be letterboxed by hand.
      */
     @SuppressWarnings("unused")
-    protected void onH264StreamChanged(boolean live) {
+    protected void onH264StreamChanged(boolean live, int width, int height) {
     }
 
     /**

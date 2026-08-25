@@ -1017,6 +1017,7 @@
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
     <string name="vnc_display_h264_active">H.264 stream</string>
     <string name="vnc_display_h264_fallback">fell back to RFB</string>
+    <string name="vnc_display_h264_unavailable">H.264 unavailable (this device has no encoder)</string>
     <string name="vnc_display_fullscreen">Fullscreen</string>
 
     <string name="native_display_title">Native Display</string>

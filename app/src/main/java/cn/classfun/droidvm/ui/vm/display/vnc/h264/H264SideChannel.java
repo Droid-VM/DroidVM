@@ -15,6 +15,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
@@ -34,6 +35,16 @@ import java.util.concurrent.TimeUnit;
  * have to decide what to drop. Dropping is the wrong answer anyway -- every P frame after a dropped
  * one decodes into rubbish, so a decoder that cannot keep up must be torn down rather than fed
  * selectively.</p>
+ *
+ * <p><b>Every wait in here is bounded, and that is new.</b> The read on a live stream used to have
+ * no timeout at all, on the reasoning that a still screen sends nothing and must not be mistaken
+ * for a dead one. The reasoning was right and the consequence was a console that froze: a host that
+ * stopped mid-stream left this thread parked in {@code read} forever, holding a socket the server
+ * still counted as its one client, while the RFB updates that would have kept the picture moving
+ * stayed suppressed for a decoder nothing was ever going to feed again. The heartbeat is what
+ * removed the reason for the unbounded wait, so the wait is bounded now -- and {@link #close} no
+ * longer trusts a single {@code Socket.close} to have been enough, because the whole failure was
+ * something staying alive that everyone had agreed was over.</p>
  */
 public final class H264SideChannel implements Closeable {
     private static final String TAG = "H264SideChannel";
@@ -45,13 +56,35 @@ public final class H264SideChannel implements Closeable {
      */
     private static final int CONNECT_TIMEOUT_MS = 1500;
     /**
-     * How long the eight-byte header may take once the socket is open. The server writes it before
-     * anything else, so this only ever expires on something that accepted the connection and then
-     * had nothing to say -- which must not hang the reader thread forever.
+     * How long the header may take once the socket is open.
+     *
+     * <p>Longer than it looks like it should be, because the server does not write the header on
+     * accept: it parks the connection until a frame has arrived to encode, since the geometry the
+     * header states is a property of that frame. Its own wait for one is ten seconds, after which
+     * it refuses in words -- so anything shorter here would hang up on a guest that was merely
+     * between frames and, worse, would replace a refusal that says why with a timeout that does
+     * not. Waiting costs nothing visible: RFB is already on screen the whole time.</p>
      */
-    private static final int HANDSHAKE_TIMEOUT_MS = 3000;
+    private static final int HANDSHAKE_TIMEOUT_MS = 12000;
+    /**
+     * How long a live stream may say nothing before it is declared dead.
+     *
+     * <p>The host beats every three seconds it has nothing else to send, so this is three intervals
+     * plus change: long enough that a late beat under load is not a funeral, short enough that a
+     * frozen console is measured in seconds. It is the only thing standing between a host that
+     * stopped and a picture that never moves again.</p>
+     */
+    private static final int READ_TIMEOUT_MS = 10000;
     /** How long the reader waits for the decoder's surface before giving up on the upgrade. */
     private static final long DECODER_READY_TIMEOUT_MS = 5000;
+    /**
+     * How long {@link #close} waits for the reader to actually be gone.
+     *
+     * <p>It is on the main thread, so it cannot be the read timeout; it is long enough for a thread
+     * that has already been woken to finish unwinding, and its failure is loud rather than silent
+     * because a reader that outlives its channel is exactly the bug this is here to end.</p>
+     */
+    private static final long JOIN_TIMEOUT_MS = 300;
 
     /** Everything here is called on the channel's own reader thread. */
     public interface Listener {
@@ -71,22 +104,39 @@ public final class H264SideChannel implements Closeable {
     private final String host;
     private final int port;
     private final Listener listener;
+    private final int readTimeoutMs;
     private final CountDownLatch decoderReady = new CountDownLatch(1);
     private final Socket socket = new Socket();
     private volatile boolean closed;
-    private Thread thread;
+    private volatile Thread thread;
 
     public H264SideChannel(@NonNull String host, int port, @NonNull Listener listener) {
+        this(host, port, listener, READ_TIMEOUT_MS);
+    }
+
+    /**
+     * The read timeout is a parameter only so that a test can watch a stream die of silence without
+     * spending ten seconds doing it. Everything else uses {@link #READ_TIMEOUT_MS}.
+     */
+    H264SideChannel(@NonNull String host, int port, @NonNull Listener listener, int readTimeoutMs) {
         this.host = host;
         this.port = port;
         this.listener = listener;
+        this.readTimeoutMs = readTimeoutMs;
     }
 
     /** Starts the reader thread. The listener hears everything, including the failure to connect. */
     public void start() {
-        thread = new Thread(this::run, "h264-side-channel");
-        thread.setDaemon(true);
-        thread.start();
+        var reader = new Thread(this::run, "h264-side-channel");
+        reader.setDaemon(true);
+        thread = reader;
+        reader.start();
+    }
+
+    /** Whether the reader thread is gone. The test for "a closed channel leaves nothing". */
+    public boolean isStopped() {
+        var reader = thread;
+        return reader == null || !reader.isAlive();
     }
 
     /**
@@ -98,9 +148,15 @@ public final class H264SideChannel implements Closeable {
     }
 
     /**
-     * Ends the connection from the outside. The reader is blocked in a socket read with no timeout
-     * -- silence is normal -- so closing the socket is what wakes it, and the exception that
-     * results is recognised as this rather than reported as a fault.
+     * Ends the connection from the outside, and does not return until it believes that happened.
+     *
+     * <p>Three things rather than one, because the failure this replaces was a socket and a thread
+     * that outlived every object that knew about them. Closing the socket is what wakes a reader
+     * parked in {@code read}; the interrupt is for the two waits a closed socket says nothing to --
+     * the decoder-ready latch and the decoder's own submit queue; and the join is the part that
+     * makes "closed" a fact rather than a request. A reader still alive after all three is logged
+     * as such, because it is bounded from now on either way -- the read timeout guarantees it
+     * unwinds within one interval -- but it is not the sort of thing that should happen quietly.</p>
      */
     @Override
     public void close() {
@@ -111,6 +167,20 @@ public final class H264SideChannel implements Closeable {
         } catch (IOException ignored) {
             // Already closed, or never opened. Either way there is nothing left to release.
         }
+        var reader = thread;
+        // Never from the reader itself: onStreamEnded runs on this thread, and a listener that
+        // closed its channel from inside it would be waiting for itself.
+        if (reader == null || reader == Thread.currentThread()) return;
+        reader.interrupt();
+        try {
+            reader.join(JOIN_TIMEOUT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        if (reader.isAlive())
+            Log.w(TAG, fmt("the reader for %s:%d outlived its close by more than %dms",
+                host, port, JOIN_TIMEOUT_MS));
     }
 
     private void run() {
@@ -123,10 +193,10 @@ public final class H264SideChannel implements Closeable {
             socket.setSoTimeout(HANDSHAKE_TIMEOUT_MS);
             var in = new BufferedInputStream(socket.getInputStream(), 1 << 16);
             var header = H264StreamProtocol.readHeader(in);
-            // From here on a quiet socket is a screen nobody is changing, which may last as long as
-            // the user leaves it alone. A read timeout past the handshake would turn that into a
-            // disconnection and a fallback to RFB for a desktop that is merely idle.
-            socket.setSoTimeout(0);
+            // Past the handshake the silence has a floor: the host beats every three seconds it has
+            // nothing to send, so a read that times out is a statement about the host and not about
+            // an idle desktop. That is the whole reason the beat exists.
+            socket.setSoTimeout(readTimeoutMs);
             Log.i(TAG, fmt("side channel %s:%d up, %dx%d",
                 host, port, header.width, header.height));
             listener.onStreamStarted(header.width, header.height);
@@ -135,8 +205,17 @@ public final class H264SideChannel implements Closeable {
             while (!closed) {
                 var frame = H264StreamProtocol.readFrame(in);
                 if (frame == null) break;
+                // A heartbeat has no picture in it. It has already done its job by arriving: the
+                // read returned, so the timeout did not, and there is nothing to decode.
+                if (frame.length == 0) continue;
                 listener.onFrame(frame);
             }
+        } catch (SocketTimeoutException e) {
+            // The beats stopped. Not an idle screen -- an idle screen beats -- so this is the host
+            // being gone or wedged, and the console has to go back to RFB rather than keep showing
+            // the last picture it was sent.
+            if (!closed) failure = new IOException(fmt(
+                "the H.264 side channel went silent for %dms", readTimeoutMs), e);
         } catch (Exception e) {
             // A close() while the reader is parked in read() surfaces as a SocketException. That is
             // this object being taken down, not the stream failing, and reporting it as a failure
