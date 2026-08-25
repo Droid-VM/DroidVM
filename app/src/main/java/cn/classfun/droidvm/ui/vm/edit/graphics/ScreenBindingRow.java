@@ -6,6 +6,7 @@ package cn.classfun.droidvm.ui.vm.edit.graphics;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static java.lang.Integer.parseInt;
+import static cn.classfun.droidvm.lib.ui.SimpleTextWatcher.simpleAfterTextWatcher;
 import static cn.classfun.droidvm.lib.utils.StringUtils.generateRandomPassword;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
@@ -24,6 +25,7 @@ import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
+import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
 /**
  * One screen's rows in the graphics tab: the switch that says the VM has the device, how big that
@@ -53,6 +55,7 @@ final class ScreenBindingRow {
     private final View options;
     private final TextInputEditText etWidth;
     private final TextInputEditText etHeight;
+    private final TextRowWidget rowWidthCpuFallback;
     private final View tilRefreshRate;
     private final TextInputEditText etRefreshRate;
     private final View tilPollHz;
@@ -88,6 +91,7 @@ final class ScreenBindingRow {
         options = block;
         etWidth = block.findViewById(R.id.et_screen_width);
         etHeight = block.findViewById(R.id.et_screen_height);
+        rowWidthCpuFallback = block.findViewById(R.id.row_screen_width_cpu_fallback);
         tilRefreshRate = block.findViewById(R.id.til_screen_refresh_rate);
         etRefreshRate = block.findViewById(R.id.et_screen_refresh_rate);
         tilPollHz = block.findViewById(R.id.til_screen_poll_hz);
@@ -132,6 +136,10 @@ final class ScreenBindingRow {
         // and a config written before the key both come up with them on.
         swInputEnabled.setChecked(true);
         swEnabled.setOnCheckedChangeListener(onChanged);
+        // The width decides whether the GPU copy can take this screen's frames at all, so it is
+        // one of the fields another row depends on -- the only geometry field that is. Through the
+        // tab's whole pass like every other change, rather than poking the one row it moves.
+        etWidth.addTextChangedListener(simpleAfterTextWatcher(s -> onChanged.run()));
         chooseExporter.setOnValueChangedListener(() -> {
             // The ladder belongs to the edge, so changing who is on the far end of it changes
             // which rungs exist -- not just which are reachable.
@@ -202,6 +210,28 @@ final class ScreenBindingRow {
         vncOptions.setVisibility(
             enabled && exporter == DisplayExporter.VNC ? VISIBLE : GONE);
         passwordOptions.setVisibility(swPasswordAuth.isChecked() ? VISIBLE : GONE);
+        // The one thing the transport ceiling cannot promise: a width whose stride the blit's
+        // dma-buf import will not take settles a rung lower, silently, and the only clue is a line
+        // in the console. Say so beside the field that causes it. Nothing is refused and nothing is
+        // rounded -- the ceiling is honoured either way, it just lands on the CPU copy.
+        var transport = currentTransport();
+        rowWidthCpuFallback.setVisibility(
+            enabled && transport != null && DisplayTransportCap.cpuFallbackFromWidth(
+                screenId, exporter, transport, typedWidth()) ? VISIBLE : GONE);
+    }
+
+    /**
+     * The width typed into this row, or 0 for a field that is empty or not a number -- a value no
+     * alignment rule can complain about, since a half-typed number is not yet a width to warn
+     * about and the geometry validator is what has something to say about it.
+     */
+    private long typedWidth() {
+        try {
+            var text = getEditText(etWidth);
+            return text.isEmpty() ? 0 : parseInt(text);
+        } catch (Exception ignored) {
+            return 0;
+        }
     }
 
     void load(@NonNull DataItem config) {

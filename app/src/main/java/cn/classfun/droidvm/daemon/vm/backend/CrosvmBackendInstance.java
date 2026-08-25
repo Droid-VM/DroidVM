@@ -1129,10 +1129,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
 
     /**
      * Host Vulkan provider for the native display's GPU blit ({@link GpuBlitProvider}) -- the
-     * scanout-dmabuf-to-SurfaceControl path. Only the accelerated scanout uses it: native display
-     * on the virtio-gpu backend (simplefb/VNC present through crosvm's CPU copy and never reach
-     * here). This is a separate axis from the render host driver ({@link #applyGfxstreamEnv}); the
-     * two can name the same turnip .so or differ.
+     * dmabuf-to-SurfaceControl path. It belongs to the native display rather than to any one
+     * screen: the bridge does the same blit for the virtio-gpu scanout and for the simplefb
+     * framebuffer, so both need this pointed somewhere before either can use the GPU. (VNC has no
+     * GPU half at all yet and presents through crosvm's CPU copy.) This is a separate axis from
+     * the render host driver ({@link #applyGfxstreamEnv}); the two can name the same turnip .so or
+     * differ.
      *
      * <p>TURNIP points the crosvm bridge at the bundled turnip. OFF -- and, until they are wired,
      * PANVK/SYSTEM -- forces crosvm's CPU copy so a stale or hand-edited value degrades cleanly
@@ -1141,12 +1143,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void applyDisplayBlitEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        // The accelerated scanout is the GPU screen exported natively, and nothing else; the
-        // simplefb screen and every VNC binding present through crosvm's CPU copy. The env var is
-        // process-wide, so it is set from whether that one binding exists.
-        var gpu0 = VMScreenConfig.find(item, VMScreenConfig.ID_GPU0);
-        if (gpu0 == null || gpu0.getExporter() != DisplayExporter.NATIVE) return;
-        if (!isScreenEnabled(VMScreenConfig.ID_GPU0)) return;
+        // Any screen this VM actually has, bound to the native display -- not the GPU screen's
+        // binding in particular. The env var is process-wide, so it is set from whether that path
+        // exists at all, and it exists for the simplefb bridge just as much: it dlopens the same
+        // driver to import the framebuffer as a dma-buf and blit it. Gating on the GPU screen was
+        // the arbitration-era rule, from when simplefb had no display of its own to export.
+        if (!VMScreenConfig.hasNativeExporter(item)) return;
         var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
         switch (provider) {
             case TURNIP: {

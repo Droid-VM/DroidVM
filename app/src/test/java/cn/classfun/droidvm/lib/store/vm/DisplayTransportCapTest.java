@@ -17,6 +17,11 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  * <p>Both ends decide the set, which is why every case here names both. The distinction the tests
  * are really holding is between a rung that is <em>unbuilt</em> (offered, refused, and expected to
  * arrive) and one that is <em>unreachable</em> (absent, because it never will).</p>
+ *
+ * <p>Two of the predicates below belong to the daemon and the editor rather than to this enum, and
+ * are held here for the same reason: they decide whether a rung the ladder offers is actually
+ * climbed at run time -- one from the VM's bindings, one from a number the user typed -- and
+ * neither of their owners can be stood up without a device.</p>
  */
 public class DisplayTransportCapTest {
     private static final String GPU0 = VMScreenConfig.ID_GPU0;
@@ -164,5 +169,70 @@ public class DisplayTransportCapTest {
     /** The predicate {@code CrosvmBackendInstance.transportCapArg} branches on. */
     private static boolean emitsCap(VMScreenConfig screen) {
         return screen.getTransportCap() == DisplayTransportCap.CPU;
+    }
+
+    @Test
+    public void theBlitDriverIsPointedAtAnyNativeBinding() {
+        // CROSVM_DISPLAY_VULKAN_LIBRARY is process-wide and the bridge dlopens it for whichever
+        // screen reaches the native display, so the question it is set from is "has this VM a
+        // native binding", not "has the GPU screen one". The simplefb bridge does the same dma-buf
+        // import and the same blit; asking about gpu-0 left it with no driver to load, which is a
+        // CPU copy for a VM whose ceiling says otherwise.
+        var item = DataItem.newObject();
+        assertFalse(VMScreenConfig.hasNativeExporter(item));
+
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        fb.setEnabled(true);
+        fb.setExporter(DisplayExporter.NATIVE);
+        assertTrue(VMScreenConfig.hasNativeExporter(item));
+
+        // The switch is the device, so a binding on a screen the VM does not have is not one.
+        fb.setEnabled(false);
+        assertFalse(VMScreenConfig.hasNativeExporter(item));
+
+        // VNC never reaches the bridge on either screen, and the GPU screen's own native binding
+        // still answers yes -- the widened question includes the one it used to ask.
+        fb.setEnabled(true);
+        fb.setExporter(DisplayExporter.VNC);
+        var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
+        gpu0.setEnabled(true);
+        gpu0.setExporter(DisplayExporter.VNC);
+        assertFalse(VMScreenConfig.hasNativeExporter(item));
+        gpu0.setExporter(DisplayExporter.NATIVE);
+        assertTrue(VMScreenConfig.hasNativeExporter(item));
+    }
+
+    @Test
+    public void aSimplefbWidthOffTheGrainSpendsTheGpuCopy() {
+        // The editor's warning condition. simplefb's pitch is width*4 with nothing padding it and
+        // the blit's LINEAR dma-buf import wants 64 bytes, so the rule is a width that is a
+        // multiple of 16. Measured on device: 1400 falls back to the CPU copy, 1408 does not.
+        assertTrue(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 1400));
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 1408));
+
+        // A ceiling already at the bottom rung loses nothing to the width, so there is nothing to
+        // tell the user -- the CPU copy is what was asked for.
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.NATIVE, DisplayTransportCap.CPU, 1400));
+
+        // The virtio-gpu scanout is allocated on the host and rounded up to what the importer
+        // wants, so it meets the rule by construction and the same width costs it nothing.
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            GPU0, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 1400));
+
+        // VNC has no GPU half to spend: that rung is offered and refused, so a ceiling naming it
+        // is already on the CPU copy for a reason the width has nothing to do with. Same for a
+        // screen nobody is watching, which has no edge for a transport to run along at all.
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.VNC, DisplayTransportCap.GPU, 1400));
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.NONE, DisplayTransportCap.GPU, 1400));
+
+        // What the editor hands over for a field that is empty or half-typed: not yet a width, so
+        // not yet anything to warn about. The geometry validator is what has something to say.
+        assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
+            FB, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 0));
     }
 }

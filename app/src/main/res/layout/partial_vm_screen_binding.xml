@@ -121,6 +121,23 @@
 
         </LinearLayout>
 
+        <!-- Not an error and not a refusal: the width above is a legal one, it just costs the GPU
+             copy. simplefb's stride is width*4 with nothing to pad it, and the blit's dma-buf
+             import wants a 64-byte pitch, so the transport quietly settles one rung lower for a
+             width that is not a multiple of 16. Shown in place rather than as a dialog, and the
+             value is never snapped for the user: moving somebody's resolution behind their back is
+             worse than the fallback it would avoid. ScreenBindingRow decides when it applies; only
+             the simplefb include ever shows it. -->
+        <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+            android:id="@+id/row_screen_width_cpu_fallback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_info"
+            android:subtitle="@string/create_vm_screen_width_cpu_fallback_desc"
+            android:text="@string/create_vm_screen_width_cpu_fallback"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
         <LinearLayout
             android:id="@+id/screen_dpi_options"
             android:layout_width="match_parent"

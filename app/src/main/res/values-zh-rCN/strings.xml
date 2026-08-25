@@ -307,6 +307,8 @@
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy（硬件编码）</string>
     <string name="create_vm_screen_transport_not_implemented">未实现</string>
+    <string name="create_vm_screen_width_cpu_fallback">此宽度下传输管线将使用 CPU Copy</string>
+    <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy 会把帧缓冲当成 linear dma-buf 导入，而驱动只收 row pitch 对齐 64 bytes 的缓冲。SimpleFB 的 pitch 就是宽度 x 4、没有任何补齐，所以 GPU Copy 需要 16 像素倍数的宽度 —— 例如 1408 而不是 1400。这个宽度本身没有问题，只是它的帧会走 CPU 复制。</string>
     <string name="create_vm_screen_input_enabled">屏幕输入设备</string>
     <string name="create_vm_screen_input_enabled_desc">为这个屏幕建立专属的触摸屏与绝对指针。键盘与相对鼠标属于整台 VM，不受影响。设备列表在 VM 开机时就已固定，因此这里的更改要等 VM 下次启动才生效。</string>
     <string name="create_vm_error_vnc_port_conflict">两个屏幕不能使用同一个 VNC 端口。</string>

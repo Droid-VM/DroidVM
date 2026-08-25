@@ -354,6 +354,22 @@ public final class VMScreenConfig {
     }
 
     /**
+     * Whether anything this VM has is exported to the app's native display.
+     *
+     * <p>For the host-process settings that belong to that path rather than to one screen -- the
+     * Vulkan library the display bridge dlopens is the one -- because an environment variable is
+     * process-wide and cannot be set per screen even when the thing it configures runs per screen.
+     * Which is why the question has to be asked of all of them: the bridge does the same GPU blit
+     * for whichever screen reaches it, so a VM whose only native binding is simplefb's needs the
+     * env exactly as much as one whose only native binding is the GPU screen's.</p>
+     */
+    public static boolean hasNativeExporter(@NonNull DataItem config) {
+        for (var screen : boundOf(config))
+            if (screen.getExporter() == DisplayExporter.NATIVE) return true;
+        return false;
+    }
+
+    /**
      * Whether this screen gets its own {@code multi-touch} + absolute-pointer pair when the VM
      * starts: the device has to exist, something has to be watching it, and the switch has to be
      * on. A screen nobody exports has no console to send absolute input from, so devices for it
