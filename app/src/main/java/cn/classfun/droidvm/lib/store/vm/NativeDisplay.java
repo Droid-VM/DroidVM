@@ -187,14 +187,29 @@ public final class NativeDisplay {
      * function of the screen and never change -- rename it and the user's mapping silently stops
      * matching anything, with no error to notice.</p>
      *
-     * <p>Its absolute-pointer sibling has no equivalent: crosvm's {@code absolute-mouse} option
-     * takes no {@code name}, and its option enum rejects unknown keys, so passing one is not a
-     * device with an odd name but a command line crosvm refuses. Until that field exists the
-     * touchscreen is the device a per-output mapping can be pinned to.</p>
+     * <p>Its absolute-pointer sibling is named by {@link #tabletDeviceName} for the same reason
+     * and on the same terms.</p>
      */
     @NonNull
     public static String touchDeviceName(@NonNull String screenId) {
         return fmt("DroidVM Touch (%s)", screenId);
+    }
+
+    /**
+     * The evdev name crosvm gives [screenId]'s absolute-pointer (tablet) device.
+     *
+     * <p>Everything {@link #touchDeviceName} says applies here unchanged -- an absolute pointer is
+     * as much a per-output device as a touchscreen, and the guest maps it to an output by name in
+     * exactly the same places. It used to have no name at all, because crosvm's
+     * {@code absolute-mouse} option had no {@code name} field and its option enum rejects unknown
+     * keys, so the device fell back to crosvm's generated "Crosvm Virtio Absolute Mouse &lt;idx&gt;"
+     * -- an index that counts emission order and therefore moves when another screen's input is
+     * switched off, which is the one thing a mapping key must never do. crosvm takes the field
+     * now, so the tablet is pinnable on the same terms as the touchscreen.</p>
+     */
+    @NonNull
+    public static String tabletDeviceName(@NonNull String screenId) {
+        return fmt("DroidVM Tablet (%s)", screenId);
     }
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */

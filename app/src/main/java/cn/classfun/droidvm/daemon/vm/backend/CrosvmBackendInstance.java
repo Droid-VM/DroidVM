@@ -954,12 +954,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
         // resolution-independent and survives guest auto-resize -- no display size needed.
         //
-        // Known overlap while crosvm's own device set is still VM-global: --vnc-server turns on
-        // display_window_mouse, and that path copies the FIRST --input multi-touch's name onto the
-        // one touchscreen it creates for RFB (create_display_window_input_devices). So a VM with a
-        // VNC-bound screen shows the guest a second device carrying the first screen's name. It is
-        // an ambiguity in the guest's device list, not a lost input path -- both devices work --
-        // and it goes away when that set becomes per screen on the crosvm side.
+        // crosvm's own RFB device set is still VM-global: --vnc-server turns on
+        // display_window_mouse and creates its own touchscreen, tablet, mouse and keyboard
+        // (create_display_window_input_devices). Those four now carry fixed names of their own --
+        // "DroidVM VNC Touch" and siblings -- rather than copying the first --input multi-touch's
+        // name, which used to hand the guest a second device under the first screen's identity.
+        // So a VNC-bound VM still shows more devices than screens, but no two of them claim to be
+        // the same one, and the names below stay this screen's alone.
         for (var screenId : absoluteInputScreens()) {
             args.add("--input");
             args.add(fmt(
@@ -972,18 +973,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             // single-touch (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto
             // it in TABLET mode.
             //
-            // No name= on this one, and not by choice: crosvm's AbsoluteMouse option has no name
-            // field and its enum is deny_unknown_fields, so `absolute-mouse[...,name=X]` is not a
-            // device with an odd name -- it is a command line crosvm refuses, i.e. a VM that does
-            // not start. So this screen's tablet is identified in the guest only by crosvm's
-            // generated "Crosvm Virtio Absolute Mouse <idx>", whose idx is the emission order
-            // here and therefore shifts when another screen's input is switched off. Naming it
-            // needs the field added on the crosvm side; until then the touchscreen is the device
-            // §5.2's per-output mapping can actually be pinned to.
+            // It carries a name= for the same reason the touchscreen does. It could not before:
+            // crosvm's AbsoluteMouse option had no name field and its enum is deny_unknown_fields,
+            // so `absolute-mouse[...,name=X]` was not a device with an odd name but a command line
+            // crosvm refuses, and this screen's tablet fell back to the generated "Crosvm Virtio
+            // Absolute Mouse <idx>" -- an idx that counts emission order here and so moves when
+            // another screen's input is switched off. Both devices of the pair are pinnable now.
             args.add("--input");
             args.add(fmt(
-                "absolute-mouse[path=%s]",
-                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.TABLET)
+                "absolute-mouse[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.TABLET),
+                NativeDisplay.tabletDeviceName(screenId)
             ));
         }
     }

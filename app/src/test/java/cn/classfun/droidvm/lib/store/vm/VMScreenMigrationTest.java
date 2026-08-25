@@ -246,4 +246,36 @@ public class VMScreenMigrationTest {
         assertNotEquals(NativeDisplay.touchDeviceName(VMScreenConfig.ID_GPU0),
             NativeDisplay.touchDeviceName(VMScreenConfig.ID_SIMPLEFB));
     }
+
+    @Test
+    public void tabletDeviceNamesAreDerivedTooAndNeverCollideWithTheTouchscreen() {
+        // The tablet is as much a per-output device as the touchscreen, so it is derived the same
+        // way. It also has to be distinguishable from its own screen's touchscreen: the two sit
+        // side by side in the guest's device list and the user picks between them there.
+        assertEquals("DroidVM Tablet (gpu-0)",
+            NativeDisplay.tabletDeviceName(VMScreenConfig.ID_GPU0));
+        assertEquals("DroidVM Tablet (simplefb)",
+            NativeDisplay.tabletDeviceName(VMScreenConfig.ID_SIMPLEFB));
+        assertNotEquals(NativeDisplay.tabletDeviceName(VMScreenConfig.ID_GPU0),
+            NativeDisplay.tabletDeviceName(VMScreenConfig.ID_SIMPLEFB));
+        for (var id : new String[] {VMScreenConfig.ID_GPU0, VMScreenConfig.ID_SIMPLEFB}) {
+            assertNotEquals(NativeDisplay.touchDeviceName(id), NativeDisplay.tabletDeviceName(id));
+        }
+    }
+
+    @Test
+    public void perScreenNamesCarryNoCommaThatWouldSplitAnInputOption() {
+        // Both names are interpolated into a crosvm `--input kind[path=...,name=...]` option, whose
+        // key-value parser runs an unquoted value to the next ',' or ']'. Spaces and parentheses
+        // survive that; a ',' or a bracket in a screen id would silently truncate the name into a
+        // different device, so assert the characters that would do it never appear.
+        for (var id : new String[] {VMScreenConfig.ID_GPU0, VMScreenConfig.ID_SIMPLEFB}) {
+            for (var name : new String[] {
+                NativeDisplay.touchDeviceName(id), NativeDisplay.tabletDeviceName(id)}) {
+                assertEquals(-1, name.indexOf(','));
+                assertEquals(-1, name.indexOf('['));
+                assertEquals(-1, name.indexOf(']'));
+            }
+        }
+    }
 }
