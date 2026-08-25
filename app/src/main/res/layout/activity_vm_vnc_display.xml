@@ -74,6 +74,20 @@
             android:importantForAccessibility="no"
             android:scaleType="fitCenter" />
 
+        <!--
+            The H.264 decoder's output, laid over the RFB canvas and given the same geometry by
+            DisplayViewportController. Not clickable and not focusable so every touch, hover and
+            button event falls straight through to the canvas beneath it: the RFB connection is
+            still what carries input while this is up.
+        -->
+        <TextureView
+            android:id="@+id/texture_h264"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:visibility="gone" />
+
         <LinearLayout
             android:id="@+id/overlay_connecting"
             android:layout_width="wrap_content"

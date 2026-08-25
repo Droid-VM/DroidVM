@@ -311,9 +311,11 @@
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy 会把帧缓冲当成 linear dma-buf 导入，而驱动只收 row pitch 对齐 64 bytes 的缓冲。SimpleFB 的 pitch 就是宽度 x 4、没有任何补齐，所以 GPU Copy 需要 16 像素倍数的宽度 —— 例如 1408 而不是 1400。这个宽度本身没有问题，只是它的帧会走 CPU 复制。</string>
     <string name="create_vm_screen_input_enabled">屏幕输入设备</string>
     <string name="create_vm_screen_input_enabled_desc">为这个屏幕建立专属的触摸屏与绝对指针。键盘与相对鼠标属于整台 VM，不受影响。设备列表在 VM 开机时就已固定，因此这里的更改要等 VM 下次启动才生效。</string>
-    <string name="create_vm_error_vnc_port_conflict">两个屏幕不能使用同一个 VNC 端口。</string>
+    <string name="create_vm_error_vnc_port_conflict">两个监听端不能用同一个端口。</string>
     <string name="create_vm_vnc_host">主机地址</string>
     <string name="create_vm_vnc_port">端口</string>
+    <string name="create_vm_vnc_h264_port">H.264 端口</string>
+    <string name="create_vm_vnc_h264_port_desc">硬件编码的 H.264 旁路通道监听的端口。留空即为 RFB 端口加 100。传输管线没到 GPU Copy（硬件编码）之前，这个端口上不会有东西在听。</string>
     <string name="create_vm_vnc_password_auth">密码认证</string>
     <string name="create_vm_vnc_password">密码</string>
     <string name="create_vm_vnc_password_clear">清空密码</string>
@@ -976,6 +978,8 @@
     <string name="vnc_display_reconnecting">正在重连 (%1$d/%2$d)…</string>
     <string name="vnc_display_reconnect_failed">重连失败，已尝试 %1$d 次</string>
     <string name="vnc_display_connect_failed">无法连接到 VNC 服务器</string>
+    <string name="vnc_display_h264_active">H.264 串流</string>
+    <string name="vnc_display_h264_fallback">已退回 RFB</string>
     <string name="vnc_display_fullscreen">全屏</string>
 
     <string name="native_display_title">原生显示器</string>

@@ -49,6 +49,13 @@ public final class VncInfoHandler extends RequestHandler {
         res.put("host", !host.isEmpty() ? host : "127.0.0.1");
         res.put("port", screen.getVncPort());
         res.put("password", screen.getVncPassword());
+        // What this binding's transport ceiling permits, and where the H.264 side channel would be
+        // if it permits an encoder. The console cannot work either out for itself: the ceiling
+        // lives in the config the daemon owns, and the port is derived from one the daemon may
+        // have assigned at start. It is still only a permit -- whether an encoder is actually
+        // standing there is answered by connecting, which is what the console does with it.
+        res.put("transport_cap", screen.getTransportCap().getToken());
+        res.put("h264_port", screen.effectiveVncH264Port());
         // When VNC binds to the IPv4 wildcard, resolve the phone's own LAN
         // address here from the router watcher's filtered host-IP set, which
         // already drops pbridge offload-proxy addresses parked on the uplink.

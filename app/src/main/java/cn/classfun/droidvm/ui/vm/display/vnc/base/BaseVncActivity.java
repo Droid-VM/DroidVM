@@ -31,6 +31,7 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MenuItem;
+import android.view.TextureView;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
@@ -39,6 +40,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -51,7 +53,9 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
+import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
+import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ConsolePipeline;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
 
 public abstract class BaseVncActivity extends AppCompatActivity implements ImeInsetsExempt {
@@ -72,6 +76,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected static final int DEFAULT_PORT = 5900;
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final long RECONNECT_DELAY_MS = 2000;
+    /**
+     * How long the message loop parks for while RFB updates are suppressed. The same order as the
+     * loop's own socket wait, so resuming costs no more than an ordinary iteration.
+     */
+    private static final long SUPPRESSED_POLL_MS = 50;
     protected final Handler mainHandler = new Handler(Looper.getMainLooper());
     protected final ExecutorService executor = newSingleThreadExecutor(this::msgLoopThread);
     protected VncClient vncClient;
@@ -89,6 +98,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected String screenId = "";
     /** Whether that screen has absolute input devices at all; see {@link #EXTRA_INPUT_ENABLED}. */
     protected boolean screenInputEnabled = true;
+    /**
+     * Where this screen's H.264 side channel would be, or -1 when the binding does not permit one.
+     * Answered by the daemon, which owns both the ceiling and the port the VM was started with.
+     */
+    protected int h264Port = -1;
     protected String vncHost = "127.0.0.1";
     // Phone LAN address the daemon resolved for an IPv4-wildcard bind (offload
     // proxy IPs already excluded); empty when not applicable. Preferred over
@@ -98,6 +112,17 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected String vncPassword = null;
     protected volatile boolean running = false;
     protected volatile boolean needsRefresh = false;
+    /**
+     * Whether the message loop is holding off on RFB framebuffer updates because a decoder is
+     * painting the screen instead. See {@link #setRfbUpdatesSuppressed}.
+     */
+    private volatile boolean rfbUpdatesSuppressed = false;
+    /** The decoder view, when this activity's layout has one; null leaves the console RFB-only. */
+    protected TextureView h264View;
+    private H264ConsolePipeline h264;
+    /** What {@link #setStatus} last put in the status line, and the note appended to it. */
+    private String statusText = "";
+    private String statusNote = "";
     private int reconnectAttempt = 0;
     protected int fbWidth, fbHeight;
     protected Bitmap displayBitmap;
@@ -179,6 +204,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         // A VM display is on screen and rendering: tell the platform this is sustained heavy
         // gameplay so its power policy raises clocks (see GamePerfHint).
         GamePerfHint.enterGameplay(this);
+        // Going to the background detaches the window and takes the decoder's surface with it, so
+        // the H.264 path tears itself down and the console falls back to RFB while it is away.
+        // Coming back is therefore the other moment worth probing: without this the upgrade would
+        // be lost for the rest of the session by the ordinary act of switching apps.
+        if (h264 != null && !h264.isRunning() && h264Port > 0 && fbWidth > 0)
+            h264.start(vncHost, h264Port);
     }
 
     @Override
@@ -191,6 +222,9 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected void onDestroy() {
         super.onDestroy();
         onDestroyExtra();
+        // First: it holds a socket and a codec, and the loop below waits for a thread that the
+        // suppression flag could otherwise leave parked.
+        stopH264();
         running = false;
         if (vncClient != null) vncClient.requestStop();
         executor.shutdown();
@@ -221,6 +255,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         tvConnectingMessage = findViewById(R.id.tv_connecting_message);
         overlayConnecting = findViewById(R.id.overlay_connecting);
         ivDisplay = findViewById(R.id.iv_display);
+        // Null for a layout that has no decoder view, which is how a console opts out of the H.264
+        // path entirely: nothing else in here has to be told about it.
+        h264View = findViewById(R.id.texture_h264);
+        if (h264View != null)
+            h264 = new H264ConsolePipeline(h264View, mainHandler, new H264Listener());
         extraKeysPanel = findViewById(R.id.extra_keys_panel);
         onBindExtraViews();
     }
@@ -271,6 +310,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             vncHost = resp.optString("host", "127.0.0.1");
             vncRemoteHost = resp.optString("remote_host", "");
             vncPort = resp.optInt("port", DEFAULT_PORT);
+            // The pre-gate on the H.264 side channel: a binding whose ceiling stops below the
+            // encoder has no side channel to find, and probing for one would spend a connect
+            // timeout learning what the config already says. It is only a pre-gate -- the ceiling
+            // permits an encoder rather than promising one -- so what settles it is the connect.
+            var cap = DisplayTransportCap.fromToken(resp.optString("transport_cap", ""));
+            h264Port = cap == DisplayTransportCap.GPU_HW ? resp.optInt("h264_port", -1) : -1;
             vncPassword = resp.optString("password", "");
             if (vncPassword.isEmpty()) vncPassword = null;
             mainHandler.post(this::startVnc);
@@ -303,6 +348,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
                 setStatus(getString(R.string.vnc_display_connected, width, height), VncStatus.CONNECTED);
                 hideConnectingOverlay();
                 onFramebufferReady(width, height);
+                // Also the resize path, and deliberately: the side channel announces its geometry
+                // once, in the header, so a guest that changed resolution is a stream describing
+                // the old one. Reconnecting is what gets a new header -- and a sync frame with it.
+                restartH264();
             });
         }
 
@@ -353,6 +402,27 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     private void messageLoop() {
         var client = vncClient;
         while (running && client != null && client.isConnected()) {
+            if (rfbUpdatesSuppressed) {
+                // Not calling processMessages IS the suppression: libvncclient asks for the next
+                // incremental update from inside HandleRFBServerMessage, at the end of the one it
+                // just handled, so a loop that stops handling messages stops asking. The server
+                // answers requests and nothing else, so it goes quiet after the one already
+                // outstanding -- and the connection stays up the whole time, which is what keeps
+                // the keyboard and the tablet pointer working (both are writes, and writes do not
+                // go through here).
+                //
+                // What is given up is noticing a dead RFB server while this lasts, since that is
+                // only found out by reading. It costs nothing in practice: the two servers are the
+                // same process, so whatever killed one closes the side channel too, and that is
+                // what lifts this flag.
+                try {
+                    Thread.sleep(SUPPRESSED_POLL_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                continue;
+            }
             if (client.processMessages() < 0) break;
             if (needsRefresh) {
                 needsRefresh = false;
@@ -372,6 +442,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             Log.w(TAG, "Executor already shut down, skipping reconnect");
             return;
         }
+        // The side channel belongs to the RFB session that just ended: its port comes from a
+        // vm_vnc_info answer this is about to ask for again, and the server it was connected to is
+        // gone with the VM. It is opened again by the reconnected session's first framebuffer.
+        stopH264();
         reconnectAttempt++;
         if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
             var msg = getString(R.string.vnc_display_reconnect_failed,
@@ -425,6 +499,101 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         });
     }
 
+    /**
+     * Starts (or restarts) the H.264 side channel for this screen, if the binding offers one.
+     *
+     * <p>Always a fresh connection rather than a reconfiguration: the stream's geometry is in its
+     * header and the server produces a sync frame for whoever just arrived, so reconnecting is both
+     * how the console learns the new size and how it gets a picture it can decode from scratch.</p>
+     */
+    private void restartH264() {
+        if (h264 == null || isFinishing() || isDestroyed()) return;
+        h264.stop();
+        // Not gated on `running`: this runs off the framebuffer callback, which libvncclient makes
+        // while it is still inside rfbInitClient -- so the flag the message loop sets afterwards
+        // may not be up yet, and gating on it would skip the probe for exactly the first
+        // framebuffer, the one every connection has.
+        if (h264Port > 0) h264.start(vncHost, h264Port);
+    }
+
+    /** Takes the H.264 path down and makes sure RFB is drawing again. */
+    private void stopH264() {
+        if (h264 != null) h264.stop();
+        setRfbUpdatesSuppressed(false);
+    }
+
+    /**
+     * Stops or resumes asking the VNC server for framebuffer updates, without touching the
+     * connection.
+     *
+     * <p>Suppression is worth having because the two pictures are the same picture: while the
+     * decoder is up, every RFB rectangle the server encodes is work spent on a canvas nobody can
+     * see. What makes it safe to resume is that libvncserver accumulates each client's modified
+     * region whether or not that client is asking, so the request sent on the way back is answered
+     * with everything that changed in the meantime -- the fallback converges in one round trip
+     * rather than showing whatever was on screen when the decoder took over.</p>
+     *
+     * <p>Repainting from the framebuffer immediately on resume is the other half: the bytes for the
+     * last update the client did receive are still in it, so the canvas has something correct to
+     * show during that round trip instead of the black it was left at.</p>
+     */
+    protected void setRfbUpdatesSuppressed(boolean suppressed) {
+        if (rfbUpdatesSuppressed == suppressed) return;
+        rfbUpdatesSuppressed = suppressed;
+        Log.i(TAG, fmt("RFB framebuffer updates %s",
+            suppressed ? "suppressed for the H.264 stream" : "resumed"));
+        if (!suppressed) needsRefresh = true;
+    }
+
+    /** Whether the H.264 decoder is what is currently painting this console. */
+    protected boolean isH264Live() {
+        return h264 != null && h264.isLive();
+    }
+
+    /** The console's own view of the H.264 path, on the main thread. */
+    private final class H264Listener implements H264ConsolePipeline.Listener {
+        @Override
+        public void onStreamLive(int width, int height) {
+            setRfbUpdatesSuppressed(true);
+            setStatusNote(getString(R.string.vnc_display_h264_active));
+            onH264StreamChanged(true);
+        }
+
+        @Override
+        public void onStreamGone(boolean wasLive, @Nullable Exception cause) {
+            setRfbUpdatesSuppressed(false);
+            // Only a stream that was actually on screen has a fallback to report. A probe that
+            // found nothing listening is the ordinary case for a VM whose host has no encoder
+            // standing behind the port, and saying "fell back to RFB" for it would describe a
+            // downgrade that never happened.
+            setStatusNote(wasLive ? getString(R.string.vnc_display_h264_fallback) : null);
+            onH264StreamChanged(false);
+        }
+    }
+
+    /**
+     * Hook for subclasses that have to move something when the decoder view appears or goes away.
+     * The default console has nothing to do here -- the two views share one geometry.
+     */
+    @SuppressWarnings("unused")
+    protected void onH264StreamChanged(boolean live) {
+    }
+
+    /**
+     * Appends a note to the status line, or clears it. Kept beside the status text rather than
+     * replacing it: which transport is carrying the picture is a second fact about the same
+     * connection, and losing "connected 1280x720" to say it would be a worse trade.
+     */
+    protected void setStatusNote(@Nullable String note) {
+        statusNote = note == null ? "" : note;
+        applyStatusText();
+    }
+
+    private void applyStatusText() {
+        tvStatus.setText(statusNote.isEmpty()
+            ? statusText : fmt("%s  ·  %s", statusText, statusNote));
+    }
+
     protected void setStatus(String text, VncStatus newStatus) {
         int color;
         if (newStatus == this.status) return;
@@ -441,7 +610,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             default:
                 return;
         }
-        tvStatus.setText(text);
+        statusText = text;
+        applyStatusText();
         this.status = newStatus;
         var indicator = new GradientDrawable();
         indicator.setShape(OVAL);
@@ -765,6 +935,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             Log.w(TAG, "Executor already shut down, skipping reconnect");
             return;
         }
+        stopH264();
         running = false;
         reconnectAttempt = 0;
         if (vncClient != null) vncClient.requestStop();

@@ -313,9 +313,11 @@
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy imports the framebuffer as a linear dma-buf, and the driver takes one only when its row pitch is 64-byte aligned. SimpleFB\'s pitch is exactly width x 4 with nothing padding it, so GPU Copy needs a width that is a multiple of 16 -- 1408 rather than 1400. This width is fine; its frames just take the CPU copy.</string>
     <string name="create_vm_screen_input_enabled">Screen input devices</string>
     <string name="create_vm_screen_input_enabled_desc">Gives this screen its own touchscreen and absolute pointer. The keyboard and the relative mouse belong to the whole VM and are not affected. The device list is fixed when the VM boots, so a change here takes effect the next time the VM starts.</string>
-    <string name="create_vm_error_vnc_port_conflict">Two screens cannot serve VNC on the same port.</string>
+    <string name="create_vm_error_vnc_port_conflict">Two listeners cannot share the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
+    <string name="create_vm_vnc_h264_port">H.264 port</string>
+    <string name="create_vm_vnc_h264_port_desc">Where the hardware-encoded H.264 side channel listens. Leave empty for the RFB port plus 100. Nothing listens on it until the transport pipeline reaches GPU Copy (hardware encode).</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>
     <string name="create_vm_vnc_password">Password</string>
     <string name="create_vm_vnc_password_clear">Clear password</string>
@@ -1013,6 +1015,8 @@
     <string name="vnc_display_reconnecting">Reconnecting (%1$d/%2$d)\u2026</string>
     <string name="vnc_display_reconnect_failed">Reconnect failed after %1$d attempts</string>
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
+    <string name="vnc_display_h264_active">H.264 stream</string>
+    <string name="vnc_display_h264_fallback">fell back to RFB</string>
     <string name="vnc_display_fullscreen">Fullscreen</string>
 
     <string name="native_display_title">Native Display</string>

@@ -1240,6 +1240,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             vncArg.append(",password=");
             vncArg.append(password);
         }
+        // The H.264 side channel's port, and only when the user named one. Left unsaid the host
+        // derives it from the RFB port (VMScreenConfig.H264_PORT_OFFSET above it), which the app's
+        // console derives the same way -- so the two ends agree on a number neither wrote down.
+        // Sending the derived value would put a copy of that rule on the command line, where it
+        // could later disagree with the rule itself.
+        if (screen.hasVncH264PortOverride()) {
+            vncArg.append(",h264-port=");
+            vncArg.append(screen.getVncH264Port());
+        }
         // VNC server pointer is FIXED to tablet (absolute, 1:1 cursor + hover/right-click/wheel):
         // every third-party VNC client gets absolute-tablet semantics. The app's own VNC display
         // routes MOUSE/TOUCH modes around RFB via the crosvm --input devices instead, so nothing

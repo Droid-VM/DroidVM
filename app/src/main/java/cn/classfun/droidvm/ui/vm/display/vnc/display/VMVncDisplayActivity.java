@@ -432,11 +432,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 @Override
                 public void onViewportChanged(int baseW, int baseH, float viewScale,
                                               float offsetX, float offsetY) {
-                    ivDisplay.setLayoutParams(new FrameLayout.LayoutParams(baseW, baseH, CENTER));
-                    ivDisplay.setScaleX(viewScale);
-                    ivDisplay.setScaleY(viewScale);
-                    ivDisplay.setTranslationX(offsetX);
-                    ivDisplay.setTranslationY(offsetY);
+                    place(ivDisplay, baseW, baseH, viewScale, offsetX, offsetY);
+                    // The decoder view is the same rectangle, because it is showing the same
+                    // screen. Applied here rather than mirrored later so that the two cannot drift
+                    // apart across a rotation or an IME: there is one viewport and it writes both.
+                    if (h264View != null)
+                        place(h264View, baseW, baseH, viewScale, offsetX, offsetY);
                 }
 
                 @Override
@@ -502,6 +503,20 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             return insets;
         });
         ViewCompat.requestApplyInsets(content);
+    }
+
+    /**
+     * Puts one view where the viewport says the guest's picture goes. A fresh LayoutParams per
+     * view, because two views sharing one instance is a layout that silently follows whichever was
+     * measured last.
+     */
+    private static void place(@NonNull View target, int baseW, int baseH, float viewScale,
+                              float offsetX, float offsetY) {
+        target.setLayoutParams(new FrameLayout.LayoutParams(baseW, baseH, CENTER));
+        target.setScaleX(viewScale);
+        target.setScaleY(viewScale);
+        target.setTranslationX(offsetX);
+        target.setTranslationY(offsetY);
     }
 
     private float dp(float v) {

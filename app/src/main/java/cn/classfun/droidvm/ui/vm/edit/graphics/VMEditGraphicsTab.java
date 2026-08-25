@@ -44,6 +44,7 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -790,9 +791,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      * is a message in the editor rather than a VM that will not start.
      *
      * <p>"One exporter per screen" needs no check: the schema keys the binding by screen, so it
-     * cannot be said twice. Two VNC servers on one port can be, and crosvm compares the effective
-     * ports -- so two screens left to pick their own port are fine (the daemon hands out distinct
-     * ones), but two that name the same one are not.</p>
+     * cannot be said twice. Two listeners on one port can be, and crosvm compares the effective
+     * ports -- so ports left unnamed are fine (the daemon hands out distinct ones, and derives the
+     * side channel's from them), but two that name the same one are not.</p>
+     *
+     * <p>A VNC binding now opens two listeners rather than one, and the second is derived from the
+     * first unless it is named. So the collision to look for is between any two <em>named</em>
+     * ports, whichever field they were typed into: an H.264 port equal to the other screen's RFB
+     * port is exactly as unstartable as two equal RFB ports, and it is the kind of thing a user
+     * hits by typing the number they just read off the row above.</p>
      */
     private boolean validateScreens() {
         var crosvm = parent.get("backend", VMBackend.DEFAULT) == VMBackend.CROSVM;
@@ -800,17 +807,35 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (!row.isScreenEnabled()) continue;
             if (row.getExporter() == DisplayExporter.NATIVE && !crosvm)
                 return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
-            if (row.getExporter() == DisplayExporter.VNC
-                && !checkInputField(row.portField(), true, 1024, 65535)) return false;
+            if (row.getExporter() != DisplayExporter.VNC) continue;
+            if (!checkInputField(row.portField(), true, 1024, 65535)) return false;
+            if (!checkInputField(row.h264PortField(), true, 1024, 65535)) return false;
         }
-        if (screenGpu0.isScreenEnabled() && screenFb.isScreenEnabled()
-            && screenGpu0.getExporter() == DisplayExporter.VNC
-            && screenFb.getExporter() == DisplayExporter.VNC
-            && screenGpu0.typedVncPort() > 0
-            && screenGpu0.typedVncPort() == screenFb.typedVncPort()) {
-            screenFb.portField().setError(
-                parent.getString(R.string.create_vm_error_vnc_port_conflict));
-            return false;
+        return validateNoPortCollision();
+    }
+
+    /**
+     * The named ports, checked pairwise. Reported on the field that repeats one already claimed, so
+     * the error lands on the number the user would change rather than on the first one they typed.
+     */
+    private boolean validateNoPortCollision() {
+        var fields = new ArrayList<TextInputEditText>();
+        var ports = new ArrayList<Integer>();
+        for (var row : new ScreenBindingRow[]{screenGpu0, screenFb}) {
+            if (!row.isScreenEnabled() || row.getExporter() != DisplayExporter.VNC) continue;
+            fields.add(row.portField());
+            ports.add(row.typedVncPort());
+            fields.add(row.h264PortField());
+            ports.add(row.typedVncH264Port());
+        }
+        for (var i = 0; i < ports.size(); i++) {
+            if (ports.get(i) <= 0) continue;
+            for (var j = 0; j < i; j++)
+                if (ports.get(j).equals(ports.get(i))) {
+                    fields.get(i).setError(
+                        parent.getString(R.string.create_vm_error_vnc_port_conflict));
+                    return false;
+                }
         }
         return true;
     }

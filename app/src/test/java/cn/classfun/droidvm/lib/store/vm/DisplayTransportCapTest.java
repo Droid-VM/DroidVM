@@ -299,4 +299,53 @@ public class DisplayTransportCapTest {
         assertFalse(DisplayTransportCap.cpuFallbackFromWidth(
             FB, DisplayExporter.NATIVE, DisplayTransportCap.GPU, 0));
     }
+
+    @Test
+    public void theSideChannelPortIsDerivedUnlessItWasNamed() {
+        // The port the app's own console connects to for H.264. Nobody writes the derived value
+        // down: the host derives it the same way from the same RFB port, and a copy of a rule
+        // stored beside the rule is a copy that can go stale.
+        var item = DataItem.newObject();
+        var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
+        gpu0.setEnabled(true);
+        gpu0.setExporter(DisplayExporter.VNC);
+        gpu0.setVncPort(5900);
+        assertEquals(-1, gpu0.getVncH264Port());
+        assertFalse(gpu0.hasVncH264PortOverride());
+        assertEquals(5900 + VMScreenConfig.H264_PORT_OFFSET, gpu0.effectiveVncH264Port());
+
+        // Named, and then it is what it says -- and the flag on the command line exists only for
+        // this case, which is the predicate the arg builder branches on.
+        gpu0.setVncH264Port(7000);
+        assertTrue(gpu0.hasVncH264PortOverride());
+        assertEquals(7000, gpu0.effectiveVncH264Port());
+
+        // Cleared by the editor the way an empty field clears the RFB port, and back to derived.
+        gpu0.setVncH264Port(-1);
+        assertFalse(gpu0.hasVncH264PortOverride());
+        assertEquals(6000, gpu0.effectiveVncH264Port());
+    }
+
+    @Test
+    public void thereIsNoSideChannelToTryWhenTheDerivationHasNoAnswer() {
+        // Both of these are -1 rather than a number the console would spend a connect timeout
+        // learning was wrong: a port the daemon has not assigned yet, and a derived one that would
+        // not fit in a port number.
+        var item = DataItem.newObject();
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        fb.setEnabled(true);
+        fb.setExporter(DisplayExporter.VNC);
+        assertEquals(-1, fb.getVncPort());
+        assertEquals(-1, fb.effectiveVncH264Port());
+
+        fb.setVncPort(VMScreenConfig.MAX_PORT);
+        assertEquals(-1, fb.effectiveVncH264Port());
+        // One below the point where the derivation stops fitting still works.
+        fb.setVncPort(VMScreenConfig.MAX_PORT - VMScreenConfig.H264_PORT_OFFSET);
+        assertEquals(VMScreenConfig.MAX_PORT, fb.effectiveVncH264Port());
+        // And an explicit port is not a derivation, so nothing about the RFB port bounds it.
+        fb.setVncPort(-1);
+        fb.setVncH264Port(9999);
+        assertEquals(9999, fb.effectiveVncH264Port());
+    }
 }

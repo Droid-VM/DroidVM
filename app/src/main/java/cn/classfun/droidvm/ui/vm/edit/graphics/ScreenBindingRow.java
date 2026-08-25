@@ -69,6 +69,7 @@ final class ScreenBindingRow {
     private final View vncOptions;
     private final TextInputEditText etHost;
     private final TextInputEditText etPort;
+    private final TextInputEditText etH264Port;
     private final SwitchRowWidget swPasswordAuth;
     private final View passwordOptions;
     private final TextInputEditText etPassword;
@@ -105,6 +106,7 @@ final class ScreenBindingRow {
         vncOptions = block.findViewById(R.id.screen_vnc_options);
         etHost = block.findViewById(R.id.et_screen_vnc_host);
         etPort = block.findViewById(R.id.et_screen_vnc_port);
+        etH264Port = block.findViewById(R.id.et_screen_vnc_h264_port);
         swPasswordAuth = block.findViewById(R.id.sw_screen_vnc_password_auth);
         passwordOptions = block.findViewById(R.id.screen_vnc_password_options);
         etPassword = block.findViewById(R.id.et_screen_vnc_password);
@@ -270,6 +272,11 @@ final class ScreenBindingRow {
         etHost.setText(screen.getVncHost());
         var port = screen.getVncPort();
         etPort.setText(port > 0 ? String.valueOf(port) : "");
+        // Empty is the stored state for every screen that never named one, and it has to read back
+        // as empty rather than as the derived number: showing the derivation in the box would turn
+        // "let the host work it out" into an answer the user appears to have given.
+        var h264Port = screen.getVncH264Port();
+        etH264Port.setText(h264Port > 0 ? String.valueOf(h264Port) : "");
         swPasswordAuth.setChecked(screen.isVncPasswordAuth());
         etPassword.setText(screen.getVncPassword());
     }
@@ -306,6 +313,8 @@ final class ScreenBindingRow {
             screen.setVncHost(getEditText(etHost));
             var portStr = getEditText(etPort);
             screen.setVncPort(portStr.isEmpty() ? -1 : parseInt(portStr));
+            var h264Str = getEditText(etH264Port);
+            screen.setVncH264Port(h264Str.isEmpty() ? -1 : parseInt(h264Str));
             var auth = swPasswordAuth.isChecked();
             screen.setVncPasswordAuth(auth);
             if (auth) screen.setVncPassword(getEditText(etPassword));
@@ -314,8 +323,17 @@ final class ScreenBindingRow {
 
     /** The port typed into this row, or -1 for "let the daemon pick one". */
     int typedVncPort() {
+        return typedPort(etPort);
+    }
+
+    /** The side-channel port typed into this row, or -1 for "derive it from the RFB port". */
+    int typedVncH264Port() {
+        return typedPort(etH264Port);
+    }
+
+    private static int typedPort(@NonNull TextInputEditText field) {
         try {
-            var portStr = getEditText(etPort);
+            var portStr = getEditText(field);
             return portStr.isEmpty() ? -1 : parseInt(portStr);
         } catch (Exception ignored) {
             return -1;
@@ -325,6 +343,11 @@ final class ScreenBindingRow {
     @NonNull
     TextInputEditText portField() {
         return etPort;
+    }
+
+    @NonNull
+    TextInputEditText h264PortField() {
+        return etH264Port;
     }
 
     @NonNull
