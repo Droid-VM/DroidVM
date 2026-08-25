@@ -108,8 +108,13 @@ public final class VMConsoleRouter {
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, config.getName());
         intent.putExtra(VMNativeDisplayActivity.EXTRA_SCREEN, screenId);
         intent.putExtra(VMNativeDisplayActivity.EXTRA_INPUT_ENABLED, inputEnabled(item, screenId));
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
+        // The screen's own size, not the VM's: the two screens have different geometry now, and
+        // the console is showing exactly one of them.
+        var screen = VMScreenConfig.find(item, screenId);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH,
+            screen != null ? screen.getWidth() : VMScreenConfig.DEFAULT_WIDTH);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT,
+            screen != null ? screen.getHeight() : VMScreenConfig.DEFAULT_HEIGHT);
         ctx.startActivity(intent);
     }
 

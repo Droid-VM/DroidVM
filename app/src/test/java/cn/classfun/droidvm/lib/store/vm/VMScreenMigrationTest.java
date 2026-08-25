@@ -14,6 +14,7 @@ import java.util.HashSet;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.enums.Enums;
 
 /**
  * The one-way fold of the legacy display keys into per-screen bindings. Every case here is a
@@ -139,15 +140,138 @@ public class VMScreenMigrationTest {
     }
 
     @Test
-    public void gpuScreenIsNotActiveWithoutAGpu() {
+    public void theGpuScreenSwitchIsTheDeviceAndNothingElseIsAsked() {
+        // There used to be a second answer to "does this VM have a GPU" sitting next to this one,
+        // and the pair could disagree. One switch means the question has one place to be asked.
         var item = legacy(true, DisplayBackend.VIRTIO_GPU, true, false);
+        item.set("gpu_enabled", true);
         VMScreenConfig.migrate(item);
         assertTrue(gpu0(item).isEnabled());
-        assertFalse(gpu0(item).isActive(item));
-        assertTrue(VMScreenConfig.boundOf(item).isEmpty());
-        item.set("gpu_enabled", true);
-        assertTrue(gpu0(item).isActive(item));
+        assertTrue(VMScreenConfig.hasGpuDevice(item));
         assertEquals(1, VMScreenConfig.boundOf(item).size());
+        assertNull(item.opt("gpu_enabled", (DataItem) null));
+        gpu0(item).setEnabled(false);
+        assertFalse(VMScreenConfig.hasGpuDevice(item));
+        assertTrue(VMScreenConfig.boundOf(item).isEmpty());
+    }
+
+    @Test
+    public void acceleratorOnWithTheScreenOffLeavesNoDevice() {
+        // The acceleration-test shape: a GPU meant to render while scanning out nothing. No guest
+        // desktop ever came up on one, so the fold does not carry it forward -- and a VM that was
+        // not doing anything is better described as off than preserved because it was written down.
+        var item = legacy(true, DisplayBackend.SIMPLEFB, true, false);
+        item.set("gpu_enabled", true);
+        item.set("gpu_backend", GpuBackend.GPU_GFXSTREAM);
+        VMScreenConfig.migrate(item);
+        assertFalse(gpu0(item).isEnabled());
+        assertFalse(VMScreenConfig.hasGpuDevice(item));
+        // The simplefb half of that VM is untouched: it is the half that was displaying anything.
+        assertTrue(fb(item).isEnabled());
+        assertEquals(DisplayExporter.NATIVE, fb(item).getExporter());
+        // The renderer choice stays on disk, unread, so turning the device back on in the editor
+        // finds it rather than a default.
+        assertEquals(GpuBackend.GPU_GFXSTREAM, Enums.optEnum(item, "gpu_backend", GpuBackend.NONE));
+    }
+
+    @Test
+    public void acceleratorOffWithTheScreenOnBecomesA2dDevice() {
+        // The reverse disagreement was an ordinary VM in intent -- a display, no 3D -- but the old
+        // builder emitted no --gpu at all for it, so it had no display device either. The new
+        // model can say what was meant, and saying it is also the repair.
+        var item = legacy(true, DisplayBackend.VIRTIO_GPU, false, true);
+        item.set("gpu_enabled", false);
+        VMScreenConfig.migrate(item);
+        assertTrue(gpu0(item).isEnabled());
+        assertEquals(GpuBackend.GPU_2D, Enums.optEnum(item, "gpu_backend", GpuBackend.NONE));
+        assertNull(item.opt("gpu_enabled", (DataItem) null));
+    }
+
+    @Test
+    public void aConfigThatNeverNamedAnAcceleratorAtAllStillGetsARenderer() {
+        // gpu_enabled absent reads as false, which is the same VM as the case above; gating the
+        // fold on the key alone would leave this one with a virtio-gpu screen and no renderer.
+        var item = legacy(true, DisplayBackend.VIRTIO_GPU, true, false);
+        assertNull(item.opt("gpu_enabled", (DataItem) null));
+        VMScreenConfig.migrate(item);
+        assertTrue(gpu0(item).isEnabled());
+        assertEquals(GpuBackend.GPU_2D, Enums.optEnum(item, "gpu_backend", GpuBackend.NONE));
+    }
+
+    @Test
+    public void theFlatGeometryLandsOnBothScreensAndTheOldKeysGo() {
+        // One width could not be two, so both screens inherit the single answer the old schema
+        // could give and are free to disagree from the next edit onwards.
+        var item = legacy(true, DisplayBackend.VIRTIO_GPU, true, false);
+        item.set("gpu_enabled", true);
+        item.set("display_width", 1400);
+        item.set("display_height", 1050);
+        item.set("display_refresh_rate", 60);
+        item.set("display_dpi_h", 220);
+        item.set("display_dpi_v", 210);
+        VMScreenConfig.migrate(item);
+
+        assertEquals(1400, gpu0(item).getWidth());
+        assertEquals(1050, gpu0(item).getHeight());
+        assertEquals(60, gpu0(item).getRefreshRate());
+        assertEquals(220, gpu0(item).getDpiH());
+        assertEquals(210, gpu0(item).getDpiV());
+
+        assertEquals(1400, fb(item).getWidth());
+        assertEquals(1050, fb(item).getHeight());
+        // simplefb gets what it can hold and no more: the device tree names no rate and no DPI,
+        // so the mode fields would be numbers nothing reads. What it gains instead is a poll rate.
+        assertEquals(VMScreenConfig.DEFAULT_POLL_HZ, fb(item).getPollHz());
+        assertNull(fb(item).item.opt("refresh_rate", (DataItem) null));
+        assertNull(fb(item).item.opt("dpi_h", (DataItem) null));
+
+        for (var key : new String[]{"display_width", "display_height", "display_refresh_rate",
+            "display_dpi_h", "display_dpi_v"})
+            assertNull(item.opt(key, (DataItem) null));
+    }
+
+    @Test
+    public void aPartialFlatGeometryFillsTheRestFromTheOldDefaults() {
+        // The old reads all carried defaults, so a config naming only some of the five was not a
+        // config with holes in it -- it was one that agreed with the defaults for the rest.
+        var item = legacy(true, DisplayBackend.SIMPLEFB, false, true);
+        item.set("display_width", 800);
+        VMScreenConfig.migrate(item);
+        assertEquals(800, fb(item).getWidth());
+        assertEquals(VMScreenConfig.DEFAULT_HEIGHT, fb(item).getHeight());
+        assertEquals(800, gpu0(item).getWidth());
+        assertEquals(VMScreenConfig.DEFAULT_REFRESH_RATE, gpu0(item).getRefreshRate());
+        assertEquals(VMScreenConfig.DEFAULT_DPI, gpu0(item).getDpiH());
+    }
+
+    @Test
+    public void theGeometryFoldDoesNotRunTwiceOverAnEditedScreen() {
+        // Gated on the legacy keys still being there, not on the new ones being absent: the new
+        // defaults equal the old values, so "absent" cannot be told from "folded and left alone",
+        // and gating on that would walk back over a size the user has since changed.
+        var item = legacy(true, DisplayBackend.VIRTIO_GPU, true, false);
+        item.set("gpu_enabled", true);
+        item.set("display_width", 1400);
+        VMScreenConfig.migrate(item);
+        gpu0(item).setWidth(2560);
+        VMScreenConfig.migrate(item);
+        assertEquals(2560, gpu0(item).getWidth());
+    }
+
+    @Test
+    public void aScreenWithNoPollRateStillAnswersWithTheRateTheBridgeUsed() {
+        var item = DataItem.newObject();
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        assertEquals(30, VMScreenConfig.DEFAULT_POLL_HZ);
+        assertEquals(VMScreenConfig.DEFAULT_POLL_HZ, fb.getPollHz());
+        // The bounds are crosvm's: 1 is "look once a second at worst", and above 240 the watcher
+        // is asking for more work than anything downstream can use.
+        assertEquals(1, VMScreenConfig.MIN_POLL_HZ);
+        assertEquals(240, VMScreenConfig.MAX_POLL_HZ);
+        assertTrue(VMScreenConfig.DEFAULT_POLL_HZ >= VMScreenConfig.MIN_POLL_HZ);
+        assertTrue(VMScreenConfig.DEFAULT_POLL_HZ <= VMScreenConfig.MAX_POLL_HZ);
+        fb.setPollHz(10);
+        assertEquals(10, fb.getPollHz());
     }
 
     @Test
@@ -174,7 +298,7 @@ public class VMScreenMigrationTest {
         VMScreenConfig.migrate(item);
         assertTrue(fb(item).isInputEnabled());
         assertNull(fb(item).item.opt("input_enabled", (DataItem) null));
-        assertTrue(fb(item).hasAbsoluteInput(item));
+        assertTrue(fb(item).hasAbsoluteInput());
         assertEquals(1, VMScreenConfig.absoluteInputOf(item).size());
         assertEquals(VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.absoluteInputOf(item).get(0).id);
     }
@@ -182,7 +306,6 @@ public class VMScreenMigrationTest {
     @Test
     public void switchingInputOffDropsOnlyThatScreensAbsoluteDevices() {
         var item = DataItem.newObject();
-        item.set("gpu_enabled", true);
         for (var id : VMScreenConfig.IDS) {
             var screen = VMScreenConfig.of(item, id);
             screen.setEnabled(true);
@@ -195,7 +318,7 @@ public class VMScreenMigrationTest {
         assertEquals(VMScreenConfig.ID_SIMPLEFB, left.get(0).id);
         // The screen is still a screen with an exporter -- only its two absolute devices went.
         // The keyboard and the relative pointer are the VM's, so nothing here can speak for them.
-        assertTrue(VMScreenConfig.find(item, VMScreenConfig.ID_GPU0).isActive(item));
+        assertTrue(VMScreenConfig.find(item, VMScreenConfig.ID_GPU0).isEnabled());
         assertEquals(2, VMScreenConfig.boundOf(item).size());
     }
 
@@ -208,7 +331,7 @@ public class VMScreenMigrationTest {
         fb.setEnabled(true);
         fb.setInputEnabled(true);
         fb.setExporter(DisplayExporter.NONE);
-        assertFalse(fb.hasAbsoluteInput(item));
+        assertFalse(fb.hasAbsoluteInput());
         assertTrue(VMScreenConfig.absoluteInputOf(item).isEmpty());
     }
 

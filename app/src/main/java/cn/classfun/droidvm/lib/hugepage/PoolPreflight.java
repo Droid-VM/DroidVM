@@ -14,6 +14,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 
 /**
  * Is the huge-page reserve able to back this VM <em>right now</em>?
@@ -119,7 +120,7 @@ public final class PoolPreflight {
     public static long neededPages(@NonNull DataItem item) {
         long mb = Math.max(item.optLong("memory_mb", 512), 64);
         mb += item.optLong("swiotlb_mb", 0);
-        if (item.optBoolean("gpu_enabled", false)) {
+        if (VMScreenConfig.hasGpuDevice(item)) {
             var backend = item.optString("gpu_backend", "");
             var mode = item.optString("gpu_mode", "");
             long guestPool = item.optLong("gpu_guest_pool_mb", 0);

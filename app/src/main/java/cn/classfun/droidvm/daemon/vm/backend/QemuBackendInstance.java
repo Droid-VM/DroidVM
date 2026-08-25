@@ -435,14 +435,20 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
     }
 
+    /**
+     * The virtio-gpu device (with its renderer, if any) and QEMU's nearest thing to simplefb.
+     *
+     * <p>The virtio-gpu screen's switch is the device, exactly as on crosvm; the renderer only
+     * decides which QEMU device model implements it. The geometry is that screen's own, so a VM
+     * with both screens no longer has to give them one size.</p>
+     */
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
-        var useGpu = item.optBoolean("gpu_enabled", false);
         var gpuScreen = isScreenEnabled(VMScreenConfig.ID_GPU0);
         var fbScreen = isScreenEnabled(VMScreenConfig.ID_SIMPLEFB);
-        var useDisplay = gpuScreen || fbScreen;
-        if (!useGpu && !useDisplay) return;
-        if (useGpu) {
+        if (!gpuScreen && !fbScreen) return;
+        if (gpuScreen) {
+            var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
             var gpuArg = new StringBuilder();
             boolean use3d = false;
@@ -456,16 +462,14 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     use3d = true;
                     break;
                 default:
+                    // 2D, or a config that never named a renderer: the plain device, which is what
+                    // "display without acceleration" is on this backend too.
                     gpuArg.append("virtio-gpu-pci");
                     break;
             }
             gpuArg.append(",disable-legacy=on,disable-modern=off");
-            if (gpuScreen) {
-                long width = item.optLong("display_width", 1280);
-                long height = item.optLong("display_height", 720);
-                gpuArg.append(fmt(",xres=%d,yres=%d", width, height));
-                gpuArg.append(",edid=on");
-            }
+            gpuArg.append(fmt(",xres=%d,yres=%d", gpu0.getWidth(), gpu0.getHeight()));
+            gpuArg.append(",edid=on");
             if (use3d) {
                 gpuArg.append(",blob=on");
                 args.add("-display");
@@ -473,13 +477,9 @@ public final class QemuBackendInstance extends VMBackendInstance {
             }
             args.add("-device");
             args.add(gpuArg.toString());
-        } else if (gpuScreen) {
-            long width = item.optLong("display_width", 1280);
-            long height = item.optLong("display_height", 720);
-            args.add("-device");
-            args.add(fmt("virtio-gpu-pci,disable-legacy=on,disable-modern=off,xres=%d,yres=%d,edid=on",
-                width, height));
         }
+        // ramfb takes no size: QEMU's firmware-programmed framebuffer gets its geometry from the
+        // guest, so the simplefb screen's width and height have nowhere to go here.
         if (fbScreen) {
             args.add("-device");
             args.add("ramfb");

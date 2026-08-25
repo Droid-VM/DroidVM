@@ -11,6 +11,7 @@ import static cn.classfun.droidvm.lib.store.vm.GpuBackend.GPU_GFXSTREAM;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -53,8 +54,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     @Nullable
     private VMConfig loadedConfig;
     private View gpuOptions;
-    private View displayGeometryOptions;
-    private View displayDpiOptions;
     private View vramSettings;
     private View tilGpuDrm2KgslPoolMb;
     private View tilGpuHostPoolMb;
@@ -75,7 +74,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private TextInputEditText etGpuGuestStepMb;
     private TextInputEditText etGpuGuestMaxGrants;
     private TextInputEditText etGpuPoolBlobMaxKb;
-    private SwitchRowWidget swGpuEnabled;
     private ChooseRowWidget chooseGpuBackend;
     private ChooseRowWidget chooseGpuMode;
     private ChooseRowWidget chooseGpuProvider;
@@ -83,11 +81,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     /** One block per screen, in VMScreenConfig.IDS order. */
     private ScreenBindingRow screenGpu0;
     private ScreenBindingRow screenFb;
-    private TextInputEditText etDisplayWidth;
-    private TextInputEditText etDisplayHeight;
-    private TextInputEditText etDisplayRefreshRate;
-    private TextInputEditText etDisplayDpiH;
-    private TextInputEditText etDisplayDpiV;
     private SwitchRowWidget swGpuCgroup;
     private View gpuCgroupOptions;
     private TextInputEditText etGpuCgroupPath;
@@ -104,7 +97,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     @Override
     public void initView() {
-        swGpuEnabled = view.findViewById(R.id.sw_gpu_enabled);
         chooseGpuBackend = view.findViewById(R.id.choose_gpu_backend);
         chooseGpuMode = view.findViewById(R.id.choose_gpu_mode);
         chooseGpuProvider = view.findViewById(R.id.choose_gpu_provider);
@@ -130,22 +122,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuGuestMaxGrants = view.findViewById(R.id.et_gpu_guest_max_grants);
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         chooseDisplayBlitProvider = view.findViewById(R.id.choose_display_blit_provider);
-        displayGeometryOptions = view.findViewById(R.id.display_geometry_options);
         // A new VM comes up as it did before the screens split: the simplefb screen on, exported
-        // over VNC, which needs nothing from the host app to be viewable. The GPU screen starts
-        // off because the GPU switch above it does.
+        // over VNC, which needs nothing from the host app to be viewable, and no virtio-gpu
+        // device at all until the user asks for one.
         screenGpu0 = new ScreenBindingRow(VMScreenConfig.ID_GPU0,
-            view.findViewById(R.id.screen_gpu0_block), R.string.create_vm_screen_gpu0,
+            view.findViewById(R.id.screen_gpu0_block),
+            view.findViewById(R.id.sw_screen_gpu0_enabled),
             false, DisplayExporter.NONE);
         screenFb = new ScreenBindingRow(VMScreenConfig.ID_SIMPLEFB,
-            view.findViewById(R.id.screen_fb_block), R.string.create_vm_screen_simplefb,
+            view.findViewById(R.id.screen_fb_block),
+            view.findViewById(R.id.sw_screen_fb_enabled),
             true, DisplayExporter.VNC);
-        etDisplayWidth = view.findViewById(R.id.et_display_width);
-        etDisplayHeight = view.findViewById(R.id.et_display_height);
-        etDisplayRefreshRate = view.findViewById(R.id.et_display_refresh_rate);
-        etDisplayDpiH = view.findViewById(R.id.et_display_dpi_h);
-        etDisplayDpiV = view.findViewById(R.id.et_display_dpi_v);
-        displayDpiOptions = view.findViewById(R.id.display_dpi_options);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         gpuCgroupOptions = view.findViewById(R.id.gpu_cgroup_options);
         etGpuCgroupPath = view.findViewById(R.id.et_gpu_cgroup_path);
@@ -154,7 +141,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     @Override
     public void initValue() {
-        swGpuEnabled.setOnCheckedChangeListener(this::updateGpuVisibility);
         screenGpu0.init(this::updateDisplayVisibility);
         screenFb.init(this::updateDisplayVisibility);
         // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
@@ -219,7 +205,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateGpuModeOptions();
         updateGpuProviderOptions();
         updateVramAllocVisibility();
-        updateGpuVisibility();
         updateDisplayVisibility();
         updateVramAllocVisibility();
         initGpuCgroup();
@@ -337,7 +322,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     private void loadConfigLocked(@NonNull VMConfig config) {
         var item = config.item;
-        swGpuEnabled.setChecked(item.optBoolean("gpu_enabled", false));
         swGpuUdmabuf.setChecked(item.optBoolean("gpu_udmabuf", true));
         // SCHED_FIFO on the GPU worker; gpu_rt_prio holds the level as a string ("" by default),
         // and "" means "do not set RT at all". Off (the default) -> normal scheduling, which avoids
@@ -382,11 +366,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // sharing is not available to this VM.
         swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
         etGpuPoolBlobMaxKb.setText(String.valueOf(item.optLong("gpu_pool_blob_max_kb", 4096)));
-        etDisplayWidth.setText(String.valueOf(item.optLong("display_width", 1280)));
-        etDisplayHeight.setText(String.valueOf(item.optLong("display_height", 720)));
-        etDisplayRefreshRate.setText(String.valueOf(item.optLong("display_refresh_rate", 120)));
-        etDisplayDpiH.setText(String.valueOf(item.optLong("display_dpi_h", 160)));
-        etDisplayDpiV.setText(String.valueOf(item.optLong("display_dpi_v", 160)));
         screenGpu0.load(item);
         screenFb.load(item);
         var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
@@ -422,7 +401,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             chooseGpuProvider.setSelectedItem(gpuProvider);
         chooseDisplayBlitProvider.setSelectedItem(
             optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP));
-        updateGpuVisibility();
         updateDisplayVisibility();
         updateVramAllocVisibility();
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
@@ -453,11 +431,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
 
     @Override
     public boolean validateInput(@NonNull VMStore store) {
-        if (!checkInputField(etDisplayWidth, false, 320, 8192)) return false;
-        if (!checkInputField(etDisplayHeight, false, 320, 8192)) return false;
-        if (!checkInputField(etDisplayRefreshRate, false, 1, 400)) return false;
-        if (!checkInputField(etDisplayDpiH, false, 100, 800)) return false;
-        if (!checkInputField(etDisplayDpiV, false, 100, 800)) return false;
+        if (!validateScreenGeometry()) return false;
         if (!checkInputField(etGpuHostPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuVramQuotaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
@@ -477,7 +451,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // step) with guest-alloc -- so either way it needs the dynamic-sharing mechanism
         // underneath. The switch refuses to turn on without it; this catches sharing being
         // turned off in the basic tab afterwards.
-        if (swGpuEnabled.isChecked() && usesVramSettings()
+        if (screenGpu0.isScreenEnabled() && usesVramSettings()
             && swGpuDynamicVram.isChecked() && !isDynamicMemorySharingAvailable())
             return showValidateFailed(dynamicVramNeedsSharingMessage());
         if (swGpuCgroup.isChecked()) {
@@ -486,6 +460,30 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                 return showValidateFailed(R.string.create_vm_error_gpu_cgroup_path);
             if (gpuCgroupCpus.trim().isEmpty())
                 return showValidateFailed(R.string.create_vm_error_gpu_cgroup_cpus_empty);
+        }
+        return true;
+    }
+
+    /**
+     * Each screen's own geometry, checked on each screen's own fields.
+     *
+     * <p>The bounds differ where the quantity does: a virtio-gpu mode's refresh rate is what the
+     * guest is told to drive, while simplefb's poll rate is how often the host looks at a block of
+     * memory -- linear host cost, no guest involvement -- so it is bounded by what the bridge
+     * accepts rather than by what a panel could show.</p>
+     */
+    private boolean validateScreenGeometry() {
+        for (var row : new ScreenBindingRow[]{screenGpu0, screenFb}) {
+            if (!checkInputField(row.widthField(), false, 320, 8192)) return false;
+            if (!checkInputField(row.heightField(), false, 320, 8192)) return false;
+            if (row.isGpuScreen()) {
+                if (!checkInputField(row.rateField(), false, 1, 400)) return false;
+                if (!checkInputField(row.dpiHField(), false, 100, 800)) return false;
+                if (!checkInputField(row.dpiVField(), false, 100, 800)) return false;
+            } else if (!checkInputField(row.rateField(), false,
+                (int) VMScreenConfig.MIN_POLL_HZ, (int) VMScreenConfig.MAX_POLL_HZ)) {
+                return false;
+            }
         }
         return true;
     }
@@ -596,15 +594,17 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     @Override
     public void saveConfig(@NonNull VMConfig config) {
         var item = config.item;
-        var gpuEnabled = swGpuEnabled.isChecked();
-        var displayEnabled = screenGpu0.isScreenEnabled() || screenFb.isScreenEnabled();
-        item.set("gpu_enabled", gpuEnabled);
         // One binding per screen, written straight through: the pair of VM-level booleans that
         // used to stand in for it could not say which screen either one meant, and could say
-        // "both" -- which is the combination crosvm now refuses to start.
+        // "both" -- which is the combination crosvm now refuses to start. The geometry rides
+        // along inside each block for the same reason -- one width could not be two -- and so
+        // does the virtio-gpu device's own existence, which no longer has a switch of its own.
         screenGpu0.save(item);
         screenFb.save(item);
-        if (gpuEnabled) {
+        // The renderer settings describe a device that is only there when the screen is: with the
+        // block off they are left exactly as they were, so switching the device off and back on
+        // finds the renderer it had rather than a default.
+        if (screenGpu0.isScreenEnabled()) {
             GpuBackend gb = chooseGpuBackend.getSelectedItem();
             // 2D clears the mode/provider pickers, so reading them would throw "Items not set".
             // Persist NONE for both in that case.
@@ -645,18 +645,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             }
             item.set("gpu_dynamic_vram", swGpuDynamicVram.isChecked());
             item.set("gpu_pool_blob_max_kb", parseInt(getEditText(etGpuPoolBlobMaxKb)));
-        }
-        if (displayEnabled) {
+            // Which host Vulkan composites this renderer's frames into the native display's
+            // Surface. It is written with the rest of the renderer's settings because that is
+            // what it is one of -- a driver choice, alongside the render host driver above it.
             item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
-            item.set("display_width", parseInt(getEditText(etDisplayWidth)));
-            item.set("display_height", parseInt(getEditText(etDisplayHeight)));
-            item.set("display_refresh_rate", parseInt(getEditText(etDisplayRefreshRate)));
-            // DPI only reaches the guest through the virtio-gpu screen's mode; simplefb's
-            // geometry comes from the device tree and carries none.
-            if (screenGpu0.isScreenEnabled()) {
-                item.set("display_dpi_h", parseInt(getEditText(etDisplayDpiH)));
-                item.set("display_dpi_v", parseInt(getEditText(etDisplayDpiV)));
-            }
         }
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP, swGpuCgroup.isChecked());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
@@ -753,35 +745,42 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             || p == GpuProvider.VK_PANVK;
     }
 
-    private void updateGpuVisibility() {
-        gpuOptions.setVisibility(swGpuEnabled.isChecked() ? VISIBLE : GONE);
-        updateDisplayVisibility();
+    /**
+     * The two screen blocks' visibility pass, run from every switch and picker under them.
+     *
+     * <p>One pass rather than one per row: the renderer section belongs to the virtio-gpu switch
+     * above it and the blit row to that screen's exporter below it, so each row asking only about
+     * itself is how a stale combination stays on screen.</p>
+     */
+    private void updateDisplayVisibility() {
+        boolean gpuDevice = screenGpu0.isScreenEnabled();
+        screenGpu0.updateVisibility();
+        screenFb.updateVisibility();
+        // The renderer is what the device is made of, so with no device there is nothing for it to
+        // describe. Greyed rather than hidden: it says what the switch above would turn on.
+        setRowsEnabled(gpuOptions, gpuDevice);
+        gpuOptions.setAlpha(gpuDevice ? 1f : 0.38f);
+        // The GPU blit is the accelerated scanout's composite step and nothing else's: the
+        // virtio-gpu screen exported natively. VNC and simplefb present through crosvm's CPU copy
+        // and never reach it, so the row would name a driver nothing loads.
+        boolean accelScanout = gpuDevice
+            && screenGpu0.getExporter() == DisplayExporter.NATIVE;
+        chooseDisplayBlitProvider.setVisibility(accelScanout ? VISIBLE : GONE);
     }
 
     /**
-     * The whole display block's visibility pass, run from every switch and picker under it.
+     * Enables or disables every control under [root].
      *
-     * <p>One pass rather than one per row: the GPU screen depends on the GPU switch two blocks
-     * up, the DPI and blit rows depend on that screen's exporter, and the geometry above both
-     * depends on either screen existing -- so each row asking only about itself is how a stale
-     * combination stays on screen.</p>
+     * <p>Recursive because setEnabled on a ViewGroup does not reach its children: a block left
+     * looking greyed but still tappable is worse than one that was never greyed, since it takes
+     * input for a device that does not exist.</p>
      */
-    private void updateDisplayVisibility() {
-        // The virtio-gpu screen is the GPU device's screen; with no GPU device there is no such
-        // screen to have. simplefb needs nothing else -- crosvm's bridge polls the guest's
-        // linear framebuffer with no GPU involved -- so it is always offered.
-        screenGpu0.setAvailable(swGpuEnabled.isChecked());
-        screenGpu0.updateVisibility();
-        screenFb.updateVisibility();
-        var anyScreen = screenGpu0.isScreenEnabled() || screenFb.isScreenEnabled();
-        displayGeometryOptions.setVisibility(anyScreen ? VISIBLE : GONE);
-        // The GPU-blit provider and the DPI rows share a trigger: both are meaningful only for
-        // the accelerated scanout, i.e. the virtio-gpu screen exported natively. VNC and simplefb
-        // composite through crosvm's CPU copy, which ignores both.
-        boolean accelScanout = screenGpu0.isScreenEnabled()
-            && screenGpu0.getExporter() == DisplayExporter.NATIVE;
-        displayDpiOptions.setVisibility(accelScanout ? VISIBLE : GONE);
-        chooseDisplayBlitProvider.setVisibility(accelScanout ? VISIBLE : GONE);
+    private static void setRowsEnabled(@NonNull View root, boolean enabled) {
+        root.setEnabled(enabled);
+        if (!(root instanceof ViewGroup)) return;
+        var group = (ViewGroup) root;
+        for (int i = 0; i < group.getChildCount(); i++)
+            setRowsEnabled(group.getChildAt(i), enabled);
     }
 
     /**

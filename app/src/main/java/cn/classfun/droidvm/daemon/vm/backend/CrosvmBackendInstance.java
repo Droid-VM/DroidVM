@@ -49,6 +49,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
@@ -324,12 +325,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 args.add("kvm");
                 break;
             case GUNYAH: {
-                boolean gfxstreamGpu = item.optBoolean("gpu_enabled", false)
+                boolean hasGpu = VMScreenConfig.hasGpuDevice(item);
+                boolean gfxstreamGpu = hasGpu
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
-                boolean drm2kgslGpu = item.optBoolean("gpu_enabled", false)
+                boolean drm2kgslGpu = hasGpu
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
                     && effectiveGpuMode(item) == GpuMode.NATIVE;
-                boolean venusGpu = item.optBoolean("gpu_enabled", false)
+                boolean venusGpu = hasGpu
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
                     && effectiveGpuMode(item) == GpuMode.VULKAN;
                 // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
@@ -752,15 +754,30 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return GpuMode.fromLegacyApi(optEnum(item, "gpu_api", GpuApi.NONE));
     }
 
+    /**
+     * The two display devices: {@code --gpu} for the virtio-gpu screen, {@code --simplefb} for the
+     * simplefb screen, each emitted exactly when its own switch is on.
+     *
+     * <p>One predicate per device, which is the whole point of the split. The arbitration-era
+     * version emitted the GPU device's {@code displays=} for either screen, because back then the
+     * simplefb bridge had no display of its own and handed its frames to this device -- so a VM
+     * with only the simplefb screen on still got a virtio-gpu scanout, a Linux guest saw a
+     * virtio-gpu output, drew its desktop onto it, and nobody exported it. That bridge is gone
+     * (crosvm's simplefb screen opens its own sink), so the geometry belongs to the screen it
+     * describes and to nothing else.</p>
+     *
+     * <p>{@code --gpu} and its {@code displays=} are one thing, never two: a virtio-gpu device
+     * with no scanout was tried and no guest desktop ever came up on it, so it is not a
+     * configuration this emits.</p>
+     */
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
-        var useGpu = item.optBoolean("gpu_enabled", false);
-        var gpuScreen = isScreenActive(VMScreenConfig.ID_GPU0);
-        var fbScreen = isScreenActive(VMScreenConfig.ID_SIMPLEFB);
-        var useDisplay = gpuScreen || fbScreen;
+        var gpuScreen = isScreenEnabled(VMScreenConfig.ID_GPU0);
+        var fbScreen = isScreenEnabled(VMScreenConfig.ID_SIMPLEFB);
         var api = optEnum(item, "gpu_api", GpuApi.NONE);
-        if (!useGpu && !useDisplay) return;
-        if (useGpu) {
+        if (!gpuScreen && !fbScreen) return;
+        if (gpuScreen) {
+            var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
             var isGfxstream = gpuBackend == GpuBackend.GPU_GFXSTREAM;
             var gpuArg = new StringBuilder();
@@ -770,25 +787,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             if (isGfxstream) {
                 gpuArg.append(",context-types=gfxstream-vulkan");
             }
-            // Geometry goes to the GPU device whichever of the two screens the user is watching.
-            // With only the simplefb screen on, the guest may still display through virtio-gpu --
-            // the firmware does, and so does any OS with the driver -- and the VMM's simplefb
-            // bridge hands its frames to this same device rather than opening a display of its
-            // own. A GPU device with no displays= falls back to crosvm's built-in default
-            // (1280x1024), which is what the guest is then told through EDID and display-info: a
-            // VM configured for 1400x1050 came up at 1280x1024, and a Linux guest picks a mode
-            // from that. The geometry itself is still VM-level; giving each screen its own is
-            // part of the screen definition landing, not of the bindings.
-            if (useDisplay) {
-                gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
-                    item.optLong("display_width", 1280),
-                    item.optLong("display_height", 720)));
-                gpuArg.append(fmt(",refresh-rate=%d",
-                    item.optLong("display_refresh_rate", 120)));
-                gpuArg.append(fmt(",dpi=[%d,%d]]]",
-                    item.optLong("display_dpi_h", 160),
-                    item.optLong("display_dpi_v", 160)));
-            }
+            // This screen's own geometry, unconditionally: the device and its scanout are emitted
+            // together or not at all. What the guest is told here is what it gets -- crosvm turns
+            // it into the EDID and the display-info a Linux guest picks its mode from -- and it no
+            // longer has anything to do with the simplefb screen, which now carries its own size
+            // to its own device below.
+            gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
+                gpu0.getWidth(), gpu0.getHeight()));
+            gpuArg.append(fmt(",refresh-rate=%d", gpu0.getRefreshRate()));
+            gpuArg.append(fmt(",dpi=[%d,%d]]]", gpu0.getDpiH(), gpu0.getDpiV()));
 
             if (isGfxstream) {
                 // gfxstream serves both VK (turnip) and GL (zink) clients, so both
@@ -887,14 +894,20 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--gpu");
             args.add(gpuArg.toString());
         }
-        // The simplefb device is its own screen now, so it rides on its own switch rather than on
-        // being the display backend the VM picked: a VM can have both devices.
+        // The simplefb device is its own screen, so it rides on its own switch and carries its own
+        // size -- which is no longer required to equal the GPU screen's, and usually should not be.
+        //
+        // poll-hz is this screen's whole answer to "how often is there a picture": nothing in the
+        // device announces a frame, the guest maps the region write-combining and no write traps,
+        // so the host's sampling rate is the frame rate. Sent explicitly rather than left to
+        // crosvm's default, because it is a value the user can see in the editor and a default
+        // that only one of the two sides knows is a value nobody can check.
         if (fbScreen) {
+            var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
             args.add("--simplefb");
             args.add(fmt(
-                "width=%d,height=%d",
-                item.optLong("display_width", 1280),
-                item.optLong("display_height", 720)
+                "width=%d,height=%d,poll-hz=%d",
+                fb.getWidth(), fb.getHeight(), fb.getPollHz()
             ));
         }
     }
@@ -912,27 +925,50 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * landed on, but writing it out means the app and the VMM agree in the config file rather
      * than in two copies of the same defaulting rule. crosvm rejects an exporter naming a screen
      * whose device is not configured, which is why every binding here is gated on
-     * {@link #isScreenActive} -- the same predicate that decides whether {@code --gpu} and
+     * {@link #isScreenEnabled} -- the same predicate that decides whether {@code --gpu} and
      * {@code --simplefb} are emitted at all.</p>
      */
     private void buildScreenExportersCommand(@NonNull List<String> args) {
         for (var screen : VMScreenConfig.listOf(config.item)) {
-            if (!isScreenActive(screen.id)) continue;
+            if (!isScreenEnabled(screen.id)) continue;
             switch (screen.getExporter()) {
                 case NATIVE:
                     args.add("--android-display-service");
-                    args.add(fmt("name=%s,screen=%s",
-                        NativeDisplay.serviceName(config, screen.id), screen.id));
+                    args.add(fmt("name=%s,screen=%s%s",
+                        NativeDisplay.serviceName(config, screen.id), screen.id,
+                        transportCapArg(screen)));
                     break;
                 case VNC:
                     args.add("--vnc-server");
-                    args.add(buildVncArg(screen));
+                    args.add(buildVncArg(screen) + transportCapArg(screen));
                     break;
                 default:
                     // A screen nobody is watching. Legal, and not the same thing as no screen.
                     break;
             }
         }
+    }
+
+    /**
+     * The ceiling on this binding's transport, as a key-value fragment for its exporter flag --
+     * or nothing at all, which is the usual answer.
+     *
+     * <p>Only the bottom rung is emitted today, because it is the only one that says something
+     * the negotiation would not already work out: capping at a CPU copy asks the host to skip a
+     * blit it could have done. Every rung above it is at or above what any sink can currently
+     * reach, so naming it would restrict nothing -- and a flag that restricts nothing is a flag
+     * whose absence and presence mean the same thing, which is worse than not sending it.</p>
+     *
+     * <p>The stored choice is kept whichever way this goes, so a rung landing later turns an
+     * already-answered preference into a real cap without asking the user again. crosvm's
+     * {@code transport-cap} enum is meant to grow the same way -- new tokens added beside
+     * {@code cpu}, nothing re-spelt -- so this stays a lookup rather than a translation.</p>
+     */
+    @NonNull
+    private static String transportCapArg(@NonNull VMScreenConfig screen) {
+        var cap = screen.getTransportCap();
+        return cap == DisplayTransportCap.CPU
+            ? fmt(",transport-cap=%s", cap.getToken()) : "";
     }
 
     // The virtio-input devices the UI drives; the daemon pre-binds the matching sockets (see
@@ -1033,7 +1069,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     // cores and is about to be handed to crosvm.
     private void applyGpuRtPrioEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        if (!item.optBoolean("gpu_enabled", false)) return;
+        if (!VMScreenConfig.hasGpuDevice(item)) return;
         // gpu_rt_prio is the SCHED_FIFO level as a string, "" (unset) by default. Empty means leave
         // CROSVM_GPU_RT_PRIO unset so crosvm applies no real-time scheduling (RT is opt-in).
         String prio = item.optString("gpu_rt_prio", "");
@@ -1055,7 +1091,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        if (!item.optBoolean("gpu_enabled", false)) return;
+        if (!VMScreenConfig.hasGpuDevice(item)) return;
         var backend = optEnum(item, "gpu_backend", GpuBackend.NONE);
         boolean gfxstream = backend == GpuBackend.GPU_GFXSTREAM;
         // Venus is Vulkan-on-virglrenderer: it drives the host GPU through the same host ICD
@@ -1110,7 +1146,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // process-wide, so it is set from whether that one binding exists.
         var gpu0 = VMScreenConfig.find(item, VMScreenConfig.ID_GPU0);
         if (gpu0 == null || gpu0.getExporter() != DisplayExporter.NATIVE) return;
-        if (!isScreenActive(VMScreenConfig.ID_GPU0)) return;
+        if (!isScreenEnabled(VMScreenConfig.ID_GPU0)) return;
         var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
         switch (provider) {
             case TURNIP: {
@@ -1159,10 +1195,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return null;
     }
 
-    /** Whether [screenId] is a screen this VM actually has; see VMScreenConfig#isActive. */
-    private boolean isScreenActive(@NonNull String screenId) {
+    /** Whether this VM has [screenId]'s display device -- the screen's own switch, and nothing else. */
+    private boolean isScreenEnabled(@NonNull String screenId) {
         var screen = VMScreenConfig.find(config.item, screenId);
-        return screen != null && screen.isActive(config.item);
+        return screen != null && screen.isEnabled();
     }
 
     /**
@@ -1178,7 +1214,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private boolean isInputBridgeNeeded() {
         for (var screen : VMScreenConfig.listOf(config.item)) {
-            if (!isScreenActive(screen.id)) continue;
+            if (!isScreenEnabled(screen.id)) continue;
             if (screen.getExporter() != DisplayExporter.NONE) return true;
         }
         return false;
