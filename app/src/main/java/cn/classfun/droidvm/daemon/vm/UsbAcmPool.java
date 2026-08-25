@@ -6,6 +6,7 @@ package cn.classfun.droidvm.daemon.vm;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
 import static cn.classfun.droidvm.lib.utils.FileUtils.readFile;
 import static cn.classfun.droidvm.lib.utils.FileUtils.writeFile;
+import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
 
@@ -53,6 +54,16 @@ public final class UsbAcmPool {
     private static final String INSTANCE_PREFIX = "dvmpool";
     private static final int NODE_WAIT_MS = 3000;
     private static final int NODE_POLL_MS = 50;
+    // The vendor USB HAL owns this gadget and re-grabs the UDC around unbinds -- and for a
+    // while after boot it churns the whole stack, which is exactly when the daemon first
+    // reconciles. Rather than fighting it with blind retries (every lost round re-enumerates
+    // USB for the host), each attempt first waits for the stack to look settled: boot
+    // completed and the UDC holding one steady non-empty value across a probe interval.
+    // sys.usb.state is empty on this vendor, so the UDC file itself is the settle signal.
+    private static final int UDC_RETRIES = 3;
+    private static final int SETTLE_PROBE_MS = 300;
+    private static final int SETTLE_POLL_MS = 500;
+    private static final int SETTLE_TIMEOUT_MS = 15000;
     /** Same keys the settings screen writes; they flow to the daemon via set_app_config. */
     public static final String KEY_USB_ACM_ENABLE = "usb_acm_enable";
     public static final String KEY_USB_ACM_PORTS = "usb_acm_ports";
@@ -184,19 +195,32 @@ public final class UsbAcmPool {
                 missingLink = true;
         }
         if (!missingLink && toRemove.isEmpty()) return;
-        withUdcUnbound(() -> {
-            for (int i = 0; i < poolSize; i++) {
-                var funcDir = funcDirOf(fmt("%s%d", INSTANCE_PREFIX, i));
-                var link = new File(CONFIG_DIR, funcDir.getName());
-                if (!link.exists())
-                    Os.symlink(funcDir.getAbsolutePath(), link.getAbsolutePath());
+        IOException lastFailure = null;
+        for (int attempt = 1; attempt <= UDC_RETRIES; attempt++) {
+            awaitUsbSettled();
+            try {
+                withUdcUnbound(() -> {
+                    for (int i = 0; i < poolSize; i++) {
+                        var funcDir = funcDirOf(fmt("%s%d", INSTANCE_PREFIX, i));
+                        var link = new File(CONFIG_DIR, funcDir.getName());
+                        if (!link.exists())
+                            Os.symlink(funcDir.getAbsolutePath(), link.getAbsolutePath());
+                    }
+                    for (var funcDir : toRemove) {
+                        deleteFile(new File(CONFIG_DIR, funcDir.getName()).getAbsolutePath());
+                        if (funcDir.isDirectory() && !funcDir.delete())
+                            Log.w(TAG, fmt("cannot remove %s", funcDir));
+                    }
+                });
+                lastFailure = null;
+                break;
+            } catch (IOException e) {
+                lastFailure = e;
+                Log.w(TAG, fmt("gadget reconcile attempt %d/%d lost the UDC race",
+                    attempt, UDC_RETRIES), e);
             }
-            for (var funcDir : toRemove) {
-                deleteFile(new File(CONFIG_DIR, funcDir.getName()).getAbsolutePath());
-                if (funcDir.isDirectory() && !funcDir.delete())
-                    Log.w(TAG, fmt("cannot remove %s", funcDir));
-            }
-        });
+        }
+        if (lastFailure != null) throw lastFailure;
         Log.i(TAG, fmt("USB ACM pool reconciled to %d members", poolSize));
     }
 
@@ -231,6 +255,44 @@ public final class UsbAcmPool {
     }
 
     /**
+     * True when the USB stack looks idle: boot is done and the UDC binding holds one steady
+     * non-empty value across a short probe. An unbound UDC means the HAL is mid-transition
+     * (or about to be) -- exactly the moment an edit window would race it.
+     */
+    private static boolean usbSettled() {
+        if (!"1".equals(getprop("sys.boot_completed"))) return false;
+        String first;
+        try {
+            first = readFile(UDC_FILE).trim();
+        } catch (IOException e) {
+            return false;
+        }
+        if (first.isEmpty()) return false;
+        threadSleep(SETTLE_PROBE_MS);
+        try {
+            return first.equals(readFile(UDC_FILE).trim());
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Waits for {@link #usbSettled()}, but never forever: a stack that will not settle gets
+     *  one polite attempt anyway rather than a pool that silently never appears. */
+    private static void awaitUsbSettled() {
+        var deadline = System.currentTimeMillis() + SETTLE_TIMEOUT_MS;
+        while (System.currentTimeMillis() < deadline) {
+            if (usbSettled()) return;
+            threadSleep(SETTLE_POLL_MS);
+        }
+        Log.w(TAG, "USB stack did not settle in time; attempting the gadget edit anyway");
+    }
+
+    @NonNull
+    private static String getprop(@NonNull String key) {
+        return runListQuiet("getprop", key).getOutString().trim();
+    }
+
+    /**
      * Runs a configfs edit inside an unbind/bind window, back-to-back with no waiting in
      * between, and with the bind in a finally so a failed edit never strands the gadget
      * unbound (which would kill adb-over-USB for good).
@@ -248,16 +310,39 @@ public final class UsbAcmPool {
             udc = names[0];
         }
         try {
-            writeFile(UDC_FILE, "");
+            // A newline, not an empty string: zero bytes never reach the kernel's UDC store
+            // at all (the write is dropped at the VFS), so "" silently leaves the gadget
+            // bound -- and every config edit below then fails with EINVAL. echo does the
+            // same thing; the store strips the newline and treats it as unbind.
+            writeFile(UDC_FILE, "\n");
         } catch (IOException ignored) {
-            // Already unbound; the bind below is what matters.
+            // Already unbound; the readback below decides.
         }
+        var check = "";
+        try {
+            check = readFile(UDC_FILE).trim();
+        } catch (IOException ignored) {
+        }
+        if (!check.isEmpty())
+            throw new IOException(fmt("gadget did not unbind (UDC still %s)", check));
         try {
             op.run();
         } catch (Exception e) {
             throw e instanceof IOException ? (IOException) e : new IOException(e);
         } finally {
-            writeFile(UDC_FILE, udc);
+            try {
+                writeFile(UDC_FILE, udc);
+            } catch (IOException e) {
+                // EBUSY here means the racing HAL bound it first. If our edits landed before
+                // that bind the gadget is up with them anyway, so only propagate a rebind
+                // failure when the UDC is genuinely left unbound.
+                var now = "";
+                try {
+                    now = readFile(UDC_FILE).trim();
+                } catch (IOException ignored) {
+                }
+                if (now.isEmpty()) throw e;
+            }
         }
     }
 
