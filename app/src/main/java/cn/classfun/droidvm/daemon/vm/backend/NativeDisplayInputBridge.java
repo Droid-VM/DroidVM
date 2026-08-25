@@ -88,6 +88,11 @@ final class NativeDisplayInputBridge {
      * same list {@link CrosvmBackendInstance} emits {@code --input} devices for, so the sockets and
      * the devices cannot diverge. A screen left out of it has no sockets and no devices; input
      * aimed at it is refused rather than landing on some other screen's geometry.</p>
+     *
+     * <p>Throws IllegalArgumentException if a path does not fit a unix socket address. That is the
+     * one failure here that is not survivable and not diagnosable after the fact: bind(2) truncates
+     * silently, so the daemon would report a live listener on an inode crosvm was never told about.
+     * The caller turns it into a refused start; see {@link NativeDisplay#requireBindablePath}.</p>
      */
     boolean startListening(@NonNull String vmId, @NonNull List<String> absoluteScreens) {
         if (!UnixHelper.isLoaded()) {
@@ -99,7 +104,10 @@ final class NativeDisplayInputBridge {
         boolean allListening = true;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
             for (var screenId : screensFor(ch, absoluteScreens)) {
-                var path = NativeDisplay.inputSocketPath(vmId, screenId, ch);
+                // Before the syscall, not after: a path bind(2) cannot hold is truncated in
+                // silence and every check downstream then passes against the wrong inode.
+                var path = NativeDisplay.requireBindablePath(
+                    NativeDisplay.inputSocketPath(vmId, screenId, ch));
                 var fd = UnixHelper.nativeUnixListen(path);
                 if (fd < 0) {
                     Log.w(TAG, fmt("Failed to pre-listen on input socket: %s", path));

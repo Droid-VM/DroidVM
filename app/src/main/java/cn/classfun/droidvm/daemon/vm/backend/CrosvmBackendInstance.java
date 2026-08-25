@@ -154,8 +154,22 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // args in buildCommand(), and absoluteInputScreens() decides which screens get the two
         // per-screen devices in both places, so the sockets and devices never diverge.
         if (isInputBridgeNeeded()) {
-            if (!inputBridge.startListening(config.getId().toString(), absoluteInputScreens())) {
-                Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
+            try {
+                if (!inputBridge.startListening(config.getId().toString(),
+                    absoluteInputScreens())) {
+                    Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
+                }
+            } catch (IllegalArgumentException e) {
+                // A socket path too long for sun_path. crosvm would refuse the command line and
+                // our own bind() would truncate it in silence, so there is no half-working start
+                // to attempt: fail here, with the path and its length on the console the user is
+                // already looking at, the way a refused serial slot does.
+                Log.e(TAG, "Display input socket path refused", e);
+                stdioStream.appendBuffer(fmt("display input setup failed: %s\n", e.getMessage()));
+                inputBridge.release();
+                closeSerialPorts();
+                controlSocketPath = null;
+                return result;
             }
         }
         // Must happen before buildCommand(): crosvm opens <cgroup>/tasks and never

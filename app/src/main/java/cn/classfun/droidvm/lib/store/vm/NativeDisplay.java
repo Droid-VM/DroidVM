@@ -9,16 +9,18 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import androidx.annotation.NonNull;
 
+import java.nio.charset.StandardCharsets;
+
 /**
  * Shared naming for the native (crosvm android-display) backend. The daemon (launching crosvm and
  * hosting the native-display binder) and the UI (looking up the display binder / sending input)
  * both derive the service names and socket paths from here, so they agree and different VMs never
  * collide.
  *
- * Everything hangs off one per-VM root, {@link #channelKeyFromId}: the display service of a
- * screen is that root plus the screen's id, and the VM-wide input sockets are that root plus the
- * channel kind. The root is a pure function of the VM's UUID, which is why a crosvm that died and
- * restarted re-registers under exactly the name the app is still waiting on.
+ * The names the outside world sees hang off one per-VM root, {@link #channelKeyFromId}: a screen's
+ * display service is that root plus the screen's id. The root is a pure function of the VM's UUID,
+ * which is why a crosvm that died and restarted re-registers under exactly the name the app is
+ * still waiting on.
  *
  * A display service is per screen, not per VM: two screens exporting natively at once would
  * otherwise want one servicemanager name for two Surfaces, and a service holds two slots (main +
@@ -27,10 +29,20 @@ import androidx.annotation.NonNull;
  * The input sockets split the same way, but only half of them: the keyboard and the relative
  * pointer have no output binding at all -- the guest compositor routes them by focus -- so they
  * stay on the VM root, while the multi-touch and absolute-pointer devices are per screen, because
- * an absolute coordinate only means anything under one output's geometry. A per-screen device's
- * socket is keyed by that screen's display-service name rather than by a second, parallel string:
- * one identity per screen, so the name the guest maps by and the inode crosvm opens cannot drift
- * apart across a reboot.
+ * an absolute coordinate only means anything under one output's geometry.
+ *
+ * The socket <em>filenames</em> are the one set of names here that is not identity-bearing, and
+ * they are deliberately terse. A unix socket address holds 107 bytes of path plus a NUL, and this
+ * app's run directory already spends 35 of them ({@code /data/data/cn.classfun.droidvm/run/}); the
+ * old {@code droidvm_disp_<uuid>_input_multitouch.sock} came to 106 -- one byte of headroom -- so
+ * the moment the screen id joined it the per-screen names hit 115 and 111 and crosvm refused the
+ * whole command line with "path must be shorter than SUN_LEN". Nothing outside this process pair
+ * ever reads these names: the daemon binds the inode and crosvm is handed the path on the command
+ * line it is started with, so unlike the service name and the evdev names, which the guest and the
+ * user's saved mappings key on across reboots, a socket filename can be abbreviated freely.
+ * {@link #inputSocketPath} therefore builds {@code dvmin_<uuid>[_<screen>]_<channel>.sock} out of
+ * two-to-three-letter tags, worst case 90 bytes, and {@link #requireBindablePath} makes the
+ * remaining margin a wall rather than a hope -- see its note on what bind(2) does otherwise.
  */
 public final class NativeDisplay {
     /**
@@ -63,22 +75,50 @@ public final class NativeDisplay {
     /** Per-attach random token; the UI only accepts a broadcast carrying the nonce it requested. */
     public static final String EXTRA_NONCE = "nonce";
 
-    // Socket filename tags per channel (index == channel constant). "mouse"/"tablet" are our tags;
-    // the crosvm device kinds they pair with are "mouse" (relative) and "single-touch" (absolute).
-    private static final String[] KINDS = {"multitouch", "keyboard", "mouse", "tablet"};
+    // Socket filename tags per channel (index == channel constant). "ms"/"tab" are our tags; the
+    // crosvm device kinds they pair with are "mouse" (relative) and "absolute-mouse". Short
+    // because the whole path has to fit sun_path (see the class note); still self-describing,
+    // because the next person reading `ls run/` deserves to know which inode is the touchscreen.
+    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab"};
+
+    /**
+     * Socket filename tag per screen, positionally paired with {@link VMScreenConfig#IDS}. A
+     * screen id is a word ("simplefb"); a socket name has a couple of bytes to spend on it. The
+     * static check below is the wall a third screen walks into: adding an id without adding its
+     * tag fails at class load rather than minting a name that overflows or collides.
+     */
+    private static final String[] SCREEN_TAGS = {"g0", "sfb"};
+
+    static {
+        if (SCREEN_TAGS.length != VMScreenConfig.IDS.length)
+            throw new IllegalStateException("every screen id needs an input-socket tag");
+    }
+
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
 
     /** Prefix every name built here starts with; {@link #vmIdFromServiceName} reads it back. */
     private static final String NAME_PREFIX = "droidvm_disp_";
 
+    /** Prefix of the input socket filenames; short, and not a name anything looks up by. */
+    private static final String SOCKET_PREFIX = "dvmin_";
+
+    /**
+     * Bytes of {@code sockaddr_un.sun_path} on Linux -- 108, of which the last must be the NUL,
+     * so 107 is the longest bindable path. Not a tunable: it is the kernel's array size.
+     */
+    public static final int SUN_PATH_SIZE = 108;
+
+    /** The longest path {@link #requireBindablePath} will pass: {@link #SUN_PATH_SIZE} less NUL. */
+    public static final int MAX_UNIX_PATH = SUN_PATH_SIZE - 1;
+
     private NativeDisplay() {
     }
 
     /**
-     * The VM's display-channel root: the key the VM-wide input sockets are named after, and the
-     * stem every per-screen service name is built on. Stable across boots because the VM's UUID
+     * The VM's display-channel root: the stem every per-screen service name is built on, and the
+     * name a pre-screens build registered on its own. Stable across boots because the VM's UUID
      * is. Taken as a raw id rather than a config because half its callers only have the id, out
-     * of an Intent extra or a socket name being read back.
+     * of an Intent extra or a service name being read back.
      */
     @NonNull
     public static String channelKeyFromId(@NonNull String vmId) {
@@ -126,17 +166,6 @@ public final class NativeDisplay {
     }
 
     /**
-     * The socket path crosvm connects to for [key]'s [channel], where key is what
-     * {@link #inputSocketKey} returns for that channel. Must match across all callers -- the
-     * daemon binds the inode and crosvm's {@code --input ...[path=]} connects to it, so a
-     * disagreement is a VM that will not start.
-     */
-    @NonNull
-    public static String inputSocketPath(@NonNull String key, int channel) {
-        return pathJoin(RUN_PATH, fmt("%s_input_%s.sock", sanitize(key), KINDS[channel]));
-    }
-
-    /**
      * Whether [channel]'s device belongs to one screen rather than to the whole VM.
      *
      * <p>The two absolute devices are: their coordinates are read against one output's geometry,
@@ -149,31 +178,65 @@ public final class NativeDisplay {
     }
 
     /**
-     * The {@link #inputSocketPath} key for [channel] on [screenId]: the VM root for the devices
-     * the whole VM shares, that screen's display-service name for the two absolute ones.
-     *
-     * <p>Reusing the service name rather than minting a second per-screen string is the point:
-     * the screen has one identity, and the socket, the binder name and the evdev name the guest
-     * maps by all ride it, so none of them can survive a rename the others did not.</p>
+     * The socket filename tag for [screenId], or the sanitized id itself if the screen is one
+     * {@link #SCREEN_TAGS} has never heard of -- a long name the length check will catch, which is
+     * the failure worth having over a short one that might collide with another screen's tag.
      */
     @NonNull
-    public static String inputSocketKey(@NonNull String vmId, @NonNull String screenId,
-                                        int channel) {
-        return isPerScreen(channel) ? serviceNameFromId(vmId, screenId) : channelKeyFromId(vmId);
+    private static String screenTag(@NonNull String screenId) {
+        for (int i = 0; i < VMScreenConfig.IDS.length; i++)
+            if (VMScreenConfig.IDS[i].equals(screenId)) return SCREEN_TAGS[i];
+        return sanitize(screenId);
     }
 
     /**
-     * The socket path for [channel] on [screenId] of [vmId]. [screenId] is ignored for the
-     * VM-wide channels, so passing the empty string for them is exact rather than a placeholder.
+     * The socket path for [channel] on [screenId] of [vmId]: {@code dvmin_<uuid>_<sc>_<ch>.sock},
+     * with the screen tag left out entirely for the VM-wide channels -- so passing the empty
+     * screen id for them is exact rather than a placeholder, and no screen a console could name
+     * reaches the keyboard's or the relative pointer's inode.
      *
      * <p>The daemon binds these and crosvm's {@code --input ...[path=]} connects to them, and the
-     * two sides agree because they call this one function rather than each composing the key and
-     * the path themselves.</p>
+     * two sides agree because they call this one function rather than each composing the name and
+     * the directory themselves.</p>
+     *
+     * <p>Terse on purpose, and safe to be terse: unlike the service name and the evdev names, this
+     * string is born and dies inside one VM start -- see the class note for what the long form
+     * cost. Worst case here is 90 bytes of the 107 a unix socket address holds; the margin is
+     * asserted in the tests and enforced by {@link #requireBindablePath} at the bind.</p>
      */
     @NonNull
     public static String inputSocketPath(@NonNull String vmId, @NonNull String screenId,
                                          int channel) {
-        return inputSocketPath(inputSocketKey(vmId, screenId, channel), channel);
+        var screen = isPerScreen(channel) ? fmt("_%s", screenTag(screenId)) : "";
+        return pathJoin(RUN_PATH, fmt("%s%s%s_%s.sock",
+            SOCKET_PREFIX, sanitize(vmId), screen, CHANNEL_TAGS[channel]));
+    }
+
+    /**
+     * Returns [path] if a unix socket can actually be bound to it, and throws naming the path and
+     * its length if not.
+     *
+     * <p>This exists because the two ends disagree about what to do with an over-long path, and
+     * both answers are bad. crosvm refuses the command line outright ("path must be shorter than
+     * SUN_LEN") and the VM never starts. bind(2) as this daemon reaches it does the opposite: the
+     * path is copied into a 108-byte {@code sun_path} and <em>silently truncated</em>, so the
+     * daemon binds some other inode, logs a successful pre-listen, and waits forever for a crosvm
+     * that was told the untruncated name -- run/ on the test phone still held two of those stubs,
+     * {@code ..._simplefb_input_multito} and {@code ..._simplefb_input_tablet.}, as the only trace
+     * that anything had gone wrong. So the length is checked here, before the syscall, and a name
+     * that grows past the limit hits a wall with the number in the message instead of a mystery.</p>
+     *
+     * <p>Measured in bytes, not chars: the kernel copies bytes, and {@link #sanitize} keeps the
+     * two equal only as long as every name it is fed is ASCII.</p>
+     */
+    @NonNull
+    public static String requireBindablePath(@NonNull String path) {
+        int len = path.getBytes(StandardCharsets.UTF_8).length;
+        if (len > MAX_UNIX_PATH)
+            throw new IllegalArgumentException(fmt(
+                "unix socket path is %d bytes, over the %d sun_path allows: %s",
+                len, MAX_UNIX_PATH, path));
+        return path;
     }
 
     /**

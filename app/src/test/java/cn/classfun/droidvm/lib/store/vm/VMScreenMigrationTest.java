@@ -4,9 +4,14 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
@@ -208,31 +213,103 @@ public class VMScreenMigrationTest {
     }
 
     @Test
-    public void absoluteSocketsRideTheScreenIdentityAndTheOthersTheVms() {
+    public void absoluteSocketsAreOnePerScreenAndTheOthersIgnoreTheScreenEntirely() {
         var vmId = "7f3c1c22-0a11-4d55-9f0e-2b0d5a6e1234";
-        // The two absolute channels are keyed by the screen's display-service name -- the same
-        // string the binder is registered under -- so a screen has one identity, not two.
-        assertEquals(NativeDisplay.serviceNameFromId(vmId, VMScreenConfig.ID_SIMPLEFB),
-            NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB,
-                NativeDisplay.MULTITOUCH));
-        assertEquals(NativeDisplay.serviceNameFromId(vmId, VMScreenConfig.ID_SIMPLEFB),
-            NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.TABLET));
+        var run = "/data/data/cn.classfun.droidvm/run/dvmin_" + vmId;
+        // Exact names, because these are a contract between two processes: the daemon binds the
+        // inode and crosvm is handed the path on its command line. A rename that only one side
+        // learns about is a VM that does not start, so it should fail here first.
+        assertEquals(run + "_sfb_mt.sock", NativeDisplay.inputSocketPath(
+            vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MULTITOUCH));
+        assertEquals(run + "_g0_tab.sock", NativeDisplay.inputSocketPath(
+            vmId, VMScreenConfig.ID_GPU0, NativeDisplay.TABLET));
+        assertEquals(run + "_kbd.sock",
+            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.KEYBOARD));
+        assertEquals(run + "_ms.sock",
+            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE));
+        // Two screens' absolute devices are different inodes, which is the whole point of them
+        // being per screen: an absolute coordinate only means anything under one output.
+        for (var ch : new int[]{NativeDisplay.MULTITOUCH, NativeDisplay.TABLET}) {
+            assertTrue(NativeDisplay.isPerScreen(ch));
+            assertNotEquals(NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch),
+                NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, ch));
+        }
         // The keyboard and the relative pointer have no output binding, so which screen the
         // console is showing must not reach their socket names at all.
         for (var ch : new int[]{NativeDisplay.KEYBOARD, NativeDisplay.MOUSE}) {
             assertFalse(NativeDisplay.isPerScreen(ch));
-            assertEquals(NativeDisplay.channelKeyFromId(vmId),
-                NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_GPU0, ch));
-            assertEquals(NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB, ch),
-                NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_GPU0, ch));
+            assertEquals(NativeDisplay.inputSocketPath(vmId, "", ch),
+                NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch));
+            assertEquals(NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, ch),
+                NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch));
         }
-        // Two screens' touch sockets are different inodes, which is the whole point.
-        assertNotEquals(
-            NativeDisplay.inputSocketPath(NativeDisplay.inputSocketKey(
-                vmId, VMScreenConfig.ID_GPU0, NativeDisplay.MULTITOUCH), NativeDisplay.MULTITOUCH),
-            NativeDisplay.inputSocketPath(NativeDisplay.inputSocketKey(
-                vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MULTITOUCH),
-                NativeDisplay.MULTITOUCH));
+        // Six sockets for a two-screen VM -- two absolute devices per screen plus the VM's two --
+        // and no two of them the same file.
+        var seen = new HashSet<String>();
+        for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
+            for (var id : VMScreenConfig.IDS)
+                seen.add(NativeDisplay.inputSocketPath(vmId, id, ch));
+        assertEquals(6, seen.size());
+    }
+
+    @Test
+    public void socketFilenamesAreCompactEnoughToBindWithMarginLeft() {
+        // The names this asserts on are short because the long ones did not work. sun_path holds
+        // 107 bytes plus a NUL; /data/data/cn.classfun.droidvm/run/ spends 35 of them before a
+        // name starts; the pre-screens droidvm_disp_<uuid>_input_multitouch.sock came to 106, one
+        // byte of headroom, so inserting the screen id made it 115 (111 for the tablet) and crosvm
+        // refused the command line with "path must be shorter than SUN_LEN".
+        //
+        // So measure against the real run directory rather than a stub -- half the budget is the
+        // base dir, and a test that supplies its own would not have caught this -- and hold the
+        // result to 100, well under the limit, so the next name that grows has somewhere to grow.
+        var vmId = UUID.randomUUID().toString();
+        assertEquals(36, vmId.length());
+        var sample = NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0,
+            NativeDisplay.MULTITOUCH);
+        assertEquals("/data/data/cn.classfun.droidvm/run/",
+            sample.substring(0, sample.lastIndexOf('/') + 1));
+        var worst = "";
+        for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
+            for (var id : VMScreenConfig.IDS) {
+                var path = NativeDisplay.inputSocketPath(vmId, id, ch);
+                if (bytes(path) > bytes(worst)) worst = path;
+            }
+        }
+        assertEquals(90, bytes(worst));
+        assertTrue(worst, bytes(worst) <= 100);
+        assertTrue(worst, bytes(worst) <= NativeDisplay.MAX_UNIX_PATH);
+        // And the check the daemon runs before binding agrees with all of them.
+        for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
+            for (var id : VMScreenConfig.IDS)
+                NativeDisplay.requireBindablePath(NativeDisplay.inputSocketPath(vmId, id, ch));
+    }
+
+    @Test
+    public void anOverlongSocketPathIsRefusedInsteadOfBeingTruncated() {
+        // bind(2) copies the path into a 108-byte sun_path and truncates without a word, so the
+        // daemon would listen on one inode while crosvm connects to the name it was given -- the
+        // two stubs the failing build left in run/, "..._simplefb_input_multito" and
+        // "..._simplefb_input_tablet.", were the only evidence it had happened. The check has to
+        // fire before the syscall, and it has to say which path and how long.
+        var longest = "/x".repeat(53) + "y";
+        assertEquals(NativeDisplay.MAX_UNIX_PATH, longest.length());
+        assertEquals(longest, NativeDisplay.requireBindablePath(longest));
+        var overlong = longest + "z";
+        var e = assertThrows(IllegalArgumentException.class,
+            () -> NativeDisplay.requireBindablePath(overlong));
+        assertTrue(e.getMessage(), e.getMessage().contains(overlong));
+        assertTrue(e.getMessage(), e.getMessage().contains("108"));
+        // Bytes, not chars: sun_path is a byte array, and a name that is short in code points can
+        // still be too long for it.
+        var wide = "/" + "é".repeat(NativeDisplay.MAX_UNIX_PATH - 1);
+        assertEquals(NativeDisplay.MAX_UNIX_PATH, wide.length());
+        assertThrows(IllegalArgumentException.class,
+            () -> NativeDisplay.requireBindablePath(wide));
+    }
+
+    private static int bytes(String s) {
+        return s.getBytes(StandardCharsets.UTF_8).length;
     }
 
     @Test
