@@ -177,6 +177,16 @@ public class H264StreamProtocolTest {
             .fromReason("no-encoder this device has no encoder we can use"));
         assertEquals(H264StreamProtocol.Refusal.BUSY, H264StreamProtocol.Refusal
             .fromReason("busy another client already has the stream"));
+        // The host's ACTUAL wire format is "token: sentence" -- the colon rides the first
+        // whitespace-delimited word. These are the verbatim strings from vnc_h264.rs; matching
+        // them is the cross-repo contract, and this test failing is how a wording change there
+        // gets noticed here.
+        assertEquals(H264StreamProtocol.Refusal.NO_ENCODER, H264StreamProtocol.Refusal
+            .fromReason("no-encoder: this device has no H.264 encoder we can use"));
+        assertEquals(H264StreamProtocol.Refusal.BUSY, H264StreamProtocol.Refusal
+            .fromReason("busy: another client already has the stream"));
+        assertEquals(H264StreamProtocol.Refusal.UNKNOWN, H264StreamProtocol.Refusal
+            .fromReason("no-frame: no encoded frame is available; the screen may be idle"));
         // A token with nothing after it is still a token.
         assertEquals(H264StreamProtocol.Refusal.NO_ENCODER,
             H264StreamProtocol.Refusal.fromReason("no-encoder"));

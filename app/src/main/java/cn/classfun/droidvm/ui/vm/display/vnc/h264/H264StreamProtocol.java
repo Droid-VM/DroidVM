@@ -117,6 +117,11 @@ public final class H264StreamProtocol {
             if (reason == null) return UNKNOWN;
             var space = reason.indexOf(' ');
             var token = space < 0 ? reason : reason.substring(0, space);
+            // The host writes "token: sentence", so the first whitespace-delimited word arrives
+            // with the colon still attached -- and an exact match against the bare token would
+            // classify every refusal as UNKNOWN. That is the cross-repo seam failing silently:
+            // a permanent no-encoder would be retried forever. Strip exactly one trailing colon.
+            if (token.endsWith(":")) token = token.substring(0, token.length() - 1);
             if (TOKEN_NO_ENCODER.equals(token)) return NO_ENCODER;
             if (TOKEN_BUSY.equals(token)) return BUSY;
             return UNKNOWN;

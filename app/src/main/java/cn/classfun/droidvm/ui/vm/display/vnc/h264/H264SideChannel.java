@@ -186,6 +186,13 @@ public final class H264SideChannel implements Closeable {
     private void run() {
         Exception failure = null;
         try {
+            // Cap the receive buffer BEFORE connect (afterwards it may not apply). This is for the
+            // HOST's benefit, not ours: its stalled-reader detection is a write timeout, and a
+            // write only stalls once every buffer between the two ends is full -- the host capped
+            // its send side at 256 KiB, and an uncapped receive side here (Linux autotunes to
+            // megabytes) would stretch its slot-recovery from ~20 s to minutes at these bitrates.
+            // Our own death detection is the read timeout and needs no buffer help.
+            socket.setReceiveBufferSize(256 * 1024);
             socket.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
             // Every frame is a whole picture the moment it is written; there is nothing a Nagle
             // delay could usefully coalesce it with, and the cost of waiting is a frame of latency.
