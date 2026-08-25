@@ -65,6 +65,8 @@ public final class EvdevEncoder {
 
     /** Live Android pointer id -> evdev MT slot. Touched only on the worker thread. */
     private final Map<Integer, Integer> pointerSlots = new HashMap<>();
+    /** Last guest-space position sent per live pointer id, for the keepalive re-send. */
+    private final Map<Integer, int[]> pointerPos = new HashMap<>();
 
     public EvdevEncoder() {
     }
@@ -213,6 +215,7 @@ public final class EvdevEncoder {
                     if (slot == null) continue; // no DOWN seen for this pointer; ignore
                     int x = (int) (event.getX(i) * scaleX);
                     int y = (int) (event.getY(i) * scaleY);
+                    pointerPos.put(id, new int[]{x, y});
                     events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
                     events.add(new Event(EV_ABS, ABS_MT_POSITION_X, x));
                     events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, y));
@@ -232,6 +235,7 @@ public final class EvdevEncoder {
                 int slot = allocSlot(id);
                 int x = (int) (event.getX(idx) * scaleX);
                 int y = (int) (event.getY(idx) * scaleY);
+                pointerPos.put(id, new int[]{x, y});
                 var events = new ArrayList<Event>(8);
                 // Only the first contact toggles BTN_TOUCH; further fingers must not re-assert it.
                 if (pointerSlots.size() == 1)
@@ -252,6 +256,7 @@ public final class EvdevEncoder {
                 int id = event.getPointerId(event.getActionIndex());
                 Integer slot = pointerSlots.remove(id);
                 if (slot == null) return null;
+                pointerPos.remove(id);
                 var events = new ArrayList<Event>(4);
                 events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
                 events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, -1));
@@ -270,6 +275,7 @@ public final class EvdevEncoder {
                     events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, -1));
                 }
                 pointerSlots.clear();
+                pointerPos.clear();
                 events.add(new Event(EV_KEY, BTN_TOUCH, 0));
                 events.add(new Event(EV_SYN, SYN_REPORT, 0));
                 return encode(events);
@@ -277,6 +283,39 @@ public final class EvdevEncoder {
             default:
                 return null;
         }
+    }
+
+    /** Whether any touch contact is currently down (keepalive needed while true). */
+    public boolean hasTouchContacts() {
+        return !pointerSlots.isEmpty();
+    }
+
+    /**
+     * Re-sends every live contact at its last position, or null if there are no contacts. Real
+     * touch hardware reports at scan rate for as long as a finger is on the glass, even when
+     * nothing changes, and guests rely on that: the Windows touch stack ages out a contact whose
+     * reports stop (a stationary finger otherwise reads as a lift, then its next micro-movement
+     * as a fresh touchdown). This frame is what a quiet scan cycle would have produced.
+     */
+    @Nullable
+    public byte[] encodeTouchKeepalive() {
+        if (pointerSlots.isEmpty()) return null;
+        var events = new ArrayList<Event>(pointerSlots.size() * 3 + 3);
+        for (var entry : pointerSlots.entrySet()) {
+            int[] pos = pointerPos.get(entry.getKey());
+            if (pos == null) continue;
+            int slot = entry.getValue();
+            events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
+            events.add(new Event(EV_ABS, ABS_MT_POSITION_X, pos[0]));
+            events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, pos[1]));
+            if (slot == 0) {
+                events.add(new Event(EV_ABS, ABS_X, pos[0]));
+                events.add(new Event(EV_ABS, ABS_Y, pos[1]));
+            }
+        }
+        if (events.isEmpty()) return null;
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
     }
 
     /** Maps a pointer id to a stable slot, allocating the lowest free slot index if new. */

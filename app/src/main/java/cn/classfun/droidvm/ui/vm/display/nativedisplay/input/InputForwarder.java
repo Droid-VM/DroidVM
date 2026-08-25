@@ -16,8 +16,9 @@ import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
 
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -57,11 +58,18 @@ public final class InputForwarder {
     private boolean mouseDragging;
     private static final float MOUSE_TAP_SLOP = 16f;   // guest px of travel before a press is a drag
     private static final long MOUSE_TAP_MS = 250;      // max press duration still treated as a tap
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
+    // Touch keepalive period. Real touch hardware reports at scan rate while a finger is on the
+    // glass; the Windows touch stack ages out a contact whose reports stop, so a stationary finger
+    // (Android sends MOVE only on change) reads as lift + fresh touchdown on its next twitch. Well
+    // under any plausible aging threshold (real digitizers scan at 60Hz+), still only ~20 frames/s.
+    private static final long TOUCH_KEEPALIVE_MS = 50;
+    private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         var t = new Thread(r, "InputForwarder");
         t.setDaemon(true);
         return t;
     });
+    // Whether a keepalive tick is scheduled; touched only on the worker thread.
+    private boolean keepaliveScheduled;
 
     // Newest pending ACTION_MOVE, coalesced so a fast finger can't outrun the synchronous IPC.
     private final AtomicReference<TouchFrame> pendingMove = new AtomicReference<>();
@@ -285,6 +293,7 @@ public final class InputForwarder {
                 default: {
                     byte[] data = encoder.encodeTouch(event, scaleX, scaleY);
                     if (data != null) sink.write(MULTITOUCH, data);
+                    scheduleTouchKeepalive();
                     break;
                 }
             }
@@ -293,6 +302,32 @@ public final class InputForwarder {
         } finally {
             event.recycle();
         }
+    }
+
+    // Worker thread only. One tick in flight at a time; the chain ends itself when the last
+    // contact lifts (encodeTouchKeepalive returns null) or the mode leaves TOUCH, and any touch
+    // event while contacts are down restarts it.
+    private void scheduleTouchKeepalive() {
+        if (keepaliveScheduled || !encoder.hasTouchContacts()) return;
+        keepaliveScheduled = true;
+        try {
+            worker.schedule(this::touchKeepaliveTick, TOUCH_KEEPALIVE_MS, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            keepaliveScheduled = false;
+        }
+    }
+
+    private void touchKeepaliveTick() {
+        keepaliveScheduled = false;
+        try {
+            if (inputMode != InputMode.TOUCH) return;
+            byte[] data = encoder.encodeTouchKeepalive();
+            if (data == null) return;
+            sink.write(MULTITOUCH, data);
+        } catch (Exception e) {
+            Log.e(TAG, "touch keepalive failed", e);
+        }
+        scheduleTouchKeepalive();
     }
 
     // Relative-mouse translation (InputMode.MOUSE): a drag becomes REL_X/REL_Y motion, a quick tap
