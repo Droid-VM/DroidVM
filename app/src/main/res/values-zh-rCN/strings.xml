@@ -139,6 +139,7 @@
     <string name="vm_info_console_text_select">文字控制台 %1$s</string>
     <string name="vm_info_console_vnc_select">VNC 控制台</string>
     <string name="vm_info_console_native_select">原生显示</string>
+    <string name="vm_info_console_screen_select">%1$s \u2013 %2$s</string>
     <string name="vm_info_console_vnc_ext_select">外部显示器的 VNC</string>
 
     <string name="vm_info_logs">日志</string>
@@ -284,19 +285,19 @@
     <string name="create_vm_gunyah_hugepage_threshold">大页阈值 (KB)</string>
     <string name="create_vm_category_vram">显存设置</string>
     <string name="create_vm_category_display">显示</string>
-    <string name="create_vm_display_enabled">启用显示器</string>
-    <string name="create_vm_display_backend">显示后端</string>
-    <string name="create_vm_display_backend_simplefb">SimpleFB</string>
-    <string name="create_vm_display_backend_virtio_gpu">Virtio-GPU</string>
+    <string name="create_vm_screen_gpu0">Virtio-GPU 屏幕</string>
+    <string name="create_vm_screen_simplefb">SimpleFB 屏幕</string>
+    <string name="create_vm_screen_gpu0_needs_gpu">Virtio-GPU 屏幕需要先启用 GPU。</string>
     <string name="create_vm_display_width">显示宽度</string>
     <string name="create_vm_display_height">显示高度</string>
     <string name="create_vm_display_refresh_rate">刷新率 (Hz)</string>
     <string name="create_vm_display_dpi_h">水平DPI</string>
     <string name="create_vm_display_dpi_v">垂直DPI</string>
-    <string name="create_vm_display_output">显示输出</string>
-    <string name="create_vm_display_output_none">无</string>
-    <string name="create_vm_display_output_native">原生显示</string>
-    <string name="create_vm_display_output_vnc">VNC</string>
+    <string name="create_vm_screen_exporter">导出端</string>
+    <string name="create_vm_screen_exporter_none">无</string>
+    <string name="create_vm_screen_exporter_native">原生显示</string>
+    <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_error_vnc_port_conflict">两个屏幕不能使用同一个 VNC 端口。</string>
     <string name="create_vm_vnc_host">主机地址</string>
     <string name="create_vm_vnc_port">端口</string>
     <string name="create_vm_vnc_password_auth">密码认证</string>

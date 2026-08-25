@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     One screen's rows: the switch that says the VM has the display device, the one exporter bound
+     to it, and that exporter's settings. Included once per screen, so the ids here appear twice at
+     runtime and are only ever looked up scoped to one include's root (see ScreenBindingRow); the
+     switch's label is set from code for the same reason.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+        android:id="@+id/sw_screen_enabled"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:icon="@drawable/ic_monitor"
+        android:text="@string/create_vm_screen_gpu0" />
+
+    <LinearLayout
+        android:id="@+id/screen_options"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_screen_exporter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_monitor"
+            android:text="@string/create_vm_screen_exporter" />
+
+        <LinearLayout
+            android:id="@+id/screen_vnc_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_host"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="2"
+                    android:hint="@string/create_vm_vnc_host">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_vnc_host"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="text"
+                        android:text="127.0.0.1"
+                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_port"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:hint="@string/create_vm_vnc_port">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_vnc_port"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_screen_vnc_password_auth"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_lock"
+                android:text="@string/create_vm_vnc_password_auth" />
+
+            <LinearLayout
+                android:id="@+id/screen_vnc_password_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_password"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/create_vm_vnc_password"
+                    app:endIconMode="password_toggle">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_vnc_password"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textPassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_screen_vnc_password_clear"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="@string/create_vm_vnc_password_clear"
+                    app:icon="@drawable/ic_close" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_screen_vnc_password_generate"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/create_vm_vnc_password_generate"
+                    app:icon="@drawable/ic_refresh" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

@@ -142,6 +142,7 @@
     <string name="vm_info_console_vnc_select">VNC Console</string>
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
     <string name="vm_info_console_native_select">Native Display</string>
+    <string name="vm_info_console_screen_select">%1$s \u2013 %2$s</string>
 
     <string name="vm_info_logs">Logs</string>
     <string name="vm_info_logs_no_logs">No logs available.</string>
@@ -286,19 +287,19 @@
     <string name="create_vm_gunyah_hugepage_threshold">Hugepage threshold (KB)</string>
     <string name="create_vm_category_vram">VRAM</string>
     <string name="create_vm_category_display">Display</string>
-    <string name="create_vm_display_enabled">Enable Display</string>
-    <string name="create_vm_display_backend">Display Backend</string>
-    <string name="create_vm_display_backend_simplefb">SimpleFB</string>
-    <string name="create_vm_display_backend_virtio_gpu">Virtio-GPU</string>
+    <string name="create_vm_screen_gpu0">Virtio-GPU screen</string>
+    <string name="create_vm_screen_simplefb">SimpleFB screen</string>
+    <string name="create_vm_screen_gpu0_needs_gpu">The Virtio-GPU screen needs the GPU enabled.</string>
     <string name="create_vm_display_width">Width</string>
     <string name="create_vm_display_height">Height</string>
     <string name="create_vm_display_refresh_rate">Rate (Hz)</string>
     <string name="create_vm_display_dpi_h">DPI Horizontal</string>
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
-    <string name="create_vm_display_output">Display output</string>
-    <string name="create_vm_display_output_none">None</string>
-    <string name="create_vm_display_output_native">Native display</string>
-    <string name="create_vm_display_output_vnc">VNC</string>
+    <string name="create_vm_screen_exporter">Exporter</string>
+    <string name="create_vm_screen_exporter_none">None</string>
+    <string name="create_vm_screen_exporter_native">Native display</string>
+    <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_error_vnc_port_conflict">Two screens cannot serve VNC on the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>

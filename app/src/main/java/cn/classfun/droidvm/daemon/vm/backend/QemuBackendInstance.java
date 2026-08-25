@@ -40,7 +40,8 @@ import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
-import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
@@ -328,7 +329,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     }
 
     private void buildInputCommand(@NonNull List<String> args) {
-        if (!config.item.optBoolean("display_enabled", false)) return;
+        if (!hasAnyScreen()) return;
         args.add("-device");
         args.add("virtio-multitouch-pci,disable-legacy=on,disable-modern=off");
         args.add("-device");
@@ -339,7 +340,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         if (!config.item.optBoolean("usb", true)) return;
         args.add("-device");
         args.add("qemu-xhci,id=usb-bus,p2=15,p3=15");
-        if (config.item.optBoolean("display_enabled", false)) {
+        if (hasAnyScreen()) {
             args.add("-device");
             args.add("usb-tablet,bus=usb-bus.0");
             args.add("-device");
@@ -392,8 +393,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
                 anyAudio = true;
         }
         if (!anyAudio) {
-            var displayEnabled = config.item.optBoolean("display_enabled", false);
-            if (!config.item.optBoolean("audio_enabled", displayEnabled)) return;
+            if (!config.item.optBoolean("audio_enabled", hasAnyScreen())) return;
         }
         args.add("-audiodev");
         args.add("aaudio,id=snd0");
@@ -438,9 +438,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);
-        var useDisplay = item.optBoolean("display_enabled", false);
+        var gpuScreen = isScreenEnabled(VMScreenConfig.ID_GPU0);
+        var fbScreen = isScreenEnabled(VMScreenConfig.ID_SIMPLEFB);
+        var useDisplay = gpuScreen || fbScreen;
         if (!useGpu && !useDisplay) return;
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
         if (useGpu) {
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
             var gpuArg = new StringBuilder();
@@ -459,7 +460,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     break;
             }
             gpuArg.append(",disable-legacy=on,disable-modern=off");
-            if (useDisplay && backend == DisplayBackend.VIRTIO_GPU) {
+            if (gpuScreen) {
                 long width = item.optLong("display_width", 1280);
                 long height = item.optLong("display_height", 720);
                 gpuArg.append(fmt(",xres=%d,yres=%d", width, height));
@@ -472,30 +473,55 @@ public final class QemuBackendInstance extends VMBackendInstance {
             }
             args.add("-device");
             args.add(gpuArg.toString());
-        } else if (backend == DisplayBackend.VIRTIO_GPU) {
+        } else if (gpuScreen) {
             long width = item.optLong("display_width", 1280);
             long height = item.optLong("display_height", 720);
             args.add("-device");
             args.add(fmt("virtio-gpu-pci,disable-legacy=on,disable-modern=off,xres=%d,yres=%d,edid=on",
                 width, height));
         }
-        if (useDisplay && backend == DisplayBackend.SIMPLEFB) {
+        if (fbScreen) {
             args.add("-device");
             args.add("ramfb");
         }
     }
 
+    /**
+     * Whether the config asks for [screenId]'s display device.
+     *
+     * <p>QEMU has no {@code screen=} to bind an exporter to -- one {@code -vnc} serves whatever
+     * the machine displays -- so the per-screen model only reaches this far: the screen switches
+     * decide which devices exist, and the first screen exporting over VNC supplies the server's
+     * settings. Native display is refused for this backend in the editor, so it never appears
+     * here at all.</p>
+     */
+    private boolean hasAnyScreen() {
+        for (var screen : VMScreenConfig.listOf(config.item))
+            if (screen.isEnabled()) return true;
+        return false;
+    }
+
+    private boolean isScreenEnabled(@NonNull String screenId) {
+        var screen = VMScreenConfig.find(config.item, screenId);
+        return screen != null && screen.isEnabled();
+    }
+
     private void buildVncCommand(@NonNull List<String> args) {
-        var item = config.item;
-        if (!item.optBoolean("vnc_enabled", false)) return;
-        var host = item.optString("vnc_host", "0.0.0.0");
+        VMScreenConfig bound = null;
+        for (var screen : VMScreenConfig.listOf(config.item))
+            if (screen.isEnabled() && screen.getExporter() == DisplayExporter.VNC) {
+                bound = screen;
+                break;
+            }
+        if (bound == null) return;
+        var host = bound.getVncHost();
         if (host.isEmpty()) host = "0.0.0.0";
-        long port = Math.max(item.optLong("vnc_port", 5900), 1);
+        long port = Math.max(bound.getVncPort(), 1);
         long displayNum = port - 5900;
         if (displayNum < 0) displayNum = 0;
         var vncArg = new StringBuilder();
         vncArg.append(fmt("%s:%d", host, displayNum));
-        var password = item.optString("vnc_password", "");
+        var password = bound.getVncPassword();
         if (!password.isEmpty()) {
             args.add("-object");
             args.add(fmt("secret,id=vnc-password,data=%s", password));

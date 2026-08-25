@@ -58,6 +58,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected final String TAG = getClass().getSimpleName();
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
+    /**
+     * Which screen's VNC server to connect to. A VM can run one per screen on different ports,
+     * so the daemon is asked for that screen's settings rather than for "the VM's VNC".
+     */
+    public static final String EXTRA_SCREEN = "screen";
     protected static final int DEFAULT_PORT = 5900;
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final long RECONNECT_DELAY_MS = 2000;
@@ -74,6 +79,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected VncExtraKeysPanel vncExtraKeys;
     protected String vmName = "";
     protected String vmId = "";
+    /** Screen whose VNC server this view shows; empty means "the VM's first bound one". */
+    protected String screenId = "";
     protected String vncHost = "127.0.0.1";
     // Phone LAN address the daemon resolved for an IPv4-wildcard bind (offload
     // proxy IPs already excluded); empty when not applicable. Preferred over
@@ -146,6 +153,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (vmName == null) vmName = "";
         vmId = intent.getStringExtra(EXTRA_VM_ID);
         if (vmId == null) vmId = "";
+        screenId = intent.getStringExtra(EXTRA_SCREEN);
+        if (screenId == null) screenId = "";
         bindViews();
         setupToolbar();
         // Before onSetupActivity() so subclasses can wire views (e.g. the physical keyboard)
@@ -253,6 +262,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         };
         DaemonConnection.getInstance().buildRequest("vm_vnc_info")
             .put("vm_id", vmId)
+            .put("screen", screenId)
             .onResponse(res)
             .onUnsuccessful(f)
             .onError(err)

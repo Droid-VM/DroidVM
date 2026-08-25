@@ -282,276 +282,155 @@
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
+    <!-- Two screens, not one display with a backend picked for it: the simplefb device and the
+         virtio-gpu device are independent, a VM can have both, and each carries the one exporter
+         that watches it. The geometry above them is still VM-level; per-screen adjustables (the
+         simplefb poll rate, the GPU screen's mode) are part of the screen definition landing,
+         not of the bindings. -->
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:title="@string/create_vm_category_display">
 
-        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-            android:id="@+id/sw_display_enabled"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:icon="@drawable/ic_monitor"
-            android:text="@string/create_vm_display_enabled" />
-
         <LinearLayout
-            android:id="@+id/display_options"
+            android:id="@+id/display_geometry_options"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
 
-            <LinearLayout
-                android:layout_width="match_parent"
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_display_width"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginBottom="8dp"
-                android:baselineAligned="false"
-                android:orientation="horizontal">
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_width">
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_display_width"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
-                    android:layout_weight="1"
-                    android:hint="@string/create_vm_display_width">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_display_width"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="1280"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_display_height"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_marginEnd="8dp"
-                    android:layout_weight="1"
-                    android:hint="@string/create_vm_display_height">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_display_height"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="720"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_display_refresh_rate"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:hint="@string/create_vm_display_refresh_rate">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_display_refresh_rate"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="30"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-            </LinearLayout>
-
-            <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                android:id="@+id/choose_display_backend"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:icon="@drawable/ic_connection"
-                android:text="@string/create_vm_display_backend" />
-
-            <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                android:id="@+id/choose_display_output"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:icon="@drawable/ic_monitor"
-                android:text="@string/create_vm_display_output" />
-
-            <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                android:id="@+id/choose_display_blit_provider"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:icon="@drawable/ic_connection"
-                android:text="@string/create_vm_display_blit_provider" />
-
-            <LinearLayout
-                android:id="@+id/display_dpi_options"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="8dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginBottom="8dp"
-                android:baselineAligned="false"
-                android:orientation="horizontal">
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_display_dpi_h"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginEnd="8dp"
-                    android:layout_weight="1"
-                    android:hint="@string/create_vm_display_dpi_h">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_display_dpi_h"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="320"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/til_display_dpi_v"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:hint="@string/create_vm_display_dpi_v">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_display_dpi_v"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:inputType="number"
-                        android:text="320"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/vnc_options"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <LinearLayout
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_display_width"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="8dp"
-                    android:baselineAligned="false"
-                    android:orientation="horizontal">
+                    android:inputType="number"
+                    android:text="1280"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_vnc_host"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="8dp"
-                        android:layout_weight="2"
-                        android:hint="@string/create_vm_vnc_host">
+            </com.google.android.material.textfield.TextInputLayout>
 
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_vnc_host"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="text"
-                            android:text="127.0.0.1"
-                            tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_display_height"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_height">
 
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_vnc_port"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:layout_weight="1"
-                        android:hint="@string/create_vm_vnc_port">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_vnc_port"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="number"
-                            tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                </LinearLayout>
-
-                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-                    android:id="@+id/sw_vnc_password_auth"
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_display_height"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:icon="@drawable/ic_lock"
-                    android:text="@string/create_vm_vnc_password_auth" />
+                    android:inputType="number"
+                    android:text="720"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
-                <LinearLayout
-                    android:id="@+id/vnc_password_options"
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_display_refresh_rate"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_refresh_rate">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_display_refresh_rate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginEnd="16dp"
-                    android:layout_marginBottom="8dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:visibility="gone">
+                    android:inputType="number"
+                    android:text="30"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
-                    <com.google.android.material.textfield.TextInputLayout
-                        android:id="@+id/til_vnc_password"
-                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:hint="@string/create_vm_vnc_password"
-                        app:endIconMode="password_toggle">
-
-                        <com.google.android.material.textfield.TextInputEditText
-                            android:id="@+id/et_vnc_password"
-                            android:layout_width="match_parent"
-                            android:layout_height="wrap_content"
-                            android:inputType="textPassword" />
-                    </com.google.android.material.textfield.TextInputLayout>
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_vnc_password_clear"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="4dp"
-                        android:contentDescription="@string/create_vm_vnc_password_clear"
-                        app:icon="@drawable/ic_close" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btn_vnc_password_generate"
-                        style="@style/Widget.Material3.Button.IconButton"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:contentDescription="@string/create_vm_vnc_password_generate"
-                        app:icon="@drawable/ic_refresh" />
-
-                </LinearLayout>
-
-            </LinearLayout>
+            </com.google.android.material.textfield.TextInputLayout>
 
         </LinearLayout>
+
+        <include
+            android:id="@+id/screen_gpu0_block"
+            layout="@layout/partial_vm_screen_binding"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_display_blit_provider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_connection"
+            android:text="@string/create_vm_display_blit_provider" />
+
+        <LinearLayout
+            android:id="@+id/display_dpi_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_display_dpi_h"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_dpi_h">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_display_dpi_h"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:text="320"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_display_dpi_v"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_dpi_v">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_display_dpi_v"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:text="320"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
+
+        <include
+            android:id="@+id/screen_fb_block"
+            layout="@layout/partial_vm_screen_binding"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 

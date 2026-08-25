@@ -53,6 +53,7 @@ import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
@@ -94,6 +95,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private static final String TAG = "VMNativeDisplay";
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
+    /**
+     * Which screen this console shows. The display service name is built from it, so it has to
+     * come from whoever opened the console -- a VM can have two screens and only one of them is
+     * registered under the name this activity waits on.
+     */
+    public static final String EXTRA_SCREEN = "screen";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
 
@@ -240,9 +247,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var intent = getIntent();
         vmName = orEmpty(intent.getStringExtra(EXTRA_VM_NAME));
         vmId = orEmpty(intent.getStringExtra(EXTRA_VM_ID));
+        var screenId = orEmpty(intent.getStringExtra(EXTRA_SCREEN));
+        if (screenId.isEmpty()) screenId = VMScreenConfig.ID_GPU0;
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
-        vmKey = NativeDisplay.serviceNameFromId(vmId);
+        vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
 
         bindViews();
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);

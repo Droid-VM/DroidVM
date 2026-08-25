@@ -9,8 +9,6 @@ import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_VARS;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
-import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.SIMPLEFB;
-import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.VIRTIO_GPU;
 import static cn.classfun.droidvm.lib.store.vm.GpuApi.VULKAN;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
@@ -50,7 +48,7 @@ import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
-import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
@@ -69,6 +67,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -154,7 +153,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
         // args in buildCommand(), so the sockets and devices never diverge.
         if (isInputBridgeNeeded()) {
-            if (!inputBridge.startListening(NativeDisplay.serviceName(config))) {
+            if (!inputBridge.startListening(NativeDisplay.channelKey(config))) {
                 Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
             }
         }
@@ -492,7 +491,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildNetCommand(args);
         buildSharedDirCommand(args);
         buildGpuCommand(args);
-        buildVncCommand(args);
+        buildScreenExportersCommand(args);
         // The evdev --input devices ride along whenever any app display path is active: the native
         // display routes everything through them; the VNC display routes its MOUSE (relative) and
         // TOUCH (multi-touch) modes here while the tablet pointer + keyboard stay on RFB.
@@ -741,8 +740,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);
-        var useDisplay = item.optBoolean("display_enabled", false);
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
+        var gpuScreen = isScreenActive(VMScreenConfig.ID_GPU0);
+        var fbScreen = isScreenActive(VMScreenConfig.ID_SIMPLEFB);
+        var useDisplay = gpuScreen || fbScreen;
         var api = optEnum(item, "gpu_api", GpuApi.NONE);
         if (!useGpu && !useDisplay) return;
         if (useGpu) {
@@ -755,14 +755,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             if (isGfxstream) {
                 gpuArg.append(",context-types=gfxstream-vulkan");
             }
-            // Geometry goes to the GPU device whichever of the two produces the picture. With
-            // display_backend=simplefb the guest may still display through virtio-gpu -- the
-            // firmware does, and so does any OS with the driver -- and the VMM's simplefb bridge
-            // hands its frames to this same device rather than opening a display of its own. A
-            // GPU device with no displays= falls back to crosvm's built-in default (1280x1024),
-            // which is what the guest is then told through EDID and display-info: a VM configured
-            // for 1400x1050 came up at 1280x1024, and a Linux guest picks a mode from that.
-            if (useDisplay && (backend == VIRTIO_GPU || backend == SIMPLEFB)) {
+            // Geometry goes to the GPU device whichever of the two screens the user is watching.
+            // With only the simplefb screen on, the guest may still display through virtio-gpu --
+            // the firmware does, and so does any OS with the driver -- and the VMM's simplefb
+            // bridge hands its frames to this same device rather than opening a display of its
+            // own. A GPU device with no displays= falls back to crosvm's built-in default
+            // (1280x1024), which is what the guest is then told through EDID and display-info: a
+            // VM configured for 1400x1050 came up at 1280x1024, and a Linux guest picks a mode
+            // from that. The geometry itself is still VM-level; giving each screen its own is
+            // part of the screen definition landing, not of the bindings.
+            if (useDisplay) {
                 gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
                     item.optLong("display_width", 1280),
                     item.optLong("display_height", 720)));
@@ -870,7 +872,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--gpu");
             args.add(gpuArg.toString());
         }
-        if (useDisplay && backend == SIMPLEFB) {
+        // The simplefb device is its own screen now, so it rides on its own switch rather than on
+        // being the display backend the VM picked: a VM can have both devices.
+        if (fbScreen) {
             args.add("--simplefb");
             args.add(fmt(
                 "width=%d,height=%d",
@@ -878,27 +882,56 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 item.optLong("display_height", 720)
             ));
         }
-        // Native display: crosvm registers an ICrosvmAndroidDisplayService binder under a per-VM
-        // name and renders the gfxstream/virtio-gpu output straight into the Android Surface the UI
-        // hands it. Requires the GPU (virtio-gpu) path above. Touch/keyboard come back over the
-        // per-VM unix sockets the root service listens on; their paths must match NativeDisplay.
-        // Single source of truth for the enable check; isNativeDisplayEnabled() also gates the
-        // socket pre-bind in start(), so the two must never diverge.
-        if (isNativeDisplayEnabled()) {
-            buildNativeDisplayCommand(args);
-        }
     }
 
-    private void buildNativeDisplayCommand(@NonNull List<String> args) {
-        args.add("--android-display-service");
-        args.add(NativeDisplay.serviceName(config));
+    /**
+     * One exporter per screen: {@code --android-display-service} or {@code --vnc-server}, each
+     * naming the screen it is bound to.
+     *
+     * <p>Native display means crosvm registers an ICrosvmAndroidDisplayService binder under that
+     * screen's name and renders its output straight into the Android Surface the UI hands it.
+     * Touch/keyboard come back over the VM's input sockets, whose paths must match NativeDisplay.
+     *
+     * <p>Every binding names its screen explicitly. crosvm still accepts an exporter with no
+     * {@code screen=} and resolves it to whichever screen a pre-screens command line would have
+     * landed on, but writing it out means the app and the VMM agree in the config file rather
+     * than in two copies of the same defaulting rule. crosvm rejects an exporter naming a screen
+     * whose device is not configured, which is why every binding here is gated on
+     * {@link #isScreenActive} -- the same predicate that decides whether {@code --gpu} and
+     * {@code --simplefb} are emitted at all.</p>
+     */
+    private void buildScreenExportersCommand(@NonNull List<String> args) {
+        for (var screen : VMScreenConfig.listOf(config.item)) {
+            if (!isScreenActive(screen.id)) continue;
+            switch (screen.getExporter()) {
+                case NATIVE:
+                    args.add("--android-display-service");
+                    args.add(fmt("name=%s,screen=%s",
+                        NativeDisplay.serviceName(config, screen.id), screen.id));
+                    break;
+                case VNC:
+                    args.add("--vnc-server");
+                    args.add(buildVncArg(screen));
+                    break;
+                default:
+                    // A screen nobody is watching. Legal, and not the same thing as no screen.
+                    break;
+            }
+        }
     }
 
     // One virtio-input device per NativeDisplay channel; the daemon pre-binds the matching sockets
     // (see start()) and the UI ships evdev records to them via vm_input / the direct sink.
+    //
+    // One set for the VM, not one per screen. The devices are VM-level: the keyboard and the
+    // relative pointer have no output binding at all (the guest compositor routes them by focus),
+    // and giving each screen its own absolute pair is a step of its own -- it needs the guest to
+    // be told by hand which touchscreen belongs to which output, in every guest OS. So the
+    // sockets hang off the VM's channelKey, and the console the user has open at the time is
+    // where its input goes, whichever screen that console is showing.
     private void buildInputDevicesCommand(@NonNull List<String> args) {
         var item = config.item;
-        var serviceName = NativeDisplay.serviceName(config);
+        var serviceName = NativeDisplay.channelKey(config);
         // multi-touch + absolute-mouse advertise a fixed normalized ABS range (crosvm
         // NORMALIZED_ABS_MAX) because width/height are OMITTED here; the UI scales view coords to
         // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
@@ -1018,9 +1051,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void applyDisplayBlitEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        if (!isNativeDisplayEnabled()) return;
-        if (optEnum(item, "display_backend", DisplayBackend.NONE) != DisplayBackend.VIRTIO_GPU)
-            return;
+        // The accelerated scanout is the GPU screen exported natively, and nothing else; the
+        // simplefb screen and every VNC binding present through crosvm's CPU copy. The env var is
+        // process-wide, so it is set from whether that one binding exists.
+        var gpu0 = VMScreenConfig.find(item, VMScreenConfig.ID_GPU0);
+        if (gpu0 == null || gpu0.getExporter() != DisplayExporter.NATIVE) return;
+        if (!isScreenActive(VMScreenConfig.ID_GPU0)) return;
         var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
         switch (provider) {
             case TURNIP: {
@@ -1069,47 +1105,40 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return null;
     }
 
-    private boolean isNativeDisplayEnabled() {
-        var item = config.item;
-        if (!item.optBoolean("display_enabled", false)) return false;
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        switch (backend) {
-            case VIRTIO_GPU:
-                // The scanout comes from the GPU device, so it has to be enabled.
-                if (!item.optBoolean("gpu_enabled", false)) return false;
-                break;
-            case SIMPLEFB:
-                // No GPU involved: crosvm's simplefb bridge polls the guest's linear framebuffer
-                // and presents it through the same display service.
-                break;
-            default:
-                return false;
-        }
-        return item.optBoolean("native_display_enabled", false);
+    /** Whether [screenId] is a screen this VM actually has; see VMScreenConfig#isActive. */
+    private boolean isScreenActive(@NonNull String screenId) {
+        var screen = VMScreenConfig.find(config.item, screenId);
+        return screen != null && screen.isActive(config.item);
     }
 
     /**
      * The evdev input bridge (and matching --input devices) is needed by both app display paths:
      * native uses it for every input; the VNC display uses it for MOUSE/TOUCH modes (tablet
-     * pointer + keyboard ride the RFB channel instead).
+     * pointer + keyboard ride the RFB channel instead). So: any screen with any exporter on it.
+     *
+     * <p>Single source of truth: this gates both the socket pre-bind in start() and the --input
+     * args in buildCommand(), so the sockets and the devices never diverge.</p>
      */
     private boolean isInputBridgeNeeded() {
-        return isNativeDisplayEnabled() || config.item.optBoolean("vnc_enabled", false);
+        for (var screen : VMScreenConfig.listOf(config.item)) {
+            if (!isScreenActive(screen.id)) continue;
+            if (screen.getExporter() != DisplayExporter.NONE) return true;
+        }
+        return false;
     }
 
-    private void buildVncCommand(@NonNull List<String> args) {
-        var item = config.item;
-        if (!item.optBoolean("vnc_enabled", false)) return;
+    @NonNull
+    private static String buildVncArg(@NonNull VMScreenConfig screen) {
         var vncArg = new StringBuilder();
-        var host = item.optString("vnc_host", "");
+        var host = screen.getVncHost();
         if (!host.isEmpty()) {
             vncArg.append("host=");
             vncArg.append(host);
             vncArg.append(",");
         }
         vncArg.append("port=");
-        vncArg.append(Math.max(item.optLong("vnc_port", -1), 1));
-        var password = item.optString("vnc_password", "");
+        vncArg.append(Math.max(screen.getVncPort(), 1));
+        var password = screen.getVncPassword();
         if (!password.isEmpty()) {
             vncArg.append(",password=");
             vncArg.append(password);
@@ -1119,8 +1148,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // routes MOUSE/TOUCH modes around RFB via the crosvm --input devices instead, so nothing
         // needs a different server-side mode.
         vncArg.append(",input=tablet");
-        args.add("--vnc-server");
-        args.add(vncArg.toString());
+        vncArg.append(",screen=");
+        vncArg.append(screen.id);
+        return vncArg.toString();
     }
 
     /**

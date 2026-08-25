@@ -37,8 +37,6 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 public final class NativeDisplayBinder {
     private static final String TAG = "NativeDisplayBinder";
 
-    /** Service-name prefix built by {@link NativeDisplay#serviceNameFromId}. */
-    private static final String NAME_PREFIX = "droidvm_disp_";
     /** How long one lookup keeps looking, and how often it looks. */
     private static final long WAIT_TOTAL_MS = 5000;
     private static final long WAIT_POLL_MS = 200;
@@ -138,8 +136,12 @@ public final class NativeDisplayBinder {
      * so they wait as before.
      */
     private static boolean vmCouldRegister(@NonNull ServerContext ctx, @NonNull String serviceName) {
-        if (!serviceName.startsWith(NAME_PREFIX)) return true;
-        var inst = ctx.getVMs().findById(serviceName.substring(NAME_PREFIX.length()));
+        // NativeDisplay owns both halves of the name -- the VM's channel root and the screen id
+        // appended to it -- so the reverse mapping lives there too rather than as a prefix strip
+        // written out again here, which is how it would silently stop matching.
+        var vmId = NativeDisplay.vmIdFromServiceName(serviceName);
+        if (vmId.isEmpty()) return true;
+        var inst = ctx.getVMs().findById(vmId);
         if (inst == null) return true;
         var state = inst.getState();
         return state == VMState.RUNNING || state == VMState.STARTING || state == VMState.REBOOTING;

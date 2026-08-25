@@ -32,6 +32,8 @@ import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
@@ -170,7 +172,7 @@ public final class VMInstance extends VMConfig {
         }
         joinThreads(1000);
         if (!setupTaps()) return false;
-        if (item.optBoolean("vnc_enabled", false)) resolveVncConfig();
+        resolveVncConfig();
         stoppedByUser = false;
         exitCode = -1;
         setState(VMState.STARTING);
@@ -256,20 +258,39 @@ public final class VMInstance extends VMConfig {
         }
     }
 
+    /**
+     * Fills in whatever each VNC-bound screen left unset before the VM starts.
+     *
+     * <p>Per screen, not per VM: two screens exporting over VNC are two servers, and crosvm
+     * refuses to start when they land on the same port -- so an unset port is resolved once for
+     * each of them, and the one just handed out is held against the next lookup because it is not
+     * bound yet and would otherwise still look free.</p>
+     */
     private void resolveVncConfig() {
-        if (item.optLong("vnc_port", -1) <= 0) {
-            int port = generateRandomAvailablePort();
-            if (port > 0) {
-                item.set("vnc_port", port);
-                Log.i(TAG, fmt("VM %s: auto-assigned VNC port %d", getName(), port));
-            } else {
-                Log.e(TAG, fmt("VM %s: failed to find available VNC port", getName()));
+        var taken = new ArrayList<Long>();
+        for (var screen : VMScreenConfig.listOf(item)) {
+            if (!screen.isEnabled() || screen.getExporter() != DisplayExporter.VNC) continue;
+            var port = screen.getVncPort();
+            if (port <= 0 || taken.contains(port)) {
+                int fresh = generateRandomAvailablePort();
+                while (fresh > 0 && taken.contains((long) fresh))
+                    fresh = generateRandomAvailablePort();
+                if (fresh > 0) {
+                    screen.setVncPort(fresh);
+                    port = fresh;
+                    Log.i(TAG, fmt("VM %s: auto-assigned VNC port %d for screen %s",
+                        getName(), fresh, screen.id));
+                } else {
+                    Log.e(TAG, fmt("VM %s: failed to find available VNC port for screen %s",
+                        getName(), screen.id));
+                }
             }
-        }
-        if (item.optBoolean("vnc_password_auth", false) && item.optString("vnc_password", "").isEmpty()) {
-            var password = generateRandomPassword(8);
-            item.set("vnc_password", password);
-            Log.i(TAG, fmt("VM %s: auto-generated VNC password", getName()));
+            if (port > 0) taken.add(port);
+            if (screen.isVncPasswordAuth() && screen.getVncPassword().isEmpty()) {
+                screen.setVncPassword(generateRandomPassword(8));
+                Log.i(TAG, fmt("VM %s: auto-generated VNC password for screen %s",
+                    getName(), screen.id));
+            }
         }
     }
 

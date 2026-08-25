@@ -34,6 +34,8 @@ import java.util.function.Consumer;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 
@@ -69,16 +71,26 @@ public final class ConsoleButton {
             parent.currentState != VMState.STOPPED);
     }
 
-    /** One chooser row. The stdio row is special: it carries the stdout/stderr side buttons. */
+    /**
+     * One chooser row. The stdio row is special: it carries the stdout/stderr side buttons; a
+     * display row additionally carries the screen it opens, since a VM can have two of them
+     * exported different ways and the row is the point where the user picks one.
+     */
     private static final class Row {
         final String title;
         final String name;
+        final String screenId;
         final int icon;
         final boolean stdio;
 
         Row(String title, String name, int icon, boolean stdio) {
+            this(title, name, "", icon, stdio);
+        }
+
+        Row(String title, String name, String screenId, int icon, boolean stdio) {
             this.title = title;
             this.name = name;
+            this.screenId = screenId;
             this.icon = icon;
             this.stdio = stdio;
         }
@@ -186,23 +198,28 @@ public final class ConsoleButton {
         }
         var running = parent.currentState != VMState.STOPPED;
         var cfg = parent.config == null ? DataItem.newObject() : parent.config.item;
-        var hasVnc = running && cfg.optBoolean("vnc_enabled", false);
-        var hasNative = running && cfg.optBoolean("native_display_enabled", false);
-        if (hasNative) {
-            rows.add(new Row(parent.getString(R.string.vm_info_console_native_select),
-                "native", R.drawable.ic_monitor, false));
-        }
-        if (hasVnc) {
-            rows.add(new Row(parent.getString(R.string.vm_info_console_vnc_select),
-                "vnc", R.drawable.ic_remote_desktop, false));
-            rows.add(new Row(parent.getString(R.string.vm_info_console_vnc_ext_select),
-                "vnc-ext", R.drawable.ic_monitor, false));
+        // One row per bound screen, not one row per exporter kind: which screen a row opens is
+        // exactly what the user is choosing once a VM can have two of them. The screen's name is
+        // only spelled out when there is more than one, so a single-screen VM reads as before.
+        var bound = running ? VMScreenConfig.boundOf(cfg) : List.<VMScreenConfig>of();
+        var named = bound.size() > 1;
+        var hasDisplay = !bound.isEmpty();
+        for (var screen : bound) {
+            if (screen.getExporter() == DisplayExporter.NATIVE) {
+                rows.add(new Row(displayTitle(R.string.vm_info_console_native_select, screen, named),
+                    "native", screen.id, R.drawable.ic_monitor, false));
+            } else if (screen.getExporter() == DisplayExporter.VNC) {
+                rows.add(new Row(displayTitle(R.string.vm_info_console_vnc_select, screen, named),
+                    "vnc", screen.id, R.drawable.ic_remote_desktop, false));
+                rows.add(new Row(displayTitle(R.string.vm_info_console_vnc_ext_select, screen, named),
+                    "vnc-ext", screen.id, R.drawable.ic_monitor, false));
+            }
         }
         if (rows.isEmpty() && !sawStd) {
             Toast.makeText(parent, R.string.vm_info_console_not_found, LENGTH_SHORT).show();
             return;
         }
-        if (rows.size() == 1 && !rows.get(0).stdio && !hasVnc && !hasNative) {
+        if (rows.size() == 1 && !rows.get(0).stdio && !hasDisplay) {
             openConsole(rows.get(0).name);
             return;
         }
@@ -213,15 +230,15 @@ public final class ConsoleButton {
         };
         var adapter = new ChooserAdapter(parent, rows, onSubStream);
         DialogInterface.OnClickListener callback = (dialog, which) -> {
-            var selected = rows.get(which).name;
-            if (selected.equals("native")) {
-                openNativeDisplay();
-            } else if (selected.equals("vnc")) {
-                openVncDisplay();
-            } else if (selected.equals("vnc-ext")) {
-                openVncExtDisplay();
+            var row = rows.get(which);
+            if (row.name.equals("native")) {
+                openNativeDisplay(row.screenId);
+            } else if (row.name.equals("vnc")) {
+                openVncDisplay(row.screenId);
+            } else if (row.name.equals("vnc-ext")) {
+                openVncExtDisplay(row.screenId);
             } else {
-                openConsole(selected);
+                openConsole(row.name);
             }
         };
         dialogHolder[0] = new MaterialAlertDialogBuilder(parent)
@@ -235,18 +252,27 @@ public final class ConsoleButton {
             parent.currentState == VMState.STOPPED);
     }
 
-    private void openNativeDisplay() {
-        if (parent.config == null) return;
-        VMConsoleRouter.openNative(parent, parent.vmId, parent.config);
+    /** "Native Display" on a one-screen VM; "Native Display \u2013 SimpleFB screen" on two. */
+    @NonNull
+    private String displayTitle(int titleRes, @NonNull VMScreenConfig screen, boolean named) {
+        var title = parent.getString(titleRes);
+        if (!named) return title;
+        return parent.getString(R.string.vm_info_console_screen_select,
+            title, screen.getDisplayName(parent));
     }
 
-    private void openVncDisplay() {
+    private void openNativeDisplay(@NonNull String screenId) {
         if (parent.config == null) return;
-        VMConsoleRouter.openVnc(parent, parent.vmId, parent.config);
+        VMConsoleRouter.openNative(parent, parent.vmId, parent.config, screenId);
     }
 
-    private void openVncExtDisplay() {
+    private void openVncDisplay(@NonNull String screenId) {
         if (parent.config == null) return;
-        VMConsoleRouter.openVncExt(parent, parent.vmId, parent.config);
+        VMConsoleRouter.openVnc(parent, parent.vmId, parent.config, screenId);
+    }
+
+    private void openVncExtDisplay(@NonNull String screenId) {
+        if (parent.config == null) return;
+        VMConsoleRouter.openVncExt(parent, parent.vmId, parent.config, screenId);
     }
 }
