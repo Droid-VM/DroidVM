@@ -89,6 +89,18 @@ public final class ChooseRowWidget extends FrameLayout {
         buttonView.setItems(items);
     }
 
+    /**
+     * Items the row lists but refuses, each shown greyed with {@code note} after its label. Call
+     * after the {@code setItems} that installs them: a new item set clears the refusals, because
+     * the same constant can be reachable under one set and not under another.
+     */
+    @SafeVarargs
+    public final <E extends Enum<E>> void setDisabledItems(
+        @Nullable CharSequence note, @NonNull E... refused
+    ) {
+        buttonView.setDisabledItems(note, refused);
+    }
+
     public void setOnValueChangedListener(@Nullable EnumPickerChanged<Enum<?>> listener) {
         buttonView.setOnValueChangedListener(listener);
     }
