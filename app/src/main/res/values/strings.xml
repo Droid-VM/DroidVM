@@ -1420,7 +1420,6 @@
     <string name="edit_vm_serial_backend_stdout">Standard output</string>
     <string name="edit_vm_serial_backend_syslog">Syslog</string>
     <string name="edit_vm_serial_backend_usb_acm">USB gadget ACM</string>
-    <string name="edit_vm_serial_usb_note">Appears as a USB serial port on the currently active USB connection. USB re-enumerates briefly when the VM starts or stops.</string>
     <string name="edit_vm_serial_path">Path</string>
     <string name="edit_vm_serial_path_pty_hint">Optional symlink to the pty</string>
     <string name="edit_vm_serial_path_required">A path is required for this serial port backend.</string>

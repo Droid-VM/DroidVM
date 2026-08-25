@@ -145,8 +145,7 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
 
             // No baud/settings group: every backend of a virtual wire ignores line speed, so
             // the row does not pretend otherwise. USB ACM does carry one choice -- which pool
-            // slot to attach, so the host COM a VM lands on never depends on boot order --
-            // plus the note about where the port appears.
+            // slot to attach, so the host COM a VM lands on never depends on boot order.
             var usb = backend == SerialBackend.USB_ACM;
             holder.btnUsbSlot.setVisibility(usb ? View.VISIBLE : View.GONE);
             if (usb)
@@ -154,7 +153,6 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
                     context.getString(R.string.edit_vm_serial_usb_slot),
                     context.getString(R.string.edit_vm_serial_usb_slot_item,
                         port.getUsbSlot())));
-            holder.tvNote.setVisibility(usb ? View.VISIBLE : View.GONE);
 
             // Single-select across every row: this is the port SPCR/stdout-path names, and
             // there is exactly one of those per machine. Any backend qualifies -- a sink

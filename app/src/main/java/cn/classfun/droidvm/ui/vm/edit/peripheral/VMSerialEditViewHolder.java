@@ -27,7 +27,6 @@ public final class VMSerialEditViewHolder extends RecyclerView.ViewHolder {
     final TextInputEditText etPath;
     final MaterialRadioButton radioConsole;
     final MaterialButton btnUsbSlot;
-    final TextView tvNote;
     TextWatcher pathWatcher;
 
     VMSerialEditViewHolder(@NonNull View itemView) {
@@ -39,7 +38,6 @@ public final class VMSerialEditViewHolder extends RecyclerView.ViewHolder {
         etPath = itemView.findViewById(R.id.et_serial_path);
         radioConsole = itemView.findViewById(R.id.radio_serial_console);
         btnUsbSlot = itemView.findViewById(R.id.btn_serial_usb_slot);
-        tvNote = itemView.findViewById(R.id.tv_serial_note);
     }
 
     void unbindWatchers() {

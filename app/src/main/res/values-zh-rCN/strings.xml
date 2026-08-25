@@ -1382,7 +1382,6 @@
     <string name="edit_vm_serial_backend_stdout">标准输出</string>
     <string name="edit_vm_serial_backend_syslog">Syslog</string>
     <string name="edit_vm_serial_backend_usb_acm">USB Gadget ACM</string>
-    <string name="edit_vm_serial_usb_note">会以 USB 串口出现在当前活动的 USB 连接上。VM 启动/停止时 USB 会短暂重新枚举。</string>
     <string name="edit_vm_serial_path">路径</string>
     <string name="edit_vm_serial_path_pty_hint">可选：pty 的符号链接</string>
     <string name="edit_vm_serial_path_required">这个串口后端需要填写路径。</string>
