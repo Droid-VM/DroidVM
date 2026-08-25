@@ -301,7 +301,6 @@
     <string name="create_vm_screen_exporter_native">原生顯示</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
     <string name="create_vm_screen_transport">傳輸管線</string>
-    <string name="create_vm_screen_transport_desc">畫格從這個螢幕送到匯出端所允許的最高管線。這是上限、不是指定：實際傳輸在這一階或更低協商出來，所以選什麼都一定滿足得了。VNC 預設就是最高階——沒有人接上 H.264 側通道之前它不花任何代價，一般 VNC 客戶端拿到的照樣是一般的 RFB。</string>
     <string name="create_vm_screen_transport_cpu">CPU Copy</string>
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
@@ -309,8 +308,7 @@
     <string name="create_vm_screen_transport_not_implemented">未實作</string>
     <string name="create_vm_screen_width_cpu_fallback">此寬度下傳輸管線將使用 CPU Copy</string>
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy 會把畫格緩衝當成 linear dma-buf 匯入，而驅動只收 row pitch 對齊 64 bytes 的緩衝。SimpleFB 的 pitch 就是寬度 x 4、沒有任何補齊，所以 GPU Copy 需要 16 像素倍數的寬度 —— 例如 1408 而不是 1400。這個寬度本身沒有問題，只是它的畫格會走 CPU 複製。</string>
-    <string name="create_vm_screen_input_enabled">螢幕輸入裝置</string>
-    <string name="create_vm_screen_input_enabled_desc">為這個螢幕建立專屬的觸控螢幕與絕對指標。鍵盤與相對滑鼠屬於整台 VM，不受影響。裝置清單在 VM 開機時就固定了，因此這裡的變更要等 VM 下次啟動才生效。</string>
+    <string name="create_vm_screen_input_enabled">輸入裝置</string>
     <string name="create_vm_error_vnc_port_conflict">兩個監聽端不能用同一個埠。</string>
     <string name="create_vm_vnc_host">主機地址</string>
     <string name="create_vm_vnc_port">埠</string>

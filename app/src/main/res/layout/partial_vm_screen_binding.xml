@@ -214,7 +214,6 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:icon="@drawable/ic_connection"
-            android:subtitle="@string/create_vm_screen_transport_desc"
             android:text="@string/create_vm_screen_transport" />
 
         <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
@@ -223,7 +222,6 @@
             android:layout_height="wrap_content"
             android:checked="true"
             android:icon="@drawable/ic_touchscreen"
-            android:subtitle="@string/create_vm_screen_input_enabled_desc"
             android:text="@string/create_vm_screen_input_enabled" />
 
         <LinearLayout

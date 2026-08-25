@@ -55,6 +55,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     @Nullable
     private VMConfig loadedConfig;
     private View gpuOptions;
+    private View rendererSection;
     private View vramSettings;
     private View tilGpuDrm2KgslPoolMb;
     private View tilGpuHostPoolMb;
@@ -102,6 +103,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseGpuMode = view.findViewById(R.id.choose_gpu_mode);
         chooseGpuProvider = view.findViewById(R.id.choose_gpu_provider);
         gpuOptions = view.findViewById(R.id.gpu_options);
+        rendererSection = view.findViewById(R.id.renderer_section);
         swGpuUdmabuf = view.findViewById(R.id.sw_gpu_udmabuf);
         swGpuRtPrio = view.findViewById(R.id.sw_gpu_rt_prio);
         vramSettings = view.findViewById(R.id.vram_settings);
@@ -758,10 +760,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         boolean gpuDevice = screenGpu0.isScreenEnabled();
         screenGpu0.updateVisibility();
         screenFb.updateVisibility();
-        // The renderer is what the device is made of, so with no device there is nothing for it to
-        // describe. Greyed rather than hidden: it says what the switch above would turn on.
-        setRowsEnabled(gpuOptions, gpuDevice);
-        gpuOptions.setAlpha(gpuDevice ? 1f : 0.38f);
+        // Device off = the whole block folds to its enable switch: renderer, display and export
+        // sections all hide (the screen row hides its own two; the renderer section is ours).
+        rendererSection.setVisibility(gpuDevice ? VISIBLE : GONE);
         // The GPU blit is no longer the native sink's step alone: the VNC sink dlopens the same
         // driver for a headless blit of its own, so the row follows any binding that could climb
         // to the GPU rung -- which for VNC means one whose ceiling has not been dropped to the CPU

@@ -32,6 +32,7 @@
         <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:id="@+id/renderer_section"
             android:title="@string/create_vm_category_renderer"
             app:cc_expanded="true">
 
@@ -68,16 +69,6 @@
                     android:icon="@drawable/ic_memory"
                     android:text="@string/create_vm_gpu_provider" />
 
-                <!-- Which host Vulkan composites this renderer's scanout into the native display's
-                     Surface. A renderer sub-setting rather than an export one: it is only ever
-                     reached from virtio-gpu frames, and it names a driver the same way the two
-                     rows above it do. -->
-                <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                    android:id="@+id/choose_display_blit_provider"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:icon="@drawable/ic_connection"
-                    android:text="@string/create_vm_display_blit_provider" />
 
                 <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                     android:id="@+id/vram_settings"
@@ -411,6 +402,18 @@
             android:layout_height="wrap_content" />
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+    <!-- Which host Vulkan composites frames into the native display's Surface. Top-level rather
+         than a renderer sub-setting: since the simplefb GPU copy landed, a simplefb-only VM with
+         a native binding loads this driver too, so it must survive the Virtio-GPU device (and its
+         renderer section) being off. Visibility follows any-native-binding in the tab. -->
+    <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+        android:id="@+id/choose_display_blit_provider"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:icon="@drawable/ic_connection"
+        android:text="@string/create_vm_display_blit_provider" />
+
 
 
 </LinearLayout>
