@@ -63,6 +63,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
      * so the daemon is asked for that screen's settings rather than for "the VM's VNC".
      */
     public static final String EXTRA_SCREEN = "screen";
+    /**
+     * Whether that screen was configured with its own absolute input devices. Used only to say
+     * why an input mode is doing nothing; where the events go is the daemon's answer, not this
+     * one. Modes that ride RFB (the tablet pointer, the keyboard) are unaffected either way.
+     */
+    public static final String EXTRA_INPUT_ENABLED = "input_enabled";
     protected static final int DEFAULT_PORT = 5900;
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final long RECONNECT_DELAY_MS = 2000;
@@ -81,6 +87,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected String vmId = "";
     /** Screen whose VNC server this view shows; empty means "the VM's first bound one". */
     protected String screenId = "";
+    /** Whether that screen has absolute input devices at all; see {@link #EXTRA_INPUT_ENABLED}. */
+    protected boolean screenInputEnabled = true;
     protected String vncHost = "127.0.0.1";
     // Phone LAN address the daemon resolved for an IPv4-wildcard bind (offload
     // proxy IPs already excluded); empty when not applicable. Preferred over
@@ -155,6 +163,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (vmId == null) vmId = "";
         screenId = intent.getStringExtra(EXTRA_SCREEN);
         if (screenId == null) screenId = "";
+        screenInputEnabled = intent.getBooleanExtra(EXTRA_INPUT_ENABLED, true);
         bindViews();
         setupToolbar();
         // Before onSetupActivity() so subclasses can wire views (e.g. the physical keyboard)
@@ -253,6 +262,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             });
         };
         DaemonConnection.OnResponse res = resp -> {
+            // Adopt the screen the daemon resolved. Asking for "the VM's VNC" is answered with a
+            // particular screen's server, and input has to agree with that answer: the absolute
+            // devices are per screen, so a console still holding "" would have nowhere to send a
+            // touch even though it is showing a screen that has one.
+            var resolved = resp.optString("screen", "");
+            if (!resolved.isEmpty()) screenId = resolved;
             vncHost = resp.optString("host", "127.0.0.1");
             vncRemoteHost = resp.optString("remote_host", "");
             vncPort = resp.optInt("port", DEFAULT_PORT);

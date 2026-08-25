@@ -32,6 +32,15 @@
             android:icon="@drawable/ic_monitor"
             android:text="@string/create_vm_screen_exporter" />
 
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_screen_input_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_touchscreen"
+            android:subtitle="@string/create_vm_screen_input_enabled_desc"
+            android:text="@string/create_vm_screen_input_enabled" />
+
         <LinearLayout
             android:id="@+id/screen_vnc_options"
             android:layout_width="match_parent"

@@ -151,9 +151,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
         // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
         // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
-        // args in buildCommand(), so the sockets and devices never diverge.
+        // args in buildCommand(), and absoluteInputScreens() decides which screens get the two
+        // per-screen devices in both places, so the sockets and devices never diverge.
         if (isInputBridgeNeeded()) {
-            if (!inputBridge.startListening(NativeDisplay.channelKey(config))) {
+            if (!inputBridge.startListening(config.getId().toString(), absoluteInputScreens())) {
                 Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
             }
         }
@@ -920,47 +921,86 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
     }
 
-    // One virtio-input device per NativeDisplay channel; the daemon pre-binds the matching sockets
-    // (see start()) and the UI ships evdev records to them via vm_input / the direct sink.
+    // The virtio-input devices the UI drives; the daemon pre-binds the matching sockets (see
+    // start()) and the UI ships evdev records to them via vm_input / the direct sink.
     //
-    // One set for the VM, not one per screen. The devices are VM-level: the keyboard and the
-    // relative pointer have no output binding at all (the guest compositor routes them by focus),
-    // and giving each screen its own absolute pair is a step of its own -- it needs the guest to
-    // be told by hand which touchscreen belongs to which output, in every guest OS. So the
-    // sockets hang off the VM's channelKey, and the console the user has open at the time is
-    // where its input goes, whichever screen that console is showing.
+    // Two of them are the VM's and two are each screen's. The keyboard and the relative pointer
+    // have no output binding at all -- the guest compositor routes them by focus, and a relative
+    // pointer walks from one output to the next -- so there is one of each for the VM. An
+    // absolute coordinate is only meaningful against one output's geometry, so multi-touch and
+    // the absolute pointer exist once per screen that has input enabled, and each carries a
+    // name= built from the screen id: evdev has no "I belong to output N" field, so the guest is
+    // told which touchscreen is which output by hand, keyed on that name, in every guest OS.
+    // That is why the name is derived and never allocated -- it has to come back identical after
+    // a reboot or the user's mapping quietly stops matching.
     private void buildInputDevicesCommand(@NonNull List<String> args) {
-        var item = config.item;
-        var serviceName = NativeDisplay.channelKey(config);
-        // multi-touch + absolute-mouse advertise a fixed normalized ABS range (crosvm
-        // NORMALIZED_ABS_MAX) because width/height are OMITTED here; the UI scales view coords to
-        // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
-        // resolution-independent and survives guest auto-resize -- no display size needed.
-        args.add("--input");
-        args.add(fmt(
-            "multi-touch[path=%s]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH)
-        ));
+        var vmId = config.getId().toString();
+        // No screen for these two, and the empty string says exactly that: their socket names do
+        // not take one, so there is no screen a console could name that would move them.
         args.add("--input");
         args.add(fmt(
             "keyboard[path=%s]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
+            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.KEYBOARD)
         ));
         // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
         // the cursor, which is what relative-motion consumers (FPS games) need.
         args.add("--input");
         args.add(fmt(
             "mouse[path=%s]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MOUSE)
+            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE)
         ));
-        // Tablet = crosvm's absolute-pointing mouse (qemu usb-tablet): ABS position + buttons +
-        // wheel, so it gives the guest pointer hover, right-click and scroll -- which single-touch
-        // (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto it in TABLET mode.
-        args.add("--input");
-        args.add(fmt(
-            "absolute-mouse[path=%s]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.TABLET)
-        ));
+        // multi-touch + absolute-mouse advertise a fixed normalized ABS range (crosvm
+        // NORMALIZED_ABS_MAX) because width/height are OMITTED here; the UI scales view coords to
+        // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
+        // resolution-independent and survives guest auto-resize -- no display size needed.
+        //
+        // Known overlap while crosvm's own device set is still VM-global: --vnc-server turns on
+        // display_window_mouse, and that path copies the FIRST --input multi-touch's name onto the
+        // one touchscreen it creates for RFB (create_display_window_input_devices). So a VM with a
+        // VNC-bound screen shows the guest a second device carrying the first screen's name. It is
+        // an ambiguity in the guest's device list, not a lost input path -- both devices work --
+        // and it goes away when that set becomes per screen on the crosvm side.
+        for (var screenId : absoluteInputScreens()) {
+            args.add("--input");
+            args.add(fmt(
+                "multi-touch[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.MULTITOUCH),
+                NativeDisplay.touchDeviceName(screenId)
+            ));
+            // Tablet = crosvm's absolute-pointing mouse (qemu usb-tablet): ABS position + buttons
+            // + wheel, so it gives the guest pointer hover, right-click and scroll -- which
+            // single-touch (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto
+            // it in TABLET mode.
+            //
+            // No name= on this one, and not by choice: crosvm's AbsoluteMouse option has no name
+            // field and its enum is deny_unknown_fields, so `absolute-mouse[...,name=X]` is not a
+            // device with an odd name -- it is a command line crosvm refuses, i.e. a VM that does
+            // not start. So this screen's tablet is identified in the guest only by crosvm's
+            // generated "Crosvm Virtio Absolute Mouse <idx>", whose idx is the emission order
+            // here and therefore shifts when another screen's input is switched off. Naming it
+            // needs the field added on the crosvm side; until then the touchscreen is the device
+            // §5.2's per-output mapping can actually be pinned to.
+            args.add("--input");
+            args.add(fmt(
+                "absolute-mouse[path=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.TABLET)
+            ));
+        }
+    }
+
+    /**
+     * The screens that get their own multi-touch + absolute pointer, in schema order.
+     *
+     * <p>One list, read by both the socket pre-bind and the {@code --input} args, because a screen
+     * in one and not the other is either a device crosvm cannot connect to (the VM does not
+     * start) or a socket nothing ever opens.</p>
+     */
+    @NonNull
+    private List<String> absoluteInputScreens() {
+        var out = new ArrayList<String>();
+        for (var screen : VMScreenConfig.absoluteInputOf(config.item))
+            out.add(screen.id);
+        return out;
     }
 
     // crosvm can promote the virtio-gpu worker to SCHED_FIFO (CROSVM_GPU_RT_PRIO). On gfxstream its
@@ -1117,7 +1157,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * pointer + keyboard ride the RFB channel instead). So: any screen with any exporter on it.
      *
      * <p>Single source of truth: this gates both the socket pre-bind in start() and the --input
-     * args in buildCommand(), so the sockets and the devices never diverge.</p>
+     * args in buildCommand(), so the sockets and the devices never diverge. It is the gate on the
+     * VM-wide keyboard and relative pointer; which screens additionally get their own absolute
+     * pair is {@link #absoluteInputScreens}, and a VM with every screen's input switched off
+     * still gets these two -- they are not a screen's to switch off.</p>
      */
     private boolean isInputBridgeNeeded() {
         for (var screen : VMScreenConfig.listOf(config.item)) {
@@ -1485,8 +1528,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     @Override
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
-        return inputBridge.writeNativeInput(channel, data);
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
+        return inputBridge.writeNativeInput(screenId, channel, data);
     }
 
     @Override

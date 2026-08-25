@@ -27,8 +27,9 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  *   <li>{@link INativeDisplayRootService#waitForDisplayBinder(String)} - look up the per-VM
  *       ICrosvmAndroidDisplayService binder crosvm registers via
  *       {@code --android-display-service <serviceName>} (an untrusted_app can't do this lookup).</li>
- *   <li>{@link INativeDisplayRootService#writeInput(String, int, byte[])} - write evdev straight to
- *       the crosvm input socket the daemon owns (no extra socket hop), by looking up the VM.</li>
+ *   <li>{@link INativeDisplayRootService#writeInput(String, String, int, byte[])} - write evdev
+ *       straight to the crosvm input socket the daemon owns (no extra socket hop), by looking up
+ *       the VM and the screen the console sending it is showing.</li>
  * </ul>
  *
  * The binder can't ride the daemon's TCP/JSON-RPC channel, so it is broadcast to the UI through
@@ -63,11 +64,11 @@ public final class NativeDisplayBinder {
             }
 
             @Override
-            public boolean writeInput(String vmId, int channel, byte[] data) {
+            public boolean writeInput(String vmId, String screenId, int channel, byte[] data) {
                 if (vmId == null || data == null || data.length == 0) return false;
                 var inst = ctx.getVMs().findById(vmId);
                 if (inst == null) return false;
-                return inst.writeNativeInput(channel, data);
+                return inst.writeNativeInput(screenId == null ? "" : screenId, channel, data);
             }
         };
     }

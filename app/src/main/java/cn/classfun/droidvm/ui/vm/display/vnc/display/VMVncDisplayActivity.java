@@ -33,6 +33,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.Insets;
@@ -223,6 +224,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             var req = new JSONObject();
             req.put("command", "vm_input");
             req.put("vm_id", vmId);
+            req.put("screen", screenId);
             req.put("channel", channel);
             req.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
             var resp = DaemonConnection.getInstance().request(req);
@@ -329,7 +331,8 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 new DaemonDisplayAttach.Listener() {
                     @Override
                     public void onAttached(@NonNull INativeDisplayRootService service) {
-                        directSink = new DirectInputSink(vmId, service, VMVncDisplayActivity.this::sendInputToDaemon);
+                        directSink = new DirectInputSink(vmId, () -> screenId, service,
+                            VMVncDisplayActivity.this::sendInputToDaemon);
                     }
 
                     @Override
@@ -624,6 +627,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     private void setInputMode(InputMode mode) {
         if (inputMode == mode) return;
+        // Only TOUCH leaves RFB for this screen's own multi-touch device, so it is the only mode
+        // the screen's input switch can silence here; the tablet pointer and the keyboard go over
+        // RFB and keep working. Say why once instead of leaving the user tapping at nothing.
+        if (!screenInputEnabled && mode == InputMode.TOUCH)
+            Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
         viewport.resetToFit();

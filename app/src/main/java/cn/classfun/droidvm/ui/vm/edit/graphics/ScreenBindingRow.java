@@ -26,7 +26,8 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 
 /**
  * One screen's rows in the graphics tab: the switch that says the VM has the device, the exporter
- * bound to it, and that exporter's settings.
+ * bound to it, that exporter's settings, and whether the screen gets its own absolute input
+ * devices.
  *
  * <p>The two screens have the same shape, so the wiring is written once here and the layout
  * carries one block of ids per screen. What differs between them -- the GPU screen's DPI and blit
@@ -44,6 +45,7 @@ final class ScreenBindingRow {
     private final SwitchRowWidget swEnabled;
     private final View options;
     private final ChooseRowWidget chooseExporter;
+    private final SwitchRowWidget swInputEnabled;
     private final View vncOptions;
     private final TextInputEditText etHost;
     private final TextInputEditText etPort;
@@ -65,6 +67,7 @@ final class ScreenBindingRow {
         swEnabled.setText(titleRes);
         options = block.findViewById(R.id.screen_options);
         chooseExporter = block.findViewById(R.id.choose_screen_exporter);
+        swInputEnabled = block.findViewById(R.id.sw_screen_input_enabled);
         vncOptions = block.findViewById(R.id.screen_vnc_options);
         etHost = block.findViewById(R.id.et_screen_vnc_host);
         etPort = block.findViewById(R.id.et_screen_vnc_port);
@@ -89,6 +92,9 @@ final class ScreenBindingRow {
         // since only edit mode ever calls load().
         chooseExporter.configure(DisplayExporter.class, defaultExporter);
         swEnabled.setChecked(defaultEnabled);
+        // The absolute devices are what a screen has unless the user says otherwise, so a new VM
+        // and a config written before the key both come up with them on.
+        swInputEnabled.setChecked(true);
         swEnabled.setOnCheckedChangeListener(onChanged);
         chooseExporter.setOnValueChangedListener(onChanged);
         swPasswordAuth.setOnCheckedChangeListener(onChanged);
@@ -134,6 +140,9 @@ final class ScreenBindingRow {
         }
         swEnabled.setChecked(screen.isEnabled());
         setExporter(screen.getExporter());
+        // Absent in the stored config means on, so an existing VM keeps the devices it had
+        // without its file being rewritten to say so.
+        swInputEnabled.setChecked(screen.isInputEnabled());
         etHost.setText(screen.getVncHost());
         var port = screen.getVncPort();
         etPort.setText(port > 0 ? String.valueOf(port) : "");
@@ -147,6 +156,7 @@ final class ScreenBindingRow {
         var exporter = enabled ? getExporter() : DisplayExporter.NONE;
         screen.setEnabled(enabled);
         screen.setExporter(exporter);
+        screen.setInputEnabled(swInputEnabled.isChecked());
         // The VNC block keeps its values even while hidden, so a screen switched to native and
         // back finds its port and password where it left them. Only the auth switch is written
         // from the live state, since it is what decides whether the password is used at all.

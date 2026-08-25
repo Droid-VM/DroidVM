@@ -299,6 +299,8 @@
     <string name="create_vm_screen_exporter_none">None</string>
     <string name="create_vm_screen_exporter_native">Native display</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_screen_input_enabled">Screen input devices</string>
+    <string name="create_vm_screen_input_enabled_desc">Gives this screen its own touchscreen and absolute pointer. The keyboard and the relative mouse belong to the whole VM and are not affected. The device list is fixed when the VM boots, so a change here takes effect the next time the VM starts.</string>
     <string name="create_vm_error_vnc_port_conflict">Two screens cannot serve VNC on the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
@@ -1016,6 +1018,7 @@
     <string name="vnc_menu_input_mode_touch">Touch Mode</string>
     <string name="vnc_menu_input_mode_mouse">Mouse Mode</string>
     <string name="vnc_menu_input_mode_tablet">Tablet Mode</string>
+    <string name="display_input_disabled_hint">Input devices are off for this screen. Turn them on in the graphics settings, then start the VM again.</string>
     <string name="usb_input_no_device">No USB keyboard or mouse found</string>
     <string name="usb_input_status">USB input: %1$d keyboard(s), %2$d mouse(es)</string>
     <string name="vnc_menu_rotate">Rotate Screen</string>

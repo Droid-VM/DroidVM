@@ -2,6 +2,7 @@ package cn.classfun.droidvm.lib.store.vm;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -157,5 +158,92 @@ public class VMScreenMigrationTest {
         // not make the daemon refuse to wait.
         assertEquals(vmId, NativeDisplay.vmIdFromServiceName(NativeDisplay.channelKeyFromId(vmId)));
         assertEquals("", NativeDisplay.vmIdFromServiceName("android.hardware.something"));
+    }
+
+    @Test
+    public void inputIsOnForAConfigThatNeverHeardOfTheKey() {
+        // The whole migration of this attribute is the default: a config written before the key
+        // existed had the devices, and reading it must not take them away. Nothing rewrites the
+        // file to say so, so the absent key has to answer for itself.
+        var item = legacy(true, DisplayBackend.SIMPLEFB, true, false);
+        VMScreenConfig.migrate(item);
+        assertTrue(fb(item).isInputEnabled());
+        assertNull(fb(item).item.opt("input_enabled", (DataItem) null));
+        assertTrue(fb(item).hasAbsoluteInput(item));
+        assertEquals(1, VMScreenConfig.absoluteInputOf(item).size());
+        assertEquals(VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.absoluteInputOf(item).get(0).id);
+    }
+
+    @Test
+    public void switchingInputOffDropsOnlyThatScreensAbsoluteDevices() {
+        var item = DataItem.newObject();
+        item.set("gpu_enabled", true);
+        for (var id : VMScreenConfig.IDS) {
+            var screen = VMScreenConfig.of(item, id);
+            screen.setEnabled(true);
+            screen.setExporter(DisplayExporter.NATIVE);
+        }
+        assertEquals(2, VMScreenConfig.absoluteInputOf(item).size());
+        VMScreenConfig.of(item, VMScreenConfig.ID_GPU0).setInputEnabled(false);
+        var left = VMScreenConfig.absoluteInputOf(item);
+        assertEquals(1, left.size());
+        assertEquals(VMScreenConfig.ID_SIMPLEFB, left.get(0).id);
+        // The screen is still a screen with an exporter -- only its two absolute devices went.
+        // The keyboard and the relative pointer are the VM's, so nothing here can speak for them.
+        assertTrue(VMScreenConfig.find(item, VMScreenConfig.ID_GPU0).isActive(item));
+        assertEquals(2, VMScreenConfig.boundOf(item).size());
+    }
+
+    @Test
+    public void aScreenNobodyWatchesGetsNoAbsoluteDevices() {
+        // Input on, device present, and still nothing to emit: with no exporter there is no
+        // console to send absolute events from, so the devices would be unreachable.
+        var item = DataItem.newObject();
+        var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        fb.setEnabled(true);
+        fb.setInputEnabled(true);
+        fb.setExporter(DisplayExporter.NONE);
+        assertFalse(fb.hasAbsoluteInput(item));
+        assertTrue(VMScreenConfig.absoluteInputOf(item).isEmpty());
+    }
+
+    @Test
+    public void absoluteSocketsRideTheScreenIdentityAndTheOthersTheVms() {
+        var vmId = "7f3c1c22-0a11-4d55-9f0e-2b0d5a6e1234";
+        // The two absolute channels are keyed by the screen's display-service name -- the same
+        // string the binder is registered under -- so a screen has one identity, not two.
+        assertEquals(NativeDisplay.serviceNameFromId(vmId, VMScreenConfig.ID_SIMPLEFB),
+            NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB,
+                NativeDisplay.MULTITOUCH));
+        assertEquals(NativeDisplay.serviceNameFromId(vmId, VMScreenConfig.ID_SIMPLEFB),
+            NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.TABLET));
+        // The keyboard and the relative pointer have no output binding, so which screen the
+        // console is showing must not reach their socket names at all.
+        for (var ch : new int[]{NativeDisplay.KEYBOARD, NativeDisplay.MOUSE}) {
+            assertFalse(NativeDisplay.isPerScreen(ch));
+            assertEquals(NativeDisplay.channelKeyFromId(vmId),
+                NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_GPU0, ch));
+            assertEquals(NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_SIMPLEFB, ch),
+                NativeDisplay.inputSocketKey(vmId, VMScreenConfig.ID_GPU0, ch));
+        }
+        // Two screens' touch sockets are different inodes, which is the whole point.
+        assertNotEquals(
+            NativeDisplay.inputSocketPath(NativeDisplay.inputSocketKey(
+                vmId, VMScreenConfig.ID_GPU0, NativeDisplay.MULTITOUCH), NativeDisplay.MULTITOUCH),
+            NativeDisplay.inputSocketPath(NativeDisplay.inputSocketKey(
+                vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MULTITOUCH),
+                NativeDisplay.MULTITOUCH));
+    }
+
+    @Test
+    public void touchDeviceNamesAreDerivedFromTheScreenAndNothingElse() {
+        // The guest maps a touchscreen to an output by this string and stores it by this string,
+        // so it must be a pure function of the screen id -- no VM, no index, no ordering.
+        assertEquals("DroidVM Touch (gpu-0)",
+            NativeDisplay.touchDeviceName(VMScreenConfig.ID_GPU0));
+        assertEquals("DroidVM Touch (simplefb)",
+            NativeDisplay.touchDeviceName(VMScreenConfig.ID_SIMPLEFB));
+        assertNotEquals(NativeDisplay.touchDeviceName(VMScreenConfig.ID_GPU0),
+            NativeDisplay.touchDeviceName(VMScreenConfig.ID_SIMPLEFB));
     }
 }

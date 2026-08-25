@@ -98,12 +98,16 @@ public final class VMInstance extends VMConfig {
         return this.backendInstance;
     }
 
-    /** Forwards UI-sent evdev bytes to the running backend's native-display input channel. */
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+    /**
+     * Forwards UI-sent evdev bytes to the running backend's native-display input channel for
+     * [screenId] -- the screen the console that sent them is showing, which is what picks between
+     * two screens' absolute devices.
+     */
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         // Only a running VM has a backend with bound input sockets; skip otherwise so a stale or
         // spoofed input call can't lazily create an idle backend instance.
         if (state != VMState.RUNNING) return false;
-        return getBackendInstance().writeNativeInput(channel, data);
+        return getBackendInstance().writeNativeInput(screenId, channel, data);
     }
 
     @NonNull

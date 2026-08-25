@@ -30,6 +30,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -101,6 +102,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
      * registered under the name this activity waits on.
      */
     public static final String EXTRA_SCREEN = "screen";
+    /**
+     * Whether that screen was configured with its own absolute input devices. Used only to say
+     * why touch is doing nothing; where the events go is the daemon's answer, not this one.
+     */
+    public static final String EXTRA_INPUT_ENABLED = "input_enabled";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
 
@@ -139,6 +145,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private String vmName = "";
     private String vmId = "";
     private String vmKey = "";
+    /**
+     * The screen this console shows. It picks the display service to wait on, and it picks which
+     * screen's absolute input devices the touches land on -- the two devices are per screen, so
+     * "the VM's touchscreen" is not a thing that can be addressed any more.
+     */
+    private String screenId = VMScreenConfig.ID_GPU0;
+    /** Whether that screen has absolute input devices at all; see {@link #EXTRA_INPUT_ENABLED}. */
+    private boolean screenInputEnabled = true;
     private int guestWidth = 1280;
     private int guestHeight = 720;
 
@@ -247,8 +261,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var intent = getIntent();
         vmName = orEmpty(intent.getStringExtra(EXTRA_VM_NAME));
         vmId = orEmpty(intent.getStringExtra(EXTRA_VM_ID));
-        var screenId = orEmpty(intent.getStringExtra(EXTRA_SCREEN));
+        screenId = orEmpty(intent.getStringExtra(EXTRA_SCREEN));
         if (screenId.isEmpty()) screenId = VMScreenConfig.ID_GPU0;
+        screenInputEnabled = intent.getBooleanExtra(EXTRA_INPUT_ENABLED, true);
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
@@ -284,7 +299,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void onRootConnected(@NonNull INativeDisplayRootService service) {
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
-        directSink = new DirectInputSink(vmId, service, this::sendInputToDaemon);
+        directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
         inputForwarder = new InputForwarder(directSink);
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
         // A forwarder is built fresh on every attach and starts in TOUCH, so it has to be told
@@ -677,6 +692,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             var req = new JSONObject();
             req.put("command", "vm_input");
             req.put("vm_id", vmId);
+            req.put("screen", screenId);
             req.put("channel", channel);
             req.put("data", Base64.encodeToString(data, Base64.NO_WRAP));
             var resp = DaemonConnection.getInstance().request(req);
@@ -925,6 +941,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // translator to the matching virtio-input device. The segmented header shows the active mode.
     private void setInputModeTo(@NonNull InputMode mode) {
         if (inputMode == mode) return;
+        // Both absolute modes ride this screen's own devices, so with them switched off the mode
+        // is selectable and inert. Say so once, here, rather than leaving the user tapping a
+        // screen that answers nothing -- and say the true reason, which is a VM that has to be
+        // started again, not a setting that would take effect if they waited.
+        if (!screenInputEnabled && mode != InputMode.MOUSE)
+            Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
             .putInt(KEY_INPUT_MODE, inputMode.ordinal()).apply();

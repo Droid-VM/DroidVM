@@ -46,6 +46,12 @@ public final class VMScreenConfig {
 
     /** Sub-object holding this screen's VNC server settings, when its exporter is VNC. */
     private static final String KEY_VNC = "vnc";
+    /**
+     * Whether this screen gets its own absolute input devices. Absent means on, which is how
+     * every config written before this key existed keeps the devices it already had: the default
+     * carries the migration, so nothing on disk has to be rewritten to gain it.
+     */
+    private static final String KEY_INPUT_ENABLED = "input_enabled";
 
     public final String id;
     public final DataItem item;
@@ -71,6 +77,26 @@ public final class VMScreenConfig {
 
     public void setExporter(@NonNull DisplayExporter exporter) {
         item.set("exporter", exporter);
+    }
+
+    /**
+     * Whether this screen gets its own multi-touch and absolute-pointer devices.
+     *
+     * <p>Absolute coordinates only mean anything under one output's geometry, so those two
+     * devices are per screen; the keyboard and the relative pointer have no output binding at
+     * all and are unaffected by this switch. Turning it off is turning the two devices off: the
+     * set of {@code --input} devices is fixed when crosvm starts, so this takes effect on the
+     * VM's next start, not on the running one.</p>
+     *
+     * <p>Defaults to on, and to on for a config that predates the key -- the devices existed
+     * before it did.</p>
+     */
+    public boolean isInputEnabled() {
+        return item.optBoolean(KEY_INPUT_ENABLED, true);
+    }
+
+    public void setInputEnabled(boolean enabled) {
+        item.set(KEY_INPUT_ENABLED, enabled);
     }
 
     /** True for the screen the virtio-gpu device provides, which needs the GPU enabled. */
@@ -194,6 +220,25 @@ public final class VMScreenConfig {
         for (var screen : listOf(config))
             if (screen.isActive(config) && screen.getExporter() != DisplayExporter.NONE)
                 out.add(screen);
+        return out;
+    }
+
+    /**
+     * Whether this screen gets its own {@code multi-touch} + absolute-pointer pair when the VM
+     * starts: the device has to exist, something has to be watching it, and the switch has to be
+     * on. A screen nobody exports has no console to send absolute input from, so devices for it
+     * would be devices nothing can ever write to.
+     */
+    public boolean hasAbsoluteInput(@NonNull DataItem config) {
+        return isActive(config) && getExporter() != DisplayExporter.NONE && isInputEnabled();
+    }
+
+    /** Every screen that gets its own absolute input devices, in {@link #IDS} order. */
+    @NonNull
+    public static List<VMScreenConfig> absoluteInputOf(@NonNull DataItem config) {
+        var out = new ArrayList<VMScreenConfig>();
+        for (var screen : listOf(config))
+            if (screen.hasAbsoluteInput(config)) out.add(screen);
         return out;
     }
 

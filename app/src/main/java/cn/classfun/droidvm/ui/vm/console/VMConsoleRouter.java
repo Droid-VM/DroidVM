@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
@@ -106,9 +107,23 @@ public final class VMConsoleRouter {
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_ID, vmId.toString());
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, config.getName());
         intent.putExtra(VMNativeDisplayActivity.EXTRA_SCREEN, screenId);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_INPUT_ENABLED, inputEnabled(item, screenId));
         intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
         intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
         ctx.startActivity(intent);
+    }
+
+    /**
+     * Whether [screenId] was started with its own absolute input devices.
+     *
+     * <p>This is what the config says now, which is only the same as what the running VM has if
+     * nobody edited it since. The console uses it to explain dead touch input, never to decide
+     * where to send events -- that answer comes from the daemon, which knows which sockets it
+     * actually bound.</p>
+     */
+    private static boolean inputEnabled(@NonNull DataItem item, @NonNull String screenId) {
+        var screen = VMScreenConfig.find(item, screenId);
+        return screen == null || screen.isInputEnabled();
     }
 
     public static void openVnc(@NonNull Context ctx, @NonNull UUID vmId,
@@ -117,6 +132,7 @@ public final class VMConsoleRouter {
         intent.putExtra(BaseVncActivity.EXTRA_VM_ID, vmId.toString());
         intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, config.getName());
         intent.putExtra(BaseVncActivity.EXTRA_SCREEN, screenId);
+        intent.putExtra(BaseVncActivity.EXTRA_INPUT_ENABLED, inputEnabled(config.item, screenId));
         ctx.startActivity(intent);
     }
 

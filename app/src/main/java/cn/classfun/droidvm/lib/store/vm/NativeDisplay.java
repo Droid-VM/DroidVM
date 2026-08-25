@@ -15,25 +15,33 @@ import androidx.annotation.NonNull;
  * both derive the service names and socket paths from here, so they agree and different VMs never
  * collide.
  *
- * Everything hangs off one per-VM root, {@link #channelKey}: the display service of a screen is
- * that root plus the screen's id, and the VM's input sockets are that root plus the channel kind.
- * The root is a pure function of the VM's UUID, which is why a crosvm that died and restarted
- * re-registers under exactly the name the app is still waiting on.
+ * Everything hangs off one per-VM root, {@link #channelKeyFromId}: the display service of a
+ * screen is that root plus the screen's id, and the VM-wide input sockets are that root plus the
+ * channel kind. The root is a pure function of the VM's UUID, which is why a crosvm that died and
+ * restarted re-registers under exactly the name the app is still waiting on.
  *
  * A display service is per screen, not per VM: two screens exporting natively at once would
  * otherwise want one servicemanager name for two Surfaces, and a service holds two slots (main +
- * cursor), not N. The input sockets stay per VM because the input devices are: the AIDL's
- * writeInput(vmId, channel, data) has no screen field, and giving each screen its own absolute
- * devices is a separate step with its own guest-side cost (a manual touch-to-output mapping in
- * every guest OS).
+ * cursor), not N.
+ *
+ * The input sockets split the same way, but only half of them: the keyboard and the relative
+ * pointer have no output binding at all -- the guest compositor routes them by focus -- so they
+ * stay on the VM root, while the multi-touch and absolute-pointer devices are per screen, because
+ * an absolute coordinate only means anything under one output's geometry. A per-screen device's
+ * socket is keyed by that screen's display-service name rather than by a second, parallel string:
+ * one identity per screen, so the name the guest maps by and the inode crosvm opens cannot drift
+ * apart across a reboot.
  */
 public final class NativeDisplay {
     /**
      * Input channels. Each maps to one crosvm {@code --input <kind>} virtio-input device and one
-     * unix socket; the daemon binds one listener per channel by looping {@link #CHANNEL_COUNT}, so
-     * the guest sees all of them and the UI routes to whichever the current {@code InputMode}
-     * selects (multi-touch, relative mouse, or absolute single-touch tablet). Ordinals are the wire
+     * unix socket, and the UI routes to whichever the current {@code InputMode} selects
+     * (multi-touch, relative mouse, or absolute single-touch tablet). Ordinals are the wire
      * channel ids shared with the daemon's InputHandler; append new channels, never renumber.
+     *
+     * <p>A channel is not by itself a device any more: {@link #isPerScreen} says whether the VM
+     * has one of them or one per screen, so the daemon binds a socket per (screen, channel) pair
+     * that exists rather than {@link #CHANNEL_COUNT} of them.</p>
      */
     public static final int MULTITOUCH = 0;
     public static final int KEYBOARD = 1;
@@ -67,15 +75,11 @@ public final class NativeDisplay {
     }
 
     /**
-     * The VM's display-channel root: the vmKey its input sockets are named after, and the stem
-     * every per-screen service name is built on. Stable across boots because the VM's UUID is.
+     * The VM's display-channel root: the key the VM-wide input sockets are named after, and the
+     * stem every per-screen service name is built on. Stable across boots because the VM's UUID
+     * is. Taken as a raw id rather than a config because half its callers only have the id, out
+     * of an Intent extra or a socket name being read back.
      */
-    @NonNull
-    public static String channelKey(@NonNull VMConfig config) {
-        return channelKeyFromId(config.getId().toString());
-    }
-
-    /** Same as {@link #channelKey(VMConfig)} but from a raw VM id (e.g. an Intent extra). */
     @NonNull
     public static String channelKeyFromId(@NonNull String vmId) {
         return fmt("%s%s", NAME_PREFIX, sanitize(vmId));
@@ -122,14 +126,75 @@ public final class NativeDisplay {
     }
 
     /**
-     * The socket path crosvm connects to for [vmKey]'s [channel], where vmKey is the VM's
-     * {@link #channelKey}. Must match across all callers -- the daemon binds the inode and
-     * crosvm's {@code --input ...[path=]} connects to it, so a disagreement is a VM that will
-     * not start.
+     * The socket path crosvm connects to for [key]'s [channel], where key is what
+     * {@link #inputSocketKey} returns for that channel. Must match across all callers -- the
+     * daemon binds the inode and crosvm's {@code --input ...[path=]} connects to it, so a
+     * disagreement is a VM that will not start.
      */
     @NonNull
-    public static String inputSocketPath(@NonNull String vmKey, int channel) {
-        return pathJoin(RUN_PATH, fmt("%s_input_%s.sock", sanitize(vmKey), KINDS[channel]));
+    public static String inputSocketPath(@NonNull String key, int channel) {
+        return pathJoin(RUN_PATH, fmt("%s_input_%s.sock", sanitize(key), KINDS[channel]));
+    }
+
+    /**
+     * Whether [channel]'s device belongs to one screen rather than to the whole VM.
+     *
+     * <p>The two absolute devices are: their coordinates are read against one output's geometry,
+     * so a VM with two screens needs two of each and the guest has to be told by hand which is
+     * which. The keyboard and the relative pointer are not: they have no output binding, and the
+     * guest compositor sends them wherever focus is.</p>
+     */
+    public static boolean isPerScreen(int channel) {
+        return channel == MULTITOUCH || channel == TABLET;
+    }
+
+    /**
+     * The {@link #inputSocketPath} key for [channel] on [screenId]: the VM root for the devices
+     * the whole VM shares, that screen's display-service name for the two absolute ones.
+     *
+     * <p>Reusing the service name rather than minting a second per-screen string is the point:
+     * the screen has one identity, and the socket, the binder name and the evdev name the guest
+     * maps by all ride it, so none of them can survive a rename the others did not.</p>
+     */
+    @NonNull
+    public static String inputSocketKey(@NonNull String vmId, @NonNull String screenId,
+                                        int channel) {
+        return isPerScreen(channel) ? serviceNameFromId(vmId, screenId) : channelKeyFromId(vmId);
+    }
+
+    /**
+     * The socket path for [channel] on [screenId] of [vmId]. [screenId] is ignored for the
+     * VM-wide channels, so passing the empty string for them is exact rather than a placeholder.
+     *
+     * <p>The daemon binds these and crosvm's {@code --input ...[path=]} connects to them, and the
+     * two sides agree because they call this one function rather than each composing the key and
+     * the path themselves.</p>
+     */
+    @NonNull
+    public static String inputSocketPath(@NonNull String vmId, @NonNull String screenId,
+                                         int channel) {
+        return inputSocketPath(inputSocketKey(vmId, screenId, channel), channel);
+    }
+
+    /**
+     * The evdev name crosvm gives [screenId]'s multi-touch device -- what the guest sees as the
+     * touchscreen's name, and the whole of its identity there.
+     *
+     * <p>Neither evdev nor HID has a field for "I belong to output N", so every guest OS maps a
+     * touchscreen to an output by the device's <em>name</em>: kwin stores it by name,
+     * {@code xinput map-to-output} takes it by name, Windows' Tablet PC setup remembers the one
+     * it was pointed at. That makes the name the only lever there is, and it has to be a pure
+     * function of the screen and never change -- rename it and the user's mapping silently stops
+     * matching anything, with no error to notice.</p>
+     *
+     * <p>Its absolute-pointer sibling has no equivalent: crosvm's {@code absolute-mouse} option
+     * takes no {@code name}, and its option enum rejects unknown keys, so passing one is not a
+     * device with an odd name but a command line crosvm refuses. Until that field exists the
+     * touchscreen is the device a per-output mapping can be pinned to.</p>
+     */
+    @NonNull
+    public static String touchDeviceName(@NonNull String screenId) {
+        return fmt("DroidVM Touch (%s)", screenId);
     }
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */
