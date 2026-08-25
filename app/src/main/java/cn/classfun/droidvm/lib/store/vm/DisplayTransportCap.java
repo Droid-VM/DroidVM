@@ -150,19 +150,23 @@ public enum DisplayTransportCap implements StringEnum {
     /**
      * Whether this build can actually reach [cap] on this edge.
      *
-     * <p>Today both exporters have the CPU copy and the Vulkan blit: the VNC sink dlopens the same
-     * driver as the native one and blits into a headless target rather than into a Surface, which
-     * is the only part of it that differs. What is left unbuilt is the rung above each -- zero copy
-     * on the native display, the hardware encoder behind VNC's blit. Unimplemented rungs are still
-     * offered -- see the class comment -- so this is what decides which of them the picker
-     * refuses.</p>
+     * <p>VNC's ladder is now built to the top: the same blit that feeds an RFB rectangle can feed a
+     * hardware H.264 encoder instead, and the app's own console reads the result off a side channel
+     * beside the RFB port. What is left unbuilt is zero copy on the native display. Unimplemented
+     * rungs are still offered -- see the class comment -- so this is what decides which of them the
+     * picker refuses.</p>
+     *
+     * <p>The two exporters no longer answer the same way, which is the point: they climbed to
+     * different heights by different mechanisms, and writing that as one shared list of caps would
+     * have made the day VNC overtook the native display look like a typo.</p>
      */
     public static boolean isImplemented(@NonNull DisplayExporter exporter,
                                         @NonNull DisplayTransportCap cap) {
         switch (exporter) {
             case NATIVE:
-            case VNC:
                 return cap == CPU || cap == GPU;
+            case VNC:
+                return cap == CPU || cap == GPU || cap == GPU_HW;
             default:
                 return false;
         }
@@ -193,18 +197,25 @@ public enum DisplayTransportCap implements StringEnum {
      * reached, so it is the one worth saying out loud in the editor: a width off by eight pixels
      * costs the whole GPU path and there is no other way to find that out.</p>
      *
-     * <p>Only simplefb has the constraint, and only where the GPU copy is a rung this build can
-     * actually climb -- see {@link #GPU_COPY_WIDTH_ALIGN}. Asking {@link #isImplemented} rather
-     * than naming the native display is what made VNC's GPU half inherit the rule the day it
-     * landed: it imports the same dma-buf under the same 64-byte pitch rule, and this condition
-     * did not have to be found and changed for the warning to start appearing there.</p>
+     * <p>Only simplefb has the constraint, and only where the ceiling actually asks for a blit --
+     * see {@link #GPU_COPY_WIDTH_ALIGN}. Asking {@link #isImplemented} rather than naming the
+     * native display is what made VNC's GPU half inherit the rule the day it landed: it imports the
+     * same dma-buf under the same 64-byte pitch rule, and this condition did not have to be found
+     * and changed for the warning to start appearing there.</p>
+     *
+     * <p>The encoder rung asks for the same import -- it is the same blit with a different
+     * destination -- so it is named here too. It had to be: the moment VNC's default rose to it,
+     * a condition that only knew about {@link #GPU} would have gone quiet for exactly the
+     * configuration it was written for, and a warning that disappears when the default moves is
+     * indistinguishable from one that was never right.</p>
      */
     public static boolean cpuFallbackFromWidth(@NonNull String screenId,
                                                @NonNull DisplayExporter exporter,
                                                @NonNull DisplayTransportCap ceiling,
                                                long width) {
         if (!VMScreenConfig.ID_SIMPLEFB.equals(screenId)) return false;
-        if (ceiling != GPU || !isImplemented(exporter, GPU)) return false;
+        if (ceiling != GPU && ceiling != GPU_HW) return false;
+        if (!isImplemented(exporter, ceiling)) return false;
         return width % GPU_COPY_WIDTH_ALIGN != 0;
     }
 
@@ -216,6 +227,13 @@ public enum DisplayTransportCap implements StringEnum {
      * satisfy today, which is a promise the negotiation would quietly break. It is the highest
      * <em>implemented</em> one, so the default never restricts anything that works, and it rises
      * on its own as the rungs land.</p>
+     *
+     * <p><b>Which is how VNC's default became the hardware encoder</b>, and that reads more
+     * expensive than it is. A ceiling is not a request: the encoder is built when a client opens
+     * the H.264 side channel and never otherwise, so a VM at this default that nobody watches over
+     * that channel does exactly what the same VM did at the GPU rung -- one blit, an RFB rectangle,
+     * no encoder. Every ordinary RFB client keeps working unchanged; what the top rung buys is that
+     * the app's own console can ask for H.264 instead of pixels.</p>
      */
     @NonNull
     public static DisplayTransportCap defaultFor(@NonNull String screenId,
@@ -224,5 +242,37 @@ public enum DisplayTransportCap implements StringEnum {
         for (var option : optionsFor(screenId, exporter))
             if (isImplemented(exporter, option)) best = option;
         return best;
+    }
+
+    /**
+     * The token {@code transport-cap=} should carry for this binding, or null to send no flag.
+     *
+     * <p>A ceiling at the top of what this build can reach is the same instruction as no ceiling at
+     * all, so the flag is written only when it says something the host would not work out on its
+     * own: the user asked for <em>less</em> than the pipeline could have given. The absence of the
+     * flag is therefore not "unspecified", it is the top rung -- which is also what makes the
+     * default configuration emit nothing, on either exporter.</p>
+     *
+     * <p>Position in {@link #optionsFor}, not the enum's own order, decides what "below" means. The
+     * two ladders diverge above the blit -- {@link #ZERO} on one, {@link #GPU_HW} on the other --
+     * so an ordinal comparison would be comparing rungs from different ladders. It also keeps a
+     * ceiling stored under another exporter from ever being emitted: {@link VMScreenConfig} has
+     * already resolved such a value to this edge's default, and this refuses to name anything the
+     * edge does not offer.</p>
+     */
+    @Nullable
+    public static String emittedToken(@NonNull String screenId,
+                                      @NonNull DisplayExporter exporter,
+                                      @NonNull DisplayTransportCap ceiling) {
+        var options = optionsFor(screenId, exporter);
+        var top = defaultFor(screenId, exporter);
+        var ceilingAt = -1;
+        var topAt = -1;
+        for (var i = 0; i < options.length; i++) {
+            if (options[i] == ceiling) ceilingAt = i;
+            if (options[i] == top) topAt = i;
+        }
+        if (ceilingAt < 0 || ceilingAt >= topAt) return null;
+        return ceiling.token;
     }
 }

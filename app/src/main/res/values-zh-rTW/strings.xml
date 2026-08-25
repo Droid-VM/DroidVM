@@ -301,7 +301,7 @@
     <string name="create_vm_screen_exporter_native">原生顯示</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
     <string name="create_vm_screen_transport">傳輸管線</string>
-    <string name="create_vm_screen_transport_desc">畫格從這個螢幕送到匯出端所允許的最高管線。這是上限、不是指定：實際傳輸在這一階或更低協商出來，所以選什麼都一定滿足得了。</string>
+    <string name="create_vm_screen_transport_desc">畫格從這個螢幕送到匯出端所允許的最高管線。這是上限、不是指定：實際傳輸在這一階或更低協商出來，所以選什麼都一定滿足得了。VNC 預設就是最高階——沒有人接上 H.264 側通道之前它不花任何代價，一般 VNC 客戶端拿到的照樣是一般的 RFB。</string>
     <string name="create_vm_screen_transport_cpu">CPU Copy</string>
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
     <string name="create_vm_screen_transport_zero">Zero Copy</string>

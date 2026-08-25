@@ -303,7 +303,7 @@
     <string name="create_vm_screen_exporter_native">Native display</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
     <string name="create_vm_screen_transport">Transport pipeline</string>
-    <string name="create_vm_screen_transport_desc">The highest pipeline frames may take from this screen to its exporter. A ceiling, not a request: the transport is negotiated at or below it, so any choice here is always reachable.</string>
+    <string name="create_vm_screen_transport_desc">The highest pipeline frames may take from this screen to its exporter. A ceiling, not a request: the transport is negotiated at or below it, so any choice here is always reachable. VNC defaults to the top rung, which costs nothing until something opens the H.264 side channel — ordinary VNC clients keep getting ordinary RFB.</string>
     <string name="create_vm_screen_transport_cpu">CPU Copy</string>
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
     <string name="create_vm_screen_transport_zero">Zero Copy</string>

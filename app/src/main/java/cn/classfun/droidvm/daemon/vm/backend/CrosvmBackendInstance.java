@@ -953,24 +953,23 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
 
     /**
      * The ceiling on this binding's transport, as a key-value fragment for its exporter flag --
-     * or nothing at all, which is the usual answer.
+     * or nothing at all, which is what a default configuration gets.
      *
-     * <p>Only the bottom rung is emitted today, because it is the only one that says something
-     * the negotiation would not already work out: capping at a CPU copy asks the host to skip a
-     * blit it could have done. Every rung above it is at or above what any sink can currently
-     * reach, so naming it would restrict nothing -- and a flag that restricts nothing is a flag
-     * whose absence and presence mean the same thing, which is worse than not sending it.</p>
+     * <p>A ceiling is emitted only where it asks for <em>less</em> than the pipeline would have
+     * given anyway; see {@link DisplayTransportCap#emittedToken}, which is where the rule lives so
+     * that a test can read the whole table off it. A flag whose presence and absence mean the same
+     * thing is worse than no flag, so the top rung of each ladder is spelt by saying nothing.</p>
      *
-     * <p>The stored choice is kept whichever way this goes, so a rung landing later turns an
-     * already-answered preference into a real cap without asking the user again. crosvm's
-     * {@code transport-cap} enum is meant to grow the same way -- new tokens added beside
-     * {@code cpu}, nothing re-spelt -- so this stays a lookup rather than a translation.</p>
+     * <p>VNC's ladder gained a middle now that the encoder is above it, and {@code gpu} is that
+     * middle: "blit this screen, but do not stand an encoder behind it". crosvm's
+     * {@code transport-cap} enum grew the same way -- new tokens added beside {@code cpu}, nothing
+     * re-spelt -- so this stays a lookup rather than a translation.</p>
      */
     @NonNull
     private static String transportCapArg(@NonNull VMScreenConfig screen) {
-        var cap = screen.getTransportCap();
-        return cap == DisplayTransportCap.CPU
-            ? fmt(",transport-cap=%s", cap.getToken()) : "";
+        var token = DisplayTransportCap.emittedToken(
+            screen.id, screen.getExporter(), screen.getTransportCap());
+        return token == null ? "" : fmt(",transport-cap=%s", token);
     }
 
     // The virtio-input devices the UI drives; the daemon pre-binds the matching sockets (see
