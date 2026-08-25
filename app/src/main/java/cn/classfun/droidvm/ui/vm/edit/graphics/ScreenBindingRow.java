@@ -173,6 +173,7 @@ final class ScreenBindingRow {
         if (options.length == 0) return;
         var keep = want != null ? want : currentTransport();
         chooseTransport.setItems(options);
+        transportMenuBuilt = true;
         chooseTransport.setDisabledItems(
             chooseTransport.getContext().getString(
                 R.string.create_vm_screen_transport_not_implemented),
@@ -182,14 +183,19 @@ final class ScreenBindingRow {
         chooseTransport.setSelectedItem(pick);
     }
 
+    /** Set by the first applyTransportOptions; the picker cannot be read before it. */
+    private boolean transportMenuBuilt = false;
+
     /** The transport currently selected, or null before the menu has ever been built. */
     @Nullable
     private DisplayTransportCap currentTransport() {
-        try {
-            return chooseTransport.getSelectedItem();
-        } catch (IllegalStateException ignored) {
-            return null;
-        }
+        // Asking the widget before its first setItems is not an IllegalStateException, it is an
+        // NPE from deep inside (ChooseRowWidget.getSelectedItem -> getPicker() on nothing) --
+        // which is exactly how the editor crashed on first open while every unit test, none of
+        // which inflates the real widget, stayed green. Track the state ourselves instead of
+        // classifying the widget's failure modes.
+        if (!transportMenuBuilt) return null;
+        return chooseTransport.getSelectedItem();
     }
 
     boolean isScreenEnabled() {
