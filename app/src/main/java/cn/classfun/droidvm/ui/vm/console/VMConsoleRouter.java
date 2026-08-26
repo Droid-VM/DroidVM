@@ -21,7 +21,6 @@ import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncDisplayActivity;
-import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncPresentationActivity;
 
 /**
  * Shared "open the VM's default view" routing, so the VM-info screen (a console
@@ -140,13 +139,6 @@ public final class VMConsoleRouter {
         intent.putExtra(BaseVncActivity.EXTRA_INPUT_ENABLED, inputEnabled(config.item, screenId));
         ctx.startActivity(intent);
     }
-
-    public static void openVncExt(@NonNull Context ctx, @NonNull UUID vmId,
-                                  @NonNull VMConfig config, @NonNull String screenId) {
-        var intent = new Intent(ctx, VMVncPresentationActivity.class);
-        intent.putExtra(BaseVncActivity.EXTRA_VM_ID, vmId.toString());
-        intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, config.getName());
-        intent.putExtra(BaseVncActivity.EXTRA_SCREEN, screenId);
-        ctx.startActivity(intent);
-    }
+    // openVncExt retired: projecting to an external display is now an action inside the VNC
+    // console's own menu (VMVncDisplayActivity#projectToExternalDisplay), not a chooser entry.
 }

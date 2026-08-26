@@ -209,10 +209,10 @@ public final class ConsoleButton {
                 rows.add(new Row(displayTitle(R.string.vm_info_console_native_select, screen, named),
                     "native", screen.id, R.drawable.ic_monitor, false));
             } else if (screen.getExporter() == DisplayExporter.VNC) {
+                // No separate "external display" row here any more: projecting is an action inside
+                // the VNC console (its menu), not a console to pick from the chooser.
                 rows.add(new Row(displayTitle(R.string.vm_info_console_vnc_select, screen, named),
                     "vnc", screen.id, R.drawable.ic_remote_desktop, false));
-                rows.add(new Row(displayTitle(R.string.vm_info_console_vnc_ext_select, screen, named),
-                    "vnc-ext", screen.id, R.drawable.ic_monitor, false));
             }
         }
         if (rows.isEmpty() && !sawStd) {
@@ -235,8 +235,6 @@ public final class ConsoleButton {
                 openNativeDisplay(row.screenId);
             } else if (row.name.equals("vnc")) {
                 openVncDisplay(row.screenId);
-            } else if (row.name.equals("vnc-ext")) {
-                openVncExtDisplay(row.screenId);
             } else {
                 openConsole(row.name);
             }
@@ -269,10 +267,5 @@ public final class ConsoleButton {
     private void openVncDisplay(@NonNull String screenId) {
         if (parent.config == null) return;
         VMConsoleRouter.openVnc(parent, parent.vmId, parent.config, screenId);
-    }
-
-    private void openVncExtDisplay(@NonNull String screenId) {
-        if (parent.config == null) return;
-        VMConsoleRouter.openVncExt(parent, parent.vmId, parent.config, screenId);
     }
 }

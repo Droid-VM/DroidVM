@@ -17,6 +17,11 @@
         android:title="@string/vnc_menu_reconnect" />
 
     <item
+        android:id="@+id/menu_project_external"
+        android:icon="@drawable/ic_monitor"
+        android:title="@string/vnc_menu_project_external" />
+
+    <item
         android:id="@+id/menu_external"
         android:icon="@drawable/ic_open_in"
         android:title="@string/vnc_menu_external_app" />

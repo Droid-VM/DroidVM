@@ -735,7 +735,23 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
+        } else if (id == R.id.menu_project_external) {
+            projectToExternalDisplay();
+            return true;
         }
         return super.onMenuItemClicked(item);
+    }
+
+    // Projecting this screen onto an external display is the presentation console, reached from
+    // in here rather than from the VM's console chooser: it is an action on the screen already
+    // open, not a separate console to pick. The presentation activity puts up the display picker
+    // itself and shows nothing until one is chosen, so "pick a display, then land on it" is its
+    // own flow -- this only hands it the same vm/screen this console is already bound to.
+    private void projectToExternalDisplay() {
+        var intent = new android.content.Intent(this, VMVncPresentationActivity.class);
+        intent.putExtra(EXTRA_VM_ID, vmId);
+        intent.putExtra(EXTRA_VM_NAME, vmName);
+        intent.putExtra(EXTRA_SCREEN, screenId);
+        startActivity(intent);
     }
 }
