@@ -567,6 +567,16 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      * the backend default -- the same order {@code VMEditBootTab.isProtectedVm} reads it in.
      */
     private boolean hostVisibleRam() {
+        var pvm = currentProtectedVm();
+        return pvm == ProtectedVM.PROTECTED_NORMAL || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
+    }
+
+    /**
+     * The protection mode this VM will start with: live from the basic tab so a just-changed
+     * selection counts, then the stored config, then the backend default.
+     */
+    @NonNull
+    private ProtectedVM currentProtectedVm() {
         ProtectedVM pvm = null;
         try {
             var basic = (VMEditBasicTab) parent.getTab(VMEditTab.TAB_BASIC);
@@ -798,14 +808,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      *
      * <p>"One exporter per screen" needs no check: the schema keys the binding by screen, so it
      * cannot be said twice. Two listeners on one port can be, and crosvm compares the effective
-     * ports -- so ports left unnamed are fine (the daemon hands out distinct ones, and derives the
-     * side channel's from them), but two that name the same one are not.</p>
-     *
-     * <p>A VNC binding now opens two listeners rather than one, and the second is derived from the
-     * first unless it is named. So the collision to look for is between any two <em>named</em>
-     * ports, whichever field they were typed into: an H.264 port equal to the other screen's RFB
-     * port is exactly as unstartable as two equal RFB ports, and it is the kind of thing a user
-     * hits by typing the number they just read off the row above.</p>
+     * ports -- so ports left unnamed are fine (the daemon hands out distinct ones), but two that
+     * name the same one are not. One listener per VNC binding again, now that the H.264 stream is
+     * served on the RFB port instead of beside it.</p>
      */
     private boolean validateScreens() {
         var crosvm = parent.get("backend", VMBackend.DEFAULT) == VMBackend.CROSVM;
@@ -815,7 +820,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                 return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
             if (row.getExporter() != DisplayExporter.VNC) continue;
             if (!checkInputField(row.portField(), true, 1024, 65535)) return false;
-            if (!checkInputField(row.h264PortField(), true, 1024, 65535)) return false;
         }
         return validateNoPortCollision();
     }
@@ -831,8 +835,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (!row.isScreenEnabled() || row.getExporter() != DisplayExporter.VNC) continue;
             fields.add(row.portField());
             ports.add(row.typedVncPort());
-            fields.add(row.h264PortField());
-            ports.add(row.typedVncH264Port());
         }
         for (var i = 0; i < ports.size(); i++) {
             if (ports.get(i) <= 0) continue;

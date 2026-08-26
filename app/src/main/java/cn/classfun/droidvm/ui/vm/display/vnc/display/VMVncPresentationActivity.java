@@ -232,11 +232,9 @@ public final class VMVncPresentationActivity
         startInputCapture();
         // The decoder's view exists only now, with the window that holds it -- which is why this is
         // not in onSetupActivity: until a display has been chosen there is nowhere for a decoded
-        // frame to go. Posted rather than probed inline because one of the two ways to get here is
-        // the framebuffer callback, whose next act is to reconnect the channel itself; by the time
-        // this runs that has either happened or is not going to.
+        // frame to go. Nothing to ask for afterwards: the stream, if there is one, has been
+        // arriving on the RFB connection all along, and the next rect finds this pipeline.
         setH264View(pres.getH264View());
-        mainHandler.post(this::probeH264);
         synchronized (bitmapLock) {
             if (displayBitmap != null && !displayBitmap.isRecycled())
                 pres.updateBitmap(displayBitmap);

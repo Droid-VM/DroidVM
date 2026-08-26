@@ -1239,15 +1239,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             vncArg.append(",password=");
             vncArg.append(password);
         }
-        // The H.264 side channel's port, and only when the user named one. Left unsaid the host
-        // derives it from the RFB port (VMScreenConfig.H264_PORT_OFFSET above it), which the app's
-        // console derives the same way -- so the two ends agree on a number neither wrote down.
-        // Sending the derived value would put a copy of that rule on the command line, where it
-        // could later disagree with the rule itself.
-        if (screen.hasVncH264PortOverride()) {
-            vncArg.append(",h264-port=");
-            vncArg.append(screen.getVncH264Port());
-        }
+        // No "h264-port=" here, and it must not come back: the hardware H.264 stream is served on
+        // the RFB port as encoding 50, so there is no second listener to place. crosvm now refuses
+        // to parse a command line that names the old key rather than ignoring it, which is what
+        // makes a mixed deploy fail loudly at start instead of running with a silently dropped
+        // flag. A config left over from before the change still carries the number; nothing reads
+        // it (see VMScreenConfig).
         // VNC server pointer is FIXED to tablet (absolute, 1:1 cursor + hover/right-click/wheel):
         // every third-party VNC client gets absolute-tablet semantics. The app's own VNC display
         // routes MOUSE/TOUCH modes around RFB via the crosvm --input devices instead, so nothing

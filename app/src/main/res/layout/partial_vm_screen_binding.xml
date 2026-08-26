@@ -279,32 +279,6 @@
 
             </LinearLayout>
 
-            <!--
-                Beside the RFB port because it is the same server's second listener, and optional
-                because leaving it empty is the normal answer: the host derives it from the port
-                above. Its own row rather than a third column, so the helper text has somewhere to
-                say what empty means and when anything listens on it at all.
-            -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_screen_vnc_h264_port"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginBottom="8dp"
-                android:hint="@string/create_vm_vnc_h264_port"
-                app:helperText="@string/create_vm_vnc_h264_port_desc"
-                app:helperTextEnabled="true">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_screen_vnc_h264_port"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="number"
-                    tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
-            </com.google.android.material.textfield.TextInputLayout>
-
             <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                 android:id="@+id/sw_screen_vnc_password_auth"
                 android:layout_width="match_parent"

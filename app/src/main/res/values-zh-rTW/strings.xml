@@ -312,8 +312,6 @@
     <string name="create_vm_error_vnc_port_conflict">兩個監聽端不能用同一個埠。</string>
     <string name="create_vm_vnc_host">主機地址</string>
     <string name="create_vm_vnc_port">埠</string>
-    <string name="create_vm_vnc_h264_port">H.264 埠</string>
-    <string name="create_vm_vnc_h264_port_desc">硬體編碼的 H.264 側通道監聽的埠。留空就是 RFB 埠加 100。傳輸管線沒到 GPU Copy（硬體編碼）之前，這個埠上不會有東西在聽。</string>
     <string name="create_vm_vnc_password_auth">密碼認證</string>
     <string name="create_vm_vnc_password">密碼</string>
     <string name="create_vm_vnc_password_clear">清空密碼</string>

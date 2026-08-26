@@ -17,7 +17,7 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 
 /**
- * The side channel's frames, decoded straight onto a Surface.
+ * The stream's frames, decoded straight onto a Surface.
  *
  * <p>This is a live screen, not a recording, so every decision here trades smoothness for latency.
  * Output buffers are released for display the moment they exist rather than at a presentation time,
@@ -104,10 +104,9 @@ public final class H264ConsoleDecoder {
     /**
      * Hands one frame to the decoder, blocking while the queue is full.
      *
-     * <p>Called from the side channel's reader thread, and the blocking is the point: a stalled
-     * decoder stops the reader, the reader stops draining the socket, and the server stops being
-     * asked for frames. That chain is what keeps a slow device showing late frames rather than
-     * wrong ones.</p>
+     * <p>Called from the RFB message loop, and the blocking is the point: a stalled decoder stops
+     * that loop, the loop stops draining the socket, and the server stops being asked for frames.
+     * That chain is what keeps a slow device showing late frames rather than wrong ones.</p>
      *
      * @throws IOException when the decoder has failed or stopped keeping up, which the caller turns
      *                     into the end of the stream and thus a fallback to RFB.
@@ -129,6 +128,35 @@ public final class H264ConsoleDecoder {
             if (released) throw new IOException("the H.264 decoder is gone");
             pending.add(frame);
             pump();
+        }
+    }
+
+    /**
+     * Throws away everything the codec was holding, so the next frame starts a picture rather than
+     * continuing one.
+     *
+     * <p>What the reset flags on an encoding-50 rect ask for. A viewer that keeps one decoder
+     * context per rectangle has several things to throw away; this console has one codec, so both
+     * flags mean this. The frames already queued go with it on purpose: they belong to the stream
+     * that was, and the bytes arriving behind the flag are a sync frame that does not need them.
+     *
+     * <p>{@code start()} after {@code flush()} is not optional in asynchronous mode -- a flushed
+     * codec stops calling back until it is started again, and every input buffer index handed out
+     * before the flush is invalid, which is why both queues are emptied here rather than drained.
+     */
+    public void reset() {
+        synchronized (lock) {
+            if (released || failed || codec == null) return;
+            try {
+                codec.flush();
+                freeInputs.clear();
+                pending.clear();
+                codec.start();
+                nextPtsUs = 0;
+                lock.notifyAll();
+            } catch (Exception e) {
+                fail(e);
+            }
         }
     }
 

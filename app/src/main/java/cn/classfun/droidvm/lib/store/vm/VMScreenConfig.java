@@ -47,11 +47,12 @@ public final class VMScreenConfig {
 
     /** Sub-object holding this screen's VNC server settings, when its exporter is VNC. */
     private static final String KEY_VNC = "vnc";
-    /**
-     * Optional listen port for the H.264 side channel. Absent is the normal state and means the
-     * host derives one; see {@link #getVncH264Port}.
-     */
-    private static final String KEY_VNC_H264_PORT = "h264_port";
+    // The VNC sub-object used to carry an "h264_port" for the H.264 side channel. There is no side
+    // channel any more -- the stream rides the RFB connection as encoding 50 -- so nothing reads
+    // the key. A config written before the change still has it, and that is not a migration:
+    // DataItem returns what it is asked for, so a key nobody asks about is a key that costs
+    // nothing. What must not happen is the daemon passing it on; see CrosvmBackendInstance, where
+    // the flag is gone, because the new crosvm refuses to start on a command line that names it.
     /**
      * Whether this screen gets its own absolute input devices. Absent means on, which is how
      * every config written before this key existed keeps the devices it already had: the default
@@ -97,15 +98,6 @@ public final class VMScreenConfig {
      * downstream can use.
      */
     public static final long MAX_POLL_HZ = 240;
-    /**
-     * How far above the RFB port the H.264 side channel sits when nobody named a port for it.
-     * crosvm's own default, spelt here because the app's console has to find the channel without
-     * asking the VM where it put it.
-     */
-    public static final long H264_PORT_OFFSET = 100;
-    /** Highest number a TCP port can be, which is what bounds the derivation above. */
-    public static final long MAX_PORT = 65535;
-
     public final String id;
     public final DataItem item;
 
@@ -287,43 +279,6 @@ public final class VMScreenConfig {
 
     public void setVncPort(long port) {
         vnc().set("port", port);
-    }
-
-    /**
-     * The port the H.264 side channel listens on, or -1 for "the one derived from the RFB port".
-     *
-     * <p>Stored only when the user overrode it. The host derives it as {@link #H264_PORT_OFFSET}
-     * above the RFB port when the flag is absent, so writing the derived value out would put a
-     * second copy of one number in two places -- and a config carrying a stale copy of a rule is
-     * worse than a config carrying nothing.</p>
-     */
-    public long getVncH264Port() {
-        return vnc().optLong(KEY_VNC_H264_PORT, -1);
-    }
-
-    public void setVncH264Port(long port) {
-        vnc().set(KEY_VNC_H264_PORT, port);
-    }
-
-    /** Whether this screen names its own side-channel port, which is when the flag is emitted. */
-    public boolean hasVncH264PortOverride() {
-        return getVncH264Port() > 0;
-    }
-
-    /**
-     * Where this screen's H.264 side channel actually is, or -1 when there is nowhere it could be.
-     *
-     * <p>The app's own console connects here; the same derivation the host uses, spelt once. -1
-     * covers both the screen whose RFB port has not been assigned yet (the daemon fills that in at
-     * start) and the derived port that would not fit in a port number -- neither is a place to
-     * try, and a console that tries anyway spends a connect timeout to learn it.</p>
-     */
-    public long effectiveVncH264Port() {
-        if (hasVncH264PortOverride()) return getVncH264Port();
-        var rfb = getVncPort();
-        if (rfb <= 0) return -1;
-        var derived = rfb + H264_PORT_OFFSET;
-        return derived > MAX_PORT ? -1 : derived;
     }
 
     public boolean isVncPasswordAuth() {

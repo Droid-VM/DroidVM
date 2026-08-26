@@ -24,6 +24,41 @@ public final class VncClient {
 
         @SuppressWarnings("unused")
         void onFramebufferUpdated(int x, int y, int w, int h);
+
+        /**
+         * One encoding-50 rect, whole: the eight-byte header (u32 BE length, u32 BE flags) and the
+         * Annex-B payload behind it. Parsed on this side rather than in C so that there is one
+         * parser and a test can feed it the seam's literal bytes.
+         *
+         * <p>[width] and [height] are the rect's, which for this encoding is the coded size of the
+         * picture inside it. Called on the message-loop thread, and blocking here is how
+         * backpressure reaches the server: the socket stops being drained.</p>
+         */
+        @SuppressWarnings("unused")
+        void onH264Rect(@NonNull byte[] rect, int width, int height);
+
+        /**
+         * One 0x44564831 rect payload: the fixed four bytes of H264_SINGLE_PORT.md §1. Called on
+         * the message-loop thread.
+         */
+        @SuppressWarnings("unused")
+        void onDvhRect(@NonNull byte[] payload);
+    }
+
+    /**
+     * Stops this process asking for the H.264 encodings on connections made from here on.
+     *
+     * <p>Process-wide because libvncclient's extension list is, and because the one fact that
+     * justifies withdrawing them is process-wide too: a device with no {@code video/avc} decoder
+     * has none for any console. It matters that the withdrawal happens rather than being merely
+     * noted -- a client that asks for encoding 50 is served no pixels, so a console that cannot
+     * decode and keeps asking is a console showing a frozen picture.</p>
+     *
+     * <p>Takes effect at the next {@link #connect}; a connection already up keeps what it
+     * negotiated.</p>
+     */
+    public static void setH264Advertised(boolean advertised) {
+        nativeSetH264Advertised(advertised);
     }
 
     private long nativeHandle;
@@ -89,6 +124,8 @@ public final class VncClient {
             Log.i(TAG, "disconnected");
         }
     }
+
+    private static native void nativeSetH264Advertised(boolean advertised);
 
     private static native long nativeCreate();
 

@@ -6,109 +6,239 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
-import java.io.IOException;
-import java.net.ConnectException;
-import java.net.SocketTimeoutException;
-
-import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264StreamProtocol.Refusal;
+import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy.Mode;
+import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy.Order;
 
 /**
- * The retry ladder, read off the policy rather than off a stopwatch.
+ * The client rules of {@code plans/H264_SINGLE_PORT.md} §1, read off the policy rather than off a
+ * stopwatch.
  *
- * <p>The behaviour being pinned is a rule about the future -- "ask again in five seconds, then ten"
- * -- which is exactly the sort of thing that is otherwise only observable by sitting in front of a
- * console with a VM that is refusing. So the schedule lives in a class with no clock and no Android
- * in it, and the activity's only job is to post what this returns.</p>
+ * <p>What is being pinned is a set of statements about the future -- "give up after five seconds of
+ * this", "declare it dead after ten seconds of that" -- which is otherwise only observable by
+ * sitting in front of a console with a VM in the right state. So the rules live in a class with no
+ * clock and no Android in it, and the time is a parameter every one of these tests supplies.</p>
  */
 public class H264ProbePolicyTest {
+    private static final long T0 = 100_000;
+
     @Test
-    public void theLadderClimbsAndThenStopsClimbing() {
-        var policy = new H264ProbePolicy();
-        assertEquals(5_000, policy.nextDelayMs(transient_()));
-        assertEquals(10_000, policy.nextDelayMs(transient_()));
-        assertEquals(15_000, policy.nextDelayMs(transient_()));
-        // The cap is a cap, not a last rung: a console left open all afternoon still notices the
-        // encoder arriving, within fifteen seconds of it doing so.
-        assertEquals(15_000, policy.nextDelayMs(transient_()));
-        assertEquals(15_000, policy.nextDelayMs(transient_()));
-        assertFalse(policy.isGivenUp());
+    public void aCapabilitiesRectSayingAvailablePutsTheConsoleOnTheDecoder() {
+        var p = connected();
+        assertEquals(Mode.WAITING, p.mode());
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0 + 40);
+        assertEquals(Mode.DECODING, p.mode());
+        assertFalse(p.isPermanent());
     }
 
     @Test
-    public void aStreamThatCameUpPutsTheLadderBackAtTheBottom() {
-        var policy = new H264ProbePolicy();
-        policy.nextDelayMs(transient_());
-        policy.nextDelayMs(transient_());
-        assertEquals(15_000, policy.nextDelayMs(transient_()));
-        // Whatever ends a stream that worked is a new fault and inherits nothing from the failures
-        // before it -- otherwise one bad minute at the start would leave every later fallback
-        // fifteen seconds from recovering.
-        policy.onLive();
-        assertEquals(5_000, policy.nextDelayMs(transient_()));
+    public void warmingIsAWaitAndNotAnAnswer() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_WARMING, T0 + 40);
+        assertEquals(Mode.WAITING, p.mode());
+        // And the five seconds do not run out underneath it: the server said it would say more, so
+        // there is no silence to draw a conclusion from.
+        assertEquals(Order.NOTHING, p.tick(T0 + 60_000));
+        assertEquals(Mode.WAITING, p.mode());
+        assertFalse(p.isPermanent());
+
+        // Minutes later the encoder comes up, and the console is not still waiting for a timer.
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0 + 90_000);
+        assertEquals(Mode.DECODING, p.mode());
+        // The ten seconds are measured from here, not from the connect: a stream announced after a
+        // long warm-up must not be declared dead on the tick after it was announced.
+        assertEquals(Order.NOTHING, p.tick(T0 + 95_000));
+        assertEquals(Mode.DECODING, p.mode());
     }
 
     @Test
-    public void aHostWithNoEncoderIsNotAskedAgain() {
-        var policy = new H264ProbePolicy();
-        assertEquals(5_000, policy.nextDelayMs(transient_()));
-        assertEquals(H264ProbePolicy.STOP, policy.nextDelayMs(refused("no-encoder no codec here")));
-        assertTrue(policy.isGivenUp());
-        // And stays given up: a later transient failure must not restart a ladder that was ended
-        // by a fact about the host.
-        assertEquals(H264ProbePolicy.STOP, policy.nextDelayMs(transient_()));
-        assertEquals(H264ProbePolicy.STOP, policy.nextDelayMs(refused("busy try later")));
+    public void aHostWithNoEncoderEndsTheQuestionForGood() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_NO_ENCODER, T0 + 40);
+        assertEquals(Mode.PIXELS, p.mode());
+        assertTrue(p.isPermanent());
+        assertTrue(p.saidNoEncoder());
+        // Nothing reopens it while this console is open -- not a later capabilities rect, not
+        // frames. The host does not grow an encoder while the VM runs.
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0 + 5_000);
+        assertEquals(Mode.PIXELS, p.mode());
+        p.onStreamRect(T0 + 6_000);
+        assertEquals(Mode.PIXELS, p.mode());
+        // Not even a reconnection: it is a fact about the host, not about the connection.
+        p.onConnected(T0 + 20_000);
+        assertEquals(Mode.PIXELS, p.mode());
+        assertTrue(p.saidNoEncoder());
     }
 
     @Test
-    public void everyOtherRefusalIsWorthAskingAgainAbout() {
-        var busy = new H264ProbePolicy();
-        assertEquals(5_000, busy.nextDelayMs(refused("busy another client already has the stream")));
-        assertFalse(busy.isGivenUp());
-
-        var unknown = new H264ProbePolicy();
-        assertEquals(5_000, unknown.nextDelayMs(refused("wedged the encoder is being rebuilt")));
-        assertFalse(unknown.isGivenUp());
+    public void anUnreadableCapabilitiesValueIsAWaitAndNotARefusal() {
+        // A newer host's new vocabulary must not permanently downgrade an old client, which is the
+        // same rule the version byte follows on the wire.
+        var p = connected();
+        p.onCapsRect(9, T0 + 40);
+        assertEquals(Mode.WAITING, p.mode());
+        assertFalse(p.isPermanent());
+        assertFalse(p.saidNoEncoder());
     }
 
     @Test
-    public void aFailureThatIsNotARefusalIsClassifiedAsTransient() {
-        // Nothing listening, a truncated stream, a decoder that could not be built, and the
-        // heartbeat running out are all reasons to come back -- none of them is the host declining.
-        assertEquals(Refusal.UNKNOWN,
-            H264ProbePolicy.refusalOf(new ConnectException("connection refused")));
-        assertEquals(Refusal.UNKNOWN,
-            H264ProbePolicy.refusalOf(new SocketTimeoutException("read timed out")));
-        assertEquals(Refusal.UNKNOWN, H264ProbePolicy.refusalOf(null));
-        assertEquals(Refusal.NO_ENCODER,
-            H264ProbePolicy.refusalOf(refused("no-encoder none available")));
+    public void anOldServerIsFiveSecondsOfSilenceAndThenThePixelPath() {
+        // The server ignored both encodings and is serving pixels. There is no capabilities rect
+        // coming, and the console must not sit in "warming" for the rest of its life.
+        var p = connected();
+        assertEquals(Order.NOTHING, p.tick(T0 + 4_999));
+        assertEquals(Mode.WAITING, p.mode());
+        assertEquals(Order.NOTHING, p.tick(T0 + H264ProbePolicy.CAPS_GRACE_MS));
+        assertEquals(Mode.PIXELS, p.mode());
     }
 
-    private static Exception transient_() {
-        return new IOException("the stream ended");
+    @Test
+    public void theSilenceVerdictIsAGuessAndEvidenceOverturnsIt() {
+        var p = connected();
+        p.tick(T0 + H264ProbePolicy.CAPS_GRACE_MS);
+        assertEquals(Mode.PIXELS, p.mode());
+        // Never permanent, and never announced: an ordinary VNC server has not refused anything,
+        // so there is nothing to tell the user and nothing to stop asking about.
+        assertFalse(p.isPermanent());
+        assertFalse(p.saidNoEncoder());
+
+        // A capabilities rect that merely arrived late outranks a conclusion drawn from its
+        // absence.
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0 + 8_000);
+        assertEquals(Mode.DECODING, p.mode());
     }
 
-    /** What the parser hands the policy when the server said why. */
-    private static Exception refused(String reason) {
-        try {
-            H264StreamProtocol.readHeader(new java.io.ByteArrayInputStream(concat(
-                new byte[]{'D', 'V', 'H', 'X'},
-                reason.getBytes(java.nio.charset.StandardCharsets.US_ASCII),
-                new byte[]{0})));
-        } catch (Exception e) {
-            return e;
+    @Test
+    public void framesAlsoOverturnTheSilenceVerdict() {
+        var p = connected();
+        p.tick(T0 + H264ProbePolicy.CAPS_GRACE_MS);
+        assertEquals(Mode.PIXELS, p.mode());
+        p.onStreamRect(T0 + 6_000);
+        assertEquals(Mode.DECODING, p.mode());
+    }
+
+    @Test
+    public void aHeartbeatIsLivenessAndNotAReasonToDecode() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_WARMING, T0 + 40);
+        // There is nothing in a heartbeat to put on screen, so it must not flip the console onto a
+        // decoder that would have no frames to show.
+        p.onHeartbeat(T0 + 3_000);
+        assertEquals(Mode.WAITING, p.mode());
+        // It does say the server knows about the pseudo-encoding, so the five seconds are off.
+        assertEquals(Order.NOTHING, p.tick(T0 + 30_000));
+        assertEquals(Mode.WAITING, p.mode());
+    }
+
+    @Test
+    public void heartbeatsKeepAnIdleStreamAlive() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        // A still screen produces no frames, which is why the host beats every three seconds. Half
+        // a minute of that is a console that is fine, not one that is frozen.
+        for (var t = T0 + 3_000; t <= T0 + 30_000; t += 3_000) {
+            p.onHeartbeat(t);
+            assertEquals(Order.NOTHING, p.tick(t + 1_000));
         }
-        throw new AssertionError("a refusal did not read as one");
+        assertEquals(Mode.DECODING, p.mode());
     }
 
-    private static byte[] concat(byte[]... parts) {
-        var total = 0;
-        for (var part : parts) total += part.length;
-        var out = new byte[total];
-        var at = 0;
-        for (var part : parts) {
-            System.arraycopy(part, 0, out, at, part.length);
-            at += part.length;
-        }
-        return out;
+    @Test
+    public void tenSecondsOfNothingAtAllIsADeadStream() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        p.onStreamRect(T0 + 1_000);
+        assertEquals(Order.NOTHING, p.tick(T0 + 1_000 + H264ProbePolicy.SILENCE_MS - 1));
+        assertEquals(Mode.DECODING, p.mode());
+        // No frame and no beat: the host is gone or wedged, however alive the socket looks.
+        assertEquals(Order.RECONNECT, p.tick(T0 + 1_000 + H264ProbePolicy.SILENCE_MS));
+        assertEquals(Mode.WAITING, p.mode());
+        assertFalse(p.isPermanent());
+    }
+
+    @Test
+    public void theSameDeadStreamIsNotReportedOnEveryTick() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        assertEquals(Order.RECONNECT, p.tick(T0 + H264ProbePolicy.SILENCE_MS));
+        // The mode left DECODING, so there is nothing for the silence clock to be about until a
+        // stream comes back.
+        assertEquals(Order.NOTHING, p.tick(T0 + H264ProbePolicy.SILENCE_MS + 1_000));
+        assertEquals(Order.NOTHING, p.tick(T0 + 120_000));
+    }
+
+    @Test
+    public void aSecondDeadStreamIsThePixelPathForGood() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        assertEquals(Order.RECONNECT, p.tick(T0 + H264ProbePolicy.SILENCE_MS));
+
+        // The reconnect this asked for. The counter deliberately survives it -- reset there, the
+        // console would ask for reconnects forever.
+        var t = T0 + 20_000;
+        p.onConnected(t);
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, t);
+        assertEquals(Mode.DECODING, p.mode());
+        assertEquals(Order.NOTHING, p.tick(t + H264ProbePolicy.SILENCE_MS));
+        assertEquals(Mode.PIXELS, p.mode());
+        assertTrue(p.isPermanent());
+        // And not announced as a host refusal, because it was not one.
+        assertFalse(p.saidNoEncoder());
+        // A third connection inherits the verdict rather than starting the cycle again.
+        p.onConnected(t + 60_000);
+        assertEquals(Mode.PIXELS, p.mode());
+    }
+
+    @Test
+    public void aDeviceWithNoDecoderIsPermanentAndIsNotTheHostsFault() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        assertEquals(Mode.DECODING, p.mode());
+        p.onDecoderUnsupported();
+        assertEquals(Mode.PIXELS, p.mode());
+        assertTrue(p.isPermanent());
+        assertTrue(p.isDecoderUnsupported());
+        // Told apart from the host having no encoder: the console withdraws the encodings for this
+        // one, and says nothing about the host.
+        assertFalse(p.saidNoEncoder());
+        p.onConnected(T0 + 30_000);
+        assertEquals(Mode.PIXELS, p.mode());
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0 + 30_100);
+        assertEquals(Mode.PIXELS, p.mode());
+    }
+
+    @Test
+    public void nothingIsDecidedBeforeAConnectionOrAfterOneEnds() {
+        var p = new H264ProbePolicy();
+        // No connection, no clocks: an un-started policy that timed out would put a console on the
+        // pixel path before it had asked anything.
+        assertEquals(Order.NOTHING, p.tick(T0 + 600_000));
+        assertEquals(Mode.WAITING, p.mode());
+
+        p.onConnected(T0);
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        assertEquals(Mode.DECODING, p.mode());
+        p.onDisconnected();
+        assertEquals(Mode.WAITING, p.mode());
+        assertEquals(Order.NOTHING, p.tick(T0 + 600_000));
+    }
+
+    @Test
+    public void aReconnectionRestartsTheFiveSecondClock() {
+        var p = connected();
+        p.onCapsRect(H264RectProtocol.CAPS_AVAILABLE, T0);
+        p.onDisconnected();
+        var t = T0 + 60_000;
+        p.onConnected(t);
+        assertEquals(Mode.WAITING, p.mode());
+        assertEquals(Order.NOTHING, p.tick(t + H264ProbePolicy.CAPS_GRACE_MS - 1));
+        assertEquals(Mode.WAITING, p.mode());
+        assertEquals(Order.NOTHING, p.tick(t + H264ProbePolicy.CAPS_GRACE_MS));
+        assertEquals(Mode.PIXELS, p.mode());
+    }
+
+    private static H264ProbePolicy connected() {
+        var p = new H264ProbePolicy();
+        p.onConnected(T0);
+        return p;
     }
 }

@@ -314,8 +314,6 @@
     <string name="create_vm_error_vnc_port_conflict">Two listeners cannot share the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
     <string name="create_vm_vnc_port">Port</string>
-    <string name="create_vm_vnc_h264_port">H.264 port</string>
-    <string name="create_vm_vnc_h264_port_desc">Where the hardware-encoded H.264 side channel listens. Leave empty for the RFB port plus 100. Nothing listens on it until the transport pipeline reaches GPU Copy (hardware encode).</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>
     <string name="create_vm_vnc_password">Password</string>
     <string name="create_vm_vnc_password_clear">Clear password</string>
