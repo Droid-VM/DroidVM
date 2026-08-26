@@ -43,7 +43,10 @@ public final class DirectInputSink implements InputForwarder.InputSink {
     /**
      * @param vmId        the VM id, used by the daemon to find the running VM's input channel.
      * @param screenId    the screen this console is currently showing; picks between two screens'
-     *                    absolute devices and is ignored by the VM-wide keyboard and pointer.
+     *                    absolute devices and their keyboards, and is ignored by the VM-wide
+     *                    relative pointer alone. Sent on every channel, so which channels are per
+     *                    screen stays {@link cn.classfun.droidvm.lib.store.vm.NativeDisplay}'s
+     *                    decision rather than something this side has to be taught.
      * @param rootService daemon broker binder that writes the bytes; null disables the direct path.
      * @param fallback    sink used when the direct path is unavailable or errors.
      */

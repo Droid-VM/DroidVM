@@ -336,7 +336,7 @@ public class VMScreenMigrationTest {
     }
 
     @Test
-    public void absoluteSocketsAreOnePerScreenAndTheOthersIgnoreTheScreenEntirely() {
+    public void scanoutSocketsAreOnePerScreenAndOnlyTheRelativePointerIgnoresTheScreen() {
         var vmId = "7f3c1c22-0a11-4d55-9f0e-2b0d5a6e1234";
         var run = "/data/data/cn.classfun.droidvm/run/dvmin_" + vmId;
         // Exact names, because these are a contract between two processes: the daemon binds the
@@ -346,33 +346,36 @@ public class VMScreenMigrationTest {
             vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MULTITOUCH));
         assertEquals(run + "_g0_tab.sock", NativeDisplay.inputSocketPath(
             vmId, VMScreenConfig.ID_GPU0, NativeDisplay.TABLET));
-        assertEquals(run + "_kbd.sock",
-            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.KEYBOARD));
+        assertEquals(run + "_g0_kbd.sock", NativeDisplay.inputSocketPath(
+            vmId, VMScreenConfig.ID_GPU0, NativeDisplay.KEYBOARD));
         assertEquals(run + "_ms.sock",
             NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE));
-        // Two screens' absolute devices are different inodes, which is the whole point of them
-        // being per screen: an absolute coordinate only means anything under one output.
-        for (var ch : new int[]{NativeDisplay.MULTITOUCH, NativeDisplay.TABLET}) {
+        // Each screen's devices are its own inodes. For the two absolute ones that is because a
+        // coordinate only means anything under one output; for the keyboard it is because input
+        // belongs to the scanout, so the screen's switch has to be able to silence typing on that
+        // screen alone -- a shared keyboard could not be switched off by any one screen.
+        for (var ch : new int[]{
+            NativeDisplay.MULTITOUCH, NativeDisplay.TABLET, NativeDisplay.KEYBOARD}) {
             assertTrue(NativeDisplay.isPerScreen(ch));
             assertNotEquals(NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch),
                 NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, ch));
         }
-        // The keyboard and the relative pointer have no output binding, so which screen the
-        // console is showing must not reach their socket names at all.
-        for (var ch : new int[]{NativeDisplay.KEYBOARD, NativeDisplay.MOUSE}) {
-            assertFalse(NativeDisplay.isPerScreen(ch));
-            assertEquals(NativeDisplay.inputSocketPath(vmId, "", ch),
-                NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch));
-            assertEquals(NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, ch),
-                NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, ch));
-        }
-        // Six sockets for a two-screen VM -- two absolute devices per screen plus the VM's two --
+        // The relative pointer is the one device with no output binding -- the guest routes it by
+        // focus and it walks between outputs -- so which screen the console is showing must not
+        // reach its socket name at all.
+        assertFalse(NativeDisplay.isPerScreen(NativeDisplay.MOUSE));
+        assertEquals(NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE),
+            NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, NativeDisplay.MOUSE));
+        assertEquals(
+            NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MOUSE),
+            NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, NativeDisplay.MOUSE));
+        // Seven sockets for a two-screen VM -- three devices per screen plus the VM's pointer --
         // and no two of them the same file.
         var seen = new HashSet<String>();
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
             for (var id : VMScreenConfig.IDS)
                 seen.add(NativeDisplay.inputSocketPath(vmId, id, ch));
-        assertEquals(6, seen.size());
+        assertEquals(7, seen.size());
     }
 
     @Test
@@ -464,6 +467,27 @@ public class VMScreenMigrationTest {
     }
 
     @Test
+    public void keyboardDeviceNamesAreDerivedPerScreenAndMatchTheCrosvmSeamFormat() {
+        // Exact strings: crosvm builds a VNC-exported screen's keyboard itself and names it by
+        // reproducing this format, with no command-line key carrying it between the two repos. So
+        // the format IS the contract, and a change here that crosvm does not learn about leaves
+        // the guest with two differently-named keyboards for what the user thinks is one setup.
+        assertEquals("DroidVM Keyboard (gpu-0)",
+            NativeDisplay.keyboardDeviceName(VMScreenConfig.ID_GPU0));
+        assertEquals("DroidVM Keyboard (simplefb)",
+            NativeDisplay.keyboardDeviceName(VMScreenConfig.ID_SIMPLEFB));
+        assertNotEquals(NativeDisplay.keyboardDeviceName(VMScreenConfig.ID_GPU0),
+            NativeDisplay.keyboardDeviceName(VMScreenConfig.ID_SIMPLEFB));
+        // And it is distinguishable from the screen's other two devices, which sit beside it in
+        // the guest's device list.
+        for (var id : new String[] {VMScreenConfig.ID_GPU0, VMScreenConfig.ID_SIMPLEFB}) {
+            assertNotEquals(NativeDisplay.keyboardDeviceName(id), NativeDisplay.touchDeviceName(id));
+            assertNotEquals(NativeDisplay.keyboardDeviceName(id),
+                NativeDisplay.tabletDeviceName(id));
+        }
+    }
+
+    @Test
     public void perScreenNamesCarryNoCommaThatWouldSplitAnInputOption() {
         // Both names are interpolated into a crosvm `--input kind[path=...,name=...]` option, whose
         // key-value parser runs an unquoted value to the next ',' or ']'. Spaces and parentheses
@@ -471,7 +495,8 @@ public class VMScreenMigrationTest {
         // different device, so assert the characters that would do it never appear.
         for (var id : new String[] {VMScreenConfig.ID_GPU0, VMScreenConfig.ID_SIMPLEFB}) {
             for (var name : new String[] {
-                NativeDisplay.touchDeviceName(id), NativeDisplay.tabletDeviceName(id)}) {
+                NativeDisplay.touchDeviceName(id), NativeDisplay.tabletDeviceName(id),
+                NativeDisplay.keyboardDeviceName(id)}) {
                 assertEquals(-1, name.indexOf(','));
                 assertEquals(-1, name.indexOf('['));
                 assertEquals(-1, name.indexOf(']'));

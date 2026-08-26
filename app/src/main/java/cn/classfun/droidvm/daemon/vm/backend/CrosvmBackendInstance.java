@@ -152,12 +152,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
         // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
         // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
-        // args in buildCommand(), and absoluteInputScreens() decides which screens get the two
-        // per-screen devices in both places, so the sockets and devices never diverge.
+        // args in buildCommand(), and touchscreenScreens()/nativeInputScreens() decide which
+        // screens get which per-screen device in both places, so the sockets and devices never
+        // diverge. The two lists differ: a VNC-exported screen's tablet and keyboard are crosvm's,
+        // not ours.
         if (isInputBridgeNeeded()) {
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
-                    absoluteInputScreens())) {
+                    touchscreenScreens(), nativeInputScreens())) {
                     Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
                 }
             } catch (IllegalArgumentException e) {
@@ -975,24 +977,30 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     // The virtio-input devices the UI drives; the daemon pre-binds the matching sockets (see
     // start()) and the UI ships evdev records to them via vm_input / the direct sink.
     //
-    // Two of them are the VM's and two are each screen's. The keyboard and the relative pointer
-    // have no output binding at all -- the guest compositor routes them by focus, and a relative
-    // pointer walks from one output to the next -- so there is one of each for the VM. An
-    // absolute coordinate is only meaningful against one output's geometry, so multi-touch and
-    // the absolute pointer exist once per screen that has input enabled, and each carries a
-    // name= built from the screen id: evdev has no "I belong to output N" field, so the guest is
-    // told which touchscreen is which output by hand, keyed on that name, in every guest OS.
-    // That is why the name is derived and never allocated -- it has to come back identical after
-    // a reboot or the user's mapping quietly stops matching.
+    // One of them is the VM's and three are each screen's. Only the relative pointer has no output
+    // binding at all -- the guest compositor routes it by focus and it walks from one output to
+    // the next -- so there is one of it for the VM. An absolute coordinate is only meaningful
+    // against one output's geometry, so multi-touch and the absolute pointer exist once per screen
+    // that has them, and each carries a name= built from the screen id: evdev has no "I belong to
+    // output N" field, so the guest is told which touchscreen is which output by hand, keyed on
+    // that name, in every guest OS. That is why the name is derived and never allocated -- it has
+    // to come back identical after a reboot or the user's mapping quietly stops matching. The
+    // keyboard is per screen on different grounds: input belongs to the scanout, so the screen's
+    // switch has to be able to turn typing off on that screen and only that screen.
+    //
+    // The three per-screen devices do not cover the same screens. The touchscreen is ours on
+    // either exporter, because multi-touch has no RFB representation -- the app synthesises it
+    // and injects it into that screen's socket while its console is up. The absolute pointer and
+    // the keyboard are ours only where the screen is exported natively: crosvm builds a
+    // VNC-exported screen's pair itself, behind that screen's own VNC server, and drives them from
+    // that server's RFB pointer and key events (see buildVncArg). Emitting either here too would
+    // hand the guest two devices under one evdev name, and the socket one would be the half
+    // nothing ever writes to.
     private void buildInputDevicesCommand(@NonNull List<String> args) {
         var vmId = config.getId().toString();
-        // No screen for these two, and the empty string says exactly that: their socket names do
-        // not take one, so there is no screen a console could name that would move them.
-        args.add("--input");
-        args.add(fmt(
-            "keyboard[path=%s]",
-            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.KEYBOARD)
-        ));
+        // No screen for this one, and the empty string says exactly that: its socket name does not
+        // take one, so there is no screen a console could name that would move it.
+        //
         // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
         // the cursor, which is what relative-motion consumers (FPS games) need.
         args.add("--input");
@@ -1005,14 +1013,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
         // resolution-independent and survives guest auto-resize -- no display size needed.
         //
-        // crosvm's own RFB device set is still VM-global: --vnc-server turns on
-        // display_window_mouse and creates its own touchscreen, tablet, mouse and keyboard
-        // (create_display_window_input_devices). Those four now carry fixed names of their own --
-        // "DroidVM VNC Touch" and siblings -- rather than copying the first --input multi-touch's
-        // name, which used to hand the guest a second device under the first screen's identity.
-        // So a VNC-bound VM still shows more devices than screens, but no two of them claim to be
-        // the same one, and the names below stay this screen's alone.
-        for (var screenId : absoluteInputScreens()) {
+        // crosvm's VM-global RFB device set is gone: --vnc-server no longer turns on
+        // display_window_mouse and no longer creates the "DroidVM VNC Touch"/Tablet/Mouse trio or
+        // the display-window keyboard. Those were one set for the whole VM, so with two VNC
+        // screens up both normalised into the same tablet and the guest had no way to tell which
+        // output a coordinate came from; and the set only ever reached the guest at all when no
+        // GPU device was configured. Each VNC binding now carries its own pair instead.
+        var nativeInputs = nativeInputScreens();
+        for (var screenId : touchscreenScreens()) {
             args.add("--input");
             args.add(fmt(
                 "multi-touch[path=%s,name=%s]",
@@ -1024,33 +1032,81 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             // single-touch (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto
             // it in TABLET mode.
             //
+            // The tablet and the keyboard below are only for the natively exported screens; that
+            // list is a subset of the one being walked, so the gate sits inside the loop rather
+            // than beside it.
+            //
             // It carries a name= for the same reason the touchscreen does. It could not before:
             // crosvm's AbsoluteMouse option had no name field and its enum is deny_unknown_fields,
             // so `absolute-mouse[...,name=X]` was not a device with an odd name but a command line
             // crosvm refuses, and this screen's tablet fell back to the generated "Crosvm Virtio
             // Absolute Mouse <idx>" -- an idx that counts emission order here and so moves when
             // another screen's input is switched off. Both devices of the pair are pinnable now.
+            if (!nativeInputs.contains(screenId)) continue;
             args.add("--input");
             args.add(fmt(
                 "absolute-mouse[path=%s,name=%s]",
                 NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.TABLET),
                 NativeDisplay.tabletDeviceName(screenId)
             ));
+            // This screen's keyboard. There is no VM-wide one any more: a keyboard shared by every
+            // screen could not be switched off by any one of them, so a screen with its input off
+            // still typed, which is not what the switch says. Now typing on a console goes to that
+            // console's screen's keyboard and a screen with input off has none -- and the guest
+            // sees several keyboards, which costs it nothing, because unlike an absolute device a
+            // keyboard needs no output binding to be routed correctly: focus decides.
+            args.add("--input");
+            args.add(fmt(
+                "keyboard[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.KEYBOARD),
+                NativeDisplay.keyboardDeviceName(screenId)
+            ));
         }
     }
 
     /**
-     * The screens that get their own multi-touch + absolute pointer, in schema order.
+     * The screens that get their own multi-touch device, in schema order: the screen exists,
+     * something is watching it, and its input switch is on.
+     *
+     * <p>Both exporters, because multi-touch is not an RFB protocol event: the app is what turns
+     * finger contacts into evdev slots, on the VNC console exactly as on the native one, and
+     * injects them into this screen's socket while that console is up. So a VNC-exported screen
+     * keeps its touchscreen socket and its {@code --input multi-touch} on the same terms it
+     * always had.</p>
      *
      * <p>One list, read by both the socket pre-bind and the {@code --input} args, because a screen
      * in one and not the other is either a device crosvm cannot connect to (the VM does not
      * start) or a socket nothing ever opens.</p>
      */
     @NonNull
-    private List<String> absoluteInputScreens() {
+    private List<String> touchscreenScreens() {
         var out = new ArrayList<String>();
         for (var screen : VMScreenConfig.absoluteInputOf(config.item))
             out.add(screen.id);
+        return out;
+    }
+
+    /**
+     * The screens whose absolute pointer and keyboard are ours to bind -- a subset of
+     * {@link #touchscreenScreens}: the natively exported ones.
+     *
+     * <p>A VNC-exported screen has both of those too, but crosvm builds them behind that screen's
+     * VNC server and writes the RFB pointer and key events straight into them, which is what makes
+     * a coordinate land under the geometry of the binding it arrived on and a keystroke reach the
+     * screen the client is looking at. There is no socket for the daemon to bind and no
+     * {@code --input} for it to emit; the whole of the daemon's say in them is the
+     * {@code view-only} flag on that screen's exporter (see {@link #buildVncArg}).</p>
+     *
+     * <p>One list for the pair, because the pair has one rule: both are the screen's, both exist
+     * only where the screen's input switch is on, and both are crosvm's on a VNC binding. Read by
+     * the socket pre-bind and the {@code --input} args alike, for the same reason the touchscreen
+     * list is.</p>
+     */
+    @NonNull
+    private List<String> nativeInputScreens() {
+        var out = new ArrayList<String>();
+        for (var screen : VMScreenConfig.absoluteInputOf(config.item))
+            if (screen.getExporter() == DisplayExporter.NATIVE) out.add(screen.id);
         return out;
     }
 
@@ -1211,9 +1267,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      *
      * <p>Single source of truth: this gates both the socket pre-bind in start() and the --input
      * args in buildCommand(), so the sockets and the devices never diverge. It is the gate on the
-     * VM-wide keyboard and relative pointer; which screens additionally get their own absolute
-     * pair is {@link #absoluteInputScreens}, and a VM with every screen's input switched off
-     * still gets these two -- they are not a screen's to switch off.</p>
+     * VM-wide relative pointer; which screens additionally get a touchscreen is
+     * {@link #touchscreenScreens} and which get a socket tablet and keyboard is
+     * {@link #nativeInputScreens}, and a VM with every screen's input switched off still gets the
+     * relative pointer -- it is not a screen's to switch off. The keyboard used to be in that
+     * sentence and no longer is.</p>
      */
     private boolean isInputBridgeNeeded() {
         for (var screen : VMScreenConfig.listOf(config.item)) {
@@ -1245,11 +1303,23 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // makes a mixed deploy fail loudly at start instead of running with a silently dropped
         // flag. A config left over from before the change still carries the number; nothing reads
         // it (see VMScreenConfig).
-        // VNC server pointer is FIXED to tablet (absolute, 1:1 cursor + hover/right-click/wheel):
-        // every third-party VNC client gets absolute-tablet semantics. The app's own VNC display
-        // routes MOUSE/TOUCH modes around RFB via the crosvm --input devices instead, so nothing
-        // needs a different server-side mode.
-        vncArg.append(",input=tablet");
+        // This screen's input switch, spelt for the other side. false makes crosvm build one
+        // tablet and one keyboard for this binding and inject its RFB pointer/key events into
+        // them; true makes it build neither and drop both, which is the only way to say "watch,
+        // don't touch" now that the devices belong to the binding rather than to the VM.
+        //
+        // The devices are the binding's, so a coordinate is read against the geometry of the
+        // screen the client is actually looking at -- which is what the retired VM-global set
+        // could not do with two VNC screens up. Pointer semantics stay absolute-tablet for every
+        // client, third-party or the app's own console; the app's VNC console is an RFB client
+        // like any other for pointer and keys, and reaches around RFB only for its TOUCH mode
+        // (this screen's multi-touch socket) and its MOUSE mode (the VM's relative pointer).
+        //
+        // The old "input=tablet" key is not merely unused now: crosvm's VncConfig is
+        // deny_unknown_fields, so emitting it would be a command line it refuses rather than a
+        // flag it ignores. That is deliberate -- a half-updated pair fails at start.
+        vncArg.append(",view-only=");
+        vncArg.append(!screen.isInputEnabled());
         vncArg.append(",screen=");
         vncArg.append(screen.id);
         return vncArg.toString();

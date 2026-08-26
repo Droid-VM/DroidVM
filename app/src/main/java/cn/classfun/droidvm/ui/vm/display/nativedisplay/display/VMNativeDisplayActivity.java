@@ -945,6 +945,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // is selectable and inert. Say so once, here, rather than leaving the user tapping a
         // screen that answers nothing -- and say the true reason, which is a VM that has to be
         // started again, not a setting that would take effect if they waited.
+        //
+        // The switch reaches typing too now, since the keyboard became this screen's rather than
+        // the VM's. The hint names no device, so it stays true of all three; MOUSE is still the
+        // one thing the switch does not touch, the relative pointer being the VM's.
         if (!screenInputEnabled && mode != InputMode.MOUSE)
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;

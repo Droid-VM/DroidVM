@@ -26,10 +26,14 @@ import java.nio.charset.StandardCharsets;
  * otherwise want one servicemanager name for two Surfaces, and a service holds two slots (main +
  * cursor), not N.
  *
- * The input sockets split the same way, but only half of them: the keyboard and the relative
- * pointer have no output binding at all -- the guest compositor routes them by focus -- so they
- * stay on the VM root, while the multi-touch and absolute-pointer devices are per screen, because
- * an absolute coordinate only means anything under one output's geometry.
+ * The input sockets split the same way, but not all of them: the relative pointer alone stays on
+ * the VM root, because it has no output binding at all -- the guest compositor routes it by focus
+ * and it walks from one output to the next. The multi-touch and absolute-pointer devices are per
+ * screen because an absolute coordinate only means anything under one output's geometry; the
+ * keyboard is per screen for a different reason, which is that input belongs to the scanout. A
+ * screen's input switch has to be able to turn typing off on that screen, and a VM-wide keyboard
+ * could not be turned off by any one screen -- so a keyboard the console types into is the
+ * console's screen's keyboard, and a screen with input off has none at all.
  *
  * The socket <em>filenames</em> are the one set of names here that is not identity-bearing, and
  * they are deliberately terse. A unix socket address holds 107 bytes of path plus a NUL, and this
@@ -170,11 +174,18 @@ public final class NativeDisplay {
      *
      * <p>The two absolute devices are: their coordinates are read against one output's geometry,
      * so a VM with two screens needs two of each and the guest has to be told by hand which is
-     * which. The keyboard and the relative pointer are not: they have no output binding, and the
-     * guest compositor sends them wherever focus is.</p>
+     * which. The keyboard is too, on the different ground that input is a property of the scanout:
+     * the screen's input switch governs it, so it cannot be one device shared by screens that
+     * disagree about whether input is on. Only the relative pointer is left VM-wide -- it has no
+     * output binding, and the guest compositor sends it wherever focus is.</p>
+     *
+     * <p>This one predicate is what makes a channel per screen everywhere at once: it picks the
+     * socket filename ({@link #inputSocketPath}), the daemon's slot key, and therefore whether the
+     * screen the console names reaches the write at all. The UI already sends its screen id on
+     * every channel, so a channel moving across this line needs no change on that side.</p>
      */
     public static boolean isPerScreen(int channel) {
-        return channel == MULTITOUCH || channel == TABLET;
+        return channel == MULTITOUCH || channel == TABLET || channel == KEYBOARD;
     }
 
     /**
@@ -191,9 +202,9 @@ public final class NativeDisplay {
 
     /**
      * The socket path for [channel] on [screenId] of [vmId]: {@code dvmin_<uuid>_<sc>_<ch>.sock},
-     * with the screen tag left out entirely for the VM-wide channels -- so passing the empty
-     * screen id for them is exact rather than a placeholder, and no screen a console could name
-     * reaches the keyboard's or the relative pointer's inode.
+     * with the screen tag left out entirely for the VM-wide channel -- so passing the empty
+     * screen id for the relative pointer is exact rather than a placeholder, and no screen a
+     * console could name reaches its inode.
      *
      * <p>The daemon binds these and crosvm's {@code --input ...[path=]} connects to them, and the
      * two sides agree because they call this one function rather than each composing the name and
@@ -269,10 +280,40 @@ public final class NativeDisplay {
      * -- an index that counts emission order and therefore moves when another screen's input is
      * switched off, which is the one thing a mapping key must never do. crosvm takes the field
      * now, so the tablet is pinnable on the same terms as the touchscreen.</p>
+     *
+     * <p><b>Cross-repo seam.</b> This string is produced in two places. A natively exported screen's
+     * tablet is the {@code --input absolute-mouse} the daemon emits with this name. A VNC-exported
+     * screen's tablet is built by crosvm itself, behind that screen's VNC server, and crosvm names
+     * it by reproducing this format -- there is no command-line key carrying it, so the format is
+     * the contract. Changing the format here means changing crosvm's VNC device setup in the same
+     * breath; changing only one silently unpins every guest-side mapping on the other. Which
+     * screens get which is {@code CrosvmBackendInstance.nativeInputScreens}. The same seam applies
+     * to {@link #keyboardDeviceName}.</p>
      */
     @NonNull
     public static String tabletDeviceName(@NonNull String screenId) {
         return fmt("DroidVM Tablet (%s)", screenId);
+    }
+
+    /**
+     * The evdev name [screenId]'s keyboard carries.
+     *
+     * <p>A keyboard is not an absolute device and the guest binds no output to it, so unlike its
+     * two siblings this name is not what a mapping keys on. It is still derived per screen, for
+     * two reasons. The guest lists these side by side and a user looking at several identical
+     * "DroidVM Keyboard" entries cannot tell which screen's switch turns which one off; and the
+     * name is the only thing distinguishing them, since a keyboard advertises nothing else that
+     * differs.</p>
+     *
+     * <p><b>Cross-repo seam</b>, on the same terms as {@link #tabletDeviceName} and in both
+     * directions: the daemon emits this string in {@code --input keyboard[...,name=]} for a
+     * natively exported screen, and crosvm builds a VNC-exported screen's keyboard itself and
+     * names it by reproducing this format. Two producers, one format, and no command-line key
+     * carrying it between them.</p>
+     */
+    @NonNull
+    public static String keyboardDeviceName(@NonNull String screenId) {
+        return fmt("DroidVM Keyboard (%s)", screenId);
     }
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */

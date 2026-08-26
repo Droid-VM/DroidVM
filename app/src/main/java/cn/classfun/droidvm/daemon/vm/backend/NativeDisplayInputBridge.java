@@ -28,13 +28,20 @@ import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
  * the UI arrives via {@link #writeNativeInput(String, int, byte[])} - called either on the daemon's
  * native-display broker binder thread (touch hot path) or from the vm_input IPC handler - and is
  * written straight to the matching crosvm peer. {@link CrosvmBackendInstance} drives the lifecycle:
- * {@link #startListening(String, List)} from start() and {@link #release()} from cleanup().
+ * {@link #startListening(String, List, List)} from start() and {@link #release()} from cleanup().
  *
- * <p>The socket set is not one per channel: the keyboard and the relative pointer are VM-wide,
- * while multi-touch and the absolute pointer exist once per screen that has them, so a slot is a
+ * <p>The socket set is not one per channel: the relative pointer is VM-wide, while multi-touch,
+ * the absolute pointer and the keyboard exist once per screen that has them, so a slot is a
  * (screen, channel) pair and the screens that get one are decided by the config. Everything here
  * is therefore keyed rather than indexed -- a flat channel-indexed array cannot say which screen a
- * write is for, and silently picking one would put touches on the wrong output.</p>
+ * write is for, and silently picking one would put touches, or typing, on the wrong output.</p>
+ *
+ * <p>The three per-screen channels do not cover the same screens, which is why they arrive as two
+ * lists rather than one. A VNC-exported screen's absolute pointer and keyboard are not ours:
+ * crosvm builds that screen's pair behind its own VNC server and feeds them from RFB pointer and
+ * key events, so there is no {@code --input} for either and a socket bound here would be an inode
+ * crosvm never connects to. Its touchscreen is still ours on the same terms as a native screen's,
+ * because multi-touch has no RFB event to arrive as.</p>
  */
 final class NativeDisplayInputBridge {
     private static final String TAG = "NativeDisplayInput";
@@ -69,8 +76,12 @@ final class NativeDisplayInputBridge {
 
     /**
      * Identity of one socket: the channel, plus the screen for the channels that have one per
-     * screen. VM-wide channels collapse onto the empty screen so the same key comes out whatever
-     * screen the console that sent the bytes happens to be showing.
+     * screen. The VM-wide channel collapses onto the empty screen so the same key comes out
+     * whatever screen the console that sent the bytes happens to be showing.
+     *
+     * <p>{@link NativeDisplay#isPerScreen} is the only place that split is decided, so a channel
+     * becoming per screen moves the socket name and this key together -- there is no second copy
+     * of the rule here to forget to update.</p>
      */
     @NonNull
     private static String slotKey(@NonNull String screenId, int channel) {
@@ -84,17 +95,22 @@ final class NativeDisplayInputBridge {
      * file from a crashed run is replaced rather than blocking us. Returns true iff every slot
      * ended up with a live listener.
      *
-     * <p>[absoluteScreens] is the screens that get their own multi-touch + absolute pointer -- the
-     * same list {@link CrosvmBackendInstance} emits {@code --input} devices for, so the sockets and
-     * the devices cannot diverge. A screen left out of it has no sockets and no devices; input
-     * aimed at it is refused rather than landing on some other screen's geometry.</p>
+     * <p>[touchScreens] are the screens that get a multi-touch device and [nativeScreens] the ones
+     * that get an absolute pointer and a keyboard -- the same two lists
+     * {@link CrosvmBackendInstance} emits {@code --input} devices from, so the sockets and the
+     * devices cannot diverge. They are not the same list: the second holds only the natively
+     * exported screens, because a VNC-exported screen's tablet and keyboard are crosvm's own. A
+     * screen left out of a list has no socket and no device on that channel; input aimed at it is
+     * refused rather than landing on some other screen's geometry, or on a screen whose user
+     * switched input off.</p>
      *
      * <p>Throws IllegalArgumentException if a path does not fit a unix socket address. That is the
      * one failure here that is not survivable and not diagnosable after the fact: bind(2) truncates
      * silently, so the daemon would report a live listener on an inode crosvm was never told about.
      * The caller turns it into a refused start; see {@link NativeDisplay#requireBindablePath}.</p>
      */
-    boolean startListening(@NonNull String vmId, @NonNull List<String> absoluteScreens) {
+    boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
+                           @NonNull List<String> nativeScreens) {
         if (!UnixHelper.isLoaded()) {
             Log.w(TAG, "UnixHelper not loaded; cannot pre-bind native-display input sockets");
             return false;
@@ -103,7 +119,7 @@ final class NativeDisplayInputBridge {
         var built = new LinkedHashMap<String, Slot>();
         boolean allListening = true;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
-            for (var screenId : screensFor(ch, absoluteScreens)) {
+            for (var screenId : screensFor(ch, touchScreens, nativeScreens)) {
                 // Before the syscall, not after: a path bind(2) cannot hold is truncated in
                 // silence and every check downstream then passes against the wrong inode.
                 var path = NativeDisplay.requireBindablePath(
@@ -126,10 +142,28 @@ final class NativeDisplayInputBridge {
         return allListening;
     }
 
-    /** The screens [channel] needs a socket for: every listed one, or just the VM itself. */
+    /**
+     * The screens [channel] needs a socket for: its own list for the three per-screen channels, or
+     * just the VM itself for the relative pointer, which has no output binding.
+     *
+     * <p>Switched on the channel rather than on {@link NativeDisplay#isPerScreen} alone, because
+     * "is this per screen" and "which screens" stopped having one answer when the VNC bindings
+     * took over their own tablets and keyboards. The tablet and the keyboard share a list: both
+     * are the screen's, both exist only where its input switch is on, and both are crosvm's on a
+     * VNC binding.</p>
+     */
     @NonNull
-    private static List<String> screensFor(int channel, @NonNull List<String> absoluteScreens) {
-        return NativeDisplay.isPerScreen(channel) ? absoluteScreens : List.of("");
+    private static List<String> screensFor(int channel, @NonNull List<String> touchScreens,
+                                           @NonNull List<String> nativeScreens) {
+        switch (channel) {
+            case NativeDisplay.MULTITOUCH:
+                return touchScreens;
+            case NativeDisplay.TABLET:
+            case NativeDisplay.KEYBOARD:
+                return nativeScreens;
+            default:
+                return List.of("");
+        }
     }
 
     /**
@@ -170,9 +204,10 @@ final class NativeDisplayInputBridge {
     /**
      * Writes pre-encoded evdev bytes (8-byte records) to the crosvm connection for [channel] on
      * [screenId]. Called from the daemon IPC thread or the broker binder thread on behalf of the
-     * UI. Returns false if the VM has no such device (an absolute channel on a screen whose input
-     * is switched off), no crosvm peer is connected yet, or the write fails -- the caller reports
-     * that as "not delivered" rather than pretending it landed somewhere.
+     * UI. Returns false if the VM has no such device (a per-screen channel -- touch, tablet or
+     * keyboard -- on a screen whose input is switched off, or on a VNC-exported screen whose
+     * tablet and keyboard are crosvm's), no crosvm peer is connected yet, or the write fails --
+     * the caller reports that as "not delivered" rather than pretending it landed somewhere.
      */
     boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         if (channel < 0 || channel >= NativeDisplay.CHANNEL_COUNT || data.length == 0) return false;

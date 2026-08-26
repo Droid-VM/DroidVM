@@ -92,6 +92,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
     // absolute pointer + the keyboard); the rest goes to the crosvm --input evdev devices via the
     // daemon (MOUSE = relative motion the guest renders a cursor for, TOUCH = raw multi-touch).
+    // What the RFB half lands on is this screen's own tablet and keyboard, built by crosvm behind
+    // this binding's VNC server -- so this console is an ordinary RFB client for those two, no
+    // different from TigerVNC on the same port, and the coordinate is read against this screen's
+    // geometry rather than some VM-wide pointer's. Both are absent when the screen's input switch
+    // is off (view-only); see setInputMode.
     // Seeded from the shared pref in onSetupActivity(); TOUCH only until that read.
     private InputMode inputMode = InputMode.TOUCH;
     private SharedPreferences prefs;
@@ -126,7 +131,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (operationLabel != null) operationLabel.setVisibility(GONE);
     };
 
-    // Unified MOUSE/TABLET gestures. TABLET lands on the RFB channel (the VNC server's fixed
+    // Unified MOUSE/TABLET gestures. TABLET lands on the RFB channel (this binding's own
     // absolute-tablet pointer); MOUSE lands on the crosvm relative-mouse device via vm_input.
     private final PointerGestureTranslator.Listener gestureListener =
         new PointerGestureTranslator.Listener() {
@@ -642,10 +647,15 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     private void setInputMode(InputMode mode) {
         if (inputMode == mode) return;
-        // Only TOUCH leaves RFB for this screen's own multi-touch device, so it is the only mode
-        // the screen's input switch can silence here; the tablet pointer and the keyboard go over
-        // RFB and keep working. Say why once instead of leaving the user tapping at nothing.
-        if (!screenInputEnabled && mode == InputMode.TOUCH)
+        // Both absolute modes are inert with the switch off, the same as on the native console.
+        // TOUCH because this screen's multi-touch device is not created; TABLET because the switch
+        // is what the daemon sends as view-only=true, and a view-only binding has no tablet and no
+        // keyboard behind it -- crosvm drops the RFB pointer and key events rather than injecting
+        // them. So RFB is no longer a way around this screen's switch, which it was while those
+        // devices belonged to the VM instead of to the binding. MOUSE is: the relative pointer has
+        // no output binding and is not a screen's to switch off. Say why once, here, rather than
+        // leaving the user tapping at nothing.
+        if (!screenInputEnabled && mode != InputMode.MOUSE)
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();

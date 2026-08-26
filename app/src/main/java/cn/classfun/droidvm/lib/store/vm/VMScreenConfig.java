@@ -142,10 +142,18 @@ public final class VMScreenConfig {
      * Whether this screen gets its own multi-touch and absolute-pointer devices.
      *
      * <p>Absolute coordinates only mean anything under one output's geometry, so those two
-     * devices are per screen; the keyboard and the relative pointer have no output binding at
+     * devices are per screen; the VM-wide keyboard and relative pointer have no output binding at
      * all and are unaffected by this switch. Turning it off is turning the two devices off: the
      * set of {@code --input} devices is fixed when crosvm starts, so this takes effect on the
      * VM's next start, not on the running one.</p>
+     *
+     * <p>Where the screen is exported over VNC the switch means one thing more, without meaning
+     * anything different: those two devices are half crosvm's now -- it builds that binding's
+     * tablet and its own keyboard itself -- so the daemon spells the same off/on as
+     * {@code view-only=true|false} on that screen's {@code --vnc-server}, and off makes crosvm
+     * build neither and drop RFB pointer and key events. Which is the answer the user was already
+     * asking for: a screen to watch and not touch, from the app's console and from a third-party
+     * client alike.</p>
      *
      * <p>Defaults to on, and to on for a config that predates the key -- the devices existed
      * before it did.</p>
@@ -426,6 +434,11 @@ public final class VMScreenConfig {
      * starts: the device has to exist, something has to be watching it, and the switch has to be
      * on. A screen nobody exports has no console to send absolute input from, so devices for it
      * would be devices nothing can ever write to.
+     *
+     * <p>Both devices, but not both from here: on a VNC-exported screen this is what the daemon
+     * turns into {@code view-only=false}, and crosvm builds the tablet. Which half is whose is
+     * {@code CrosvmBackendInstance.touchscreenScreens}/{@code socketTabletScreens}; this predicate
+     * is the same question for both and stays one.</p>
      */
     public boolean hasAbsoluteInput() {
         return isEnabled() && getExporter() != DisplayExporter.NONE && isInputEnabled();
