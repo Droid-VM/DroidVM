@@ -125,17 +125,22 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuGuestMaxGrants = view.findViewById(R.id.et_gpu_guest_max_grants);
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         chooseDisplayBlitProvider = view.findViewById(R.id.choose_display_blit_provider);
-        // A new VM comes up as it did before the screens split: the simplefb screen on, exported
-        // over VNC, which needs nothing from the host app to be viewable, and no virtio-gpu
-        // device at all until the user asks for one.
+        // A new VM comes up with the simplefb screen on and no virtio-gpu device at all until the
+        // user asks for one. This is where a new screen's exporter default lives -- the stored
+        // config's fallback is a separate question and stays at NONE, see
+        // VMScreenConfig.getExporter -- and it is NATIVE rather than the VNC it used to be: the
+        // viewer for that one is this app, already installed, so it is the only exporter whose
+        // first boot can be looked at without setting something up first. The gpu-0 row's default
+        // is inert while its screen is off (save() writes NONE for a screen that is off) and is
+        // there for the moment the user turns the device on.
         screenGpu0 = new ScreenBindingRow(VMScreenConfig.ID_GPU0,
             view.findViewById(R.id.screen_gpu0_block),
             view.findViewById(R.id.sw_screen_gpu0_enabled),
-            false, DisplayExporter.NONE);
+            false, DisplayExporter.NATIVE);
         screenFb = new ScreenBindingRow(VMScreenConfig.ID_SIMPLEFB,
             view.findViewById(R.id.screen_fb_block),
             view.findViewById(R.id.sw_screen_fb_enabled),
-            true, DisplayExporter.VNC);
+            true, DisplayExporter.NATIVE);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         gpuCgroupOptions = view.findViewById(R.id.gpu_cgroup_options);
         etGpuCgroupPath = view.findViewById(R.id.et_gpu_cgroup_path);

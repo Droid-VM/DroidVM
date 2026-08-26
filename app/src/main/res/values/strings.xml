@@ -299,7 +299,7 @@
     <string name="create_vm_display_dpi_h">DPI Horizontal</string>
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
     <string name="create_vm_screen_exporter">Exporter</string>
-    <string name="create_vm_screen_exporter_none">None</string>
+    <string name="create_vm_screen_exporter_none">Sink (discard)</string>
     <string name="create_vm_screen_exporter_native">Native display</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
     <string name="create_vm_screen_transport">Transport pipeline</string>
@@ -1090,6 +1090,12 @@
     <string name="logs_share">Share</string>
     <string name="logs_share_title">Share logs</string>
     <string name="logs_share_failed">Failed to share logs: %1$s</string>
+    <string name="logs_filter">Filter</string>
+    <string name="logs_filter_title">Filter the log</string>
+    <string name="logs_filter_message">Only lines containing this text are shown. Leave it empty to show everything.</string>
+    <string name="logs_filter_hint">Text to match</string>
+    <string name="logs_filter_show_all">Show all</string>
+    <string name="logs_title_filtered">%1$s - %2$s (filter: %3$s)</string>
     <string name="logs_not_found_title">Daemon log unavailable</string>
     <string name="logs_not_found_message">No daemon log file found, is daemon running?</string>
 
@@ -1258,7 +1264,9 @@
     <string name="log_helper_huge_page_fault_message">Virtual machine %s ran into insufficient huge page memory.\nTry changing the memory size, or use the pre-allocation module.\nOpen the browser for more information.</string>
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-The-virtual-machine%27s-system-does-not-support-SWIOTLB-Restrict-DMA-Pool%2e</string>
     <string name="log_helper_no_restrict_pool_title">Missing virtual machine kernel functionality</string>
-    <string name="log_helper_no_restrict_pool_message">The kernel of virtual machine %s does not support Restricted DMA Pool.\nPlease replace the kernel or use the built-in DroidVM kernel.\nOpen the browser for more information.</string>
+    <string name="log_helper_no_restrict_pool_devices">The following devices of virtual machine %1$s accessed the protected memory region:</string>
+    <string name="log_helper_no_restrict_pool_message">The guest kernel may not support Restricted DMA Pool (CONFIG_DMA_RESTRICTED_POOL). Replace the kernel, or use the built-in DroidVM kernel.\nOr the guest driver for those devices may not be ported yet. Install the ported guest drivers:\nWindows: https://github.com/Droid-VM/gunyah-guest-drivers-windows\nLinux: https://github.com/Droid-VM/droidvm-guest-additions\nOpen the browser for more information.</string>
+    <string name="log_helper_open_log">Open log</string>
     <string name="log_helper_unsupported_gunyah_title">Unsupported Gunyah version</string>
     <string name="log_helper_unsupported_gunyah_message">The Gunyah version on your device is too old (for example, Snapdragon 8 Gen 2). Try updating the system or switching to a newer device.</string>
     <string name="log_helper_unsupported_sandbox_title">Sandbox is not supported</string>
@@ -1348,18 +1356,6 @@
     <string name="vm_hugepage_short_start_anyway">Start anyway</string>
 
     <string name="create_vm_category_peripheral">Peripherals</string>
-    <string name="edit_vm_peripheral_empty">No peripherals</string>
-    <string name="edit_vm_peripheral_add">Add peripheral</string>
-    <string name="edit_vm_peripheral_add_title">Peripheral type</string>
-    <string name="edit_vm_peripheral_type">Peripheral type</string>
-    <string name="edit_vm_peripheral_delete">Remove peripheral</string>
-    <string name="edit_vm_peripheral_host_device">Host device</string>
-    <string name="edit_vm_peripheral_host_default">Follow system</string>
-    <string name="edit_vm_peripheral_host_missing">Not connected right now; the VM will follow the system routing.</string>
-    <string name="edit_vm_peripheral_host_missing_item">%1$s (not connected)</string>
-    <string name="edit_vm_peripheral_pick_output">Play through</string>
-    <string name="edit_vm_peripheral_pick_input">Record from</string>
-    <string name="edit_vm_peripheral_duplicate_host">Two peripherals of the same type point at one host device.</string>
     <string name="audio_device_builtin_speaker">Speaker</string>
     <string name="audio_device_builtin_earpiece">Earpiece</string>
     <string name="audio_device_builtin_mic">Built-in microphone</string>
@@ -1370,14 +1366,12 @@
     <string name="audio_device_usb">USB audio</string>
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">Line out</string>
+
     <string name="record_audio_permission_title">Allow microphone access?</string>
     <string name="record_audio_permission_message">This VM is being given a microphone, which records from the phone\'s mic while the VM runs. Allow microphone access so the guest can hear it.</string>
     <string name="record_audio_permission_allow">Continue</string>
     <string name="record_audio_permission_skip">Not now</string>
 
-    <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
-    <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
-    <string name="edit_vm_peripheral_unavailable">No host backend for this device yet; it will be skipped when the VM starts.</string>
     <string name="edit_vm_sound_endpoint_add">Add device</string>
     <string name="edit_vm_sound_endpoint_remove">Remove endpoint</string>
     <string name="edit_vm_sound_purpose_usage">Purpose</string>
@@ -1417,8 +1411,6 @@
     <string name="edit_vm_sound_underrun_repeat">Repeat</string>
     <string name="edit_vm_sound_underrun_wsola">WSOLA</string>
     <string name="edit_vm_sound_underrun_lpc">LPC</string>
-    <string name="edit_vm_peripheral_host_output">Output</string>
-    <string name="edit_vm_peripheral_host_input">Input</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>

@@ -297,7 +297,7 @@
     <string name="create_vm_display_dpi_h">水平DPI</string>
     <string name="create_vm_display_dpi_v">垂直DPI</string>
     <string name="create_vm_screen_exporter">导出端</string>
-    <string name="create_vm_screen_exporter_none">无</string>
+    <string name="create_vm_screen_exporter_none">Sink（丢弃）</string>
     <string name="create_vm_screen_exporter_native">原生显示</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
     <string name="create_vm_screen_transport">传输管线</string>
@@ -1053,6 +1053,12 @@
     <string name="logs_share">分享</string>
     <string name="logs_share_title">分享日志</string>
     <string name="logs_share_failed">分享日志失败：%1$s</string>
+    <string name="logs_filter">过滤</string>
+    <string name="logs_filter_title">过滤日志</string>
+    <string name="logs_filter_message">只显示包含这段文字的行。留空则显示全部。</string>
+    <string name="logs_filter_hint">要匹配的文字</string>
+    <string name="logs_filter_show_all">显示全部</string>
+    <string name="logs_title_filtered">%1$s - %2$s（过滤：%3$s）</string>
     <string name="logs_not_found_title">守护进程日志不可用</string>
     <string name="logs_not_found_message">找不到守护进程的日志文件，守护进程是否正在运行？</string>
 
@@ -1129,7 +1135,9 @@
     <string name="log_helper_huge_page_fault_message">虚拟机 %1$s 遇到了大页内存不足的情况。\n请尝试修改内存大小，或者使用预分配模块。\n打开浏览器查看更多信息。</string>
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9A%E8%99%9A%E6%8B%9F%E6%9C%BA%E7%9A%84%E7%B3%BB%E7%BB%9F%E4%B8%8D%E6%94%AF%E6%8C%81SWIOTLB-Restrict-DMA-Pool</string>
     <string name="log_helper_no_restrict_pool_title">虚拟机内核功能缺失</string>
-    <string name="log_helper_no_restrict_pool_message">虚拟机 %1$s 的内核不支持 Restricted DMA Pool。\n请更换内核或使用DroidVM内置内核。\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_no_restrict_pool_devices">%1$s 的以下设备访问了保护区域内存：</string>
+    <string name="log_helper_no_restrict_pool_message">可能是虚拟机的内核不支持 Restricted DMA Pool（CONFIG_DMA_RESTRICTED_POOL），请更换内核或使用 DroidVM 内置内核。\n也可能是这些设备的客户机驱动程序尚未移植，请安装已移植的客户机驱动程序：\nWindows：https://github.com/Droid-VM/gunyah-guest-drivers-windows\nLinux：https://github.com/Droid-VM/droidvm-guest-additions\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_open_log">打开日志</string>
     <string name="log_helper_unsupported_gunyah_title">不支持的Gunyah版本</string>
     <string name="log_helper_unsupported_gunyah_message">您的设备上的Gunyah版本过旧（如骁龙8 Gen 2），请尝试更新系统或更换新的设备。</string>
     <string name="log_helper_unsupported_sandbox_title">沙箱模式不支持</string>

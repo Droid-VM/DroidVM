@@ -123,6 +123,20 @@ public final class VMScreenConfig {
         item.set("enabled", enabled);
     }
 
+    /**
+     * Who watches this screen. Absent reads as NONE, and stays reading as NONE even though a new
+     * screen now comes up defaulted to NATIVE.
+     *
+     * <p>Those are two different questions and only one of them is here. What a new VM gets is the
+     * picker's default, set where the row is built; this is what a file that does not say means.
+     * Nothing this app writes leaves the key out -- {@code ScreenBindingRow.save} calls
+     * {@link #setExporter} unconditionally on the entry {@link #of} has just created, and
+     * {@link #migrateBindings} writes it for every config from before the screens split -- so
+     * moving the fallback would not change what any VM comes up with. It would only change how a
+     * hand-edited file, or a token this build cannot parse, is read, and it would change it into
+     * a display service and a pair of input devices bound to a screen whose file never asked for
+     * either, because everything downstream tests {@code != NONE}.</p>
+     */
     @NonNull
     public DisplayExporter getExporter() {
         return Enums.optEnum(item, "exporter", DisplayExporter.NONE);
