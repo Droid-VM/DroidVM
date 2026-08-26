@@ -1265,7 +1265,7 @@
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-The-virtual-machine%27s-system-does-not-support-SWIOTLB-Restrict-DMA-Pool%2e</string>
     <string name="log_helper_no_restrict_pool_title">Missing virtual machine kernel functionality</string>
     <string name="log_helper_no_restrict_pool_devices">The following devices of virtual machine %1$s accessed the protected memory region:</string>
-    <string name="log_helper_no_restrict_pool_message">The guest kernel may not support Restricted DMA Pool (CONFIG_DMA_RESTRICTED_POOL). Replace the kernel, or use the built-in DroidVM kernel.\nOr the guest driver for those devices may not be ported yet. Install the ported guest drivers:\nWindows: https://github.com/Droid-VM/gunyah-guest-drivers-windows\nLinux: https://github.com/Droid-VM/droidvm-guest-additions\nOpen the browser for more information.</string>
+    <string name="log_helper_no_restrict_pool_message"><![CDATA[The guest kernel may not support the Restricted DMA Pool — replace the kernel or use the built-in DroidVM kernel.<br><br>Or the guest drivers for those devices are not ported yet — install the <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows drivers</a> or <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux drivers</a>.]]></string>
     <string name="log_helper_open_log">Open log</string>
     <string name="log_helper_unsupported_gunyah_title">Unsupported Gunyah version</string>
     <string name="log_helper_unsupported_gunyah_message">The Gunyah version on your device is too old (for example, Snapdragon 8 Gen 2). Try updating the system or switching to a newer device.</string>

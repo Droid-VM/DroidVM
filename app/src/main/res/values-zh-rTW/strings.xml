@@ -1228,7 +1228,7 @@
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9A%E8%99%9A%E6%8B%9F%E6%9C%BA%E7%9A%84%E7%B3%BB%E7%BB%9F%E4%B8%8D%E6%94%AF%E6%8C%81SWIOTLB-Restrict-DMA-Pool</string>
     <string name="log_helper_no_restrict_pool_title">虛擬機器核心功能缺失</string>
     <string name="log_helper_no_restrict_pool_devices">%1$s 的以下裝置存取了保護區域記憶體：</string>
-    <string name="log_helper_no_restrict_pool_message">可能是虛擬機器的核心不支援 Restricted DMA Pool（CONFIG_DMA_RESTRICTED_POOL），請更換核心或使用 DroidVM 內建核心。\n也可能是這些裝置的客戶機驅動程式尚未移植，請安裝已移植的客戶機驅動程式：\nWindows：https://github.com/Droid-VM/gunyah-guest-drivers-windows\nLinux：https://github.com/Droid-VM/droidvm-guest-additions\n開啟瀏覽器查看更多資訊。</string>
+    <string name="log_helper_no_restrict_pool_message"><![CDATA[可能是虛擬機器的核心不支援 Restricted DMA Pool，請更換核心或使用 DroidVM 內建核心。<br><br>也可能是這些裝置的驅動尚未移植，請安裝以下 <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows 驅動</a> 或 <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux 驅動</a>。]]></string>
     <string name="log_helper_open_log">開啟 Log</string>
     <string name="log_helper_unsupported_gunyah_title">不支援的 Gunyah 版本</string>
     <string name="log_helper_unsupported_gunyah_message">您的裝置上的 Gunyah 版本過舊（如驍龍 8 Gen 2），請嘗試更新系統或更換較新的裝置。</string>

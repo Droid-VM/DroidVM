@@ -82,14 +82,19 @@ public final class OsKernelWithoutRestrictPoolHandler extends LogHelperHandler {
 
     @Override
     public void show(@NonNull Context ctx, @NonNull UUID vmId, @NonNull String vmName) {
-        var sb = new StringBuilder();
+        var sb = new android.text.SpannableStringBuilder();
         sb.append(ctx.getString(R.string.log_helper_no_restrict_pool_devices, vmName));
         for (var device : namesOf(vmId)) sb.append('\n').append(BULLET).append(device);
-        sb.append("\n\n").append(ctx.getString(R.string.log_helper_no_restrict_pool_message));
+        sb.append("\n\n");
+        // The body carries its links as anchors with human labels, so it is HTML in the resource
+        // and spans here; a raw URL would be linkified downstream, but an <a> tag would not.
+        sb.append(android.text.Html.fromHtml(
+            ctx.getString(R.string.log_helper_no_restrict_pool_message),
+            android.text.Html.FROM_HTML_MODE_LEGACY));
         showDialog(ctx,
             R.string.log_helper_no_restrict_pool_url,
             R.string.log_helper_no_restrict_pool_title,
-            sb.toString(),
+            sb,
             R.string.log_helper_open_log,
             (d, w) -> openLog(ctx, vmId, vmName)
         );

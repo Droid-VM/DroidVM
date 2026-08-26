@@ -113,6 +113,17 @@ public abstract class LogHelperHandler {
         if (!url.isEmpty()) mab.setNeutralButton(R.string.log_helper_open_url, cb);
         var dialog = mab.show();
         TextView body = dialog.findViewById(android.R.id.message);
-        if (body != null) Linkify.addLinks(body, Linkify.WEB_URLS);
+        if (body == null) return;
+        // A message built from HTML anchors already carries its URLSpans, and Linkify would strip
+        // them while hunting for raw URLs -- so anchors get the movement method only, and plain
+        // text keeps the old raw-URL pass.
+        boolean hasAnchors = message instanceof android.text.Spanned
+            && ((android.text.Spanned) message)
+                .getSpans(0, message.length(), android.text.style.URLSpan.class).length > 0;
+        if (hasAnchors) {
+            body.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+        } else {
+            Linkify.addLinks(body, Linkify.WEB_URLS);
+        }
     }
 }

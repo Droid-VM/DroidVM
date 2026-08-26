@@ -1136,7 +1136,7 @@
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/%E9%97%AE%E9%A2%98%EF%BC%9A%E8%99%9A%E6%8B%9F%E6%9C%BA%E7%9A%84%E7%B3%BB%E7%BB%9F%E4%B8%8D%E6%94%AF%E6%8C%81SWIOTLB-Restrict-DMA-Pool</string>
     <string name="log_helper_no_restrict_pool_title">虚拟机内核功能缺失</string>
     <string name="log_helper_no_restrict_pool_devices">%1$s 的以下设备访问了保护区域内存：</string>
-    <string name="log_helper_no_restrict_pool_message">可能是虚拟机的内核不支持 Restricted DMA Pool（CONFIG_DMA_RESTRICTED_POOL），请更换内核或使用 DroidVM 内置内核。\n也可能是这些设备的客户机驱动程序尚未移植，请安装已移植的客户机驱动程序：\nWindows：https://github.com/Droid-VM/gunyah-guest-drivers-windows\nLinux：https://github.com/Droid-VM/droidvm-guest-additions\n打开浏览器查看更多信息。</string>
+    <string name="log_helper_no_restrict_pool_message"><![CDATA[可能是虚拟机的内核不支持 Restricted DMA Pool，请更换内核或使用 DroidVM 内置内核。<br><br>也可能是这些设备的驱动尚未移植，请安装以下 <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows 驱动</a> 或 <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux 驱动</a>。]]></string>
     <string name="log_helper_open_log">打开日志</string>
     <string name="log_helper_unsupported_gunyah_title">不支持的Gunyah版本</string>
     <string name="log_helper_unsupported_gunyah_message">您的设备上的Gunyah版本过旧（如骁龙8 Gen 2），请尝试更新系统或更换新的设备。</string>
