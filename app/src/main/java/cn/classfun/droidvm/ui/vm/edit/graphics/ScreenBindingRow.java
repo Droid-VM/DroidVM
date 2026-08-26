@@ -158,10 +158,12 @@ final class ScreenBindingRow {
      * with a note, so the ladder reads whole; rungs that cannot exist on this pair are absent,
      * because offering a choice nobody will ever be able to make is worse than not naming it.</p>
      *
-     * @param want the value to restore if this edge has it -- the stored one on load, or null to
-     *             keep whatever is selected. Anything the edge does not have falls back to the
-     *             default <em>on screen only</em>: the stored config is not rewritten, so a screen
-     *             whose exporter was flipped to look and flipped back keeps its answer.
+     * @param want the stored ceiling to restore on load, if this edge still offers it; or null on
+     *             a fresh row or an exporter switch, which re-evaluates to the edge's default
+     *             instead of carrying the old pick across. Switching exporter is switching which
+     *             ladder this is, and each ladder's fastest rung is a different one, so the pick
+     *             follows the new edge rather than lingering on a value that was only best for the
+     *             old one. A restore that the edge no longer offers also falls back to the default.
      */
     private void applyTransportOptions(@NonNull DisplayExporter exporter,
                                        @Nullable DisplayTransportCap want) {
@@ -169,15 +171,19 @@ final class ScreenBindingRow {
         // was rather than emptying it, since the picker refuses an empty item list outright.
         var options = DisplayTransportCap.optionsFor(screenId, exporter);
         if (options.length == 0) return;
-        var keep = want != null ? want : currentTransport();
         chooseTransport.setItems(options);
         transportMenuBuilt = true;
         chooseTransport.setDisabledItems(
             chooseTransport.getContext().getString(
                 R.string.create_vm_screen_transport_not_implemented),
             DisplayTransportCap.unimplementedFor(screenId, exporter));
-        var pick = keep != null && DisplayTransportCap.isOfferedFor(screenId, exporter, keep)
-            ? keep : DisplayTransportCap.defaultFor(screenId, exporter);
+        // want != null is a load: restore the stored ceiling if this edge still offers it. want ==
+        // null is a fresh row or an exporter switch, and then the ceiling is re-evaluated to the
+        // new edge's default rather than carried over -- the fastest rung differs per exporter
+        // (GPU_HW on VNC, plain GPU on native), so carrying the old pick left a screen switched to
+        // VNC sitting at plain GPU copy when the hardware-encode rung is what it should default to.
+        var pick = want != null && DisplayTransportCap.isOfferedFor(screenId, exporter, want)
+            ? want : DisplayTransportCap.defaultFor(screenId, exporter);
         chooseTransport.setSelectedItem(pick);
     }
 
