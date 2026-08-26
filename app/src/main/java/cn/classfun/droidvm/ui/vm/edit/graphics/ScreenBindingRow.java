@@ -3,22 +3,33 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.graphics;
 
+import static android.content.DialogInterface.BUTTON_POSITIVE;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static java.lang.Integer.parseInt;
-import static cn.classfun.droidvm.lib.ui.SimpleTextWatcher.simpleAfterTextWatcher;
 import static cn.classfun.droidvm.lib.utils.StringUtils.generateRandomPassword;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
+import android.content.Context;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.AutoCompleteTextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
@@ -43,6 +54,13 @@ import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
  */
 final class ScreenBindingRow {
     private static final int VNC_PASSWORD_LENGTH = 8;
+    /** The size bounds the editor saves within; the menu and its dialog both honour them. */
+    private static final int MIN_EDGE = ScreenResolutionOptions.MIN_EDGE;
+    private static final int MAX_EDGE = 8192;
+    /** A mode's rate is bounded by what a panel could show; the poll rate by what crosvm takes. */
+    private static final int MAX_REFRESH_RATE = 400;
+    /** The rates offered before "custom". Both screens take all three. */
+    private static final int[] RATE_OPTIONS = {30, 60, 120};
 
     /** Screen id, as stored and as handed to crosvm's {@code screen=}. */
     final String screenId;
@@ -53,13 +71,11 @@ final class ScreenBindingRow {
 
     private final SwitchRowWidget swEnabled;
     private final View options;
-    private final TextInputEditText etWidth;
-    private final TextInputEditText etHeight;
+    private final TextInputLayout tilResolution;
+    private final AutoCompleteTextView ddResolution;
+    private final TextInputLayout tilRate;
+    private final AutoCompleteTextView ddRate;
     private final TextRowWidget rowWidthCpuFallback;
-    private final View tilRefreshRate;
-    private final TextInputEditText etRefreshRate;
-    private final View tilPollHz;
-    private final TextInputEditText etPollHz;
     private final View dpiOptions;
     private final TextInputEditText etDpiH;
     private final TextInputEditText etDpiV;
@@ -72,6 +88,21 @@ final class ScreenBindingRow {
     private final SwitchRowWidget swPasswordAuth;
     private final View passwordOptions;
     private final TextInputEditText etPassword;
+
+    /**
+     * The geometry as picked, rather than as typed.
+     *
+     * <p>It lives here because the two fields that show it are menus now: what a menu carries is a
+     * label, and the label is written from these numbers rather than parsed back out of. What
+     * reaches the config is unchanged -- the same three numbers under the same keys -- so a config
+     * written before this row was a menu still loads into it.</p>
+     */
+    private int width = (int) VMScreenConfig.DEFAULT_WIDTH;
+    private int height = (int) VMScreenConfig.DEFAULT_HEIGHT;
+    private int rate;
+    /** The sizes this device offers, settled once in {@link #init}. */
+    @NonNull
+    private List<ScreenResolutionOptions.Option> sizes = List.of();
 
     /**
      * @param block  the root of this screen's {@code partial_vm_screen_binding} include, and also
@@ -89,13 +120,11 @@ final class ScreenBindingRow {
         this.defaultExporter = defaultExporter;
         swEnabled = switch_;
         options = block;
-        etWidth = block.findViewById(R.id.et_screen_width);
-        etHeight = block.findViewById(R.id.et_screen_height);
+        tilResolution = block.findViewById(R.id.til_screen_resolution);
+        ddResolution = block.findViewById(R.id.dd_screen_resolution);
+        tilRate = block.findViewById(R.id.til_screen_rate);
+        ddRate = block.findViewById(R.id.dd_screen_rate);
         rowWidthCpuFallback = block.findViewById(R.id.row_screen_width_cpu_fallback);
-        tilRefreshRate = block.findViewById(R.id.til_screen_refresh_rate);
-        etRefreshRate = block.findViewById(R.id.et_screen_refresh_rate);
-        tilPollHz = block.findViewById(R.id.til_screen_poll_hz);
-        etPollHz = block.findViewById(R.id.et_screen_poll_hz);
         dpiOptions = block.findViewById(R.id.screen_dpi_options);
         etDpiH = block.findViewById(R.id.et_screen_dpi_h);
         etDpiV = block.findViewById(R.id.et_screen_dpi_v);
@@ -113,10 +142,12 @@ final class ScreenBindingRow {
         btnClear.setOnClickListener(v -> etPassword.setText(""));
         btnGenerate.setOnClickListener(v ->
             etPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
-        // Which of the rate fields this screen has is a property of the device, not of anything
-        // the user can change, so it is settled once here rather than in the visibility pass.
-        tilRefreshRate.setVisibility(gpuScreen ? VISIBLE : GONE);
-        tilPollHz.setVisibility(gpuScreen ? GONE : VISIBLE);
+        // Which rate this screen has -- and whether it has a DPI at all -- is a property of the
+        // device, not of anything the user can change, so both are settled once here rather than
+        // in the visibility pass. One rate row either way; only its hint and its bounds differ.
+        rate = (int) (gpuScreen
+            ? VMScreenConfig.DEFAULT_REFRESH_RATE : VMScreenConfig.DEFAULT_POLL_HZ);
+        tilRate.setHint(block.getContext().getString(rateHint()));
         dpiOptions.setVisibility(gpuScreen ? VISIBLE : GONE);
     }
 
@@ -136,10 +167,12 @@ final class ScreenBindingRow {
         // and a config written before the key both come up with them on.
         swInputEnabled.setChecked(true);
         swEnabled.setOnCheckedChangeListener(onChanged);
-        // The width decides whether the GPU copy can take this screen's frames at all, so it is
-        // one of the fields another row depends on -- the only geometry field that is. Through the
-        // tab's whole pass like every other change, rather than poking the one row it moves.
-        etWidth.addTextChangedListener(simpleAfterTextWatcher(s -> onChanged.run()));
+        // The width decides whether the GPU copy can take this screen's frames at all, so picking
+        // a size is one of the changes another row depends on -- the only geometry one that is.
+        // Through the tab's whole pass like every other change, rather than poking the one row it
+        // moves.
+        bindSizeMenu(onChanged);
+        bindRateMenu(onChanged);
         chooseExporter.setOnValueChangedListener(() -> {
             // The ladder belongs to the edge, so changing who is on the far end of it changes
             // which rungs exist -- not just which are reachable.
@@ -147,6 +180,171 @@ final class ScreenBindingRow {
             onChanged.run();
         });
         swPasswordAuth.setOnCheckedChangeListener(onChanged);
+    }
+
+    /**
+     * The size menu: every size this device has a reason to offer, smallest first, then "custom".
+     *
+     * <p>Picking is the whole of the input path now, which is what turns the geometry check into a
+     * check on a stored value rather than on something half-typed: every entry above the last is
+     * in bounds by construction, and the last one validates before it hands anything back.</p>
+     */
+    private void bindSizeMenu(@NonNull Runnable onChanged) {
+        var ctx = ddResolution.getContext();
+        var panel = panelSize(ctx);
+        sizes = ScreenResolutionOptions.build(panel[0], panel[1]);
+        var labels = new ArrayList<String>(sizes.size() + 1);
+        for (var size : sizes) labels.add(sizeLabel(ctx, size.width, size.height));
+        labels.add(ctx.getString(R.string.create_vm_display_custom));
+        ddResolution.setAdapter(IconItemAdapter.create(ctx, labels, R.drawable.ic_monitor));
+        ddResolution.setOnItemClickListener((parent, view, pos, id) -> {
+            if (pos < sizes.size()) {
+                var size = sizes.get(pos);
+                width = size.width;
+                height = size.height;
+                tilResolution.setError(null);
+                onChanged.run();
+            } else {
+                askCustomSize(ctx, onChanged);
+            }
+            // The menu wrote the entry's own label into the field on its way out. Put the value
+            // back: after "custom" it would otherwise sit there reading "Custom..." while the
+            // dialog is still open, and after a pick the label is this row's to format.
+            applySizeText();
+        });
+        applySizeText();
+    }
+
+    /** The rate menu. Same shape as the size menu, and the same reason for it. */
+    private void bindRateMenu(@NonNull Runnable onChanged) {
+        var ctx = ddRate.getContext();
+        var labels = new ArrayList<String>(RATE_OPTIONS.length + 1);
+        for (var hz : RATE_OPTIONS) labels.add(rateLabel(ctx, hz));
+        labels.add(ctx.getString(R.string.create_vm_display_custom));
+        ddRate.setAdapter(IconItemAdapter.create(ctx, labels, R.drawable.ic_speedometer));
+        ddRate.setOnItemClickListener((parent, view, pos, id) -> {
+            if (pos < RATE_OPTIONS.length) {
+                rate = RATE_OPTIONS[pos];
+                tilRate.setError(null);
+                onChanged.run();
+            } else {
+                askCustomRate(ctx, onChanged);
+            }
+            applyRateText();
+        });
+        applyRateText();
+    }
+
+    /** How a size reads, whether the menu offers it, a dialog produced it or a config carried it. */
+    @NonNull
+    private static String sizeLabel(@NonNull Context ctx, int w, int h) {
+        return ctx.getString(R.string.create_vm_display_size_fmt, w, h);
+    }
+
+    @NonNull
+    private static String rateLabel(@NonNull Context ctx, int hz) {
+        return ctx.getString(R.string.create_vm_display_rate_fmt, hz);
+    }
+
+    private void applySizeText() {
+        ddResolution.setText(sizeLabel(ddResolution.getContext(), width, height), false);
+    }
+
+    private void applyRateText() {
+        ddRate.setText(rateLabel(ddRate.getContext(), rate), false);
+    }
+
+    /** The size menu's last entry: two numbers, checked against the bounds the editor saves in. */
+    private void askCustomSize(@NonNull Context ctx, @NonNull Runnable onChanged) {
+        var view = LayoutInflater.from(ctx).inflate(R.layout.dialog_screen_resolution, null);
+        TextInputEditText etW = view.findViewById(R.id.et_custom_width);
+        TextInputEditText etH = view.findViewById(R.id.et_custom_height);
+        etW.setText(String.valueOf(width));
+        etH.setText(String.valueOf(height));
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.create_vm_display_custom_size_title)
+            .setView(view)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+        // Wired after show() so a refused value can stay on screen with its error: the listener
+        // setPositiveButton takes dismisses the dialog whatever it decides.
+        dialog.getButton(BUTTON_POSITIVE).setOnClickListener(v -> {
+            var w = bounded(etW, MIN_EDGE, MAX_EDGE);
+            var h = bounded(etH, MIN_EDGE, MAX_EDGE);
+            if (w == 0 || h == 0) return;
+            width = w;
+            height = h;
+            tilResolution.setError(null);
+            applySizeText();
+            onChanged.run();
+            dialog.dismiss();
+        });
+    }
+
+    /** The rate menu's last entry, bounded by whichever rate this screen has. */
+    private void askCustomRate(@NonNull Context ctx, @NonNull Runnable onChanged) {
+        var view = LayoutInflater.from(ctx).inflate(R.layout.dialog_screen_rate, null);
+        TextInputLayout til = view.findViewById(R.id.til_custom_rate);
+        TextInputEditText etRate = view.findViewById(R.id.et_custom_rate);
+        til.setHint(ctx.getString(rateHint()));
+        etRate.setText(String.valueOf(rate));
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(rateHint())
+            .setView(view)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+        dialog.getButton(BUTTON_POSITIVE).setOnClickListener(v -> {
+            var hz = bounded(etRate, rateMin(), rateMax());
+            if (hz == 0) return;
+            rate = hz;
+            tilRate.setError(null);
+            applyRateText();
+            onChanged.run();
+            dialog.dismiss();
+        });
+    }
+
+    /**
+     * The number typed into a dialog field, or 0 with the reason shown on the field -- the same
+     * reading, bounds and message the tab applies to every other number on this screen, since the
+     * value is bound for the same config.
+     */
+    private static int bounded(@NonNull TextInputEditText field, int min, int max) {
+        field.setError(null);
+        try {
+            var value = parseInt(getEditText(field));
+            if (value < min || value > max) throw new IllegalArgumentException();
+            return value;
+        } catch (Exception ignored) {
+            field.setError(field.getContext().getString(R.string.create_vm_error_invalid_number));
+            return 0;
+        }
+    }
+
+    @StringRes
+    private int rateHint() {
+        return gpuScreen
+            ? R.string.create_vm_display_refresh_rate : R.string.create_vm_display_poll_hz;
+    }
+
+    private int rateMin() {
+        return gpuScreen ? 1 : (int) VMScreenConfig.MIN_POLL_HZ;
+    }
+
+    private int rateMax() {
+        return gpuScreen ? MAX_REFRESH_RATE : (int) VMScreenConfig.MAX_POLL_HZ;
+    }
+
+    /** The panel this app is running on, in whatever rotation it is held, or 0x0 if it cannot be
+     * asked -- which offers the fixed sizes alone rather than inventing a device. */
+    @NonNull
+    private static int[] panelSize(@NonNull Context ctx) {
+        var wm = ctx.getSystemService(WindowManager.class);
+        if (wm == null) return new int[]{0, 0};
+        var bounds = wm.getMaximumWindowMetrics().getBounds();
+        return new int[]{bounds.width(), bounds.height()};
     }
 
     /**
@@ -240,21 +438,32 @@ final class ScreenBindingRow {
         var transport = currentTransport();
         rowWidthCpuFallback.setVisibility(
             enabled && transport != null && DisplayTransportCap.cpuFallbackFromWidth(
-                screenId, exporter, transport, typedWidth()) ? VISIBLE : GONE);
+                screenId, exporter, transport, width) ? VISIBLE : GONE);
     }
 
     /**
-     * The width typed into this row, or 0 for a field that is empty or not a number -- a value no
-     * alignment rule can complain about, since a half-typed number is not yet a width to warn
-     * about and the geometry validator is what has something to say about it.
+     * Whether the geometry this row holds is one the VM can be saved with, said on the row that
+     * holds it.
+     *
+     * <p>Nothing the two menus produce can fail this: every size and rate they offer is in bounds,
+     * and their dialogs check before they return. What it catches is a config that arrived out of
+     * bounds -- hand-edited, or written where the limits were different -- and it reports on a row
+     * that is on screen, because a save refused for a reason the screen does not show is a VM the
+     * user cannot fix.</p>
      */
-    private long typedWidth() {
-        try {
-            var text = getEditText(etWidth);
-            return text.isEmpty() ? 0 : parseInt(text);
-        } catch (Exception ignored) {
-            return 0;
+    boolean validateGeometry() {
+        tilResolution.setError(null);
+        tilRate.setError(null);
+        var ctx = tilResolution.getContext();
+        if (width < MIN_EDGE || width > MAX_EDGE || height < MIN_EDGE || height > MAX_EDGE) {
+            tilResolution.setError(ctx.getString(R.string.create_vm_error_invalid_number));
+            return false;
         }
+        if (rate < rateMin() || rate > rateMax()) {
+            tilRate.setError(ctx.getString(R.string.create_vm_error_invalid_number));
+            return false;
+        }
+        return true;
     }
 
     void load(@NonNull DataItem config) {
@@ -270,15 +479,17 @@ final class ScreenBindingRow {
         // Absent in the stored config means on, so an existing VM keeps the devices it had
         // without its file being rewritten to say so.
         swInputEnabled.setChecked(screen.isInputEnabled());
-        etWidth.setText(String.valueOf(screen.getWidth()));
-        etHeight.setText(String.valueOf(screen.getHeight()));
+        width = (int) screen.getWidth();
+        height = (int) screen.getHeight();
+        applySizeText();
         if (gpuScreen) {
-            etRefreshRate.setText(String.valueOf(screen.getRefreshRate()));
+            rate = (int) screen.getRefreshRate();
             etDpiH.setText(String.valueOf(screen.getDpiH()));
             etDpiV.setText(String.valueOf(screen.getDpiV()));
         } else {
-            etPollHz.setText(String.valueOf(screen.getPollHz()));
+            rate = (int) screen.getPollHz();
         }
+        applyRateText();
         etHost.setText(screen.getVncHost());
         var port = screen.getVncPort();
         etPort.setText(port > 0 ? String.valueOf(port) : "");
@@ -302,14 +513,14 @@ final class ScreenBindingRow {
         // block below keeps its values: a size typed once and then switched off should still be
         // there when the switch comes back. Only the rows this screen actually has are written --
         // a poll rate on the GPU screen would be a number nothing reads.
-        screen.setWidth(parseInt(getEditText(etWidth)));
-        screen.setHeight(parseInt(getEditText(etHeight)));
+        screen.setWidth(width);
+        screen.setHeight(height);
         if (gpuScreen) {
-            screen.setRefreshRate(parseInt(getEditText(etRefreshRate)));
+            screen.setRefreshRate(rate);
             screen.setDpiH(parseInt(getEditText(etDpiH)));
             screen.setDpiV(parseInt(getEditText(etDpiV)));
         } else {
-            screen.setPollHz(parseInt(getEditText(etPollHz)));
+            screen.setPollHz(rate);
         }
         // The VNC block keeps its values even while hidden, so a screen switched to native and
         // back finds its port and password where it left them. Only the auth switch is written
@@ -341,22 +552,6 @@ final class ScreenBindingRow {
     @NonNull
     TextInputEditText portField() {
         return etPort;
-    }
-
-    @NonNull
-    TextInputEditText widthField() {
-        return etWidth;
-    }
-
-    @NonNull
-    TextInputEditText heightField() {
-        return etHeight;
-    }
-
-    /** The rate field this screen actually has: the mode's refresh rate, or the poll rate. */
-    @NonNull
-    TextInputEditText rateField() {
-        return gpuScreen ? etRefreshRate : etPollHz;
     }
 
     @NonNull

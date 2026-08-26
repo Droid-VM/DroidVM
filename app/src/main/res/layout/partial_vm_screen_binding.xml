@@ -8,9 +8,10 @@
      renderer section. Both sit in the parent block, because the renderer goes between them and an
      included layout has no slot to put another block in the middle of itself.
 
-     The two screens differ only in which rows of "display settings" apply: a mode has a refresh
-     rate and a DPI, a watched framebuffer has a poll rate, and neither has the other's. Both sets
-     are here and ScreenBindingRow shows one, so the wiring stays written once.
+     The two screens differ only in which rows of "display settings" apply: a mode has a rate the
+     guest is told about and a DPI, a watched framebuffer has a poll rate and no DPI. The rate is
+     one row either way, hinted per screen; the DPI row is here and ScreenBindingRow hides it on
+     the framebuffer, so the wiring stays written once.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -37,85 +38,50 @@
             android:baselineAligned="false"
             android:orientation="horizontal">
 
+            <!-- Size and rate are picked, not typed: every value either list offers is one the
+                 geometry validator accepts, and the two sizes that depend on the device are ones
+                 nobody could type without going to look them up. Anything else is still reachable
+                 through the last entry of either list, which opens a dialog that validates what it
+                 is given, so the only numbers that reach the config are checked ones. What is
+                 stored is unchanged: two sizes and a rate, as before. -->
             <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_screen_width"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:id="@+id/til_screen_resolution"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:hint="@string/create_vm_display_width">
+                android:layout_weight="2"
+                android:hint="@string/create_vm_display_resolution">
 
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_screen_width"
+                <AutoCompleteTextView
+                    android:id="@+id/dd_screen_resolution"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:text="1280"
-                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+                    android:focusable="false"
+                    android:inputType="none"
+                    tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
 
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- One field for both screens, hinted by ScreenBindingRow: the mode's refresh rate on
+                 virtio-gpu, the poll rate on the framebuffer. They are different numbers about
+                 different things, but a screen has exactly one of them, so there is one field. -->
             <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_screen_height"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_marginEnd="8dp"
-                android:layout_weight="1"
-                android:hint="@string/create_vm_display_height">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_screen_height"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:text="720"
-                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- The mode's refresh rate: virtio-gpu only, because it is a field of a mode the
-                 guest is told about. Exactly one of this and the poll rate beside it is shown. -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_screen_refresh_rate"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:id="@+id/til_screen_rate"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
                 android:layout_weight="1"
                 android:hint="@string/create_vm_display_refresh_rate">
 
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_screen_refresh_rate"
+                <AutoCompleteTextView
+                    android:id="@+id/dd_screen_rate"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:text="120"
-                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
-
-            </com.google.android.material.textfield.TextInputLayout>
-
-            <!-- How often the host looks at the framebuffer: simplefb only, because nothing in
-                 that device announces a frame, so this is the only thing that decides when a
-                 picture exists. -->
-            <com.google.android.material.textfield.TextInputLayout
-                android:id="@+id/til_screen_poll_hz"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:layout_weight="1"
-                android:hint="@string/create_vm_display_poll_hz">
-
-                <com.google.android.material.textfield.TextInputEditText
-                    android:id="@+id/et_screen_poll_hz"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:inputType="number"
-                    android:text="30"
-                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+                    android:focusable="false"
+                    android:inputType="none"
+                    tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
 
             </com.google.android.material.textfield.TextInputLayout>
 

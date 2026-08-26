@@ -497,24 +497,20 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     }
 
     /**
-     * Each screen's own geometry, checked on each screen's own fields.
+     * Each screen's own geometry, checked on each screen's own rows.
      *
-     * <p>The bounds differ where the quantity does: a virtio-gpu mode's refresh rate is what the
-     * guest is told to drive, while simplefb's poll rate is how often the host looks at a block of
-     * memory -- linear host cost, no guest involvement -- so it is bounded by what the bridge
-     * accepts rather than by what a panel could show.</p>
+     * <p>Size and rate are picked from menus, so the row itself holds their bounds -- including the
+     * one that differs by device: a virtio-gpu mode's refresh rate is what the guest is told to
+     * drive, while simplefb's poll rate is how often the host looks at a block of memory (linear
+     * host cost, no guest involvement), so it is bounded by what the bridge accepts rather than by
+     * what a panel could show. The DPI is still typed, and is still checked here.</p>
      */
     private boolean validateScreenGeometry() {
         for (var row : new ScreenBindingRow[]{screenGpu0, screenFb}) {
-            if (!checkInputField(row.widthField(), false, 320, 8192)) return false;
-            if (!checkInputField(row.heightField(), false, 320, 8192)) return false;
+            if (!row.validateGeometry()) return false;
             if (row.isGpuScreen()) {
-                if (!checkInputField(row.rateField(), false, 1, 400)) return false;
                 if (!checkInputField(row.dpiHField(), false, 100, 800)) return false;
                 if (!checkInputField(row.dpiVField(), false, 100, 800)) return false;
-            } else if (!checkInputField(row.rateField(), false,
-                (int) VMScreenConfig.MIN_POLL_HZ, (int) VMScreenConfig.MAX_POLL_HZ)) {
-                return false;
             }
         }
         return true;

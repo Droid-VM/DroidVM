@@ -296,6 +296,11 @@
     <string name="create_vm_display_height">Height</string>
     <string name="create_vm_display_refresh_rate">Rate (Hz)</string>
     <string name="create_vm_display_poll_hz">Poll (Hz)</string>
+    <string name="create_vm_display_resolution">Resolution</string>
+    <string name="create_vm_display_size_fmt">%1$d x %2$d</string>
+    <string name="create_vm_display_rate_fmt">%1$d Hz</string>
+    <string name="create_vm_display_custom">Custom...</string>
+    <string name="create_vm_display_custom_size_title">Custom resolution</string>
     <string name="create_vm_display_dpi_h">DPI Horizontal</string>
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
     <string name="create_vm_screen_exporter">Exporter</string>

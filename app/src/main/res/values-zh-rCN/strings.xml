@@ -294,6 +294,11 @@
     <string name="create_vm_display_height">显示高度</string>
     <string name="create_vm_display_refresh_rate">刷新率 (Hz)</string>
     <string name="create_vm_display_poll_hz">轮询率 (Hz)</string>
+    <string name="create_vm_display_resolution">分辨率</string>
+    <string name="create_vm_display_size_fmt">%1$d x %2$d</string>
+    <string name="create_vm_display_rate_fmt">%1$d Hz</string>
+    <string name="create_vm_display_custom">自定义…</string>
+    <string name="create_vm_display_custom_size_title">自定义分辨率</string>
     <string name="create_vm_display_dpi_h">水平DPI</string>
     <string name="create_vm_display_dpi_v">垂直DPI</string>
     <string name="create_vm_screen_exporter">导出端</string>
