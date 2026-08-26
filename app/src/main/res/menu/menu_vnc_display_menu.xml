@@ -26,9 +26,4 @@
         android:icon="@drawable/ic_open_in"
         android:title="@string/vnc_menu_external_app" />
 
-    <item
-        android:id="@+id/menu_view_url"
-        android:icon="@drawable/ic_nav_network"
-        android:title="@string/vnc_menu_view_url" />
-
 </menu>
