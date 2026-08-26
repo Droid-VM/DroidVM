@@ -31,6 +31,7 @@ import java.util.function.Consumer;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.data.HostCameraDevices;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SoundBuffer;
 import cn.classfun.droidvm.lib.store.vm.SoundMode;
@@ -60,6 +61,8 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     /** Asks for RECORD_AUDIO before a capture-capable device is added; set by the tab. */
     private Consumer<Runnable> micPermissionGate;
+    /** Asks for CAMERA before a camera device is added, and drops the add if refused. */
+    private Consumer<Runnable> cameraPermissionGate;
     // What the phone reported last time we looked, so binding a row is not a binder call each
     // time it scrolls past. Dropped by refreshHostDevices().
     private List<HostAudioDevices.Entry> outputCache;
@@ -71,6 +74,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     public void setMicPermissionGate(@Nullable Consumer<Runnable> gate) {
         this.micPermissionGate = gate;
+    }
+
+    public void setCameraPermissionGate(@Nullable Consumer<Runnable> gate) {
+        this.cameraPermissionGate = gate;
     }
 
     @NonNull
@@ -122,6 +129,14 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             }
             appendItem(item);
         };
+        // A camera is gated on consent rather than merely asking for it: without the grant the
+        // device could be listed but never opened, so adding one anyway would write a config that
+        // is guaranteed to disappoint.
+        if (type == PeripheralType.VIRTIO_CAMERA) {
+            if (cameraPermissionGate != null) cameraPermissionGate.accept(add);
+            else add.run();
+            return;
+        }
         // Anything that can capture needs the host mic permission asked for, and both kinds now
         // start with a microphone on them.
         if (micPermissionGate != null) {
@@ -139,14 +154,21 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.tvType.setText(type.getDisplayString(context));
         holder.tvUnavailable.setVisibility(type.isAvailable() ? GONE : VISIBLE);
 
-        boolean virtio = type == PeripheralType.VIRTIO_SOUND;
-        holder.groupVirtioSound.setVisibility(virtio ? VISIBLE : GONE);
-        holder.groupIntelHda.setVisibility(virtio ? GONE : VISIBLE);
+        holder.groupVirtioSound.setVisibility(type == PeripheralType.VIRTIO_SOUND ? VISIBLE : GONE);
+        holder.groupIntelHda.setVisibility(type == PeripheralType.INTEL_HDA ? VISIBLE : GONE);
+        holder.groupVirtioCamera.setVisibility(
+            type == PeripheralType.VIRTIO_CAMERA ? VISIBLE : GONE);
 
-        if (virtio) {
-            bindVirtioSound(holder, peripheral);
-        } else {
-            bindIntelHda(holder, peripheral);
+        switch (type) {
+            case VIRTIO_SOUND:
+                bindVirtioSound(holder, peripheral);
+                break;
+            case INTEL_HDA:
+                bindIntelHda(holder, peripheral);
+                break;
+            case VIRTIO_CAMERA:
+                bindVirtioCamera(holder, peripheral);
+                break;
         }
 
         holder.btnDelete.setOnClickListener(v -> {
@@ -315,6 +337,67 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 notifyItemChangedSafe(pos);
             });
         });
+    }
+
+    private void bindVirtioCamera(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral
+    ) {
+        var key = peripheral.getHostDevice();
+        holder.btnCameraDevice.setText(
+            HostCameraDevices.labelOf(context, key, peripheral.getHostLabel()));
+        // Same warning as an audio endpoint that is unplugged: a config carried over from another
+        // phone can name a camera this one does not have.
+        boolean missing = !key.isEmpty() && !hasCamera(key);
+        holder.tvWarning.setVisibility(missing ? VISIBLE : GONE);
+        if (missing) holder.tvWarning.setText(R.string.edit_vm_peripheral_camera_missing);
+        holder.btnCameraDevice.setOnClickListener(v -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            var cfg = new VMPeripheralConfig(items.get(pos));
+            showCameraPicker(cfg.getHostDevice(), cfg.getHostLabel(), (chosen, label) -> {
+                cfg.setHostDevice(chosen, label);
+                notifyItemChangedSafe(pos);
+            });
+        });
+    }
+
+    private boolean hasCamera(@NonNull String key) {
+        for (var entry : HostCameraDevices.list(context)) {
+            if (entry.key.equals(key)) return true;
+        }
+        return false;
+    }
+
+    /**
+     * One camera out of the host's list, plus "host default".
+     *
+     * <p>No second question after it, unlike the audio picker: a camera has no equivalent of an
+     * audio stream's purpose -- what it is used for does not change which sensor is meant.</p>
+     */
+    private void showCameraPicker(
+        @NonNull String current, @NonNull String storedLabel, @NonNull HostPicked onPicked
+    ) {
+        var keys = new ArrayList<String>();
+        var labels = new ArrayList<String>();
+        keys.add(HostCameraDevices.DEFAULT_KEY);
+        labels.add(context.getString(R.string.host_camera_default));
+        for (var entry : HostCameraDevices.list(context)) {
+            keys.add(entry.key);
+            labels.add(entry.label);
+        }
+        if (!current.isEmpty() && !keys.contains(current)) {
+            keys.add(current);
+            labels.add(context.getString(R.string.edit_vm_peripheral_host_missing_item,
+                storedLabel.isEmpty() ? current : storedLabel));
+        }
+        int checked = Math.max(0, keys.indexOf(current));
+        new MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.edit_vm_peripheral_host_camera)
+            .setSingleChoiceItems(labels.toArray(new String[0]), checked, (dialog, which) -> {
+                dialog.dismiss();
+                onPicked.onPicked(keys.get(which), which == 0 ? "" : labels.get(which));
+            })
+            .show();
     }
 
     /**

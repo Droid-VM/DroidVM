@@ -27,6 +27,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
@@ -84,6 +85,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private ScreenBindingRow screenGpu0;
     private ScreenBindingRow screenFb;
     private SwitchRowWidget swGpuCgroup;
+    private SwitchRowWidget swVpuEnabled;
+    private View vpuOptions;
+    private View mediaGuestPoolOptions;
+    private TextInputEditText etMediaHostPoolMb;
+    private TextInputEditText etMediaGuestPoolMb;
     private View gpuCgroupOptions;
     private TextInputEditText etGpuCgroupPath;
     private TextRowWidget rowGpuCgroupCpus;
@@ -142,6 +148,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             view.findViewById(R.id.sw_screen_fb_enabled),
             true, DisplayExporter.NATIVE);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
+        swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
+        vpuOptions = view.findViewById(R.id.vpu_options);
+        mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
+        etMediaHostPoolMb = view.findViewById(R.id.et_media_host_pool_mb);
+        etMediaGuestPoolMb = view.findViewById(R.id.et_media_guest_pool_mb);
         gpuCgroupOptions = view.findViewById(R.id.gpu_cgroup_options);
         etGpuCgroupPath = view.findViewById(R.id.et_gpu_cgroup_path);
         rowGpuCgroupCpus = view.findViewById(R.id.row_gpu_cgroup_cpus);
@@ -229,6 +240,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             updateGpuCgroupVisibility();
         });
         rowGpuCgroupCpus.setOnClickListener(v -> showGpuCpusPicker());
+        swVpuEnabled.setOnCheckedChangeListener(() -> updateVpuVisibility());
         // RT is only offered on top of a cpuset with cores in it. The switch is inside the
         // cpuset block, so it is already hidden when the block is off; this catches the one
         // reachable gap -- the block on, but every core cleared in the picker.
@@ -412,6 +424,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateDisplayVisibility();
         updateVramAllocVisibility();
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
+        swVpuEnabled.setChecked(VpuConfig.isEnabled(item));
+        etMediaHostPoolMb.setText(String.valueOf(VpuConfig.getHostPoolMb(item)));
+        etMediaGuestPoolMb.setText(String.valueOf(VpuConfig.getGuestPoolMb(item)));
+        updateVpuVisibility();
         etGpuCgroupPath.setText(item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
             CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH));
         setGpuCgroupCpus(item.optString(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, ""));
@@ -444,6 +460,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etGpuVramQuotaMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
+        if (swVpuEnabled.isChecked()) {
+            if (!checkInputField(etMediaHostPoolMb, false, 0, 65536)) return false;
+            // Checked only when it is offered: a hidden field holds whatever the config carried
+            // over from another protection mode, and rejecting a value nobody can see or edit
+            // would make the VM unsaveable for a reason the screen does not show.
+            if (VpuConfig.guestPoolApplies(currentProtectedVm())
+                && !checkInputField(etMediaGuestPoolMb, false, 0, 65536)) return false;
+        }
         // The growth fields are only read (and only shown) with dynamic vram on over a guest
         // pool; otherwise saveConfig() writes the fully pre-shared values in their place, so a
         // stale entry in a hidden field must not block the save.
@@ -550,6 +574,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The protection mode is chosen on the basic tab, and it decides whether the guest-alloc
         // pool is offered at all. Nothing tells this tab when that changes, so ask on the way in.
         updateVramAllocVisibility();
+        // Same reason: the media guest pool is only offered to a VM whose memory the host cannot
+        // read, which is also decided over there.
+        updateVpuVisibility();
     }
 
     /**
@@ -585,8 +612,20 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         }
         if (pvm == null && loadedConfig != null)
             pvm = optEnum(loadedConfig.item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-        if (pvm == null) pvm = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
-        return pvm == ProtectedVM.PROTECTED_NORMAL || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
+        return pvm == null ? ProtectedVM.PROTECTED_WITHOUT_FIRMWARE : pvm;
+    }
+
+    /**
+     * The pool fields only exist while the device does, and the guest one only while the host
+     * cannot read guest memory. Hiding it is not cosmetic: with no field there is no
+     * {@code media_guest} node, and with no node in /reserved-memory the guest driver stays on
+     * its stock path of allocating from system RAM.
+     */
+    private void updateVpuVisibility() {
+        boolean enabled = swVpuEnabled.isChecked();
+        vpuOptions.setVisibility(enabled ? VISIBLE : GONE);
+        mediaGuestPoolOptions.setVisibility(
+            enabled && VpuConfig.guestPoolApplies(currentProtectedVm()) ? VISIBLE : GONE);
     }
 
     /**
@@ -670,6 +709,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // any-native-binding for the same reason).
         item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP, swGpuCgroup.isChecked());
+        VpuConfig.setEnabled(item, swVpuEnabled.isChecked());
+        VpuConfig.setHostPoolMb(item, parseInt(getEditText(etMediaHostPoolMb)));
+        // Stored even while hidden, so flipping the protection mode back does not lose it. What
+        // decides whether a media_guest pool is created is VpuConfig.guestPoolMbFor, not whether
+        // the field was on screen.
+        VpuConfig.setGuestPoolMb(item, parseInt(getEditText(etMediaGuestPoolMb)));
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, gpuCgroupCpus.trim());
     }

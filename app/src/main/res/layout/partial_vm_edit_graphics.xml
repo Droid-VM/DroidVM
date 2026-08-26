@@ -415,5 +415,95 @@
         android:text="@string/create_vm_display_blit_provider" />
 
 
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_vpu">
+
+        <!-- One switch, and it attaches both directions. Decode and encode are separate
+             virtio-media devices in the guest (a device is one V4L2 node is one function), but
+             they are one piece of hardware to a user, and a VM given half of a VPU is a VM whose
+             video editor exports on the CPU for no reason anyone could see. Split it only if a
+             host ever turns out to serve one direction and not the other. -->
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_vpu_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_video"
+            android:text="@string/create_vm_vpu_enabled" />
+
+        <LinearLayout
+            android:id="@+id/vpu_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <!-- Where the host puts the buffers it allocates. The guest maps them at
+                 pool base + the offset the host returns, which is what virtio-media's mmap
+                 command already does, so this is the whole of the protected-VM story for
+                 host-allocated buffers. -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_media_host_pool_mb"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:hint="@string/create_vm_vpu_host_pool_mb">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_media_host_pool_mb"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:text="256"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Only for a VM whose memory the host cannot read. Hidden otherwise, and no
+                 media_guest pool is passed, which leaves the guest driver on its stock path of
+                 allocating from system RAM. -->
+            <LinearLayout
+                android:id="@+id/media_guest_pool_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_media_guest_pool_mb"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:hint="@string/create_vm_vpu_guest_pool_mb">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_media_guest_pool_mb"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:text="128"
+                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_vpu_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="@string/create_vm_vpu_note"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
 
 </LinearLayout>

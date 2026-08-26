@@ -48,6 +48,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab {
     public void initValue() {
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
         adapter.setMicPermissionGate(parent.getRecordAudioPermission()::ensureThen);
+        adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         listSerialPorts.setAdapter(VMSerialEditAdapter.class);
         // A brand-new VM never goes through loadConfig, but its serial list is not empty:
         // the fixed COM quartet exists either way, so show it (COM1 as the app console).

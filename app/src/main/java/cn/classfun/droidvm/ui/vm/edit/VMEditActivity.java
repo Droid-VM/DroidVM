@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
+import cn.classfun.droidvm.lib.ui.CameraPermission;
 import cn.classfun.droidvm.lib.ui.RecordAudioPermission;
 import cn.classfun.droidvm.lib.ui.SwipeableTabActivity;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -58,6 +59,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public boolean editMode = false;
     public UUID editVMId = null;
     private RecordAudioPermission recordAudioPermission;
+    private CameraPermission cameraPermission;
     private final Map<String, Object> sharedData = new HashMap<>();
 
 
@@ -74,6 +76,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
     @NonNull
     public RecordAudioPermission getRecordAudioPermission() {
         return recordAudioPermission;
+    }
+
+    /** Host camera permission gate, shared with the peripheral tab. Unlike the mic one, a
+     *  refusal here stops the peripheral being added -- see {@link CameraPermission}. */
+    @NonNull
+    public CameraPermission getCameraPermission() {
+        return cameraPermission;
     }
 
     private void pickerResult(Uri uri) {
@@ -95,6 +104,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
         // Registered here, ahead of the tabs: an ActivityResultLauncher can only be created
         // before the activity reaches STARTED.
         recordAudioPermission = new RecordAudioPermission(this);
+        cameraPermission = new CameraPermission(this);
         tabs = createTabInstances();
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         tabLayout = findViewById(R.id.tab_layout);

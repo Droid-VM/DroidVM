@@ -1355,6 +1355,18 @@
     <string name="vm_hugepage_short_start_anyway">Start anyway</string>
 
     <string name="create_vm_category_peripheral">Peripherals</string>
+    <string name="edit_vm_peripheral_empty">No peripherals</string>
+    <string name="edit_vm_peripheral_add">Add peripheral</string>
+    <string name="edit_vm_peripheral_add_title">Peripheral type</string>
+    <string name="edit_vm_peripheral_type">Peripheral type</string>
+    <string name="edit_vm_peripheral_delete">Remove peripheral</string>
+    <string name="edit_vm_peripheral_host_device">Host device</string>
+    <string name="edit_vm_peripheral_host_default">Follow system</string>
+    <string name="edit_vm_peripheral_host_missing">Not connected right now; the VM will follow the system routing.</string>
+    <string name="edit_vm_peripheral_host_missing_item">%1$s (not connected)</string>
+    <string name="edit_vm_peripheral_pick_output">Play through</string>
+    <string name="edit_vm_peripheral_pick_input">Record from</string>
+    <string name="edit_vm_peripheral_duplicate_host">Two peripherals of the same type point at one host device.</string>
     <string name="audio_device_builtin_speaker">Speaker</string>
     <string name="audio_device_builtin_earpiece">Earpiece</string>
     <string name="audio_device_builtin_mic">Built-in microphone</string>
@@ -1365,12 +1377,39 @@
     <string name="audio_device_usb">USB audio</string>
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">Line out</string>
+    <!-- Camera peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media camera</string>
+    <string name="camera_permission_title">Allow camera access?</string>
+    <string name="camera_permission_message">A camera peripheral hands one of this phone\'s cameras to the guest. Android only lets the camera open while this app holds the permission, so without it the device would be listed but could never start.</string>
+    <string name="camera_permission_allow">Allow</string>
+    <string name="camera_permission_cancel">Cancel</string>
+    <string name="camera_permission_declined">Camera not allowed, so no camera device was added.</string>
+    <string name="host_camera_default">Host default</string>
+    <string name="host_camera_front">Front camera (%1$s)</string>
+    <string name="host_camera_back">Back camera (%1$s)</string>
+    <string name="host_camera_external">External camera (%1$s)</string>
+    <string name="host_camera_unknown">Camera %1$s</string>
+    <string name="host_camera_none">No camera on this host</string>
+    <string name="create_vm_category_vpu">Video acceleration (VPU)</string>
+    <string name="create_vm_vpu_enabled">Attach a hardware video encoder and decoder</string>
+    <string name="create_vm_vpu_host_pool_mb">Host pool size (MB)</string>
+    <string name="create_vm_vpu_guest_pool_mb">Guest pool size (MB)</string>
+    <string name="create_vm_vpu_note">Placeholder: these are stored with the VM, but crosvm carries no virtio-media codec device yet, so nothing is attached.</string>
+    <string name="edit_vm_peripheral_camera_missing">This phone has no such camera; the device will not start.</string>
+    <string name="edit_vm_peripheral_host_camera">Host camera</string>
+    <string name="peripheral_fgs_title">Peripheral in use</string>
+    <string name="peripheral_fgs_text">A running VM is using a device that needs DroidVM in the foreground.</string>
+    <string name="notif_channel_peripheral_foreground">VM peripherals</string>
+    <string name="notif_channel_peripheral_foreground_desc">Shown while a VM uses a camera or another device that Android only allows in the foreground.</string>
 
     <string name="record_audio_permission_title">Allow microphone access?</string>
     <string name="record_audio_permission_message">This VM is being given a microphone, which records from the phone\'s mic while the VM runs. Allow microphone access so the guest can hear it.</string>
     <string name="record_audio_permission_allow">Continue</string>
     <string name="record_audio_permission_skip">Not now</string>
 
+    <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
+    <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
+    <string name="edit_vm_peripheral_unavailable">No host backend for this device yet; it will be skipped when the VM starts.</string>
     <string name="edit_vm_sound_endpoint_add">Add device</string>
     <string name="edit_vm_sound_endpoint_remove">Remove endpoint</string>
     <string name="edit_vm_sound_purpose_usage">Purpose</string>
@@ -1410,6 +1449,8 @@
     <string name="edit_vm_sound_underrun_repeat">Repeat</string>
     <string name="edit_vm_sound_underrun_wsola">WSOLA</string>
     <string name="edit_vm_sound_underrun_lpc">LPC</string>
+    <string name="edit_vm_peripheral_host_output">Output</string>
+    <string name="edit_vm_peripheral_host_input">Input</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>

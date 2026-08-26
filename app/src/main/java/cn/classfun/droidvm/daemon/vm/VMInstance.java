@@ -124,6 +124,9 @@ public final class VMInstance extends VMConfig {
         this.state = newState;
         Log.i(TAG, fmt("VM %s [%s] -> %s", getName(), getId().toString(), newState.name()));
         fireEvent("state", null);
+        // The one place every transition passes through, so the foreground service a peripheral
+        // may need is raised and dropped from the same edge the guest device appears on.
+        PeripheralForegroundControl.refresh(store);
     }
 
     private void fireEvent(@NonNull String event, @Nullable JSONObject extra) {
