@@ -62,7 +62,6 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         var act = new ActivityResultContracts.StartActivityForResult();
         diskActivityLauncher = parent.registerForActivityResult(act, this::activityResult);
         diskAdapter = listDisks.setAdapter(VMDiskEditAdapter.class);
-        diskAdapter.setOnBrowseFileListener(this::diskAdapterOnBrowseFile);
         diskAdapter.setOnImportOrCreateListener(this::diskAdapterOnImportOrCreate);
         // no PFLASH while the boot tab's UEFI vars pflash is enabled
         diskAdapter.setUefiVarsEnabledProvider(() -> {
@@ -96,20 +95,6 @@ public final class VMEditStorageTab extends VMEditBaseTab {
             parent, null, onImportPickerUi, diskActivityLauncher
         );
         pendingImportDialog.showImportDialog();
-    }
-
-    private void diskAdapterOnBrowseFile(int pos) {
-        pendingBrowsePosition = pos;
-        if (parent.currentPicker != null) return;
-        parent.currentPicker = uri -> {
-            if (uri != null && pendingBrowsePosition >= 0) {
-                var path = resolveUriPath(parent, uri);
-                diskAdapter.setPathAt(pendingBrowsePosition, path);
-            }
-            pendingBrowsePosition = -1;
-            parent.currentPicker = null;
-        };
-        parent.filePickerLauncher.launch(new String[]{"*/*"});
     }
 
     private void sharedDirAdapterOnBrowse(int pos) {

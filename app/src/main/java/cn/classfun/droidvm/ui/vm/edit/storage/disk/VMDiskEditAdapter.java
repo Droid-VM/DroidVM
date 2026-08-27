@@ -40,7 +40,6 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         boolean isEnabled();
     }
 
-    private OnItemClickListener browseFileListener;
     private OnItemClickListener importOrCreateListener;
     private UefiVarsEnabledProvider uefiVarsEnabledProvider = () -> true;
     private boolean readonlyChanged = false;
@@ -92,10 +91,6 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     @SuppressWarnings("unused")
     public interface OnItemClickListener {
         void onItemClick(int position);
-    }
-
-    public void setOnBrowseFileListener(OnItemClickListener l) {
-        this.browseFileListener = l;
     }
 
     public void setOnImportOrCreateListener(OnItemClickListener l) {
@@ -268,10 +263,7 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     private void showBrowseDialog(int position) {
         MenuItem.OnMenuItemClickListener listener = item -> {
             var id = item.getItemId();
-            if (id == R.id.menu_disk_browse_file) {
-                if (browseFileListener != null)
-                    browseFileListener.onItemClick(position);
-            } else if (id == R.id.menu_disk_browse_registered) {
+            if (id == R.id.menu_disk_browse_registered) {
                 showRegisteredDiskDialog(position);
             } else if (id == R.id.menu_disk_browse_import_create) {
                 if (importOrCreateListener != null)
