@@ -188,7 +188,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             updateGpuProviderOptions();
             updateVramAllocVisibility();
         });
-        chooseGpuBackend.configure(GpuBackend.class, GPU_GFXSTREAM);
+        chooseGpuBackend.configure(GpuBackend.class, GpuBackend.GPU_VIRGLRENDERER);
         // GPU-blit provider for the native display's scanout composite -- a peer set of Vulkan
         // drivers plus an Off (CPU copy) escape. TURNIP/SYSTEM/OFF are wired (SYSTEM points the
         // bridge at the SoC's vendor Vulkan and degrades to the CPU copy if it lacks the extensions);
