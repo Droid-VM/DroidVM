@@ -358,7 +358,6 @@
     <string name="edit_vm_disk_delete">移除磁盘</string>
     <string name="edit_vm_disk_browse">浏览</string>
     <string name="edit_vm_disk_browse_title">选择磁盘来源</string>
-    <string name="edit_vm_disk_browse_file">选择文件</string>
     <string name="edit_vm_disk_browse_registered">选择已注册的磁盘</string>
     <string name="edit_vm_disk_browse_import_create">导入或创建磁盘</string>
     <string name="edit_vm_disk_no_registered">未找到已注册的磁盘。</string>
@@ -395,7 +394,7 @@
     <string name="edit_vm_uefi_firmware">UEFI 固件(留空 = 内置 EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">内置 EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">选择 UEFI 固件</string>
-    <string name="edit_vm_uefi_firmware_hint">自定义固件仅对 QEMU 后端生效\ncrosvm 始终使用内置 EDK2\nUEFI 引导 Linux 适配中,尚不可用;如需引导 Linux,请选择 Linux 内核引导方式</string>
+    <string name="edit_vm_uefi_firmware_hint">自定义固件仅对 QEMU 后端生效\ncrosvm 始终使用内置 EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI 变量(留空 = 内置 EDK2 变量)</string>
     <string name="edit_vm_uefi_vars_browse_title">选择 UEFI 变量文件</string>
     <string name="edit_vm_uefi_vars_too_large">对于 crosvm,pflash 镜像大小不能超过 %1$d MiB</string>
@@ -1343,6 +1342,29 @@
     <string name="audio_device_usb">USB 音频</string>
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">线路输出</string>
+    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media 摄像头</string>
+    <string name="camera_permission_title">允许使用摄像头？</string>
+    <string name="camera_permission_message">摄像头外设会把这台手机的其中一个摄像头交给客户机。Android 只在本应用持有权限时才允许开启摄像头，没有权限时这个设备虽然会列出，却永远无法启动。</string>
+    <string name="camera_permission_allow">允许</string>
+    <string name="camera_permission_cancel">取消</string>
+    <string name="camera_permission_declined">未授予摄像头权限，因此没有添加摄像头设备。</string>
+    <string name="host_camera_default">主机默认</string>
+    <string name="host_camera_front">前置摄像头（%1$s）</string>
+    <string name="host_camera_back">后置摄像头（%1$s）</string>
+    <string name="host_camera_external">外接摄像头（%1$s）</string>
+    <string name="host_camera_unknown">摄像头 %1$s</string>
+    <string name="host_camera_none">此主机没有摄像头</string>
+    <string name="create_vm_category_vpu">视频加速 (VPU)</string>
+    <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
+    <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
+    <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
+    <string name="create_vm_vpu_note">占位设置：这些值会随 VM 一起保存，但 crosvm 目前还没有 virtio-media 编解码设备，因此不会挂载任何东西。</string>
+    <string name="edit_vm_peripheral_camera_missing">这台手机没有这个摄像头，该设备不会启动。</string>
+    <string name="edit_vm_peripheral_host_camera">主机摄像头</string>
+    <string name="peripheral_fgs_title">外设使用中</string>
+    <string name="peripheral_fgs_text">正在运行的 VM 使用了需要 DroidVM 保持在前台的设备。</string>
+    <string name="notif_channel_peripheral_foreground">虚拟机外设</string>
+    <string name="notif_channel_peripheral_foreground_desc">当 VM 使用摄像头等 Android 只允许在前台使用的设备时显示。</string>
     <string name="record_audio_permission_title">允许使用麦克风？</string>
     <string name="record_audio_permission_message">这台 VM 加了麦克风，运行期间会录取手机的麦克风。允许麦克风权限，客户机才听得到。</string>
     <string name="record_audio_permission_allow">继续</string>

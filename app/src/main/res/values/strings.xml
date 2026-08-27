@@ -360,7 +360,6 @@
     <string name="edit_vm_disk_delete">Remove disk</string>
     <string name="edit_vm_disk_browse">Browse</string>
     <string name="edit_vm_disk_browse_title">Select disk source</string>
-    <string name="edit_vm_disk_browse_file">Select file</string>
     <string name="edit_vm_disk_browse_registered">Select registered disk</string>
     <string name="edit_vm_disk_browse_import_create">Import or create disk</string>
     <string name="edit_vm_disk_no_registered">No registered disks found.</string>
@@ -397,7 +396,7 @@
     <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
-    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2\nBooting Linux via UEFI is still being adapted and is not usable yet -- to boot Linux, choose the Linux kernel boot protocol</string>
+    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI vars (empty = built-in EDK2 vars)</string>
     <string name="edit_vm_uefi_vars_browse_title">Select UEFI vars</string>
     <string name="edit_vm_uefi_vars_too_large">For crosvm, pflash image size must not exceed %1$d MiB</string>
@@ -1268,7 +1267,7 @@
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-The-virtual-machine%27s-system-does-not-support-SWIOTLB-Restrict-DMA-Pool%2e</string>
     <string name="log_helper_no_restrict_pool_title">Missing virtual machine kernel functionality</string>
     <string name="log_helper_no_restrict_pool_devices">The following devices of virtual machine %1$s accessed the protected memory region:</string>
-    <string name="log_helper_no_restrict_pool_message"><![CDATA[The guest kernel may not support the Restricted DMA Pool — replace the kernel or use the built-in DroidVM kernel.<br><br>Or the guest drivers for those devices are not ported yet — install the <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows drivers</a> or <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux drivers</a>.]]></string>
+    <string name="log_helper_no_restrict_pool_message"><![CDATA[The guest kernel may not support the Restricted DMA Pool &#8212; replace the kernel or use the built-in DroidVM kernel.<br><br>Or the guest drivers for those devices are not ported yet &#8212; install the <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows drivers</a> or <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux drivers</a>.]]></string>
     <string name="log_helper_open_log">Open log</string>
     <string name="log_helper_unsupported_gunyah_title">Unsupported Gunyah version</string>
     <string name="log_helper_unsupported_gunyah_message">The Gunyah version on your device is too old (for example, Snapdragon 8 Gen 2). Try updating the system or switching to a newer device.</string>
