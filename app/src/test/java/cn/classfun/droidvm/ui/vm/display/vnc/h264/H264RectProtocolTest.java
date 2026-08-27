@@ -15,11 +15,11 @@ import java.io.IOException;
 /**
  * The seam, in bytes.
  *
- * <p>Every fixture here is written from {@code plans/H264_SINGLE_PORT.md} §1 rather than from the
- * parser, and is meant to be diffed literally against the bytes the server-side test asserts. That
- * is the whole point of them: two agents implementing one contract from one document is exactly the
- * arrangement in which each can be internally consistent and the pair still not meet, and the only
- * check that catches it is the same literal bytes appearing on both sides.</p>
+ * <p>Every fixture here is written from {@code plans/H264_SINGLE_PORT.md} section 1 rather than
+ * from the parser, and is meant to be diffed literally against the bytes the server-side test
+ * asserts. That is the whole point of them: two agents implementing one contract from one document
+ * is exactly the arrangement in which each can be internally consistent and the pair still not
+ * meet, and the only check that catches it is the same literal bytes appearing on both sides.</p>
  *
  * <p>The hex is spelt out rather than built, for the same reason. A fixture assembled by a helper
  * that shares its idea of byte order with the code under test asserts that the code agrees with
@@ -152,8 +152,9 @@ public class H264RectProtocolTest {
 
     @Test
     public void anUnknownKindParsesAndIsNeitherOfTheTwo() {
-        // §1: a client must ignore unknown kinds. Ignoring is the caller's job, so what this side
-        // owes is a rect that answers "no" to both questions rather than one that throws.
+        // Section 1: a client must ignore unknown kinds. Ignoring is the caller's job, so what
+        // this side owes is a rect that answers "no" to both questions rather than one that
+        // throws.
         var odd = H264RectProtocol.parseDvhRect(hex("01070000"));
         assertNotNull(odd);
         assertEquals(7, odd.kind);

@@ -15,10 +15,11 @@ import java.util.Arrays;
  * The two rect bodies the H.264 console reads off the ordinary RFB connection, and the only part of
  * the decoder path that can be tested without a device.
  *
- * <p>Both layouts are pinned by {@code plans/H264_SINGLE_PORT.md} §1 and are implemented here as
- * written. Neither is negotiated, neither is derived from anything, and this class is the one place
- * either is read -- the JNI layer hands up whole rect bodies rather than parsed ones precisely so
- * that a unit test can feed this the same literal bytes the server-side test asserts.</p>
+ * <p>Both layouts are pinned by {@code plans/H264_SINGLE_PORT.md} section 1 and are implemented
+ * here as written. Neither is negotiated, neither is derived from anything, and this class is the
+ * one place either is read -- the JNI layer hands up whole rect bodies rather than parsed ones
+ * precisely so that a unit test can feed this the same literal bytes the server-side test
+ * asserts.</p>
  *
  * <p><b>Encoding 50</b> ("Open H.264", rfbproto.rst): {@code u32} big-endian length, {@code u32}
  * big-endian flags, then that many bytes of Annex-B NAL units. The flags say whether the decoder's

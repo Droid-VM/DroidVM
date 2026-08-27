@@ -38,8 +38,8 @@ public final class VncClient {
         void onH264Rect(@NonNull byte[] rect, int width, int height);
 
         /**
-         * One 0x44564831 rect payload: the fixed four bytes of H264_SINGLE_PORT.md §1. Called on
-         * the message-loop thread.
+         * One 0x44564831 rect payload: the fixed four bytes of H264_SINGLE_PORT.md section 1.
+         * Called on the message-loop thread.
          */
         @SuppressWarnings("unused")
         void onDvhRect(@NonNull byte[] payload);

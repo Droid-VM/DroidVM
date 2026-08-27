@@ -10,8 +10,8 @@ import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy.Mode;
 import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy.Order;
 
 /**
- * The client rules of {@code plans/H264_SINGLE_PORT.md} §1, read off the policy rather than off a
- * stopwatch.
+ * The client rules of {@code plans/H264_SINGLE_PORT.md} section 1, read off the policy rather than
+ * off a stopwatch.
  *
  * <p>What is being pinned is a set of statements about the future -- "give up after five seconds of
  * this", "declare it dead after ten seconds of that" -- which is otherwise only observable by

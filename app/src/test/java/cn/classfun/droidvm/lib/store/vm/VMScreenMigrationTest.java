@@ -418,17 +418,17 @@ public class VMScreenMigrationTest {
         // two stubs the failing build left in run/, "..._simplefb_input_multito" and
         // "..._simplefb_input_tablet.", were the only evidence it had happened. The check has to
         // fire before the syscall, and it has to say which path and how long.
-        var longest = "/x".repeat(53) + "y";
+        var longest = fmt("%sy", "/x".repeat(53));
         assertEquals(NativeDisplay.MAX_UNIX_PATH, longest.length());
         assertEquals(longest, NativeDisplay.requireBindablePath(longest));
-        var overlong = longest + "z";
+        var overlong = fmt("%sz", longest);
         var e = assertThrows(IllegalArgumentException.class,
             () -> NativeDisplay.requireBindablePath(overlong));
         assertTrue(e.getMessage(), e.getMessage().contains(overlong));
         assertTrue(e.getMessage(), e.getMessage().contains("108"));
         // Bytes, not chars: sun_path is a byte array, and a name that is short in code points can
         // still be too long for it.
-        var wide = "/" + "é".repeat(NativeDisplay.MAX_UNIX_PATH - 1);
+        var wide = "/" + "\u00e9".repeat(NativeDisplay.MAX_UNIX_PATH - 1);
         assertEquals(NativeDisplay.MAX_UNIX_PATH, wide.length());
         assertThrows(IllegalArgumentException.class,
             () -> NativeDisplay.requireBindablePath(wide));

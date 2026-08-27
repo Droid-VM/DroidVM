@@ -568,10 +568,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     /**
      * One read of the policy's clocks, and whatever it asks for as a result.
      *
-     * <p>This is the whole of the timing half of {@code H264_SINGLE_PORT.md} §1: five seconds of no
-     * capabilities rect means the server is not one that knows about them, and ten seconds of
-     * neither frame nor heartbeat while decoding means the stream is dead however alive the socket
-     * looks. Everything else on the H.264 path is driven by rects arriving.</p>
+     * <p>This is the whole of the timing half of {@code H264_SINGLE_PORT.md} section 1: five
+     * seconds of no capabilities rect means the server is not one that knows about them, and ten
+     * seconds of neither frame nor heartbeat while decoding means the stream is dead however alive
+     * the socket looks. Everything else on the H.264 path is driven by rects arriving.</p>
      */
     @MainThread
     private void tickH264() {
@@ -687,7 +687,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     private void applyStatusText() {
         tvStatus.setText(statusNote.isEmpty()
-            ? statusText : fmt("%s  ·  %s", statusText, statusNote));
+            ? statusText : fmt("%s  \u00b7  %s", statusText, statusNote));
     }
 
     protected void setStatus(String text, VncStatus newStatus) {

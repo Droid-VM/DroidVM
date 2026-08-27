@@ -19,7 +19,7 @@
  * whose fixed four-byte payload says the two things RFB negotiation cannot: whether the host has
  * an encoder at all, and -- on an idle screen, where a live stream and a dead one look alike --
  * that the connection is still there. Both numbers and the payload layout are pinned by
- * plans/H264_SINGLE_PORT.md §1 and are implemented here as written, not renegotiated. */
+ * plans/H264_SINGLE_PORT.md section 1 and are implemented here as written, not renegotiated. */
 #define VNC_ENCODING_H264 50
 #define VNC_ENCODING_DVH1 0x44564831
 /* An encoding-50 rect body opens with u32 BE length and u32 BE flags, then the Annex-B payload. */

@@ -38,14 +38,14 @@ public final class OsKernelWithoutRestrictPoolHandler extends LogHelperHandler {
      * what makes a line one of these rather than a mention of the words.
      */
     private static final String FILTER = "host access to lent memory region at";
-    private static final String MARKER = FILTER + " 0x";
+    private static final String MARKER = fmt("%s 0x", FILTER);
     /**
      * The failing device, which crosvm puts before " activate failed" on the same line:
      * {@code ... virtio_pci_device] pcivu-sound activate failed: failed to get host address: host
      * access to lent memory region at 0x105600000 (purpose=GuestMemoryRegion) in protected VM}
      */
     private static final Pattern DEVICE = Pattern.compile("(\\S+) activate failed");
-    private static final String BULLET = "• ";
+    private static final String BULLET = "\u2022 ";  // U+2022, escaped to keep this file ASCII
     private static final String STREAM = "stderr";
 
     /**

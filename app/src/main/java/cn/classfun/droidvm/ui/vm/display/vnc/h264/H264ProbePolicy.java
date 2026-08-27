@@ -9,10 +9,10 @@ import androidx.annotation.NonNull;
  * Whether this console is decoding, waiting for something to decode, or on the pixel path -- and
  * what has to happen to move it between the three.
  *
- * <p>The rules are {@code plans/H264_SINGLE_PORT.md} §1's client half, and they are here rather
- * than in the activity so that they can be read off a test instead of a stopwatch: this class has
- * no Android in it and no clock of its own. Every method takes the current time; the activity's
- * only job is to say what time it is and to do what {@link #tick} returns.</p>
+ * <p>The rules are {@code plans/H264_SINGLE_PORT.md} section 1's client half, and they are here
+ * rather than in the activity so that they can be read off a test instead of a stopwatch: this
+ * class has no Android in it and no clock of its own. Every method takes the current time; the
+ * activity's only job is to say what time it is and to do what {@link #tick} returns.</p>
  *
  * <p><b>Three things end the waiting, and only one of them is a message.</b> A capabilities rect
  * saying {@link H264RectProtocol#CAPS_NO_ENCODER} is a fact about the host, and the host does not
@@ -108,7 +108,9 @@ public final class H264ProbePolicy {
         if (mode == Mode.DECODING) mode = Mode.WAITING;
     }
 
-    /** A capabilities rect arrived. [value] is the §1 {@code value} byte, whatever it holds. */
+    /**
+     * A capabilities rect arrived. [value] is the section 1 {@code value} byte, whatever it holds.
+     */
     public synchronized void onCapsRect(int value, long nowMs) {
         sawCaps = true;
         assumedNoCaps = false;
