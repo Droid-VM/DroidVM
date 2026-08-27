@@ -509,19 +509,46 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         var attributes = SoundPurpose.attributesFor(input);
         var values = new ArrayList<String>();
         for (int i = 0; i < attributes.size(); i++) values.add("");
-        askPurpose(input, device, deviceLabel, previous, attributes, values, 0, onPicked);
+        askPurpose(new PurposeWalk(device, deviceLabel, previous, attributes, values, onPicked), 0);
     }
 
-    private void askPurpose(
-        boolean input, @NonNull String device, @NonNull String deviceLabel,
-        @NonNull String previous, @NonNull List<String> attributes,
-        @NonNull ArrayList<String> values, int at, @NonNull HostPicked onPicked
-    ) {
-        if (at >= attributes.size()) {
-            onPicked.onPicked(HostAudioDevices.withAttrs(device, attributes, values), deviceLabel);
+    /**
+     * One walk through one endpoint's attributes. Everything but the position is settled before
+     * the first dialog opens, so the position is the only thing each dialog passes to the next.
+     */
+    private static final class PurposeWalk {
+        /** The device the key is being built for, and the label to hand back with it. */
+        final String device;
+        final String deviceLabel;
+        /** The key configured before this walk, which each question defaults to. */
+        final String previous;
+        /** The attributes to ask about, in order, and the answers so far -- one slot each. */
+        final List<String> attributes;
+        final ArrayList<String> values;
+        final HostPicked onPicked;
+
+        PurposeWalk(
+            @NonNull String device, @NonNull String deviceLabel, @NonNull String previous,
+            @NonNull List<String> attributes, @NonNull ArrayList<String> values,
+            @NonNull HostPicked onPicked
+        ) {
+            this.device = device;
+            this.deviceLabel = deviceLabel;
+            this.previous = previous;
+            this.attributes = attributes;
+            this.values = values;
+            this.onPicked = onPicked;
+        }
+    }
+
+    private void askPurpose(@NonNull PurposeWalk walk, int at) {
+        if (at >= walk.attributes.size()) {
+            walk.onPicked.onPicked(
+                HostAudioDevices.withAttrs(walk.device, walk.attributes, walk.values),
+                walk.deviceLabel);
             return;
         }
-        var attribute = attributes.get(at);
+        var attribute = walk.attributes.get(at);
         var choices = SoundPurpose.choicesFor(attribute);
         var labels = new ArrayList<String>();
         var stored = new ArrayList<String>();
@@ -535,14 +562,14 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         }
         // Carried over from what was configured before, so re-picking a device does not quietly
         // discard how it was set up.
-        int checked = Math.max(0, stored.indexOf(HostAudioDevices.attrOf(previous, attribute)));
+        int checked = Math.max(0,
+            stored.indexOf(HostAudioDevices.attrOf(walk.previous, attribute)));
         new MaterialAlertDialogBuilder(context)
             .setTitle(SoundPurpose.titleFor(attribute))
             .setSingleChoiceItems(labels.toArray(new String[0]), checked, (dialog, which) -> {
                 dialog.dismiss();
-                values.set(at, stored.get(which));
-                askPurpose(input, device, deviceLabel, previous, attributes, values, at + 1,
-                    onPicked);
+                walk.values.set(at, stored.get(which));
+                askPurpose(walk, at + 1);
             })
             .show();
     }
