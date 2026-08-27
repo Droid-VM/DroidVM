@@ -310,7 +310,7 @@
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy（硬件编码）</string>
-    <string name="create_vm_screen_transport_not_implemented">未实现</string>
+    <string name="create_vm_option_not_implemented">未实现</string>
     <string name="create_vm_screen_width_cpu_fallback">此宽度下传输管线将使用 CPU Copy</string>
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy 会把帧缓冲当成 linear dma-buf 导入，而驱动只收 row pitch 对齐 64 bytes 的缓冲。SimpleFB 的 pitch 就是宽度 x 4、没有任何补齐，所以 GPU Copy 需要 16 像素倍数的宽度 —— 例如 1408 而不是 1400。这个宽度本身没有问题，只是它的帧会走 CPU 复制。</string>
     <string name="create_vm_screen_input_enabled">输入设备</string>

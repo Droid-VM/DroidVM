@@ -312,7 +312,7 @@
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy (hardware encode)</string>
-    <string name="create_vm_screen_transport_not_implemented">not implemented</string>
+    <string name="create_vm_option_not_implemented">not implemented</string>
     <string name="create_vm_screen_width_cpu_fallback">Transport pipeline will use CPU Copy at this width</string>
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy imports the framebuffer as a linear dma-buf, and the driver takes one only when its row pitch is 64-byte aligned. SimpleFB\'s pitch is exactly width x 4 with nothing padding it, so GPU Copy needs a width that is a multiple of 16 -- 1408 rather than 1400. This width is fine; its frames just take the CPU copy.</string>
     <string name="create_vm_screen_input_enabled">Input devices</string>

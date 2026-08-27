@@ -729,12 +729,20 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             chooseGpuMode.setItems(GpuMode.VULKAN);
             chooseGpuMode.setSelectedItem(GpuMode.VULKAN);
         } else if (backend == GpuBackend.GPU_VIRGLRENDERER) {
-            // virglrenderer serves all three: OPENGL (host GL), NATIVE (drm2kgsl), VULKAN (venus).
+            // virglrenderer has all three capsets: OPENGL (virgl2), NATIVE (drm2kgsl), VULKAN
+            // (venus). Only two of them are wired here -- the GL path is listed and refused rather
+            // than hidden, so the menu says what virglrenderer is for and where this build stands
+            // in it, and a VM stored with OPENGL still shows what it is set to.
             chooseGpuMode.setVisibility(VISIBLE);
             chooseGpuMode.setItems(GpuMode.NATIVE, GpuMode.OPENGL, GpuMode.VULKAN);
+            chooseGpuMode.setDisabledItems(
+                parent.getString(R.string.create_vm_option_not_implemented), GpuMode.OPENGL);
+            // setItems already lands on the first of them (Native Context), which is what a new
+            // VM comes up with; a stored mode is restored by load() afterwards. This only catches
+            // a selection left over from a set that no longer applies.
             Object cur = chooseGpuMode.getSelectedItem();
             if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE && cur != GpuMode.VULKAN)
-                chooseGpuMode.setSelectedItem(GpuMode.OPENGL);
+                chooseGpuMode.setSelectedItem(GpuMode.NATIVE);
         } else {
             // 2D has no acceleration to choose. setItems() rejects an empty list, so hide the row
             // rather than clearing it; its stale items are never read for 2D (the reads below are
