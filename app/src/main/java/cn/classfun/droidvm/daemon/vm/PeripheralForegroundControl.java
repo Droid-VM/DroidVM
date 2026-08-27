@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -63,8 +65,8 @@ final class PeripheralForegroundControl {
             Log.w(TAG, "no system context; peripheral foreground service not updated");
             return;
         }
-        Log.i(TAG, "peripheral foreground service types 0x" + Integer.toHexString(applied)
-            + " -> 0x" + Integer.toHexString(wanted));
+        Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s",
+            Integer.toHexString(applied), Integer.toHexString(wanted)));
         PeripheralForegroundService.apply(context, wanted);
         applied = wanted;
     }

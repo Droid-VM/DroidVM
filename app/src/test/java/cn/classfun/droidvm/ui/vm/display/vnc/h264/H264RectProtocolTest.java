@@ -42,7 +42,7 @@ public class H264RectProtocolTest {
     @Test
     public void aSyncRectCarriesItsLengthItsResetFlagAndItsPayload() {
         // length 0x00000018 = 24, flags 0x00000002 = ResetAllContexts, then the 24 bytes.
-        var body = hex("00000018" + "00000002" + SYNC_ANNEX_B);
+        var body = hex("00000018", "00000002", SYNC_ANNEX_B);
         assertEquals(H264RectProtocol.RECT_HEADER_BYTES + 24, body.length);
 
         var rect = parse(body);
@@ -53,7 +53,7 @@ public class H264RectProtocolTest {
 
     @Test
     public void anOrdinaryRectResetsNothing() {
-        var body = hex("00000008" + "00000000" + DELTA_ANNEX_B);
+        var body = hex("00000008", "00000000", DELTA_ANNEX_B);
         var rect = parse(body);
         assertEquals(0, rect.flags);
         assertFalse(rect.resetsDecoder());
@@ -64,7 +64,7 @@ public class H264RectProtocolTest {
     public void theOtherResetFlagIsAlsoAReset() {
         // 0x1 is ResetContext: a viewer keeping one context per rectangle has two different things
         // to throw away, and this console has one codec, so both flags reach it as the same order.
-        var body = hex("00000008" + "00000001" + DELTA_ANNEX_B);
+        var body = hex("00000008", "00000001", DELTA_ANNEX_B);
         var rect = parse(body);
         assertEquals(H264RectProtocol.FLAG_RESET_CONTEXT, rect.flags);
         assertTrue(rect.resetsDecoder());
@@ -74,9 +74,9 @@ public class H264RectProtocolTest {
     public void theLengthIsBigEndianAndNotTheOtherWay() {
         // The one byte that separates 24 from 402653184. Little-endian here would read the flags
         // word as the length and walk off the end of every frame after the first.
-        var body = hex("00000018" + "00000000" + SYNC_ANNEX_B);
+        var body = hex("00000018", "00000000", SYNC_ANNEX_B);
         assertEquals(24, parse(body).annexB.length);
-        var swapped = hex("18000000" + "00000000" + SYNC_ANNEX_B);
+        var swapped = hex("18000000", "00000000", SYNC_ANNEX_B);
         assertThrows(IOException.class, () -> H264RectProtocol.parseStreamRect(swapped));
     }
 
@@ -85,9 +85,9 @@ public class H264RectProtocolTest {
         // The reader that pulled these off the socket read the same length to know how many to
         // ask for, so this is the two readings having diverged. Refusing is what keeps that
         // duplication from being a place the seam can quietly come apart.
-        var short_ = hex("00000018" + "00000000" + DELTA_ANNEX_B);
+        var short_ = hex("00000018", "00000000", DELTA_ANNEX_B);
         assertThrows(IOException.class, () -> H264RectProtocol.parseStreamRect(short_));
-        var long_ = hex("00000004" + "00000000" + DELTA_ANNEX_B);
+        var long_ = hex("00000004", "00000000", DELTA_ANNEX_B);
         assertThrows(IOException.class, () -> H264RectProtocol.parseStreamRect(long_));
     }
 
@@ -102,9 +102,9 @@ public class H264RectProtocolTest {
     public void aLengthPastTheGuardIsRefusedWithoutAllocating() {
         // 0x7FFFFFFF. Read into a long, so the high bit is a large number and not a negative one --
         // a signed read would make this a negative length and sail past the guard.
-        var body = hex("7FFFFFFF" + "00000000" + DELTA_ANNEX_B);
+        var body = hex("7FFFFFFF", "00000000", DELTA_ANNEX_B);
         assertThrows(IOException.class, () -> H264RectProtocol.parseStreamRect(body));
-        var high = hex("FFFFFFFF" + "00000000" + DELTA_ANNEX_B);
+        var high = hex("FFFFFFFF", "00000000", DELTA_ANNEX_B);
         assertThrows(IOException.class, () -> H264RectProtocol.parseStreamRect(high));
     }
 
@@ -201,7 +201,12 @@ public class H264RectProtocolTest {
         }
     }
 
-    private static byte[] hex(String s) {
+    /**
+     * The fixture bytes. Each wire field is its own argument rather than a '+' away from the next,
+     * so the header words stay visible as the separate things they are.
+     */
+    private static byte[] hex(String... parts) {
+        var s = String.join("", parts);
         var out = new byte[s.length() / 2];
         for (var i = 0; i < out.length; i++)
             out[i] = (byte) Integer.parseInt(s.substring(i * 2, i * 2 + 2), 16);

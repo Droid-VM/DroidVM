@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.peripheral;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -89,7 +91,8 @@ public final class PeripheralForegroundService extends Service {
             // not held -- the user declined CAMERA after the peripheral was added, say. Stopping
             // is the honest outcome: a service that cannot carry the type it was raised for grants
             // no capability, and leaving it up would show a notification that promises otherwise.
-            Log.w(TAG, "startForeground rejected for types 0x" + Integer.toHexString(typeMask), e);
+            Log.w(TAG, fmt("startForeground rejected for types 0x%s",
+                Integer.toHexString(typeMask)), e);
             stopSelf();
             return START_NOT_STICKY;
         }

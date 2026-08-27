@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.data;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.content.Context;
 import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
@@ -72,7 +74,7 @@ public final class HostCameraDevices {
                     // A camera the platform lists but will not describe is usually one this uid
                     // may not touch. Keep it in the list under its id rather than dropping it:
                     // the guest may still be able to open it, and a missing row looks like a bug.
-                    Log.w(TAG, "characteristics for camera " + id + " unavailable", e);
+                    Log.w(TAG, fmt("characteristics for camera %s unavailable", id), e);
                 }
                 out.add(new Entry(id, labelFor(context, id, facing), facing));
             }

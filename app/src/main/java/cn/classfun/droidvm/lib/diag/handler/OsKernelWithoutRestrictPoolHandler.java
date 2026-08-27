@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.diag.handler;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.content.Context;
 import android.content.Intent;
 

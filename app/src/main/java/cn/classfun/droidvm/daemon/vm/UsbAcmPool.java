@@ -8,6 +8,7 @@ import static cn.classfun.droidvm.lib.utils.FileUtils.readFile;
 import static cn.classfun.droidvm.lib.utils.FileUtils.writeFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
 
 import android.system.Os;
@@ -47,9 +48,9 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 public final class UsbAcmPool {
     private static final String TAG = "UsbAcmPool";
     private static final String GADGET = "/config/usb_gadget/g1";
-    private static final String FUNCTIONS_DIR = GADGET + "/functions";
-    private static final String CONFIG_DIR = GADGET + "/configs/b.1";
-    private static final String UDC_FILE = GADGET + "/UDC";
+    private static final String FUNCTIONS_DIR = pathJoin(GADGET, "functions");
+    private static final String CONFIG_DIR = pathJoin(GADGET, "configs", "b.1");
+    private static final String UDC_FILE = pathJoin(GADGET, "UDC");
     private static final String UDC_CLASS_DIR = "/sys/class/udc";
     private static final String INSTANCE_PREFIX = "dvmpool";
     private static final int NODE_WAIT_MS = 3000;

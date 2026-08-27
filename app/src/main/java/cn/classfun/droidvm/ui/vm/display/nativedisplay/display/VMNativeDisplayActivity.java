@@ -978,7 +978,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
      * its VM exited.
      */
     private final String eventKey =
-        TAG + "@" + Integer.toHexString(System.identityHashCode(this));
+        fmt("%s@%s", TAG, Integer.toHexString(System.identityHashCode(this)));
 
     @Override
     protected void onStart() {

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import org.junit.Test;
 
@@ -338,17 +339,17 @@ public class VMScreenMigrationTest {
     @Test
     public void scanoutSocketsAreOnePerScreenAndOnlyTheRelativePointerIgnoresTheScreen() {
         var vmId = "7f3c1c22-0a11-4d55-9f0e-2b0d5a6e1234";
-        var run = "/data/data/cn.classfun.droidvm/run/dvmin_" + vmId;
+        var run = fmt("/data/data/cn.classfun.droidvm/run/dvmin_%s", vmId);
         // Exact names, because these are a contract between two processes: the daemon binds the
         // inode and crosvm is handed the path on its command line. A rename that only one side
         // learns about is a VM that does not start, so it should fail here first.
-        assertEquals(run + "_sfb_mt.sock", NativeDisplay.inputSocketPath(
+        assertEquals(fmt("%s_sfb_mt.sock", run), NativeDisplay.inputSocketPath(
             vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MULTITOUCH));
-        assertEquals(run + "_g0_tab.sock", NativeDisplay.inputSocketPath(
+        assertEquals(fmt("%s_g0_tab.sock", run), NativeDisplay.inputSocketPath(
             vmId, VMScreenConfig.ID_GPU0, NativeDisplay.TABLET));
-        assertEquals(run + "_g0_kbd.sock", NativeDisplay.inputSocketPath(
+        assertEquals(fmt("%s_g0_kbd.sock", run), NativeDisplay.inputSocketPath(
             vmId, VMScreenConfig.ID_GPU0, NativeDisplay.KEYBOARD));
-        assertEquals(run + "_ms.sock",
+        assertEquals(fmt("%s_ms.sock", run),
             NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE));
         // Each screen's devices are its own inodes. For the two absolute ones that is because a
         // coordinate only means anything under one output; for the keyboard it is because input

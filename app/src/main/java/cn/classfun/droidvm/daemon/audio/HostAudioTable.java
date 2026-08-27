@@ -127,7 +127,7 @@ public final class HostAudioTable {
         int lines = appendAll(text, false) + appendAll(text, true);
 
         var target = new File(PATH);
-        var staging = new File(PATH + ".new");
+        var staging = new File(fmt("%s.new", PATH));
         try {
             var parent = target.getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
