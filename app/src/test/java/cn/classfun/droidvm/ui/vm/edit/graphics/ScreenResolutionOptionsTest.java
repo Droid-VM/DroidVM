@@ -1,5 +1,6 @@
 package cn.classfun.droidvm.ui.vm.edit.graphics;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -31,7 +32,7 @@ public class ScreenResolutionOptionsTest {
     public void everySizeIsLandscape() {
         for (var panel : new int[][]{{1080, 2400}, {2400, 1080}, {1440, 3200}, {800, 1280}})
             for (var opt : ScreenResolutionOptions.build(panel[0], panel[1]))
-                assertTrue(opt.width + "x" + opt.height, opt.width >= opt.height);
+                assertTrue(fmt("%dx%d", opt.width, opt.height), opt.width >= opt.height);
     }
 
     @Test
