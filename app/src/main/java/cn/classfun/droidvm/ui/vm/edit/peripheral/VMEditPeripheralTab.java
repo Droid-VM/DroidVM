@@ -47,9 +47,14 @@ public final class VMEditPeripheralTab extends VMEditBaseTab {
     @Override
     public void initValue() {
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
-        adapter.setMicPermissionGate(parent.getRecordAudioPermission()::ensureThen);
+        adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         listSerialPorts.setAdapter(VMSerialEditAdapter.class);
+        if (!parent.editMode) {
+            var peripherals = DataItem.newArray();
+            peripherals.append(VMPeripheralConfig.createDefaultVirtioSound().item);
+            listPeripherals.setItems(peripherals);
+        }
         // A brand-new VM never goes through loadConfig, but its serial list is not empty:
         // the fixed COM quartet exists either way, so show it (COM1 as the app console).
         var scratch = DataItem.newObject();
@@ -62,6 +67,14 @@ public final class VMEditPeripheralTab extends VMEditBaseTab {
         // The host device list is live: something may have been plugged in or paired since the
         // rows were last bound.
         if (adapter != null) adapter.refreshHostDevices();
+    }
+
+    /** Whether the unsaved peripheral rows give the guest a host microphone. */
+    public boolean hasMicrophone() {
+        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+            for (var endpoint : peripheral.getEndpoints())
+                if (endpoint.getMode().isInput()) return true;
+        return false;
     }
 
     @Override

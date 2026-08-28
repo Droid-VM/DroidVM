@@ -12,7 +12,6 @@ import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIR
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -26,8 +25,6 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.data.QcomChipName;
-import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementDraft;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
@@ -47,7 +44,6 @@ import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
 public final class VMEditBasicTab extends VMEditBaseTab {
-    private final String TAG = "VMEditBasicTab";
     /** Matches the ti_max on input_cpu in partial_vm_edit_basic.xml. */
     private static final int MAX_VCPUS = 64;
     private TextInputRowWidget inputName;
@@ -120,13 +116,25 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         inputSwiotlb.setValue(64, SizeUnit.MB);
+        swBalloon.setChecked(false);
+        swPmu.setChecked(VMConfig.NEW_VM_DEFAULT_PMU);
+        swRng.setChecked(VMConfig.NEW_VM_DEFAULT_RNG);
+        swSmt.setChecked(VMConfig.NEW_VM_DEFAULT_SMT);
+        swUsb.setChecked(VMConfig.NEW_VM_DEFAULT_USB);
+        swSandbox.setChecked(false);
+        swHugepages.setChecked(VMConfig.NEW_VM_DEFAULT_HUGEPAGES);
         swDebug.setChecked(false);
-        chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
+        chooseProtectedVm.configure(
+            ProtectedVM.class, VMConfig.NEW_VM_DEFAULT_PROTECTED_VM);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
-        chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
-        choosePrepareLendMthp.configure(LendMthpMode.class, LendMthpMode.CHUNKED);
+        chooseHypervisor.configure(
+            VMHypervisor.class, VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
+        choosePrepareLendMthp.configure(
+            LendMthpMode.class, LendMthpMode.defaultForDevice(parent));
+        if (!parent.editMode)
+            swGunyahDynamicShare.setChecked(VMConfig.NEW_VM_DEFAULT_GUNYAH_DYNAMIC_SHARE);
         parent.put("backend", VMBackend.DEFAULT);
-        parent.put("hypervisor", VMHypervisor.DEFAULT);
+        parent.put("hypervisor", chooseHypervisor.getSelectedItem());
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
         swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
@@ -134,18 +142,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         updateGunyahVisibility();
         updateProtectedVisibility();
         initCpuTopology();
-        try {
-            var socModel = QcomChipName.getCurrentSoC();
-            var gunyah = new QcomGunyahSupports(parent);
-            if (gunyah.isCapacitySupported(socModel, "no_mthp"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.DISABLED);
-            if (gunyah.isCapacitySupported(socModel, "mthp_chunked"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.CHUNKED);
-            if (gunyah.isCapacitySupported(socModel, "mthp_single"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.SINGLE);
-        } catch (Exception e) {
-            Log.w(TAG, "failed to load soc capacity", e);
-        }
     }
 
     @Override
@@ -169,7 +165,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
-        chooseHypervisor.setSelectedItem(optEnum(item, "hypervisor", VMHypervisor.DEFAULT));
+        var backend = optEnum(item, "backend", VMBackend.DEFAULT);
+        var configuredHypervisor = optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
+        var hypervisor = VMHypervisor.resolveConfigured(backend, configuredHypervisor);
+        chooseHypervisor.setSelectedItem(hypervisor != null
+            ? hypervisor : VMHypervisor.defaultForNewVm(backend));
         var extraOpts = item.opt("extra_options", null);
         if (extraOpts != null && extraOpts.is(DataItem.Type.ARRAY)) {
             var sb = new StringBuilder();

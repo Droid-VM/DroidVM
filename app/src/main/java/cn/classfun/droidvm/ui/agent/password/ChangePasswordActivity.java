@@ -11,6 +11,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -25,12 +27,15 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.ui.agent.AgentOperationActivity;
 import cn.classfun.droidvm.ui.agent.base.AgentVM;
 
 public final class ChangePasswordActivity extends AppCompatActivity {
     private static final String TAG = "ChangePasswordActivity";
     public static final String EXTRA_DISK_ID = "disk_id";
+    private static final String EXTRA_QUICK_PASSWORD = "quick_password";
     private TextInputLayout tilPassword;
     private TextInputEditText etPassword;
     private TextInputLayout tilConfirmPassword;
@@ -41,11 +46,24 @@ public final class ChangePasswordActivity extends AppCompatActivity {
     private TextView tvDiskName;
     private MaterialSwitch swNormalUsers;
     private UUID diskId;
+    private ActivityResultLauncher<Intent> operationLauncher;
 
     @NonNull
     public static Intent createIntent(@NonNull Context context, @NonNull UUID diskId) {
         var intent = new Intent(context, ChangePasswordActivity.class);
         intent.putExtra(EXTRA_DISK_ID, diskId.toString());
+        return intent;
+    }
+
+    /** Skips the confirmation form and immediately changes only the root password. */
+    @NonNull
+    public static Intent createQuickIntent(
+        @NonNull Context context,
+        @NonNull UUID diskId,
+        @NonNull String password
+    ) {
+        var intent = createIntent(context, diskId);
+        intent.putExtra(EXTRA_QUICK_PASSWORD, password);
         return intent;
     }
 
@@ -62,10 +80,15 @@ public final class ChangePasswordActivity extends AppCompatActivity {
         etConfirmPassword = findViewById(R.id.et_confirm_password);
         swNormalUsers = findViewById(R.id.sw_normal_users);
         fabConfirm = findViewById(R.id.fab_confirm);
-        initialize();
+        operationLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                setResult(result.getResultCode());
+                finish();
+            });
+        initialize(savedInstanceState == null);
     }
 
-    private void initialize() {
+    private void initialize(boolean isFreshStart) {
         collapsingToolbar.setTitle(getString(R.string.change_password_title));
         toolbar.setNavigationOnClickListener(v -> finish());
         var diskIdStr = getIntent().getStringExtra(EXTRA_DISK_ID);
@@ -84,6 +107,13 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             return;
         }
         tvDiskName.setText(getString(R.string.change_password_disk_label, diskConfig.getName()));
+        var quickPassword = getIntent().getStringExtra(EXTRA_QUICK_PASSWORD);
+        // Do not retain the password in this Activity's explicit intent.
+        getIntent().removeExtra(EXTRA_QUICK_PASSWORD);
+        if (isFreshStart && quickPassword != null && !quickPassword.isEmpty()) {
+            startPasswordChange(quickPassword, false, true);
+            return;
+        }
         fabConfirm.setOnClickListener(v -> onConfirm());
     }
 
@@ -101,7 +131,14 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             tilConfirmPassword.setError(getString(R.string.change_password_error_mismatch));
             return;
         }
-        boolean changeNormalUsers = swNormalUsers.isChecked();
+        startPasswordChange(password, swNormalUsers.isChecked(), false);
+    }
+
+    private void startPasswordChange(
+        @NonNull String password,
+        boolean changeNormalUsers,
+        boolean quickMode
+    ) {
         var diskStore = new DiskStore();
         diskStore.load(this);
         var diskConfig = diskStore.findById(diskId);
@@ -110,13 +147,20 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             finish();
             return;
         }
-        var agentVM = new AgentVM();
+        // Password rescue deliberately uses QEMU's private virtio-console transport. AgentVM
+        // itself remains backend-agnostic so other agent users can make their own choice.
+        var agentVM = new AgentVM(VMBackend.QEMU, VMHypervisor.SOFT);
         var action = new PasswordAction(agentVM);
         action.setPassword(password);
         action.setChangeNormalUsers(changeNormalUsers);
         agentVM.addDisk(diskConfig);
         var intent = AgentOperationActivity.createIntent(this, agentVM);
-        startActivity(intent);
-        finish();
+        if (quickMode) {
+            intent.putExtra(AgentOperationActivity.EXTRA_AUTOFINISH_ON_SUCCESS, true);
+            operationLauncher.launch(intent);
+        } else {
+            startActivity(intent);
+            finish();
+        }
     }
 }

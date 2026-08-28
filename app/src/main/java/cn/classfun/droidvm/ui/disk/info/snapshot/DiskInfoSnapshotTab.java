@@ -305,7 +305,11 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
             // Snapshot commands rewrite the image; a disk other images overlay is locked.
             try {
                 var diskStore = new DiskStore();
-                diskStore.load(activity);
+                if (!diskStore.load(activity)) {
+                    activity.runOnUiThread(() -> Toast.makeText(
+                        activity, R.string.disk_info_load_failed, LENGTH_SHORT).show());
+                    return;
+                }
                 int n = diskStore.childrenOf(config.getId()).size();
                 if (n > 0) {
                     activity.runOnUiThread(() -> {
@@ -359,4 +363,3 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
         if (tvLog != null) tvLog.append(message.trim());
     }
 }
-

@@ -63,6 +63,7 @@ public final class DiskDownloadManager {
 
     private static final AtomicLong NEXT_ID = new AtomicLong(1);
     private static final ConcurrentHashMap<Long, Download> JOBS = new ConcurrentHashMap<>();
+    private static final java.util.Set<Long> RETAINED = ConcurrentHashMap.newKeySet();
 
     private DiskDownloadManager() {
     }
@@ -127,7 +128,9 @@ public final class DiskDownloadManager {
 
     /**
      * Registers a download and returns its id. Drops any earlier job for the same
-     * destination and purges finished jobs. The caller then starts
+     * destination and purges failed/cancelled jobs. Successful jobs stay available
+     * until their source Activity consumes them, so a completed background download
+     * can still continue its import workflow. The caller then starts
      * {@link DiskDownloadService} for this id, which runs the download.
      */
     public static long enqueue(
@@ -186,6 +189,31 @@ public final class DiskDownloadManager {
         var d = JOBS.get(id);
         if (d == null || d.state != STATE_SUCCESS) return null;
         return new Result(d.folder, d.name, d.diskId);
+    }
+
+    /**
+     * Keeps a successful background result until its source screen has resumed and
+     * consumed it. This is opt-in so ordinary one-shot download screens retain
+     * their existing cleanup behaviour.
+     */
+    public static void retainUntilReleased(long id) {
+        if (JOBS.containsKey(id)) RETAINED.add(id);
+    }
+
+    /** Atomically consumes a successful result so two Activity instances cannot process it twice. */
+    @Nullable
+    public static Result consumeResult(long id) {
+        var d = JOBS.get(id);
+        if (d == null || d.state != STATE_SUCCESS || !JOBS.remove(id, d)) return null;
+        RETAINED.remove(id);
+        return new Result(d.folder, d.name, d.diskId);
+    }
+
+    /** Releases a terminal job after its source Activity has consumed the result. */
+    public static void release(long id) {
+        RETAINED.remove(id);
+        var d = JOBS.get(id);
+        if (d != null && (d.cancelled.get() || isTerminal(id))) JOBS.remove(id, d);
     }
 
     /** Ids of all known (in-flight or just-finished) downloads. */
@@ -444,15 +472,19 @@ public final class DiskDownloadManager {
         }
     }
 
-    /** Drops finished jobs and any earlier job aimed at the same destination. */
+    /** Drops failed/cancelled jobs and any earlier job aimed at the same destination. */
     private static void purgeFinishedAndDuplicates(String folder, String name) {
         for (var e : JOBS.entrySet()) {
             var d = e.getValue();
             boolean duplicate = d.folder.equals(folder) && d.name.equals(name);
-            boolean finished = d.state == STATE_SUCCESS
+            boolean terminal = d.state == STATE_SUCCESS
                 || d.state == STATE_FAILED || d.state == STATE_CANCELLED;
+            boolean finished = terminal && !RETAINED.contains(d.id);
             if (duplicate) d.cancelled.set(true);
-            if (duplicate || finished) JOBS.remove(e.getKey());
+            if (duplicate || finished) {
+                JOBS.remove(e.getKey());
+                RETAINED.remove(e.getKey());
+            }
         }
     }
 

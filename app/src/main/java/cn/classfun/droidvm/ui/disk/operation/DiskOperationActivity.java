@@ -25,7 +25,9 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -48,6 +50,7 @@ import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
+import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 
 public final class DiskOperationActivity extends AppCompatActivity {
@@ -59,6 +62,8 @@ public final class DiskOperationActivity extends AppCompatActivity {
     public static final String EXTRA_DISK_NAME = "disk_name";
     /** On success, {@code setResult(RESULT_OK)} and finish so a launcher can chain. */
     public static final String EXTRA_AUTOFINISH = "autofinish";
+    /** Explicit in-app activity to launch only after this disk operation succeeds. */
+    public static final String EXTRA_SUCCESS_INTENT = "success_intent";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private TerminalView terminalView;
     private ProgressBar progressSpinner;
@@ -69,7 +74,9 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private MaterialToolbar toolbar;
     private TerminalSession session;
     private boolean finished = false;
+    private boolean postProcessing = false;
     private boolean autoFinish = false;
+    private Intent successIntent = null;
     private String outputPath = null;
     private String taskAction = null;
     private DiskStore diskStore = null;
@@ -145,26 +152,66 @@ public final class DiskOperationActivity extends AppCompatActivity {
         @NonNull String path,
         @NonNull Runnable done
     ) {
+        startOptimizeAfterImportImpl(activity, diskId, path, null, done, done);
+    }
+
+    /**
+     * Result-aware variant for callers that must continue only after optimization succeeds.
+     * {@code onSkipped} runs when the image already needs no rewrite; an optimization that is
+     * required is launched through {@code launcher} and reports its outcome there. Cancelling the
+     * compression prompt or failing to launch calls {@code onCancelled}.
+     */
+    public static void startOptimizeAfterImportForResult(
+        @NonNull android.app.Activity activity,
+        @NonNull UUID diskId,
+        @NonNull String path,
+        @NonNull ActivityResultLauncher<Intent> launcher,
+        @NonNull Runnable onSkipped,
+        @NonNull Runnable onCancelled
+    ) {
+        startOptimizeAfterImportImpl(
+            activity, diskId, path, launcher, onSkipped, onCancelled);
+    }
+
+    private static void startOptimizeAfterImportImpl(
+        @NonNull android.app.Activity activity,
+        @NonNull UUID diskId,
+        @NonNull String path,
+        @Nullable ActivityResultLauncher<Intent> launcher,
+        @NonNull Runnable onSkipped,
+        @NonNull Runnable onCancelled
+    ) {
         runOnPool(() -> {
             var supported = DiskCompress.detect(path).isCrosvmSupported();
             // An imported overlay is skipped outright: it is mostly a header (nothing worth
             // rewriting), and its chain gets checked by the pre-start guard instead.
             var isOverlay = hasBackingFile(path);
             activity.runOnUiThread(() -> {
-                if (supported || isOverlay || activity.isFinishing()) {
-                    done.run();
+                if (activity.isFinishing()) {
+                    onCancelled.run();
                     return;
                 }
-                OptimizeCompression.resolve(activity, done, compress -> {
+                if (supported || isOverlay) {
+                    onSkipped.run();
+                    return;
+                }
+                OptimizeCompression.resolve(activity, onCancelled, compress -> {
                     try {
                         var obj = new JSONObject();
                         obj.put("action", "convert");
                         obj.put("compress", compress.value());
-                        activity.startActivity(createIntent(activity, diskId, obj));
+                        var intent = createIntent(activity, diskId, obj);
+                        if (launcher == null) {
+                            activity.startActivity(intent);
+                            onSkipped.run();
+                        } else {
+                            intent.putExtra(EXTRA_AUTOFINISH, true);
+                            launcher.launch(intent);
+                        }
                     } catch (Exception e) {
                         Log.e(TAG, "Failed to start optimize activity", e);
+                        onCancelled.run();
                     }
-                    done.run();
                 });
             });
         });
@@ -219,6 +266,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
         var diskIdStr = intent.getStringExtra(EXTRA_DISK_ID);
         var taskJsonStr = intent.getStringExtra(EXTRA_TASK_JSON);
         autoFinish = intent.getBooleanExtra(EXTRA_AUTOFINISH, false);
+        successIntent = intent.getParcelableExtra(EXTRA_SUCCESS_INTENT, Intent.class);
         if (taskJsonStr == null) {
             Log.e(TAG, "Missing task JSON");
             finish();
@@ -277,66 +325,93 @@ public final class DiskOperationActivity extends AppCompatActivity {
      * "points at overlay" and "points at base" are valid views, so a failure at any step leaves
      * a consistent, recoverable state.
      */
-    private void finishCommit() {
+    private boolean finishCommit() {
         try {
             var store = new DiskStore();
-            store.load(this);
+            if (!store.load(this)) {
+                Log.e(TAG, "commit finished but disk registry could not be loaded; keeping overlay");
+                return false;
+            }
             var overlay = store.findById(diskConfig.getId());
-            if (overlay == null) return;
+            if (overlay == null) return false;
             var parent = store.parentOf(overlay);
             if (parent == null) {
                 Log.w(TAG, "commit finished but overlay has no registered parent");
-                return;
+                return false;
             }
             var overlayPath = overlay.getFullPath();
             var parentPath = parent.getFullPath();
             var parentFormat = detectFormat(parentPath);
             // Children of the committed overlay re-base onto the (now content-identical)
-            // parent: header-only rewrite, then the registry link.
+            // parent: header-only rewrite, then the registry link. A partial failure is still
+            // consistent: already-moved children point at the parent and the overlay remains for
+            // children that were not moved.
             for (var child : store.childrenOf(overlay.getId())) {
                 var result = RunUtils.runList(
                     findQemuImg(), "rebase", "-u",
                     "-b", parentPath, "-F", parentFormat, child.getFullPath());
-                if (!result.isSuccess()) result.printLog(TAG);
+                if (!result.isSuccess()) {
+                    result.printLog(TAG);
+                    if (!store.save(this))
+                        Log.e(TAG, "Failed to persist completed child rebases");
+                    Log.e(TAG, "Keeping committed overlay after child rebase failure: "
+                        + child.getFullPath());
+                    return false;
+                }
                 child.setParentId(parent.getId());
             }
-            // Any VM attachment of the overlay now means the base.
-            var vmStore = new cn.classfun.droidvm.lib.store.vm.VMStore();
-            if (vmStore.load(vmStore, this)) {
-                boolean vmChanged = false;
-                for (int i = 0; i < vmStore.size(); i++) {
-                    var disks = vmStore.get(i).item.opt("disks", null);
-                    if (disks == null
-                        || !disks.is(cn.classfun.droidvm.lib.store.base.DataItem.Type.ARRAY))
-                        continue;
-                    for (var disk : disks.asArray()) {
-                        if (overlayPath.equals(disk.optString("path", ""))) {
-                            disk.set("path", parentPath);
-                            vmChanged = true;
-                        }
-                    }
-                }
-                if (vmChanged) vmStore.save(this);
+            // Persist child links before changing attachments or deleting the overlay file.
+            if (!store.save(this)) {
+                Log.e(TAG, "Keeping committed overlay: failed to save child links");
+                return false;
+            }
+            // Only slots pointing directly at the merged overlay move to its parent. Slots
+            // pointing at child overlays stay exactly where they are.
+            if (!DiskDependencyUpdater.redirectVmDisks(
+                this, java.util.Set.of(overlayPath), parentPath)) {
+                Log.e(TAG, "Keeping committed overlay: failed to save VM attachments");
+                return false;
             }
             store.removeById(overlay.getId());
-            store.save(this);
-            RunUtils.runList("rm", "-f", overlayPath);
+            if (!store.save(this)) {
+                Log.e(TAG, "Keeping committed overlay: failed to remove registry entry");
+                return false;
+            }
+            var removed = RunUtils.runList("rm", "-f", overlayPath);
+            if (!removed.isSuccess()) {
+                removed.printLog(TAG);
+                return false;
+            }
+            return true;
         } catch (Exception e) {
             Log.e(TAG, "commit follow-up failed", e);
+            return false;
         }
     }
 
-    /** After a successful flatten the overlay stands alone; only the registry link changes. */
-    private void finishFlatten() {
+    /**
+     * After a successful flatten the replacement image uses the same path and contains the whole
+     * backing-chain view. Child backing headers and every VM slot therefore remain valid and must
+     * not move; only this image's parent registry link is cleared.
+     */
+    private boolean finishFlatten() {
         try {
             var store = new DiskStore();
-            store.load(this);
+            if (!store.load(this)) {
+                Log.e(TAG, "flatten finished but disk registry could not be loaded");
+                return false;
+            }
             var overlay = store.findById(diskConfig.getId());
-            if (overlay == null) return;
+            if (overlay == null) return false;
             overlay.setParentId(null);
-            store.save(this);
+            if (!store.save(this)) {
+                Log.e(TAG, "flatten finished but standalone registry link could not be saved");
+                return false;
+            }
+            return true;
         } catch (Exception e) {
             Log.e(TAG, "flatten follow-up failed", e);
+            return false;
         }
     }
 
@@ -376,12 +451,14 @@ public final class DiskOperationActivity extends AppCompatActivity {
         if (finished) return;
         finished = true;
         int exitCode = session == null ? -1 : session.getExitStatus();
-        // Overlay-tree operations carry registry/VM follow-up decided before launch; run it
-        // unattended now that the data operation succeeded.
+        // Overlay-tree success includes its persisted relationship follow-up. Keep the progress
+        // UI up until that finishes; never report success while VMStore/DiskStore is still stale.
         if (exitCode == 0 && diskConfig != null && "commit".equals(taskAction)) {
-            runOnPool(this::finishCommit);
+            startTreePostProcessing(this::finishCommit);
+            return;
         } else if (exitCode == 0 && diskConfig != null && "flatten".equals(taskAction)) {
-            runOnPool(this::finishFlatten);
+            startTreePostProcessing(this::finishFlatten);
+            return;
         }
         // Path mode (no registered DiskConfig) is an in-place op, so there is
         // nothing to persist -- skip the store update. commit/flatten did their own registry
@@ -408,6 +485,11 @@ public final class DiskOperationActivity extends AppCompatActivity {
             }
             diskStore.save(this);
         }
+        if (exitCode == 0 && successIntent != null) {
+            startActivity(successIntent);
+            finish();
+            return;
+        }
         // Chained convert (e.g. pre-start decompress): hand control back to the
         // launcher, which starts the VM. No success screen -- the start is the
         // feedback.
@@ -426,6 +508,28 @@ public final class DiskOperationActivity extends AppCompatActivity {
             ivStatus.setImageResource(R.drawable.ic_large_error);
             tvStatus.setText(getString(R.string.disk_operation_failed, exitCode));
         }
+    }
+
+    private void startTreePostProcessing(@NonNull java.util.function.BooleanSupplier operation) {
+        postProcessing = true;
+        btnCancel.setVisibility(GONE);
+        tvStatus.setText(R.string.disk_operation_finalizing);
+        runOnPool(() -> {
+            boolean success = operation.getAsBoolean();
+            runOnUiThread(() -> {
+                if (isFinishing()) return;
+                postProcessing = false;
+                progressSpinner.setVisibility(GONE);
+                ivStatus.setVisibility(VISIBLE);
+                if (success) {
+                    ivStatus.setImageResource(R.drawable.ic_large_success);
+                    tvStatus.setText(R.string.disk_operation_success);
+                } else {
+                    ivStatus.setImageResource(R.drawable.ic_large_error);
+                    tvStatus.setText(R.string.disk_operation_dependency_failed);
+                }
+            });
+        });
     }
 
     private void showFailed(String message) {
@@ -451,6 +555,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     }
 
     private void confirmFinish() {
+        if (postProcessing) return;
         if (finished) {
             finish();
             return;

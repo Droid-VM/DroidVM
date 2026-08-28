@@ -91,6 +91,8 @@ public final class VMScreenConfig {
      * that never names one behaves as it always did. Mirrors crosvm's DEFAULT_SIMPLEFB_POLL_HZ.
      */
     public static final long DEFAULT_POLL_HZ = 30;
+    /** Initial SimpleFB polling rate shown when creating a VM. */
+    public static final long NEW_VM_DEFAULT_POLL_HZ = 60;
     public static final long MIN_POLL_HZ = 1;
     /**
      * crosvm's MAX_SIMPLEFB_POLL_HZ. A sanity bound on a knob whose cost is linear in it, not a

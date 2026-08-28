@@ -317,8 +317,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildCpuPlacementCommand(args);
         var hyp = item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.CROSVM);
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
         if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for CROSVM backend");
         args.add("--hypervisor");
         var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
@@ -736,8 +735,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private boolean isGunyahHypervisor() {
         var hyp = config.item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.CROSVM);
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
         return hypervisor == VMHypervisor.GUNYAH;
     }
 

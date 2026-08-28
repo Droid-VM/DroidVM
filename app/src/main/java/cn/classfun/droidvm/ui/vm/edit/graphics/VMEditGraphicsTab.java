@@ -631,9 +631,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      */
     private boolean isDynamicMemorySharingAvailable() {
         var hypervisor = parent.get("hypervisor", VMHypervisor.DEFAULT);
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(
-                parent.get("backend", VMBackend.DEFAULT));
+        hypervisor = VMHypervisor.resolveConfigured(
+            parent.get("backend", VMBackend.DEFAULT), hypervisor);
         return hypervisor != VMHypervisor.GUNYAH
             || parent.get(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, false);
     }

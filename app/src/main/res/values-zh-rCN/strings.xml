@@ -55,6 +55,17 @@
     <string name="setup_extract_uptodate">\u2705 预构建文件已是最新。</string>
     <string name="setup_extract_fail">\u274C 解压预构建文件失败，请重试。</string>
 
+    <string name="setup_network_title">创建网络</string>
+    <string name="setup_network_desc">虚拟机必须接上网络才会有连接。请先选一种创建起来；之后可以在“网络”分页添加或修改。</string>
+    <string name="setup_network_opt_wifi">Wi-Fi 伪桥接</string>
+    <string name="setup_network_opt_linux">Linux 网桥（IPv4 NAT + DHCP）</string>
+    <string name="setup_network_opt_gvisor">gVisor 网桥（IPv4 + IPv6 NAT + DHCP）</string>
+    <string name="setup_network_info_wifi">名称：%1$s\n上行：Wi-Fi，第二层伪桥接\n地址：由 Wi-Fi 路由器分配\nNAT：不使用\nDHCP：由路由器提供</string>
+    <string name="setup_network_info_linux">名称：%1$s\n上行：经由主机路由\nIPv4：%2$s\nIPv6：%3$s（静态，仅主机端）\nNAT：IPv4 已启用\nDHCP：IPv4 已启用</string>
+    <string name="setup_network_info_gvisor">名称：%1$s\n上行：经由主机路由，用户空间实现\nIPv4：%2$s\nIPv6：%3$s\nNAT：IPv4 与 IPv6 已启用\nDHCP：IPv4、IPv6 与 SLAAC 已启用</string>
+    <string name="setup_network_no_subnet">已无可用网段</string>
+    <string name="setup_network_created">已创建网络 %1$s</string>
+
     <string name="setup_done_title">设置完成</string>
     <string name="setup_done_desc">所有检查均已通过。\n您可以开始使用 DroidVM。</string>
 
@@ -103,6 +114,8 @@
     <string name="vm_edit">编辑</string>
     <string name="vm_delete">删除</string>
     <string name="vm_delete_confirm">确定要删除此虚拟机吗？</string>
+    <string name="vm_delete_writable_disks">同时删除关联的可写入磁盘文件（%1$d 个）</string>
+    <string name="vm_delete_disks_result">已删除 %1$d 个可写入磁盘文件；另有 %2$d 个仍在使用、存在磁盘依赖关系或无法删除，已保留。</string>
     <string name="vm_state_stopped">已停止</string>
     <string name="vm_state_starting">启动中</string>
     <string name="vm_state_running">运行中</string>
@@ -660,7 +673,25 @@
     <string name="disk_create_preview">预览：%1$s</string>
     <string name="disk_create_preview_desc">磁盘文件路径预览</string>
 
-    <string name="lxc_title">导入 LXC 镜像</string>
+    <string name="vm_create_mode_title">新增虚拟机</string>
+    <string name="vm_create_linux">Linux VM</string>
+    <string name="vm_create_windows">Windows VM</string>
+    <string name="vm_create_customize">自定义</string>
+    <string name="windows_vm_unavailable_title">Windows VM 尚不可用</string>
+    <string name="windows_vm_unavailable_message">此功能尚在实现中，目前不可用。请先使用 windows_build.ps1 脚本构建 Windows 镜像。</string>
+    <string name="windows_vm_open_script">打开构建脚本</string>
+    <string name="linux_vm_create_title">创建 Linux 虚拟机</string>
+    <string name="linux_vm_category_settings">设置</string>
+    <string name="linux_vm_disk_size_hint">磁盘大小</string>
+    <string name="linux_vm_root_password_hint">Root 密码</string>
+    <string name="linux_vm_network_hint">网络</string>
+    <string name="linux_vm_network_none">不使用网络</string>
+    <string name="linux_vm_network_unavailable">选择的网络已不存在。</string>
+    <string name="linux_vm_create_action">创建</string>
+    <string name="linux_vm_create_success">虚拟机“%1$s”已创建。</string>
+    <string name="linux_vm_create_failed">Linux 虚拟机创建流程未完成。</string>
+
+    <string name="lxc_title">下载发行版 LXC 镜像</string>
     <string name="lxc_category_source">来源</string>
     <string name="lxc_meta_source_hint">元数据来源</string>
     <string name="lxc_download_source_hint">下载来源</string>
@@ -683,6 +714,7 @@
     <string name="lxc_variant_hint">构建类别</string>
     <string name="lxc_build_hint">构建版本</string>
     <string name="lxc_category_output">输出</string>
+    <string name="lxc_reset_password_hint">重置 root 密码（可选）</string>
     <string name="lxc_info_size">下载大小：%1$s</string>
     <string name="lxc_info_path">远程路径：%1$s</string>
     <string name="lxc_fab_import">导入</string>
@@ -692,9 +724,9 @@
     <string name="lxc_error_name_empty">文件名不能为空。</string>
     <string name="lxc_error_folder_empty">保存文件夹不能为空。</string>
     <string name="lxc_error_custom_url">请输入有效的镜像站 URL。</string>
+    <string name="lxc_error_source_unavailable">所选元数据源当前不可用。</string>
     <string name="lxc_no_images">未找到 disk-kvm 镜像。</string>
-    <string name="lxc_default_download_source">cernet</string>
-    <string name="disk_add_lxc">导入 LXC 镜像</string>
+    <string name="disk_add_lxc">下载发行版 LXC 镜像</string>
     <string name="disk_add_url">从 URL 下载</string>
     <string name="disk_add_images">下载发行版镜像</string>
 
@@ -746,6 +778,8 @@
     <string name="disk_operation_running">执行中\u2026</string>
     <string name="disk_operation_success">操作完成。</string>
     <string name="disk_operation_failed">操作失败（退出码 %1$d）。</string>
+    <string name="disk_operation_finalizing">正在保存磁盘依赖关系…</string>
+    <string name="disk_operation_dependency_failed">磁盘数据操作已完成，但无法保存 VM／磁盘依赖关系；可保留源镜像时已予以保留。</string>
     <string name="disk_operation_bad_task">无效的任务参数。</string>
     <string name="disk_operation_cancel_title">取消操作？</string>
     <string name="disk_operation_cancel_message">磁盘操作仍在进行中，确定要取消吗？</string>
@@ -766,6 +800,7 @@
     <string name="agent_operation_starting_vm">正在启动临时虚拟机\u2026</string>
     <string name="agent_operation_running">执行中\u2026</string>
     <string name="agent_operation_success">操作完成。</string>
+    <string name="agent_operation_success_skipped">操作完成；有操作不适用，未进行更改。</string>
     <string name="agent_operation_failed">操作失败（退出码 %1$d）。</string>
     <string name="agent_operation_failed_detail">操作失败：%1$s</string>
     <string name="agent_operation_prepare_failed">准备代理虚拟机失败。</string>
@@ -778,8 +813,26 @@
     <string name="agent_operation_log_creating_vm">正在守护进程上创建临时虚拟机\u2026\n</string>
     <string name="agent_operation_log_starting_vm">正在启动临时虚拟机\u2026\n</string>
     <string name="agent_operation_log_running">临时虚拟机正在运行\u2026\n</string>
-    <string name="agent_operation_log_success">\n密码修改成功。\n</string>
+    <string name="agent_operation_log_success">\n所有请求的操作均已完成。\n</string>
+    <string name="agent_operation_log_skipped">\n操作未发生错误，但至少有一个操作未进行更改。\n</string>
     <string name="agent_operation_log_failed">\n操作失败，请查看上方日志。\n</string>
+    <string name="agent_operation_logs">日志</string>
+    <string name="agent_operation_stopping">正在停止救援虚拟机…</string>
+    <string name="agent_operation_vm_stopped">救援虚拟机已停止。</string>
+    <string name="agent_operation_control_failed">救援虚拟机的控制通道已断开。</string>
+    <string name="agent_operation_error_root_not_found">找不到受支持的 Linux 根分区。</string>
+    <string name="agent_operation_error_password">无法更新密码数据库。</string>
+    <string name="agent_operation_error_unmount">密码已更新，但无法安全卸载目标文件系统。</string>
+    <string name="agent_operation_error_script">救援脚本意外失败。</string>
+    <string name="agent_operation_error_autogrow_disk">无法检查目标磁盘。</string>
+    <string name="agent_operation_error_autogrow_in_use">最后一个分区仍在挂载或使用中。</string>
+    <string name="agent_operation_error_partition_grow">无法扩展最后一个分区。</string>
+    <string name="agent_operation_error_partition_reread">分区表已更改，但内核无法重新加载。</string>
+    <string name="agent_operation_error_filesystem_check">文件系统检查失败，未执行文件系统扩展。</string>
+    <string name="agent_operation_error_filesystem_mount">无法挂载文件系统以进行扩展。</string>
+    <string name="agent_operation_error_filesystem_grow">分区已扩大，但文件系统扩展失败。</string>
+    <string name="agent_operation_error_filesystem_unmount">文件系统已扩展，但无法安全卸载。</string>
+    <string name="agent_operation_error_unknown">救援错误：%1$s</string>
 
     <string name="disk_resize">调整大小</string>
     <string name="disk_resize_title">调整磁盘大小</string>
@@ -792,6 +845,11 @@
     <string name="disk_resize_shrink_message">新大小小于当前大小，缩小磁盘可能会导致数据丢失。确定要继续吗？</string>
     <string name="disk_resize_error_invalid">请输入有效的大小</string>
     <string name="disk_resize_error_info">无法获取磁盘信息</string>
+    <string name="disk_resize_autogrow">分区大小扩容</string>
+    <string name="disk_resize_autogrow_description">支持 ext2/3/4、Btrfs、F2FS</string>
+    <string name="disk_resize_error_no_action">请选择不同大小，或启用文件系统扩展</string>
+    <string name="disk_resize_error_autogrow_shrink">缩小虚拟磁盘时不能同时扩展文件系统</string>
+    <string name="disk_dependency_update_failed">无法更新 VM 磁盘依赖关系；未删除任何磁盘。</string>
 
     <string name="disk_set_format">转换格式</string>
     <string name="disk_set_format_title">转换磁盘格式</string>

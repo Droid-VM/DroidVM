@@ -75,8 +75,9 @@ public final class ImageCommandGenerate {
         appendAction();
         sb.append("; then ");
         if (useTempPath) {
-            sb.append(fmt("rm -vf %s; ", realPath));
-            sb.append(fmt("mv -v %s %s; ", tmpPath, realPath));
+            // tmp lives beside the destination, so mv replaces it with one same-filesystem
+            // rename. The old image remains intact until the new image is complete.
+            sb.append(fmt("mv -vf %s %s; ", tmpPath, realPath));
         } else if (!diskPath.equals(outputPath) && !action.equals("clone")) {
             sb.append(fmt("rm -vf %s; ", eDiskPath));
         }
@@ -120,12 +121,10 @@ public final class ImageCommandGenerate {
         sb.append(" commit -p ").append(eDiskPath);
     }
 
-    /**
-     * Pull all backing data into the overlay so it stands alone ({@code rebase} to an empty
-     * backing). Writes only the overlay - siblings of the old backing are unaffected.
-     */
-    private void appendFlatten() {
-        sb.append(" rebase -p -b ").append(escapedString("")).append(" ").append(eDiskPath);
+    /** Copy the complete backing-chain view, then atomically replace the overlay on success. */
+    private void appendFlatten() throws JSONException {
+        task.put("drop_backing", true);
+        appendConvert();
     }
 
     private void appendClone() throws JSONException {

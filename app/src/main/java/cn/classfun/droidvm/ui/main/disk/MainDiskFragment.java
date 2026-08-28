@@ -61,12 +61,7 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
 
     @Override
     protected int getItemMenuResId(@NonNull DiskConfig config) {
-        var fmt = config.getFormat();
-        if (!DiskConfig.supportsExtraOperations(fmt))
-            return R.menu.menu_disk_actions_simple;
-        if (config.getParentId() != null)
-            return R.menu.menu_disk_actions_overlay;
-        return R.menu.menu_disk_actions;
+        return DiskActionDialog.getMenuResId(config);
     }
 
     @Override

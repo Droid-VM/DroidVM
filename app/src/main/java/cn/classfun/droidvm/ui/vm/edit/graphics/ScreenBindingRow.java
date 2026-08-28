@@ -146,7 +146,7 @@ final class ScreenBindingRow {
         // device, not of anything the user can change, so both are settled once here rather than
         // in the visibility pass. One rate row either way; only its hint and its bounds differ.
         rate = (int) (gpuScreen
-            ? VMScreenConfig.DEFAULT_REFRESH_RATE : VMScreenConfig.DEFAULT_POLL_HZ);
+            ? VMScreenConfig.DEFAULT_REFRESH_RATE : VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
         tilRate.setHint(block.getContext().getString(rateHint()));
         dpiOptions.setVisibility(gpuScreen ? VISIBLE : GONE);
     }

@@ -32,6 +32,7 @@ import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.annotation.IdRes;
+import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -92,19 +93,53 @@ public final class DiskActionDialog {
         this.activityLauncher = activityLauncher;
     }
 
+    /** Source menu for the disk list and the disk-info action grid derived from it. */
+    @MenuRes
+    public static int getMenuResId(@NonNull DiskConfig config) {
+        if (!DiskConfig.supportsExtraOperations(config.getFormat()))
+            return R.menu.menu_disk_actions_simple;
+        if (config.getParentId() != null)
+            return R.menu.menu_disk_actions_overlay;
+        return R.menu.menu_disk_actions;
+    }
+
+    /** Actions that rewrite bytes in the selected image and are unsafe while it has overlays. */
+    public static boolean modifiesDiskContent(@IdRes int id) {
+        return id == R.id.menu_disk_resize
+            || id == R.id.menu_disk_convert
+            || id == R.id.menu_disk_optimize
+            || id == R.id.menu_disk_change_password;
+    }
+
     public boolean diskMenuOnClick(@NonNull DiskConfig config, @IdRes int id) {
+        if (!isDiskAction(id)) return false;
+        Runnable action = () -> performDiskAction(config, id);
+        if (modifiesDiskContent(id))
+            guardUnlocked(config, action);
+        else
+            action.run();
+        return true;
+    }
+
+    private static boolean isDiskAction(@IdRes int id) {
+        return modifiesDiskContent(id)
+            || id == R.id.menu_disk_delete
+            || id == R.id.menu_disk_create_increment
+            || id == R.id.menu_disk_merge
+            || id == R.id.menu_disk_flatten
+            || id == R.id.menu_disk_show_info
+            || id == R.id.menu_disk_clone;
+    }
+
+    private void performDiskAction(@NonNull DiskConfig config, @IdRes int id) {
         if (id == R.id.menu_disk_resize) {
-            guardUnlocked(config, () -> new DiskResizeDialog(context, config));
-            return true;
+            new DiskResizeDialog(context, config);
         } else if (id == R.id.menu_disk_convert) {
-            guardUnlocked(config, () -> new DiskSetFormatDialog(context, config).show());
-            return true;
+            new DiskSetFormatDialog(context, config).show();
         } else if (id == R.id.menu_disk_optimize) {
-            guardUnlocked(config, () -> tryOptimize(config));
-            return true;
+            tryOptimize(config);
         } else if (id == R.id.menu_disk_delete) {
             confirmDelete(config);
-            return true;
         } else if (id == R.id.menu_disk_create_increment) {
             // Snapshot-feel path: one name field, instant create. Advanced (size, compression,
             // encryption) falls through to the full create screen in backing mode.
@@ -113,27 +148,18 @@ public final class DiskActionDialog {
                 intent.putExtra(DiskCreateActivity.EXTRA_BACKING_ID, config.getId().toString());
                 launchActivity(intent);
             }).show();
-            return true;
         } else if (id == R.id.menu_disk_merge) {
             tryMerge(config);
-            return true;
         } else if (id == R.id.menu_disk_flatten) {
             tryFlatten(config);
-            return true;
         } else if (id == R.id.menu_disk_show_info) {
             showMoreInfo(config);
-            return true;
         } else if (id == R.id.menu_disk_clone) {
             new DiskCloneDialog(context, config).show();
-            return true;
         } else if (id == R.id.menu_disk_change_password) {
-            guardUnlocked(config, () -> {
-                var intent = ChangePasswordActivity.createIntent(context, config.getId());
-                launchActivity(intent);
-            });
-            return true;
+            var intent = ChangePasswordActivity.createIntent(context, config.getId());
+            launchActivity(intent);
         }
-        return false;
     }
 
     /**
@@ -215,9 +241,9 @@ public final class DiskActionDialog {
     }
 
     /**
-     * Make the overlay standalone by pulling its base's data in ("take the branch with you").
-     * Writes only the overlay, so sibling overlays never matter; the family's VMs must be off
-     * because the file is rewritten in place.
+     * Make the overlay standalone by copying its complete backing-chain view to a temporary image
+     * and replacing the overlay only after that copy succeeds ("take the branch with you").
+     * Sibling overlays never matter; the family's VMs must be off during the replacement.
      */
     public void tryFlatten(@NonNull DiskConfig config) {
         tryFlatten(config, null);
@@ -358,19 +384,18 @@ public final class DiskActionDialog {
     }
 
     /**
-     * Write operations on a disk other images overlay would shift the ground under those
-     * overlays (resize/convert/password change the content or size; delete orphans them), so a
-     * disk with registered children only allows read-side actions until its overlays are merged,
-     * flattened or deleted. Runs {@code action} on the main thread when unlocked; explains
-     * otherwise. The registry read happens off the main thread.
+     * Rewriting a disk that other images overlay would shift the ground under those overlays.
+     * Tree-aware operations (create, merge, flatten and delete) deliberately remain available;
+     * only byte-mutating actions pass through this guard. The registry read happens off the main
+     * thread and fails closed.
      */
     private void guardUnlocked(@NonNull DiskConfig config, @NonNull Runnable action) {
         runOnPool(() -> {
-            int children = 0;
+            int children = -1;
             try {
                 var store = new DiskStore();
-                store.load(context);
-                children = store.childrenOf(config.getId()).size();
+                if (store.load(context))
+                    children = store.childrenOf(config.getId()).size();
             } catch (Exception e) {
                 Log.w(TAG, "Failed to check disk children", e);
             }
@@ -378,6 +403,10 @@ public final class DiskActionDialog {
             mainLooper.post(() -> {
                 if (n == 0) {
                     action.run();
+                    return;
+                }
+                if (n < 0) {
+                    Toast.makeText(context, R.string.disk_info_load_failed, LENGTH_SHORT).show();
                     return;
                 }
                 new MaterialAlertDialogBuilder(context)
@@ -579,11 +608,16 @@ public final class DiskActionDialog {
         @NonNull DiskConfig config, @Nullable String extraNote, @Nullable Runnable onConfirmed) {
         runOnPool(() -> {
             var store = new DiskStore();
-            store.load(context);
+            if (!store.load(context)) {
+                fail(context.getString(R.string.disk_dependency_update_failed));
+                return;
+            }
             var subtree = new ArrayList<DiskConfig>();
             var self = store.findById(config.getId());
             collectSubtree(store, self == null ? config : self, subtree);
-            boolean isRoot = self == null || store.parentOf(self) == null;
+            var parent = self == null ? null : store.parentOf(self);
+            boolean isRoot = parent == null;
+            var replacementPath = parent == null ? null : parent.getFullPath();
             var paths = new HashSet<String>();
             for (var cfg : subtree) paths.add(cfg.getFullPath());
             var runningNames = runningVmsAttaching(paths);
@@ -593,13 +627,16 @@ public final class DiskActionDialog {
                 return;
             }
             mainLooper.post(() ->
-                showDeleteDialog(subtree, isRoot, extraNote, onConfirmed));
+                showDeleteDialog(
+                    subtree, isRoot, paths, replacementPath, extraNote, onConfirmed));
         });
     }
 
     private void showDeleteDialog(
         @NonNull List<DiskConfig> subtree,
         boolean isRoot,
+        @NonNull java.util.Set<String> subtreePaths,
+        @Nullable String replacementPath,
         @Nullable String extraNote,
         @Nullable Runnable onConfirmed
     ) {
@@ -624,17 +661,28 @@ public final class DiskActionDialog {
             boolean isChecked = checkBox.isChecked();
             runOnPool(() -> {
                 var store = new DiskStore();
-                store.load(context);
-                // Leaves first: a half-finished delete then leaves no overlay stranded on a
-                // base that is already gone.
+                if (!store.load(context)
+                    || !DiskDependencyUpdater.redirectVmDisks(
+                        context, subtreePaths, replacementPath)) {
+                    fail(context.getString(R.string.disk_dependency_update_failed));
+                    return;
+                }
+                // Registry first, leaves first. Files stay present until both VM references and
+                // the registry have been saved, so an I/O failure cannot create dangling slots.
                 for (int i = subtree.size() - 1; i >= 0; i--) {
                     var cfg = subtree.get(i);
-                    if (isChecked) runList("rm", "-f", cfg.getFullPath());
                     store.removeById(cfg.getId());
                 }
-                store.save(context);
+                if (!store.save(context)) {
+                    fail(context.getString(R.string.disk_dependency_update_failed));
+                    return;
+                }
+                if (isChecked) {
+                    for (int i = subtree.size() - 1; i >= 0; i--)
+                        runList("rm", "-f", subtree.get(i).getFullPath());
+                }
                 if (this.onUpdate != null)
-                    this.onUpdate.run();
+                    mainLooper.post(this.onUpdate);
                 // After the registry is written, so a listener re-reading it (e.g. to redo the
                 // lock state of a disk that just lost its last overlay) sees the new truth.
                 if (onConfirmed != null) mainLooper.post(onConfirmed);

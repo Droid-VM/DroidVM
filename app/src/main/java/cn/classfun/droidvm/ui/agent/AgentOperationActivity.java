@@ -10,12 +10,14 @@ import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
 
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 import android.util.Log;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -35,6 +37,7 @@ import org.json.JSONObject;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
@@ -42,16 +45,27 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
-import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
 import cn.classfun.droidvm.ui.agent.base.AgentVM;
 import cn.classfun.droidvm.ui.agent.base.BaseAction;
+import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
 
+/** Runs a maintenance action in the bundled initramfs under QEMU TCG. */
 public final class AgentOperationActivity extends AppCompatActivity
     implements DaemonConnection.EventListener, ForegroundCallback {
     private static final String TAG = "AgentOperationActivity";
     public static final String EXTRA_AGENT_VM_JSON = "agent_vm_json";
+    public static final String EXTRA_AUTOFINISH_ON_SUCCESS = "autofinish_on_success";
+    private static final String AGENT_MARKER = "__DROIDVM_AGENT__:";
+    private static final String READY_MARKER = AGENT_MARKER + "READY";
+    private static final String RESULT_OK_MARKER = AGENT_MARKER + "RESULT:OK";
+    private static final String RESULT_ERROR_MARKER = AGENT_MARKER + "RESULT:ERROR:";
+    private static final int AGENT_BUFFER_LIMIT = 64 * 1024;
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final StringBuilder agentOutput = new StringBuilder();
+    private final AtomicBoolean cleanupStarted = new AtomicBoolean(false);
     private ProgressBar progressSpinner;
     private ImageView ivStatus;
     private TextView tvTitle;
@@ -59,11 +73,21 @@ public final class AgentOperationActivity extends AppCompatActivity
     private TerminalView terminalView;
     private TerminalSession terminalSession;
     private MaterialButton btnCancel;
+    private MaterialButton btnLogs;
     private MaterialToolbar toolbar;
-    private boolean finished = false;
+    private volatile boolean bootstrapSent = false;
+    private volatile boolean actionSent = false;
+    private volatile boolean resultShown = false;
+    private volatile boolean shellStarted = false;
+    private volatile boolean actionSkipped = false;
+    private volatile boolean closing = false;
+    private volatile boolean activityDone = false;
+    private volatile boolean vmExited = false;
+    private boolean autoFinishOnSuccess = false;
     private String vmId = null;
+    private String vmName = null;
     private AgentVM agentVM = null;
-    private BaseAction action = null;
+    private String actionPayload = null;
 
     private final SimpleTerminalSessionClient sessionClient = new SimpleTerminalSessionClient(this) {
         @Override
@@ -102,7 +126,9 @@ public final class AgentOperationActivity extends AppCompatActivity
         tvStatus = findViewById(R.id.tv_status);
         terminalView = findViewById(R.id.terminal_view);
         btnCancel = findViewById(R.id.btn_cancel);
+        btnLogs = findViewById(R.id.btn_logs);
         btnCancel.setOnClickListener(v -> confirmCancel());
+        btnLogs.setOnClickListener(v -> openLogs());
         initialize();
     }
 
@@ -116,6 +142,7 @@ public final class AgentOperationActivity extends AppCompatActivity
             }
         });
         var intent = getIntent();
+        autoFinishOnSuccess = intent.getBooleanExtra(EXTRA_AUTOFINISH_ON_SUCCESS, false);
         var agentVmJson = intent.getStringExtra(EXTRA_AGENT_VM_JSON);
         if (agentVmJson == null) {
             Log.e(TAG, "Missing agent_vm_json extra");
@@ -126,9 +153,15 @@ public final class AgentOperationActivity extends AppCompatActivity
             var diskStore = new DiskStore();
             diskStore.load(this);
             agentVM = new AgentVM(diskStore, new JSONObject(agentVmJson));
-            action = BaseAction.createAction(agentVM);
+            var actions = BaseAction.createActions(agentVM);
+            var script = BaseAction.buildRescueScript(actions);
+            for (var action : actions) action.clearSecrets();
+            actionPayload = Base64.encodeToString(
+                script.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+            // Do not retain the JSON copy containing the password for the Activity lifetime.
+            intent.removeExtra(EXTRA_AGENT_VM_JSON);
         } catch (Exception e) {
-            Log.e(TAG, "Failed to parse AgentVM", e);
+            Log.e(TAG, "Failed to prepare AgentVM action", e);
             finish();
             return;
         }
@@ -168,18 +201,12 @@ public final class AgentOperationActivity extends AppCompatActivity
     }
 
     private void startAgent() {
-        try {
-            agentVM.prepareVars();
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to prepare agent", e);
-            runOnUiThread(() -> showFailed(getString(R.string.agent_operation_prepare_failed)));
-            return;
-        }
         runOnUiThread(() -> {
             tvStatus.setText(R.string.agent_operation_creating_vm);
             appendLog(getString(R.string.agent_operation_log_creating_vm));
         });
         var vmConfig = agentVM.buildVM();
+        vmName = vmConfig.getName();
         var conn = DaemonConnection.getInstance();
         try {
             registerEventListeners();
@@ -212,9 +239,7 @@ public final class AgentOperationActivity extends AppCompatActivity
         } catch (Exception e) {
             Log.e(TAG, "Failed to create/start agent VM", e);
             runOnUiThread(() -> showFailed(
-                getString(R.string.agent_operation_start_failed, e.getMessage())
-            ));
-            cleanupVM();
+                getString(R.string.agent_operation_start_failed, e.getMessage()), false));
         }
     }
 
@@ -242,12 +267,242 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (event.equals("output")) {
             var text = URLDecoder.decode(data.optString("data", ""), StandardCharsets.UTF_8);
             var stream = data.optString("stream", "");
-            if (!text.isEmpty() && (stream.equals("stdio") || stream.equals("uart")))
+            if (text.isEmpty()) return;
+            if (stream.equals("uart"))
                 mainHandler.post(() -> appendLog(text));
+            else if (stream.equals("agent"))
+                handleAgentOutput(text);
         } else if (event.equals("exited")) {
             int exitCode = data.optInt("exit_code", -1);
             mainHandler.post(() -> onVMFinished(exitCode));
         }
+    }
+
+    private void handleAgentOutput(@NonNull String text) {
+        String snapshot;
+        synchronized (agentOutput) {
+            agentOutput.append(text);
+            if (agentOutput.length() > AGENT_BUFFER_LIMIT)
+                agentOutput.delete(0, agentOutput.length() - AGENT_BUFFER_LIMIT);
+            snapshot = agentOutput.toString();
+        }
+        if (snapshot.contains(AGENT_MARKER + "ACTION:SKIPPED:"))
+            actionSkipped = true;
+        if (!bootstrapSent && (snapshot.contains("~ #")
+            || snapshot.contains("Run /bin/sh as init process"))) {
+            bootstrapSent = true;
+            sendAgentCommand("stty -echo 2>/dev/null; "
+                + "mount -t proc proc /proc 2>/dev/null || true; "
+                + "mount -t sysfs sysfs /sys 2>/dev/null || true; "
+                + "mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; "
+                + "busybox mdev -s; printf '\\n" + READY_MARKER + "\\n'", true);
+        }
+        if (bootstrapSent && !actionSent && snapshot.contains(READY_MARKER)) {
+            actionSent = true;
+            var payload = actionPayload;
+            actionPayload = null;
+            if (payload == null) {
+                mainHandler.post(() -> showFailed(
+                    getString(R.string.agent_operation_prepare_failed), true));
+                return;
+            }
+            var command = "printf '%s' '" + payload
+                + "' | busybox base64 -d > /run/droidvm-rescue.sh && "
+                + "busybox sh /run/droidvm-rescue.sh; rc=$?; "
+                + "rm -f /run/droidvm-rescue.sh; "
+                + "[ $rc -eq 0 ] || printf '\\n" + RESULT_ERROR_MARKER
+                + "SCRIPT_FAILED\\n'";
+            sendAgentCommand(command, true);
+        }
+        if (!resultShown && snapshot.contains(RESULT_OK_MARKER)) {
+            mainHandler.post(this::showSuccess);
+            return;
+        }
+        if (!resultShown && snapshot.contains(RESULT_ERROR_MARKER)) {
+            var start = snapshot.lastIndexOf(RESULT_ERROR_MARKER) + RESULT_ERROR_MARKER.length();
+            var end = snapshot.indexOf('\n', start);
+            if (end < 0) end = snapshot.length();
+            var code = snapshot.substring(start, end).replace("\r", "").trim();
+            mainHandler.post(() -> showFailed(describeAgentError(code), true));
+        }
+    }
+
+    private void sendAgentCommand(@NonNull String command, boolean failOnError) {
+        runOnPool(() -> {
+            try {
+                writeConsole("agent", command + "\n");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to write agent console", e);
+                if (failOnError) mainHandler.post(() -> showFailed(
+                    getString(R.string.agent_operation_control_failed), false));
+            }
+        });
+    }
+
+    private void writeConsole(@NonNull String stream, @NonNull String data) throws Exception {
+        if (vmId == null || vmId.isEmpty()) throw new IllegalStateException("VM is not ready");
+        var req = new JSONObject();
+        req.put("command", "vm_console_write");
+        req.put("vm_id", vmId);
+        req.put("stream", stream);
+        req.put("data", data);
+        var resp = DaemonConnection.getInstance().request(req);
+        if (!resp.optBoolean("success", false))
+            throw new RuntimeException(resp.optString("message", "console write failed"));
+    }
+
+    @NonNull
+    private String describeAgentError(@NonNull String code) {
+        switch (code) {
+            case "ROOT_NOT_FOUND":
+                return getString(R.string.agent_operation_error_root_not_found);
+            case "PASSWD_FAILED":
+                return getString(R.string.agent_operation_error_password);
+            case "UNMOUNT_FAILED":
+                return getString(R.string.agent_operation_error_unmount);
+            case "SCRIPT_FAILED":
+                return getString(R.string.agent_operation_error_script);
+            case "AUTOGROW_DISK_NOT_FOUND":
+            case "AUTOGROW_PROBE_FAILED":
+                return getString(R.string.agent_operation_error_autogrow_disk);
+            case "AUTOGROW_PARTITION_IN_USE":
+                return getString(R.string.agent_operation_error_autogrow_in_use);
+            case "PARTITION_GROW_FAILED":
+                return getString(R.string.agent_operation_error_partition_grow);
+            case "PARTITION_REREAD_FAILED":
+                return getString(R.string.agent_operation_error_partition_reread);
+            case "FILESYSTEM_CHECK_FAILED":
+                return getString(R.string.agent_operation_error_filesystem_check);
+            case "FILESYSTEM_MOUNT_FAILED":
+                return getString(R.string.agent_operation_error_filesystem_mount);
+            case "FILESYSTEM_GROW_FAILED":
+                return getString(R.string.agent_operation_error_filesystem_grow);
+            case "FILESYSTEM_UNMOUNT_FAILED":
+                return getString(R.string.agent_operation_error_filesystem_unmount);
+            default:
+                return getString(R.string.agent_operation_error_unknown, code);
+        }
+    }
+
+    private void showSuccess() {
+        if (resultShown || closing) return;
+        resultShown = true;
+        progressSpinner.setVisibility(GONE);
+        ivStatus.setVisibility(VISIBLE);
+        ivStatus.setImageResource(R.drawable.ic_large_success);
+        tvStatus.setText(actionSkipped
+            ? R.string.agent_operation_success_skipped
+            : R.string.agent_operation_success);
+        appendLog(getString(actionSkipped
+            ? R.string.agent_operation_log_skipped
+            : R.string.agent_operation_log_success));
+        if (autoFinishOnSuccess) finishAgent(true);
+        else showResultButtons();
+    }
+
+    private void showFailed(@NonNull String message, boolean logsAvailable) {
+        if (resultShown || closing) return;
+        resultShown = true;
+        progressSpinner.setVisibility(GONE);
+        ivStatus.setVisibility(VISIBLE);
+        ivStatus.setImageResource(R.drawable.ic_large_error);
+        tvStatus.setText(getString(R.string.agent_operation_failed_detail, message));
+        appendLog(getString(R.string.agent_operation_log_failed));
+        btnLogs.setVisibility(logsAvailable && !vmExited ? VISIBLE : GONE);
+        btnCancel.setText(android.R.string.ok);
+        btnCancel.setOnClickListener(v -> finishAgent());
+    }
+
+    private void showResultButtons() {
+        btnLogs.setVisibility(vmExited ? GONE : VISIBLE);
+        btnCancel.setText(android.R.string.ok);
+        btnCancel.setOnClickListener(v -> finishAgent());
+    }
+
+    private void openLogs() {
+        if (vmExited || vmId == null || closing) return;
+        btnLogs.setEnabled(false);
+        runOnPool(() -> {
+            try {
+                if (!shellStarted) {
+                    writeConsole("agent", "ROOT_DEVICE=$(cat /run/droidvm-root-device 2>/dev/null); "
+                        + "if [ -n \"$ROOT_DEVICE\" ] && ! mountpoint -q /mnt; then "
+                        + "mount -o rw \"$ROOT_DEVICE\" /mnt >/dev/null 2>&1 || true; fi; "
+                        + "printf '\\nDroidVM rescue shell; target root: /mnt\\n' > /dev/ttyAMA0; "
+                        + "setsid sh -c 'exec sh -i </dev/ttyAMA0 >/dev/ttyAMA0 2>&1' &\n");
+                    shellStarted = true;
+                }
+                runOnUiThread(() -> {
+                    btnLogs.setEnabled(true);
+                    var intent = new Intent(this, VMConsoleActivity.class);
+                    intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, vmId);
+                    intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, vmName);
+                    intent.putExtra(VMConsoleActivity.EXTRA_STREAM, "uart");
+                    intent.putExtra(VMConsoleActivity.EXTRA_LOGS, false);
+                    startActivity(intent);
+                });
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to open rescue shell", e);
+                runOnUiThread(() -> {
+                    btnLogs.setEnabled(true);
+                    showFailed(getString(R.string.agent_operation_control_failed), false);
+                });
+            }
+        });
+    }
+
+    private void finishAgent() {
+        finishAgent(false);
+    }
+
+    private void finishAgent(boolean returnSuccess) {
+        if (closing) return;
+        closing = true;
+        btnCancel.setEnabled(false);
+        btnLogs.setEnabled(false);
+        tvStatus.setText(R.string.agent_operation_stopping);
+        runOnPool(() -> {
+            if (!vmExited) {
+                try {
+                    writeConsole("agent", "sync; umount /mnt >/dev/null 2>&1 || "
+                        + "umount -l /mnt >/dev/null 2>&1 || true; poweroff -f\n");
+                } catch (Exception e) {
+                    Log.w(TAG, "Guest shutdown command failed", e);
+                }
+                threadSleep(800);
+                requestStop();
+            }
+            cleanupVM();
+            runOnUiThread(() -> finishActivity(returnSuccess));
+        });
+    }
+
+    private void requestStop() {
+        if (vmId == null || vmId.isEmpty()) return;
+        try {
+            var req = new JSONObject();
+            req.put("command", "vm_stop");
+            req.put("vm_id", vmId);
+            DaemonConnection.getInstance().request(req);
+        } catch (Exception e) {
+            Log.d(TAG, "VM was already stopped or stop request failed", e);
+        }
+    }
+
+    private void onVMFinished(int exitCode) {
+        if (activityDone) return;
+        vmExited = true;
+        appendLog(fmt(
+            "\n--- %s (exit code: %d) ---\n",
+            getString(R.string.agent_operation_vm_exited), exitCode
+        ));
+        btnLogs.setVisibility(GONE);
+        if (closing) return;
+        if (resultShown) {
+            tvStatus.setText(R.string.agent_operation_vm_stopped);
+            return;
+        }
+        showFailed(getString(R.string.agent_operation_failed, exitCode), false);
     }
 
     @Override
@@ -256,149 +511,100 @@ public final class AgentOperationActivity extends AppCompatActivity
 
     @Override
     public void onDaemonDisconnected() {
-        if (!finished) {
-            mainHandler.post(() -> showFailed(getString(R.string.agent_operation_daemon_disconnected)));
-        }
-    }
-
-    private void onVMFinished(int exitCode) {
-        if (finished) return;
-        finished = true;
-        appendLog(fmt(
-            "\n--- %s (exit code: %d) ---\n",
-            getString(R.string.agent_operation_vm_exited), exitCode
-        ));
-        runOnPool(() -> {
-            String resultMessage = null;
-            boolean success = false;
-            try {
-                if (action != null) {
-                    action.checkResult();
-                    success = true;
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Agent result check failed", e);
-                resultMessage = e.getMessage();
-            }
-            killTerminalSession();
-            cleanupVM();
-            final boolean finalSuccess = success;
-            final String finalMsg = resultMessage;
-            runOnUiThread(() -> {
-                progressSpinner.setVisibility(GONE);
-                ivStatus.setVisibility(VISIBLE);
-                btnCancel.setText(android.R.string.ok);
-                btnCancel.setOnClickListener(v -> finish());
-                if (finalSuccess) {
-                    ivStatus.setImageResource(R.drawable.ic_large_success);
-                    tvStatus.setText(R.string.agent_operation_success);
-                    appendLog(getString(R.string.agent_operation_log_success));
-                } else {
-                    ivStatus.setImageResource(R.drawable.ic_large_error);
-                    if (finalMsg != null) {
-                        tvStatus.setText(getString(R.string.agent_operation_failed_detail, finalMsg));
-                    } else {
-                        tvStatus.setText(getString(R.string.agent_operation_failed, exitCode));
-                    }
-                    appendLog(getString(R.string.agent_operation_log_failed));
-                }
-            });
-        });
+        if (!activityDone && !closing)
+            mainHandler.post(() -> showFailed(
+                getString(R.string.agent_operation_daemon_disconnected), false));
     }
 
     private void killTerminalSession() {
-        if (terminalSession != null) {
-            try {
-                if (terminalSession.isRunning())
-                    shellKillProcess(terminalSession.getPid(), SIGHUP);
-            } catch (Exception ignored) {
-            }
-            terminalSession = null;
+        if (terminalSession == null) return;
+        try {
+            if (terminalSession.isRunning())
+                shellKillProcess(terminalSession.getPid(), SIGHUP);
+        } catch (Exception ignored) {
         }
+        terminalSession.finishIfRunning();
+        terminalSession = null;
     }
 
     private void cleanupVM() {
+        if (!cleanupStarted.compareAndSet(false, true)) return;
         unregisterEventListeners();
-        if (vmId != null && !vmId.isEmpty()) {
+        var id = vmId;
+        if (id == null || id.isEmpty()) return;
+        requestStop();
+        var conn = DaemonConnection.getInstance();
+        boolean stopped = false;
+        for (int i = 0; i < 50; i++) {
             try {
-                var conn = DaemonConnection.getInstance();
-                var destroyReq = new JSONObject();
-                destroyReq.put("command", "vm_delete");
-                destroyReq.put("vm_id", vmId);
-                conn.request(destroyReq);
-                Log.i(TAG, fmt("Temporary VM %s destroyed", vmId));
+                var statusReq = new JSONObject();
+                statusReq.put("command", "vm_status");
+                statusReq.put("vm_id", id);
+                var status = conn.request(statusReq);
+                if (status.optBoolean("success", false)
+                    && status.optString("state", "").equals("stopped")) {
+                    stopped = true;
+                    break;
+                }
             } catch (Exception e) {
-                Log.w(TAG, fmt("Failed to destroy temporary VM %s", vmId), e);
+                break;
             }
+            threadSleep(100);
         }
-        if (agentVM != null) {
-            try {
-                agentVM.cleanupVars();
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to cleanup vars", e);
-            }
+        if (!stopped) {
+            Log.w(TAG, fmt("Temporary VM %s did not stop; leaving its daemon record intact", id));
+            return;
         }
+        try {
+            var destroyReq = new JSONObject();
+            destroyReq.put("command", "vm_delete");
+            destroyReq.put("vm_id", id);
+            var response = conn.request(destroyReq);
+            if (!response.optBoolean("success", false))
+                Log.w(TAG, fmt("Failed to destroy temporary VM %s: %s",
+                    id, response.optString("message", "unknown error")));
+            else
+                Log.i(TAG, fmt("Temporary VM %s destroyed", id));
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to destroy temporary VM %s", id), e);
+        }
+        vmId = null;
     }
 
-    private void showFailed(@NonNull String message) {
-        finished = true;
-        progressSpinner.setVisibility(GONE);
-        ivStatus.setVisibility(VISIBLE);
-        ivStatus.setImageResource(R.drawable.ic_large_error);
-        tvStatus.setText(message);
-        btnCancel.setText(android.R.string.ok);
-        btnCancel.setOnClickListener(v -> finish());
+    private void finishActivity(boolean returnSuccess) {
+        if (activityDone) return;
+        activityDone = true;
+        killTerminalSession();
+        if (returnSuccess) setResult(RESULT_OK);
+        finish();
     }
 
     private void confirmCancel() {
-        if (finished) {
-            finish();
+        if (resultShown) {
+            finishAgent();
             return;
         }
         new MaterialAlertDialogBuilder(this)
             .setTitle(R.string.agent_operation_cancel_title)
             .setMessage(R.string.agent_operation_cancel_message)
-            .setPositiveButton(android.R.string.ok, (d, w) -> {
-                finished = true;
-                runOnPool(() -> {
-                    killTerminalSession();
-                    cleanupVM();
-                });
-                finish();
-            })
+            .setPositiveButton(android.R.string.ok, (d, w) -> finishAgent())
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
 
     private void confirmFinish() {
-        if (finished) {
-            finish();
-            return;
-        }
-        new MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.agent_operation_cancel_title)
-            .setMessage(R.string.agent_operation_cancel_message)
-            .setPositiveButton(android.R.string.ok, (d, w) -> {
-                finished = true;
-                runOnPool(() -> {
-                    killTerminalSession();
-                    cleanupVM();
-                });
-                finish();
-            })
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        confirmCancel();
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (!finished) {
+        if (!activityDone) {
+            closing = true;
             runOnPool(() -> {
-                killTerminalSession();
                 cleanupVM();
+                killTerminalSession();
             });
         }
     }
 }
-

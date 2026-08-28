@@ -4,6 +4,10 @@
 package cn.classfun.droidvm.lib.store.vm;
 
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
+
+import android.content.Context;
 
 import androidx.annotation.NonNull;
 
@@ -18,6 +22,16 @@ import cn.classfun.droidvm.lib.store.base.DataConfig;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public class VMConfig extends DataConfig {
+    /** Initial value shown for dynamic memory sharing when creating a VM. */
+    public static final boolean NEW_VM_DEFAULT_GUNYAH_DYNAMIC_SHARE = true;
+    public static final boolean NEW_VM_DEFAULT_HUGEPAGES = true;
+    public static final boolean NEW_VM_DEFAULT_PMU = true;
+    public static final boolean NEW_VM_DEFAULT_RNG = true;
+    public static final boolean NEW_VM_DEFAULT_SMT = true;
+    public static final boolean NEW_VM_DEFAULT_USB = true;
+    public static final ProtectedVM NEW_VM_DEFAULT_PROTECTED_VM =
+        ProtectedVM.PSEUDO_UNPROTECTED;
+
     public VMConfig() {
         setId(UUID.randomUUID());
         item.set("created_at", System.currentTimeMillis());
@@ -38,6 +52,95 @@ public class VMConfig extends DataConfig {
         // Configs from before "serial_ports" implicitly meant "COM1 = app console, rest sinks";
         // make that explicit so every reader sees the same list.
         VMSerialConfig.ensureDefaults(item);
+    }
+
+    /**
+     * Materializes the values shown by every tab when Customize opens for a new VM. Quick
+     * creation starts here and only replaces the fields it exposes, so both creation paths keep
+     * the same defaults as those defaults evolve.
+     */
+    @NonNull
+    public static VMConfig createWithCustomizeDefaults(@NonNull Context context) {
+        var config = new VMConfig();
+        var item = config.item;
+        item.set("memory_mb", 512L);
+        item.set("cpu_count", 1L);
+        item.set("swiotlb_mb", 64L);
+        item.set("balloon", false);
+        item.set("pmu", NEW_VM_DEFAULT_PMU);
+        item.set("rng", NEW_VM_DEFAULT_RNG);
+        item.set("smt", NEW_VM_DEFAULT_SMT);
+        item.set("usb", NEW_VM_DEFAULT_USB);
+        item.set("sandbox", false);
+        item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
+        item.set("strace", false);
+        item.set("gunyah_dynamic_share", NEW_VM_DEFAULT_GUNYAH_DYNAMIC_SHARE);
+        item.set("gunyah_hugepage_threshold_kb", 1024L);
+        item.set(LendMthpMode.KEY, LendMthpMode.defaultForDevice(context));
+        item.set("protected_vm", NEW_VM_DEFAULT_PROTECTED_VM);
+        item.set("backend", VMBackend.DEFAULT);
+        item.set("hypervisor", VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
+        item.set("extra_options", DataItem.newArray());
+        item.set("environment_variables", DataItem.newArray());
+        item.set(CpuPlacementPlan.KEY_AFFINITY, "");
+        item.set(CpuPlacementPlan.KEY_AUTO, true);
+        item.set(CpuPlacementPlan.KEY_CAPACITY, "");
+        item.set(CpuPlacementPlan.KEY_CLUSTERS, "");
+
+        var boot = BootConfig.of(config);
+        boot.setProtocol(BootConfig.Protocol.UEFI);
+        boot.setUefiFirmware("");
+        boot.setUefiVarsEnabled(true);
+        boot.setUefiVars("");
+        boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
+        boot.setKernel(PATH_BUILTIN_KERNEL);
+        boot.setInitrd(PATH_BUILTIN_INITRD);
+        boot.setCmdline(BootConfig.DEFAULT_MANUAL_CMDLINE);
+        boot.setImageCmdline("");
+        boot.setImageDisk(0);
+        boot.setVdafix(true);
+        boot.setBootWait(BootConfig.DEFAULT_BOOT_WAIT);
+        item.set("auto_up", false);
+
+        item.set("disks", DataItem.newArray());
+        item.set("shared_dirs", DataItem.newArray());
+        item.set("networks", DataItem.newArray());
+
+        var gpu = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
+        gpu.setEnabled(false);
+        gpu.setExporter(DisplayExporter.NONE);
+        gpu.setTransportCap(DisplayTransportCap.defaultFor(
+            VMScreenConfig.ID_GPU0, DisplayExporter.NATIVE));
+        gpu.setInputEnabled(true);
+        gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
+        gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
+        gpu.setRefreshRate(VMScreenConfig.DEFAULT_REFRESH_RATE);
+        gpu.setDpiH(VMScreenConfig.DEFAULT_DPI);
+        gpu.setDpiV(VMScreenConfig.DEFAULT_DPI);
+
+        var simpleFb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        simpleFb.setEnabled(true);
+        simpleFb.setExporter(DisplayExporter.NATIVE);
+        simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
+            VMScreenConfig.ID_SIMPLEFB, DisplayExporter.NATIVE));
+        simpleFb.setInputEnabled(true);
+        simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
+        simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
+        simpleFb.setPollHz(VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
+        item.set("display_blit_provider", GpuBlitProvider.TURNIP);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, false);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
+            CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, "");
+        VpuConfig.setEnabled(item, false);
+        VpuConfig.setHostPoolMb(item, VpuConfig.DEFAULT_HOST_POOL_MB);
+        VpuConfig.setGuestPoolMb(item, VpuConfig.DEFAULT_GUEST_POOL_MB);
+
+        var peripherals = DataItem.newArray();
+        peripherals.append(VMPeripheralConfig.createDefaultVirtioSound().item);
+        item.set("peripherals", peripherals);
+        VMSerialConfig.ensureDefaults(item);
+        return config;
     }
 
     /**

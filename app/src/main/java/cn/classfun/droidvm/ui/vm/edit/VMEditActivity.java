@@ -37,6 +37,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 
 public final class VMEditActivity extends SwipeableTabActivity {
     private static final String TAG = "VMEditActivity";
@@ -60,6 +61,8 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public UUID editVMId = null;
     private RecordAudioPermission recordAudioPermission;
     private CameraPermission cameraPermission;
+    /** A microphone permission choice has already been offered during this edit session. */
+    private boolean micPermissionHandled = false;
     private final Map<String, Object> sharedData = new HashMap<>();
 
 
@@ -76,6 +79,12 @@ public final class VMEditActivity extends SwipeableTabActivity {
     @NonNull
     public RecordAudioPermission getRecordAudioPermission() {
         return recordAudioPermission;
+    }
+
+    /** Shares one microphone permission prompt between adding a device and saving the VM. */
+    public void ensureRecordAudioThen(@NonNull Runnable action) {
+        micPermissionHandled = true;
+        recordAudioPermission.ensureThen(action);
     }
 
     /** Host camera permission gate, shared with the peripheral tab. Unlike the mic one, a
@@ -212,6 +221,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     private void doSave() {
+        var peripheralTab = getTab(VMEditTab.TAB_PERIPHERAL);
+        if (!micPermissionHandled
+            && peripheralTab instanceof VMEditPeripheralTab
+            && ((VMEditPeripheralTab) peripheralTab).hasMicrophone()) {
+            ensureRecordAudioThen(this::doSave);
+            return;
+        }
         // Commit any field still being edited: NIC MAC/offset/forward inputs
         // write back to the model on focus loss, so flush the focused view
         // before reading the tabs' config.
@@ -250,7 +266,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
                 return;
             }
         } else {
-            config = new VMConfig();
+            config = VMConfig.createWithCustomizeDefaults(this);
         }
         for (var tab : tabs) {
             try {

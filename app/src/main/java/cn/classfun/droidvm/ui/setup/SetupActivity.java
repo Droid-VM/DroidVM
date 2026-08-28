@@ -30,6 +30,7 @@ import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
 import cn.classfun.droidvm.ui.setup.step.DoneStepFragment;
 import cn.classfun.droidvm.ui.setup.step.ExtractStepFragment;
 import cn.classfun.droidvm.ui.setup.step.KernelModuleStepFragment;
+import cn.classfun.droidvm.ui.setup.step.NetworkStepFragment;
 import cn.classfun.droidvm.ui.setup.step.PrivacyStepFragment;
 import cn.classfun.droidvm.ui.setup.step.RootStepFragment;
 import cn.classfun.droidvm.ui.setup.step.SocStepFragment;
@@ -85,6 +86,8 @@ public final class SetupActivity extends AppCompatActivity {
             new ExtractStepFragment(this),
             // After extract: the module list reads the .ko files extract just put in place.
             new KernelModuleStepFragment(this),
+            // Before Done, so the user leaves the wizard with a network to attach a VM to.
+            new NetworkStepFragment(this),
             new DoneStepFragment(this),
         };
         var targetStep = getIntent().getStringExtra(EXTRA_TARGET_STEP);

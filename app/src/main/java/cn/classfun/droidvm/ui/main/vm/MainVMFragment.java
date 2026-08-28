@@ -7,6 +7,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
@@ -24,13 +25,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
+import cn.classfun.droidvm.ui.disk.lxc.CreateLinuxVmActivity;
 import cn.classfun.droidvm.ui.main.base.stateful.MainStatefulFragment;
 import cn.classfun.droidvm.ui.vm.VMActions;
+import cn.classfun.droidvm.ui.vm.VMDeletion;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
@@ -76,7 +79,38 @@ public final class MainVMFragment
 
     @Override
     public void onFabClick(@NonNull View v) {
-        startActivity(new Intent(requireContext(), VMEditActivity.class));
+        MenuDialogBuilder.showSimple(
+            requireContext(),
+            R.string.vm_create_mode_title,
+            R.menu.menu_vm_create,
+            item -> {
+                var context = requireContext();
+                var id = item.getItemId();
+                if (id == R.id.menu_vm_create_linux) {
+                    startActivity(new Intent(context, CreateLinuxVmActivity.class));
+                } else if (id == R.id.menu_vm_create_windows) {
+                    showWindowsVmUnavailableDialog();
+                } else if (id == R.id.menu_vm_create_customize) {
+                    startActivity(new Intent(context, VMEditActivity.class));
+                } else {
+                    return false;
+                }
+                return true;
+            }
+        );
+    }
+
+    private void showWindowsVmUnavailableDialog() {
+        new MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.windows_vm_unavailable_title)
+            .setMessage(R.string.windows_vm_unavailable_message)
+            .setPositiveButton(R.string.windows_vm_open_script, (dialog, which) ->
+                startActivity(new Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/Droid-VM/win11-arm64-image-builder/blob/master/windows_build.ps1")
+                )))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     @NonNull
@@ -155,23 +189,16 @@ public final class MainVMFragment
         }
     }
 
-    private void deleteVM(@NonNull VMConfig config) {
+    private void deleteVM(@NonNull VMConfig config, boolean deleteDisks) {
         var ctx = requireContext();
         adapter.items.removeById(config.getId());
-        adapter.items.save(ctx);
+        boolean saved = adapter.items.save(ctx);
         refreshView();
-        DaemonConnection.getInstance().buildRequest("vm_delete")
-            .put("vm_id", config.getId().toString())
-            .invoke();
+        VMDeletion.releaseDaemonAndMaybeDeleteDisks(ctx, config, deleteDisks, saved);
     }
 
     private void confirmDeleteVM(@NonNull VMConfig config) {
-        var ctx = requireContext();
-        new MaterialAlertDialogBuilder(ctx)
-            .setTitle(config.getName())
-            .setMessage(R.string.vm_delete_confirm)
-            .setPositiveButton(R.string.vm_delete, (d, w) -> deleteVM(config))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        VMDeletion.confirm(requireContext(), config,
+            deleteDisks -> deleteVM(config, deleteDisks));
     }
 }

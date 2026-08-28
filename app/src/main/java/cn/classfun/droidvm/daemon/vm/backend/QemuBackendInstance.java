@@ -57,9 +57,13 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
     private String qmpSocketPath = null;
     private String uartSocketPath = null;
+    private String agentSocketPath = null;
     private int ioThreadCounter = 0;
     private int driveCounter = 0;
+    private final boolean agentMode;
     private final LocalSocketConsoleStream uartStream;
+    @Nullable
+    private final LocalSocketConsoleStream agentStream;
     private final InputConsoleStream stdoutStream;
     private final InputConsoleStream stderrStream;
     private final SimpleConsoleStream stdioStream;
@@ -69,7 +73,12 @@ public final class QemuBackendInstance extends VMBackendInstance {
         @NonNull VMConfig config
     ) {
         super(context, config);
+        agentMode = config.item.optBoolean("agent_mode", false);
         uartStream = new LocalSocketConsoleStream(config, "uart", null);
+        agentStream = agentMode
+            ? new LocalSocketConsoleStream(config, "agent", null) : null;
+        if (agentStream != null)
+            agentStream.setPersistentLogEnabled(false);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);
         stdioStream = new SimpleConsoleStream(config, "stdio");
@@ -77,6 +86,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         addStream(stderrStream);
         addStream(stdioStream);
         addStream(uartStream);
+        if (agentStream != null) addStream(agentStream);
     }
 
     @NonNull
@@ -89,6 +99,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         deleteFile(qmpSocketPath);
         uartSocketPath = pathJoin(RUN_PATH, fmt("%s-uart.sock", config.getName()));
         deleteFile(uartSocketPath);
+        if (agentMode) {
+            agentSocketPath = pathJoin(RUN_PATH, fmt("%s-agent.sock", config.getName()));
+            deleteFile(agentSocketPath);
+        }
         Log.i(TAG, fmt("QMP socket path: %s", qmpSocketPath));
         var args = buildCommand();
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
@@ -103,23 +117,32 @@ public final class QemuBackendInstance extends VMBackendInstance {
             Log.e(TAG, "Failed to start qemu process", e);
             return result;
         }
-        waitForUartClient();
+        // agent0 is declared before the blocking UART chardev. Connect it first, then release
+        // QEMU's UART wait so no hvc0 boot output can race ahead of the daemon reader.
+        if (agentStream != null)
+            waitForSocketClient("agent", agentSocketPath, agentStream);
+        waitForSocketClient("UART", uartSocketPath, uartStream);
         return result;
     }
 
-    private void waitForUartClient() {
+    private void waitForSocketClient(
+        @NonNull String label,
+        @NonNull String socketPath,
+        @NonNull LocalSocketConsoleStream stream
+    ) {
         int i = 0;
-        Log.i(TAG, fmt("UART socket path: %s", uartSocketPath));
+        Log.i(TAG, fmt("%s socket path: %s", label, socketPath));
         while (true) {
             try {
-                var uart = new LocalSocket(LocalSocket.SOCKET_STREAM);
-                uart.connect(new LocalSocketAddress(uartSocketPath, FILESYSTEM));
-                Log.i(TAG, "UART client connected");
-                uartStream.setSocket(uart);
+                var socket = new LocalSocket(LocalSocket.SOCKET_STREAM);
+                socket.connect(new LocalSocketAddress(socketPath, FILESYSTEM));
+                Log.i(TAG, fmt("%s client connected", label));
+                stream.setSocket(socket);
                 return;
             } catch (Exception e) {
                 if (i >= 50) {
-                    Log.e(TAG, "failed to create UART socket after multiple attempts, giving up");
+                    Log.e(TAG, fmt(
+                        "failed to connect %s socket after multiple attempts, giving up", label));
                     throw new RuntimeException(e);
                 }
                 i++;
@@ -140,8 +163,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add(pathJoin(DATA_DIR, "usr", "share", "qemu"));
         var hyp = item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.QEMU);
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.QEMU, hypervisor);
         if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for QEMU backend");
         args.add("-accel");
         var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
@@ -217,7 +239,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
         if (item.optBoolean("hugepages", true))
             args.add("-mem-prealloc");
-        if (item.optBoolean("rng", true)) {
+        if (!agentMode && item.optBoolean("rng", true)) {
             args.add("-object");
             args.add("rng-random,filename=/dev/urandom,id=rng0");
             args.add("-device");
@@ -227,14 +249,25 @@ public final class QemuBackendInstance extends VMBackendInstance {
             args.add("-device");
             args.add("virtio-balloon-pci,disable-legacy=on,disable-modern=off");
         }
-        buildInputCommand(args);
-        buildUsbCommand(args);
+        if (!agentMode) buildInputCommand(args);
+        if (!agentMode) buildUsbCommand(args);
         buildDiskCommand(args);
-        buildNetCommand(args);
-        buildSharedDirCommand(args);
-        buildAudioCommand(args);
-        buildGpuCommand(args);
-        buildVncCommand(args);
+        if (!agentMode) {
+            buildNetCommand(args);
+            buildSharedDirCommand(args);
+            buildAudioCommand(args);
+            buildGpuCommand(args);
+            buildVncCommand(args);
+        }
+        if (agentMode) {
+            args.add("-chardev");
+            args.add(fmt(
+                "socket,id=agent0,path=%s,server=on,wait=off", agentSocketPath));
+            args.add("-device");
+            args.add("virtio-serial-pci,id=agent-bus,disable-legacy=on,disable-modern=off");
+            args.add("-device");
+            args.add("virtconsole,chardev=agent0,name=org.droidvm.agent");
+        }
         args.add("-chardev");
         args.add(fmt("socket,id=uart0,path=%s,server=on,wait=on", uartSocketPath));
         args.add("-serial");
@@ -314,7 +347,9 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     args.add(fmt("iothread,id=%s", ioId));
                     var driveArg = new StringBuilder();
                     driveArg.append(fmt("file=%s,if=none,id=%s", path, drId));
-                    driveArg.append(",cache=unsafe,aio=threads,discard=unmap");
+                    driveArg.append(agentMode
+                        ? ",cache=writeback,aio=threads,discard=unmap"
+                        : ",cache=unsafe,aio=threads,discard=unmap");
                     if (readonly) driveArg.append(",readonly=on");
                     args.add("-drive");
                     args.add(driveArg.toString());
@@ -625,6 +660,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     @Override
     public void cleanup() {
         uartStream.close();
+        if (agentStream != null) agentStream.close();
         if (qmpSocketPath != null) {
             deleteFile(qmpSocketPath);
             qmpSocketPath = null;
@@ -632,6 +668,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         if (uartSocketPath != null) {
             deleteFile(uartSocketPath);
             uartSocketPath = null;
+        }
+        if (agentSocketPath != null) {
+            deleteFile(agentSocketPath);
+            agentSocketPath = null;
         }
     }
 }

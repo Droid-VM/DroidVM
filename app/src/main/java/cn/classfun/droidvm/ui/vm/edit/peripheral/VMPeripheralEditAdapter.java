@@ -113,21 +113,14 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     private void addPeripheral(@NonNull PeripheralType type) {
         Runnable add = () -> {
-            var item = DataItem.newObject();
-            var cfg = new VMPeripheralConfig(item);
-            cfg.setType(type);
             if (type == PeripheralType.VIRTIO_SOUND) {
-                // A sound card with no endpoints is a card that does nothing, and what almost
-                // everyone wants first is a speaker and a microphone following the phone. Both
-                // are removable, and a card that genuinely wants one direction is one tap away.
-                var speaker = cfg.addEndpoint();
-                speaker.setMode(SoundMode.SPEAKER);
-                speaker.setHostDevice(HostAudioDevices.SYSTEM_DEFAULT_KEY, "");
-                var microphone = cfg.addEndpoint();
-                microphone.setMode(SoundMode.MICROPHONE);
-                microphone.setHostDevice(HostAudioDevices.SYSTEM_DEFAULT_KEY, "");
+                // Keep manually added cards identical to the one a new VM starts with.
+                appendItem(VMPeripheralConfig.createDefaultVirtioSound().item);
+                return;
             }
-            appendItem(item);
+            var config = new VMPeripheralConfig(DataItem.newObject());
+            config.setType(type);
+            appendItem(config.item);
         };
         // A camera is gated on consent rather than merely asking for it: without the grant the
         // device could be listed but never opened, so adding one anyway would write a config that
