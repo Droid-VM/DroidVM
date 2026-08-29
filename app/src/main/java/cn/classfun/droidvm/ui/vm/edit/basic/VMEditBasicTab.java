@@ -58,9 +58,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
     private SwitchRowWidget swDebug;
-    private SwitchRowWidget swGunyahDynamicShare;
-    private View gunyahDynamicShareOptions;
-    private TextInputEditText etGunyahHugepageThreshold;
     private ChooseRowWidget choosePrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
@@ -100,9 +97,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
         swDebug = view.findViewById(R.id.sw_debug);
-        swGunyahDynamicShare = view.findViewById(R.id.sw_gunyah_dynamic_share);
-        gunyahDynamicShareOptions = view.findViewById(R.id.gunyah_dynamic_share_options);
-        etGunyahHugepageThreshold = view.findViewById(R.id.et_gunyah_hugepage_threshold);
         choosePrepareLendMthp = view.findViewById(R.id.choose_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
@@ -131,15 +125,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
             VMHypervisor.class, VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
         choosePrepareLendMthp.configure(
             LendMthpMode.class, LendMthpMode.defaultForDevice(parent));
-        if (!parent.editMode)
-            swGunyahDynamicShare.setChecked(VMConfig.NEW_VM_DEFAULT_GUNYAH_DYNAMIC_SHARE);
         parent.put("backend", VMBackend.DEFAULT);
         parent.put("hypervisor", chooseHypervisor.getSelectedItem());
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
-        swGunyahDynamicShare.setOnCheckedChangeListener(this::updateGunyahVisibility);
         chooseProtectedVm.setOnValueChangedListener((oldValue, newValue) -> updateProtectedVisibility());
-        updateGunyahVisibility();
         updateProtectedVisibility();
         initCpuTopology();
     }
@@ -159,9 +149,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
         swDebug.setChecked(item.optBoolean("strace", false));
-        swGunyahDynamicShare.setChecked(item.optBoolean("gunyah_dynamic_share", false));
-        etGunyahHugepageThreshold.setText(String.valueOf(
-            item.optLong("gunyah_hugepage_threshold_kb", 1024)));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
@@ -191,7 +178,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
             etEnvironmentVariables.setText("");
         }
         loadCpuTopology(item);
-        updateGunyahVisibility();
         updateProtectedVisibility();
     }
 
@@ -257,14 +243,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         boolean bounces = pvm == ProtectedVM.PROTECTED_PROTECTED
             || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
         inputSwiotlb.setVisibility(bounces ? VISIBLE : GONE);
-    }
-
-    private void updateGunyahVisibility() {
-        boolean enabled = swGunyahDynamicShare.isChecked();
-        gunyahDynamicShareOptions.setVisibility(enabled ? VISIBLE : GONE);
-        // Publish it: features in other tabs (guest-alloc vram today, more later) cannot work
-        // without dynamic sharing and check this before letting the VM be saved.
-        parent.put(VMEditActivity.SHARED_GUNYAH_DYNAMIC_SHARE, enabled);
     }
 
     /** vCPU count as currently typed, clamped to the field's own 1..64 range. */
@@ -385,7 +363,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         if (!validateInputCpu(store)) return false;
         if (!validateHypervisor(store)) return false;
         if (!validateEnvironmentVariables()) return false;
-        if (!checkInputField(etGunyahHugepageThreshold, false, 64, 1048576)) return false;
         if (!validateCpuTopology()) return false;
         return true;
     }
@@ -457,8 +434,6 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
         item.set("strace", swDebug.isChecked());
-        item.set("gunyah_dynamic_share", swGunyahDynamicShare.isChecked());
-        item.set("gunyah_hugepage_threshold_kb", parseInt(getEditText(etGunyahHugepageThreshold)));
         LendMthpMode lendMthpMode = choosePrepareLendMthp.getSelectedItem();
         item.set(LendMthpMode.KEY, lendMthpMode);
         ProtectedVM pvm = chooseProtectedVm.getSelectedItem();

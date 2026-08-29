@@ -282,13 +282,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     ) {
         if (guestPool <= 0) return;
         long step = item.optLong("gpu_guest_step_mb", 0);
-        // Same situation as the host-alloc dynamic-vram warning in buildCommand(): the editor
-        // refuses this combination, a config built straight through the daemon API can still
-        // reach here. Each growth grant is a runtime SHARE (one memparcel), which on Gunyah needs
-        // the module and accept transport that dynamic sharing brings up. Boot anyway, but say so.
-        if (step > 0 && !item.optBoolean("gunyah_dynamic_share", false))
-            Log.w(TAG, "guest pool step without gunyah_dynamic_share: the pool cannot grow "
-                + "past its preallocation");
         if (preAlloc.length() > 0) preAlloc.append(',');
         preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
         preAlloc.append(fmt(",gpu-guest-prealloc-mb=%d",
@@ -335,10 +328,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 boolean venusGpu = hasGpu
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
                     && effectiveGpuMode(item) == GpuMode.VULKAN;
-                // How host-visible blobs reach the guest is no longer a hypervisor sub-option:
-                // it follows from --runtime-share / --pre-alloc / --gpu vm-accept below. The old
-                // `gunyah[blob_mode=guest-accept]` field is gone from crosvm, and passing it made
-                // every gfxstream-on-Gunyah VM fail to start with "unknown field `blob_mode`".
+                // Dynamic mappings keep the normal RegisterMemory interface. The Gunyah backend
+                // transparently supplies the protected-VM SHARE/accept transport.
                 args.add("gunyah");
                 // The guest-alloc pool buys the host access to buffers the guest allocated, which
                 // in an ordinary protected VM it does not otherwise have. When the host can
@@ -352,26 +343,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 var pvm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
                 boolean hostVisibleRam = pvm == ProtectedVM.PROTECTED_NORMAL
                     || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
-                // Dynamic memory sharing: the guest returns folios at runtime instead of pinning
-                // them up front; hugepage-threshold-kb selects which allocations take the
-                // hugepage share path.
-                if (item.optBoolean("gunyah_dynamic_share", false)) {
-                    args.add("--runtime-share");
-                    args.add(fmt("hugepage-threshold-kb=%d",
-                        item.optLong("gunyah_hugepage_threshold_kb", 1024)));
-                }
                 // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
                     boolean udmabuf = item.optBoolean("gpu_udmabuf", true);
-                    // The editor refuses this combination; a config built straight through the
-                    // daemon API can still reach here. Dynamic vram grows host-visible memory by
-                    // sharing it at runtime, which on Gunyah needs the module and the accept
-                    // transport that dynamic sharing brings up. Boot anyway, but say so.
-                    if (!udmabuf && item.optBoolean("gpu_dynamic_vram", true)
-                        && !item.optBoolean("gunyah_dynamic_share", false))
-                        Log.w(TAG, "dynamic vram without gunyah_dynamic_share: host-visible "
-                            + "allocations past the pre-alloc pool have nowhere to go");
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
                     long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
@@ -814,12 +789,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 boolean udmabufGpu = item.optBoolean("gpu_udmabuf", true);
                 boolean dynamicVram = !udmabufGpu && item.optBoolean("gpu_dynamic_vram", true);
                 if (dynamicVram) {
-                    // crosvm calls it vram-limit, and it meters three separate things: the
-                    // runtime-share folio budget, the VK_EXT_memory_budget figure handed to
-                    // the guest driver, and -- by being defined and non-zero at all --
-                    // whether fusion routing is on. All three are ignored under guest-alloc.
+                    // vram-limit supplies gfxstream's folio quota, the VK_EXT_memory_budget
+                    // capacity handed to the guest driver, and -- by being defined and non-zero
+                    // at all -- enables fusion routing. All are ignored under guest-alloc.
                     gpuArg.append(
                         fmt(",vram-limit=%d", item.optLong("gpu_vram_quota_mb", 2048)));
+                    // gfxstream allocation policy: only its fresh host-visible shmem is eligible
+                    // for folio backing. Driver-exported DMA-BUFs remain untouched.
+                    gpuArg.append(fmt(",vram-folio-threshold-kb=%d",
+                        item.optLong("gpu_vram_folio_threshold_kb",
+                            item.optLong("gunyah_hugepage_threshold_kb", 1024))));
                     // Fusion size gate: host-visible allocations up to this try the pre-alloc
                     // pool first, larger ones go straight to the runtime-SHARE path.
                     gpuArg.append(fmt(",pool-blob-max-kb=%d",

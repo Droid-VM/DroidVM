@@ -192,7 +192,6 @@
     <string name="create_vm_error_hypervisor_not_supported">所選後端不支援選取的虛擬化模式</string>
     <string name="create_vm_error_path_invalid">無效的絕對路徑</string>
     <string name="create_vm_error_native_display_only_crosvm">原生顯示只在使用CrosVM後端時有效</string>
-    <string name="create_vm_error_needs_gunyah_dynamic_share">「%1$s」需要先在「基本」分頁開啟「啟用動態內存共享」</string>
     <string name="create_vm_category_kernel">Linux 核心</string>
     <string name="create_vm_kernel_hint">核心</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -287,13 +286,12 @@
     <string name="create_vm_gpu_venus_pool_mb">命令緩衝池大小 (MB)</string>
     <string name="create_vm_gpu_dynamic_vram">啟用動態顯存</string>
     <string name="create_vm_gpu_vram_quota_mb">動態顯存配額 (MB)</string>
+    <string name="create_vm_gpu_vram_folio_threshold_kb">Host 配置大頁閾值 (KB)</string>
     <string name="create_vm_gpu_pool_blob_max_kb">blob 分流閾值 (KB)</string>
     <string name="create_vm_gpu_guest_pool_mb">顯存大小 (MB)</string>
     <string name="create_vm_gpu_guest_prealloc_mb">Guest 啟動預分配 (MB)</string>
     <string name="create_vm_gpu_guest_step_mb">Guest 動態步長 (MB)</string>
     <string name="create_vm_gpu_guest_max_grants">Guest 最大 memparcel 數 (0 = 不限)</string>
-    <string name="create_vm_gunyah_dynamic_share">啟用動態內存共享</string>
-    <string name="create_vm_gunyah_hugepage_threshold">大頁閾值 (KB)</string>
     <string name="create_vm_category_vram">顯存設定</string>
     <string name="create_vm_category_screen_gpu0">Virtio-GPU</string>
     <string name="create_vm_category_screen_simplefb">SimpleFB</string>

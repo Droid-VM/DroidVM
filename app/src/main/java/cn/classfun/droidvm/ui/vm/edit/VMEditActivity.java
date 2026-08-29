@@ -42,12 +42,6 @@ import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 public final class VMEditActivity extends SwipeableTabActivity {
     private static final String TAG = "VMEditActivity";
     public static final String EXTRA_VM_ID = "vm_id";
-    /**
-     * Live state of the basic tab's Gunyah dynamic memory sharing switch, published through
-     * {@link #put}. Features in other tabs that cannot work without it read this with
-     * {@code parent.get(SHARED_GUNYAH_DYNAMIC_SHARE, false)} instead of reaching into the tab.
-     */
-    public static final String SHARED_GUNYAH_DYNAMIC_SHARE = "gunyah_dynamic_share";
     private FloatingActionButton fab;
     private CollapsingToolbarLayout collapsingToolbar;
     private TabLayout tabLayout;
