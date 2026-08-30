@@ -14,6 +14,13 @@
          it is the prerequisite for proxying capture through an unprivileged helper if the
          root path turns out not to work. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- A camera peripheral needs both: the runtime grant to be allowed at all, and the normal
+         FOREGROUND_SERVICE_CAMERA so the app can raise a service typed "camera". Only the typed
+         service puts the uid in the state AppOps requires, and crosvm (forked by the root daemon,
+         invisible to ActivityManager) can never put itself there. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -253,6 +260,14 @@
             android:name=".lib.download.DiskDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Raised while a running VM carries a peripheral that needs the app's uid to look
+             foreground. The type list is the union of every PeripheralType that asks for one;
+             the service picks which of them to declare at startForeground() time. -->
+        <service
+            android:name=".lib.peripheral.PeripheralForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
 
     </application>
 </manifest>

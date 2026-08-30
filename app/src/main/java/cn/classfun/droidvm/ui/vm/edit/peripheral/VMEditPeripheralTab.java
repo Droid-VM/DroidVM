@@ -48,6 +48,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab {
     public void initValue() {
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
+        adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         listSerialPorts.setAdapter(VMSerialEditAdapter.class);
         if (!parent.editMode) {
             var peripherals = DataItem.newArray();
