@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Two rows, two anchors each, so neither row crowds at a phone dialog's width: the long
+  auto-load control pairs with the name up top, the short load/unload button with the
+  status line below. Both rows are ShrinkToFitRow: in a dialog too narrow for a row's
+  natural width (the English status row already overflows at 360dp; a long name plus the
+  Auto-load control overflows the top row too), the whole row scales down uniformly (name
+  and switch together) so the name stays one line and nothing clips or collapses, rather
+  than the name wrapping to two lines while the switch keeps full size. Each row's
+  weighted Space is what pins its right-hand control to the edge when there IS room; under
+  scaling that Space collapses and the row packs tight before shrinking. The why-button is
+  outlined rather than plain text so it reads as a control, not part of the status line.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginBottom="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingHorizontal="14dp"
+        android:paddingVertical="10dp">
+
+        <cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- One line: the row scales the whole line down before the name would wrap,
+                 so wrap_content here measures the name's full single-line width. -->
+            <TextView
+                android:id="@+id/km_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:textAppearance="?attr/textAppearanceTitleMedium"
+                tools:text="Gunyah Host Share" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <LinearLayout
+                android:id="@+id/km_auto_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/kernel_module_autostart"
+                    android:textAppearance="?attr/textAppearanceBodyMedium" />
+
+                <com.google.android.material.materialswitch.MaterialSwitch
+                    android:id="@+id/km_autostart"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    tools:ignore="TouchTargetSizeCheck" />
+
+            </LinearLayout>
+
+        </cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow>
+
+        <cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/km_dot"
+                android:layout_width="12dp"
+                android:layout_height="12dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_circle_filled" />
+
+            <TextView
+                android:id="@+id/km_status"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:textAppearance="?attr/textAppearanceTitleSmall"
+                tools:text="@string/kernel_module_loaded" />
+
+            <!-- Compact metrics: stock Material button padding and its 48dp min height
+                 would leave the status stranded in a tall, mostly empty row. -->
+            <Button
+                android:id="@+id/km_why"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="36dp"
+                android:paddingHorizontal="12dp"
+                android:text="@string/kernel_module_why"
+                android:textSize="13sp"
+                tools:ignore="TouchTargetSizeCheck" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1" />
+
+            <Button
+                android:id="@+id/km_toggle"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minHeight="40dp"
+                tools:text="@string/kernel_module_load" />
+
+        </cn.classfun.droidvm.ui.widgets.row.ShrinkToFitRow>
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

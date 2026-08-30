@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
+import cn.classfun.droidvm.daemon.vm.VMInstance;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
 import cn.classfun.droidvm.daemon.vm.pkg.VMExportTask;
 import cn.classfun.droidvm.daemon.vm.pkg.VMImportTask;
@@ -33,6 +34,14 @@ public final class ServerContext {
     private final Map<UUID, VMExportTask> exportTasks = new ConcurrentHashMap<>();
     private final Map<UUID, VMImportTask> importTasks = new ConcurrentHashMap<>();
     public DataItem appConfig = DataItem.newObject();
+    /**
+     * Where VM events go. Here rather than on the store because loading vms.json builds every
+     * VMInstance against a throwaway store (see VMInstanceStore.createEmpty) and the callback is
+     * installed after the load -- so a store-owned field reached none of the VMs that existed at
+     * startup, which is all of them, and every state change, reboot and exit was fired into a
+     * null. The context is the one object both stores share, so putting it here cannot go stale.
+     */
+    public volatile VMInstance.VMEventCallback vmEventCallback = null;
 
     public ServerContext() {
         Log.i(TAG, "loading config files...");

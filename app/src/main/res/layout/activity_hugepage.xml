@@ -357,6 +357,17 @@
                 android:icon="@drawable/ic_nav_vm"
                 android:text="@string/hugepage_stat_active_vms" />
 
+            <!-- Last on the screen, and the only row here that goes anywhere.
+                 The ripple that separates it from the read-only status rows
+                 above comes from the widget itself, once a click listener is
+                 attached (see RowTouchFeedback). -->
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_advanced"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info"
+                android:text="@string/hugepage_advanced" />
+
         </LinearLayout>
     </androidx.core.widget.NestedScrollView>
 </androidx.coordinatorlayout.widget.CoordinatorLayout>
