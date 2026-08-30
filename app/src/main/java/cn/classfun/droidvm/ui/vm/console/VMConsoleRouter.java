@@ -14,18 +14,24 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncDisplayActivity;
-import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncPresentationActivity;
 
 /**
  * Shared "open the VM's default view" routing, so the VM-info screen (a console
  * button) and the VM-list auto-open-after-start pick the <b>same</b> thing:
- * native display, else VNC, else the serial console (uart, then stdio). Keeping
+ * the first bound screen, else the serial console (uart, then stdio). Keeping
  * this in one place is why both paths agree instead of the list always opening
  * the UART console regardless of the VM's display.
+ *
+ * <p>Every display view is opened for one screen, named explicitly, because the VM can have two
+ * and they can be exported differently. The default picks the first one bound -- the only one a
+ * single-screen VM has; the chooser is where a two-screen VM is asked which.</p>
  */
 public final class VMConsoleRouter {
     private VMConsoleRouter() {
@@ -37,13 +43,13 @@ public final class VMConsoleRouter {
      */
     public static void openDefault(@NonNull Context ctx, @NonNull UUID vmId,
                                    @NonNull VMConfig config, boolean running) {
-        var item = config.item;
-        if (item.optBoolean("native_display_enabled", false)) {
-            openNative(ctx, vmId, config);
-            return;
-        }
-        if (item.optBoolean("vnc_enabled", false)) {
-            openVnc(ctx, vmId, config);
+        var bound = VMScreenConfig.boundOf(config.item);
+        if (!bound.isEmpty()) {
+            var screen = bound.get(0);
+            if (screen.getExporter() == DisplayExporter.NATIVE)
+                openNative(ctx, vmId, config, screen.id);
+            else
+                openVnc(ctx, vmId, config, screen.id);
             return;
         }
         // Serial console: ask the daemon which streams exist. Prefer a real guest serial port
@@ -88,27 +94,51 @@ public final class VMConsoleRouter {
         ctx.startActivity(intent);
     }
 
-    public static void openNative(@NonNull Context ctx, @NonNull UUID vmId, @NonNull VMConfig config) {
+    /**
+     * Opens [screenId]'s native display. The screen id travels in the intent rather than being
+     * inferred here, because the display service name is derived from it and a wrong guess is a
+     * console that waits forever on a binder nobody registers.
+     */
+    public static void openNative(@NonNull Context ctx, @NonNull UUID vmId,
+                                  @NonNull VMConfig config, @NonNull String screenId) {
         var item = config.item;
         var intent = new Intent(ctx, VMNativeDisplayActivity.class);
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_ID, vmId.toString());
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, config.getName());
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH, item.optLong("display_width", 1280));
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT, item.optLong("display_height", 720));
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_SCREEN, screenId);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_INPUT_ENABLED, inputEnabled(item, screenId));
+        // The screen's own size, not the VM's: the two screens have different geometry now, and
+        // the console is showing exactly one of them.
+        var screen = VMScreenConfig.find(item, screenId);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_WIDTH,
+            screen != null ? screen.getWidth() : VMScreenConfig.DEFAULT_WIDTH);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT,
+            screen != null ? screen.getHeight() : VMScreenConfig.DEFAULT_HEIGHT);
         ctx.startActivity(intent);
     }
 
-    public static void openVnc(@NonNull Context ctx, @NonNull UUID vmId, @NonNull VMConfig config) {
+    /**
+     * Whether [screenId] was started with its own absolute input devices.
+     *
+     * <p>This is what the config says now, which is only the same as what the running VM has if
+     * nobody edited it since. The console uses it to explain dead touch input, never to decide
+     * where to send events -- that answer comes from the daemon, which knows which sockets it
+     * actually bound.</p>
+     */
+    private static boolean inputEnabled(@NonNull DataItem item, @NonNull String screenId) {
+        var screen = VMScreenConfig.find(item, screenId);
+        return screen == null || screen.isInputEnabled();
+    }
+
+    public static void openVnc(@NonNull Context ctx, @NonNull UUID vmId,
+                               @NonNull VMConfig config, @NonNull String screenId) {
         var intent = new Intent(ctx, VMVncDisplayActivity.class);
         intent.putExtra(BaseVncActivity.EXTRA_VM_ID, vmId.toString());
         intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, config.getName());
+        intent.putExtra(BaseVncActivity.EXTRA_SCREEN, screenId);
+        intent.putExtra(BaseVncActivity.EXTRA_INPUT_ENABLED, inputEnabled(config.item, screenId));
         ctx.startActivity(intent);
     }
-
-    public static void openVncExt(@NonNull Context ctx, @NonNull UUID vmId, @NonNull VMConfig config) {
-        var intent = new Intent(ctx, VMVncPresentationActivity.class);
-        intent.putExtra(BaseVncActivity.EXTRA_VM_ID, vmId.toString());
-        intent.putExtra(BaseVncActivity.EXTRA_VM_NAME, config.getName());
-        ctx.startActivity(intent);
-    }
+    // openVncExt retired: projecting to an external display is now an action inside the VNC
+    // console's own menu (VMVncDisplayActivity#projectToExternalDisplay), not a chooser entry.
 }

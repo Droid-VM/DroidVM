@@ -16,12 +16,18 @@ import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class EnumPicker<E extends Enum<E>> {
     private final Context context;
     private final Class<E> enumClass;
     private final List<E> items = new ArrayList<>();
+    /** Items listed but refused; see {@link #setDisabledItems}. */
+    private final Set<E> disabled = new LinkedHashSet<>();
+    private CharSequence disabledNote = null;
     private EnumPickerChanged<E> onValueChanged = null;
     private int selectedIndex = -1;
 
@@ -41,19 +47,15 @@ public final class EnumPicker<E extends Enum<E>> {
         if (items.isEmpty())
             throw new IllegalStateException("Items cannot be empty");
         var labels = new String[items.size()];
-        for (int i = 0; i < items.size(); i++) {
-            var item = items.get(i);
-            var label = item.toString();
-            if (item instanceof StringEnum) {
-                var se = (StringEnum) item;
-                label = se.getDisplayString(context);
-            }
-            labels[i] = label;
-        }
+        for (int i = 0; i < items.size(); i++)
+            labels[i] = menuLabel(items.get(i));
         var b = new MaterialAlertDialogBuilder(context);
         if (title != null)
             b.setTitle(title);
         b.setSingleChoiceItems(labels, selectedIndex, (dialog, which) -> {
+            // A refused row leaves the dialog open rather than closing on a value it did not
+            // apply, which would read as having been accepted.
+            if (disabled.contains(items.get(which))) return;
             setSelectedIndex(which);
             dialog.dismiss();
         });
@@ -67,12 +69,9 @@ public final class EnumPicker<E extends Enum<E>> {
         var menu = popup.getMenu();
         for (int i = 0; i < items.size(); i++) {
             var item = items.get(i);
-            var label = item.name();
-            if (item instanceof StringEnum) {
-                var se = (StringEnum) item;
-                label = se.getDisplayString(context);
-            }
-            menu.add(0, i, i, label);
+            // MaterialMenu's adapter already honours isEnabled(): it greys the row and swallows
+            // the tap, so nothing here has to re-check on the way back out.
+            menu.add(0, i, i, menuLabel(item)).setEnabled(!disabled.contains(item));
         }
         popup.setOnMenuItemClickListener(menuItem -> {
             setSelectedIndex(menuItem.getItemId());
@@ -81,8 +80,37 @@ public final class EnumPicker<E extends Enum<E>> {
         popup.show();
     }
 
+    /** This item's label, plus the disabled note when it is one of the refused ones. */
+    @NonNull
+    private String menuLabel(@NonNull E item) {
+        var label = item instanceof StringEnum
+            ? ((StringEnum) item).getDisplayString(context) : item.name();
+        if (disabledNote == null || !disabled.contains(item)) return label;
+        return fmt("%s (%s)", label, disabledNote);
+    }
+
+    /**
+     * Items the picker lists but will not select.
+     *
+     * <p>For a set of choices that is easier to read whole than pruned -- a ladder whose upper
+     * rungs are designed but not built, say. Hiding them makes the remaining values look like the
+     * entire vocabulary and makes each one that lands later look like a feature out of nowhere;
+     * listing them greyed, with {@code note} saying why, says what the set is and where this build
+     * stands in it. A disabled item can still be the current value: that is how a choice stored
+     * before its rung was refused survives being looked at.</p>
+     *
+     * <p>Cleared by {@link #setItems} and {@link #autoItems}, since a new item set has its own
+     * answer -- the same constant can be reachable under one and not under another.</p>
+     */
+    public void setDisabledItems(@Nullable CharSequence note, @NonNull Collection<E> refused) {
+        disabled.clear();
+        disabled.addAll(refused);
+        disabledNote = note;
+    }
+
     public void autoItems() {
         items.clear();
+        disabled.clear();
         for (var item : getConstants()) {
             if (item instanceof StringEnum) {
                 var se = (StringEnum) item;
@@ -109,6 +137,7 @@ public final class EnumPicker<E extends Enum<E>> {
             throw new IllegalArgumentException("Constants cannot be empty");
         items.clear();
         items.addAll(constants);
+        disabled.clear();
         selectedIndex = -1;
         setSelectedIndex(0);
     }

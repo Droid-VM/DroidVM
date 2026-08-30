@@ -33,6 +33,7 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.Insets;
@@ -91,6 +92,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
     // absolute pointer + the keyboard); the rest goes to the crosvm --input evdev devices via the
     // daemon (MOUSE = relative motion the guest renders a cursor for, TOUCH = raw multi-touch).
+    // What the RFB half lands on is this screen's own tablet and keyboard, built by crosvm behind
+    // this binding's VNC server -- so this console is an ordinary RFB client for those two, no
+    // different from TigerVNC on the same port, and the coordinate is read against this screen's
+    // geometry rather than some VM-wide pointer's. Both are absent when the screen's input switch
+    // is off (view-only); see setInputMode.
     // Seeded from the shared pref in onSetupActivity(); TOUCH only until that read.
     private InputMode inputMode = InputMode.TOUCH;
     private SharedPreferences prefs;
@@ -125,6 +131,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (operationLabel != null) operationLabel.setVisibility(GONE);
     };
 
+    // Unified MOUSE/TABLET gestures. TABLET lands on the RFB channel (this binding's own
     // absolute-tablet pointer); MOUSE lands on the crosvm relative-mouse device via vm_input.
     private final PointerGestureTranslator.Listener gestureListener =
         new PointerGestureTranslator.Listener() {
@@ -222,6 +229,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             var req = new JSONObject();
             req.put("command", "vm_input");
             req.put("vm_id", vmId);
+            req.put("screen", screenId);
             req.put("channel", channel);
             req.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
             var resp = DaemonConnection.getInstance().request(req);
@@ -328,6 +336,8 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 new DaemonDisplayAttach.Listener() {
                     @Override
                     public void onAttached(@NonNull INativeDisplayRootService service) {
+                        directSink = new DirectInputSink(vmId, () -> screenId, service,
+                            VMVncDisplayActivity.this::sendInputToDaemon);
                     }
 
                     @Override
@@ -617,6 +627,16 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     private void setInputMode(InputMode mode) {
         if (inputMode == mode) return;
+        // Both absolute modes are inert with the switch off, the same as on the native console.
+        // TOUCH because this screen's multi-touch device is not created; TABLET because the switch
+        // is what the daemon sends as view-only=true, and a view-only binding has no tablet and no
+        // keyboard behind it -- crosvm drops the RFB pointer and key events rather than injecting
+        // them. So RFB is no longer a way around this screen's switch, which it was while those
+        // devices belonged to the VM instead of to the binding. MOUSE is: the relative pointer has
+        // no output binding and is not a screen's to switch off. Say why once, here, rather than
+        // leaving the user tapping at nothing.
+        if (!screenInputEnabled && mode != InputMode.MOUSE)
+            Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
         viewport.resetToFit();
@@ -695,8 +715,23 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
+        } else if (id == R.id.menu_project_external) {
+            projectToExternalDisplay();
             return true;
         }
         return super.onMenuItemClicked(item);
+    }
+
+    // Projecting this screen onto an external display is the presentation console, reached from
+    // in here rather than from the VM's console chooser: it is an action on the screen already
+    // open, not a separate console to pick. The presentation activity puts up the display picker
+    // itself and shows nothing until one is chosen, so "pick a display, then land on it" is its
+    // own flow -- this only hands it the same vm/screen this console is already bound to.
+    private void projectToExternalDisplay() {
+        var intent = new android.content.Intent(this, VMVncPresentationActivity.class);
+        intent.putExtra(EXTRA_VM_ID, vmId);
+        intent.putExtra(EXTRA_VM_NAME, vmName);
+        intent.putExtra(EXTRA_SCREEN, screenId);
+        startActivity(intent);
     }
 }
