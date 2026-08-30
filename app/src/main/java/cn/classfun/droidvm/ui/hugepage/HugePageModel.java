@@ -563,12 +563,20 @@ final class HugePageModel {
         "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
 
     /**
-     * Knobs whose module param is writable at runtime (0600), so a save can take
-     * effect without waiting for the next load. The rest are 0400 - insmod-time
-     * only, by construction: {@code system_reserve_mb} sizes a table built once,
-     * and the {@code boot_acquire} trio is loader policy the module never acts on.
+     * Knobs whose module param is writable at runtime (0600), so a save shows up
+     * without waiting for the next load. Two different reasons to be on this
+     * list: {@code cma_reservoir_floor_mb} is consulted on every flip, so writing
+     * it actually takes effect; the {@code boot_acquire} trio is writable
+     * precisely because the module never reads it - the write changes nothing and
+     * exists so a saved setting is visible somewhere the user can see it.
+     *
+     * <p>{@code system_reserve_mb} is deliberately absent: it sizes a table built
+     * once at insmod, so a later write would only lie about what is in force. An
+     * older module has these as 0400 and the write simply fails - the value still
+     * persisted, it just waits for the next load.
      */
-    private static final List<String> LIVE_WRITABLE = List.of("cma_reservoir_floor_mb");
+    private static final List<String> LIVE_WRITABLE = List.of(
+        "cma_reservoir_floor_mb", "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
 
     /** Module param carrying THIS device's default reserve, {@code min(RAM/2, 6144)}. */
     private static final String SYSTEM_RESERVE_DEFAULT = "system_reserve_mb_default";

@@ -1167,10 +1167,9 @@
     <string name="hugepage_stat_pool_size_cma">池大小:%1$d/%2$d(%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">模組未載入</string>
     <string name="hugepage_advanced">進階設定</string>
-    <string name="hugepage_adv_hint">值為 settings.prop 的設定,副標為模組目前的讀回值。</string>
+    <string name="hugepage_adv_hint">右側為模組目前的讀回值;點一列可編輯 settings.prop 的設定。</string>
     <string name="hugepage_adv_unavailable">不可用</string>
-    <string name="hugepage_adv_unset">未設定</string>
-    <string name="hugepage_adv_clear">清除</string>
+    <string name="hugepage_adv_unset">(default)</string>
     <string name="hugepage_adv_warn_below_default">低於本機預設值 %1$d，系統可能不穩定</string>
     <string name="hugepage_adv_invalid">數值無效</string>
     <string name="hugepage_adv_saved">已儲存</string>

@@ -1205,10 +1205,9 @@
     <string name="hugepage_stat_pool_size_cma">Pool size: %1$d/%2$d (%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">Module not loaded</string>
     <string name="hugepage_advanced">Advanced</string>
-    <string name="hugepage_adv_hint">Values are what settings.prop asks for; the subtitle is the module\'s current readback.</string>
+    <string name="hugepage_adv_hint">The value on the right is what the module is running; tap a row to edit what settings.prop asks for.</string>
     <string name="hugepage_adv_unavailable">Unavailable</string>
-    <string name="hugepage_adv_unset">Not set</string>
-    <string name="hugepage_adv_clear">Clear</string>
+    <string name="hugepage_adv_unset">(default)</string>
     <string name="hugepage_adv_warn_below_default">Below this device\'s default (%1$d); the system may become unstable</string>
     <string name="hugepage_adv_invalid">Invalid value</string>
     <string name="hugepage_adv_saved">Saved</string>

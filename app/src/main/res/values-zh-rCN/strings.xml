@@ -1166,10 +1166,9 @@
     <string name="hugepage_stat_pool_size_cma">池大小:%1$d/%2$d(%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">模块未加载</string>
     <string name="hugepage_advanced">高级设置</string>
-    <string name="hugepage_adv_hint">值为 settings.prop 的设置,副标为模块当前的读回值。</string>
+    <string name="hugepage_adv_hint">右侧为模块当前的读回值;点一列可编辑 settings.prop 的设置。</string>
     <string name="hugepage_adv_unavailable">不可用</string>
-    <string name="hugepage_adv_unset">未设置</string>
-    <string name="hugepage_adv_clear">清除</string>
+    <string name="hugepage_adv_unset">(default)</string>
     <string name="hugepage_adv_warn_below_default">低于本机默认值 %1$d，系统可能不稳定</string>
     <string name="hugepage_adv_invalid">数值无效</string>
     <string name="hugepage_adv_saved">已保存</string>

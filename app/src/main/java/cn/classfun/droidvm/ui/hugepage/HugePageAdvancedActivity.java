@@ -114,7 +114,13 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
         showEditor(KEY_SYSTEM_RESERVE);
     }
 
-    /** Re-read every knob: value = settings.prop, subtitle = what the module runs. */
+    /**
+     * Re-read every knob. The list shows one number per row: what the module is
+     * <b>actually running</b>. What settings.prop asks for is a different fact -
+     * it may be waiting for the next load, or have been dropped by the insmod
+     * ladder - and it belongs where it can be explained and changed, which is
+     * the editor, not a column.
+     */
     private void load() {
         runOnPool(() -> {
             var read = model.advancedKnobs();
@@ -125,11 +131,8 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
                 reserveDefaultMb = def;
                 for (var e : rows.entrySet()) {
                     var knob = read.get(e.getKey());
-                    e.getValue().setValue(knob == null || knob.saved == null
-                        ? getString(R.string.hugepage_adv_unset) : knob.saved);
-                    e.getValue().setSubtitle(fmt("sysfs = %s",
-                        knob == null || knob.live == null
-                            ? getString(R.string.hugepage_adv_unavailable) : knob.live));
+                    e.getValue().setValue(knob == null || knob.live == null
+                        ? getString(R.string.hugepage_adv_unavailable) : knob.live);
                 }
             });
         });
@@ -158,6 +161,9 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
                 ? unavailable : Integer.toString(reserveDefaultMb)));
         liveView.setText(header);
         til.setHint(key);
+        // Empty field = no settings.prop key = the module's own default. The
+        // placeholder says so in the one place the state can be acted on.
+        til.setPlaceholderText(getString(R.string.hugepage_adv_unset));
         if (knob != null && knob.saved != null) {
             input.setText(knob.saved);
             input.setSelection(input.getText().length());
@@ -166,9 +172,12 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
         var dialog = new MaterialAlertDialogBuilder(this)
             .setTitle(key)
             .setView(view)
-            .setPositiveButton(R.string.hugepage_save_pool_size,
-                (d, w) -> save(key, input.getText().toString().trim()))
-            .setNeutralButton(R.string.hugepage_adv_clear, (d, w) -> save(key, null))
+            // Empty field = no key = the module default, so Save covers clearing
+            // too and there is no second button to explain the difference.
+            .setPositiveButton(R.string.hugepage_save_pool_size, (d, w) -> {
+                var raw = input.getText().toString().trim();
+                save(key, raw.isEmpty() ? null : raw);
+            })
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.setOnShowListener(d -> {
@@ -176,7 +185,7 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
             Runnable validate = () -> {
                 var raw = input.getText().toString().trim();
                 var value = parse(key, raw);
-                ok.setEnabled(value != null);
+                ok.setEnabled(raw.isEmpty() || value != null);   // empty = clear
                 til.setError(value == null && !raw.isEmpty()
                     ? getString(R.string.hugepage_adv_invalid) : null);
                 // Only the reserve has a "too low". The module hands back THIS
