@@ -354,8 +354,9 @@ public final class DiskOperationActivity extends AppCompatActivity {
                     result.printLog(TAG);
                     if (!store.save(this))
                         Log.e(TAG, "Failed to persist completed child rebases");
-                    Log.e(TAG, "Keeping committed overlay after child rebase failure: "
-                        + child.getFullPath());
+                    Log.e(TAG, fmt(
+                        "Keeping committed overlay after child rebase failure: %s",
+                        child.getFullPath()));
                     return false;
                 }
                 child.setParentId(parent.getId());

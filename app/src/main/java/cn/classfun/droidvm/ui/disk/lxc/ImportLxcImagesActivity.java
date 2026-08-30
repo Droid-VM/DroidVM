@@ -308,7 +308,7 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         try {
             return UUID.fromString(value);
         } catch (IllegalArgumentException e) {
-            Log.w(TAG, "Invalid " + label + " ID", e);
+            Log.w(TAG, fmt("Invalid %s ID", label), e);
             return null;
         }
     }
@@ -976,8 +976,9 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
     }
 
     /**
-     * Before Repos.load() completes this is remembered ∪ repo.yaml. Afterwards
-     * lxcRepo points at Repos.load(), so rebuilding produces remembered ∪ remote.
+     * Before Repos.load() completes this is the union of remembered and
+     * repo.yaml. Afterwards lxcRepo points at Repos.load(), so rebuilding
+     * produces the union of remembered and remote.
      * putIfAbsent makes the exact remembered name/base URL win on key collisions.
      */
     @NonNull

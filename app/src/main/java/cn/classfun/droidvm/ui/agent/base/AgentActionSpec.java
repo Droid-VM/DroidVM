@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.agent.base;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -23,7 +25,7 @@ public final class AgentActionSpec implements JSONSerialize {
     public AgentActionSpec(@NonNull String type) {
         var normalized = type.trim().toLowerCase(java.util.Locale.ROOT);
         if (!normalized.matches("[a-z][a-z0-9_-]*"))
-            throw new IllegalArgumentException("Invalid agent action type: " + type);
+            throw new IllegalArgumentException(fmt("Invalid agent action type: %s", type));
         this.type = normalized;
     }
 

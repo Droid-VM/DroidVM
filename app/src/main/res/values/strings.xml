@@ -813,7 +813,7 @@
     <string name="disk_operation_running">Running\u2026</string>
     <string name="disk_operation_success">Completed successfully.</string>
     <string name="disk_operation_failed">Failed (exit code %1$d).</string>
-    <string name="disk_operation_finalizing">Saving disk dependencies…</string>
+    <string name="disk_operation_finalizing">Saving disk dependencies...</string>
     <string name="disk_operation_dependency_failed">The disk data operation finished, but its VM/disk dependencies could not be saved. The source image was kept when possible.</string>
     <string name="disk_operation_bad_task">Invalid task parameters.</string>
     <string name="disk_operation_cancel_title">Cancel operation?</string>
@@ -852,7 +852,7 @@
     <string name="agent_operation_log_skipped">\nCompleted without error; at least one action made no changes.\n</string>
     <string name="agent_operation_log_failed">\nOperation failed. Please check the logs above.\n</string>
     <string name="agent_operation_logs">Logs</string>
-    <string name="agent_operation_stopping">Stopping rescue VM…</string>
+    <string name="agent_operation_stopping">Stopping rescue VM...</string>
     <string name="agent_operation_vm_stopped">The rescue VM has stopped.</string>
     <string name="agent_operation_control_failed">Lost the rescue VM control channel.</string>
     <string name="agent_operation_error_root_not_found">No supported Linux root partition was found.</string>
