@@ -158,8 +158,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         args.add(String.valueOf(Math.max(item.optLong("cpu_count", 1), 1)));
         var hyp = item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.CROSVM);
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
         if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for CROSVM backend");
         args.add("--hypervisor");
         var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
@@ -342,6 +341,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
     }
 
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);

@@ -30,10 +30,16 @@ public final class DeleteHandler extends RequestHandler {
             throw new RequestException("missing vm_id");
         var vms = request.getContext().getVMs();
         var inst = vms.findById(vmId);
-        if (inst == null)
-            throw new RequestException(fmt("VM not found: %s", vmId));
+        // A VM the daemon never managed (created in the app but never started) has nothing to
+        // stop and nothing to remove: deleting it is a no-op, not an error - the app deletes
+        // its disks on our word that no process of ours holds them.
+        if (inst == null) {
+            request.res().put("existed", false);
+            return;
+        }
         if (inst.getState() != VMState.STOPPED && inst.stop())
             throw new RequestException(fmt("Failed to stop VM: %s", vmId));
         vms.removeById(inst.getId());
+        request.res().put("existed", true);
     }
 }

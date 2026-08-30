@@ -75,8 +75,9 @@ public final class ImageCommandGenerate {
         appendAction();
         sb.append("; then ");
         if (useTempPath) {
-            sb.append(fmt("rm -vf %s; ", realPath));
-            sb.append(fmt("mv -v %s %s; ", tmpPath, realPath));
+            // tmp lives beside the destination, so mv replaces it with one same-filesystem
+            // rename. The old image remains intact until the new image is complete.
+            sb.append(fmt("mv -vf %s %s; ", tmpPath, realPath));
         } else if (!diskPath.equals(outputPath) && !action.equals("clone")) {
             sb.append(fmt("rm -vf %s; ", eDiskPath));
         }
@@ -104,9 +105,26 @@ public final class ImageCommandGenerate {
             case "convert":
                 appendConvert();
                 break;
+            case "commit":
+                appendCommit();
+                break;
+            case "flatten":
+                appendFlatten();
+                break;
             default:
                 throw new RuntimeException(fmt("Unknown action: %s", action));
         }
+    }
+
+    /** Merge the overlay's changes down into its backing file (in place, both files). */
+    private void appendCommit() {
+        sb.append(" commit -p ").append(eDiskPath);
+    }
+
+    /** Copy the complete backing-chain view, then atomically replace the overlay on success. */
+    private void appendFlatten() throws JSONException {
+        task.put("drop_backing", true);
+        appendConvert();
     }
 
     private void appendClone() throws JSONException {
@@ -138,6 +156,17 @@ public final class ImageCommandGenerate {
             task.put("format", format);
         } else throw new RuntimeException("No format specified in task or image info");
         sb.append(" --target-format ").append(format);
+        // convert reads through the whole backing chain, so rewriting an overlay without
+        // re-declaring its backing silently flattens it into a standalone full image. Unless the
+        // task names a backing itself (or asks to drop it), carry the source's backing over.
+        if (!task.has("backing_id") && !task.has("backing_path")
+            && !task.optBoolean("drop_backing", false)
+            && info.has("backing-filename")
+            && "qcow2".equalsIgnoreCase(format)) {
+            var backing = info.optString("full-backing-filename",
+                info.getString("backing-filename"));
+            if (!backing.isEmpty()) task.put("backing_path", backing);
+        }
         if (task.has("output")) {
             outputPath = task.getString("output");
             // In-place re-compress (output == source): writing straight to the

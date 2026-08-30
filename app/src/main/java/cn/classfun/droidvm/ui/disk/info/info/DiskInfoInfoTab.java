@@ -12,10 +12,14 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.util.Log;
+import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.PopupMenu;
+import android.widget.Space;
 import android.widget.TextView;
 
-import androidx.annotation.IdRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -24,12 +28,15 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONObject;
 
+import java.util.ArrayList;
+
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
 import cn.classfun.droidvm.ui.disk.info.DiskInfoActivity;
 import cn.classfun.droidvm.ui.disk.info.base.DiskInfoBaseTab;
+import cn.classfun.droidvm.ui.disk.tree.DiskBranchPanel;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
@@ -50,12 +57,8 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
     private TextRowWidget rowEncryption;
     private TextRowWidget rowCompression;
     private TextRowWidget rowDirtyFlag;
-    private MaterialButton btnResize;
-    private MaterialButton btnConvert;
-    private MaterialButton btnOptimize;
-    private MaterialButton btnCreateIncrement;
-    private MaterialButton btnClone;
-    private MaterialButton btnDelete;
+    private LinearLayout actionsContainer;
+    private int actionsMenuResId;
     private DiskActionDialog dialog;
 
     public DiskInfoInfoTab(
@@ -87,23 +90,13 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
         rowDirtyFlag = view.findViewById(R.id.row_dirty_flag);
         sectionRaw = view.findViewById(R.id.section_raw);
         tvRawOutput = view.findViewById(R.id.tv_raw_output);
-        btnResize = view.findViewById(R.id.btn_resize);
-        btnConvert = view.findViewById(R.id.btn_convert);
-        btnOptimize = view.findViewById(R.id.btn_optimize);
-        btnCreateIncrement = view.findViewById(R.id.btn_create_increment);
-        btnClone = view.findViewById(R.id.btn_clone);
-        btnDelete = view.findViewById(R.id.btn_delete);
+        actionsContainer = view.findViewById(R.id.disk_actions_container);
         initialize();
     }
 
     private void initialize() {
         dialog = new DiskActionDialog(activity, this::onDiskUpdated, null);
-        bindButton(btnResize, R.id.menu_disk_resize);
-        bindButton(btnConvert, R.id.menu_disk_convert);
-        bindButton(btnOptimize, R.id.menu_disk_optimize);
-        bindButton(btnCreateIncrement, R.id.menu_disk_create_increment);
-        bindButton(btnClone, R.id.menu_disk_clone);
-        bindButton(btnDelete, R.id.menu_disk_delete);
+        populateActions(activity.config);
         bindCopy(rowFilename);
         bindCopy(rowFolder);
         bindCopy(rowFormat);
@@ -114,13 +107,81 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
         bindCopy(rowEncryption);
         bindCopy(rowCompression);
         bindCopy(rowDirtyFlag);
-        var rowExtra1 = view.findViewById(R.id.row_extra_1);
-        var rowExtra2 = view.findViewById(R.id.row_extra_2);
-        var fmt = activity.config.getFormat();
-        if (!DiskConfig.supportsExtraOperations(fmt)) {
-            rowExtra1.setVisibility(GONE);
-            rowExtra2.setVisibility(GONE);
+    }
+
+    /**
+     * Build from the list long-press menu, folding create/merge/flatten into the existing branch
+     * manager because the tree dialog owns those relationship-changing operations here.
+     */
+    private void populateActions(@Nullable DiskConfig config) {
+        if (config == null) return;
+        int menuResId = DiskActionDialog.getMenuResId(config);
+        if (menuResId == actionsMenuResId && actionsContainer.getChildCount() > 0) return;
+        actionsMenuResId = menuResId;
+        actionsContainer.removeAllViews();
+
+        var menuHost = new PopupMenu(activity, actionsContainer);
+        menuHost.getMenuInflater().inflate(menuResId, menuHost.getMenu());
+        var actions = new ArrayList<MenuItem>();
+        boolean branchesAdded = false;
+        for (int i = 0; i < menuHost.getMenu().size(); i++) {
+            var item = menuHost.getMenu().getItem(i);
+            if (!item.isVisible()) continue;
+            if (isBranchAction(item.getItemId())) {
+                if (!branchesAdded) {
+                    actions.add(null); // null is the synthetic "Manage overlays" action.
+                    branchesAdded = true;
+                }
+            } else {
+                actions.add(item);
+            }
         }
+
+        LinearLayout row = null;
+        int visibleCount = 0;
+        for (var item : actions) {
+            if ((visibleCount & 1) == 0) {
+                row = new LinearLayout(activity);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                actionsContainer.addView(row, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
+            var button = (MaterialButton) LayoutInflater.from(activity)
+                .inflate(R.layout.item_disk_info_action, row, false);
+            if (item == null) {
+                button.setText(R.string.disk_manage_branches);
+                button.setIconResource(R.drawable.ic_file_multiple);
+                button.setOnClickListener(v -> DiskBranchPanel.open(
+                    activity, activity.config.getFullPath(), null,
+                    // The panel stays up until Close, even after its own disk is deleted (it
+                    // shows an empty tree then); only closing it takes this page down with it.
+                    result -> {
+                        if (result.subjectGone) activity.finish();
+                        else onDiskUpdated();
+                    }));
+            } else {
+                button.setText(item.getTitle());
+                button.setIcon(item.getIcon());
+                int actionId = item.getItemId();
+                button.setOnClickListener(v ->
+                    dialog.diskMenuOnClick(activity.config, actionId));
+            }
+            row.addView(button);
+            visibleCount++;
+        }
+        if ((visibleCount & 1) != 0 && row != null) {
+            var spacer = new Space(activity);
+            row.addView(spacer, new LinearLayout.LayoutParams(
+                0, 0, 1));
+        }
+    }
+
+    private static boolean isBranchAction(int id) {
+        return id == R.id.menu_disk_create_increment
+            || id == R.id.menu_disk_merge
+            || id == R.id.menu_disk_flatten
+            || id == R.id.menu_disk_reset;
     }
 
     private void onDiskUpdated() {
@@ -134,10 +195,6 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
         }
     }
 
-    private void bindButton(@NonNull MaterialButton btn, @IdRes int id) {
-        btn.setOnClickListener(v -> dialog.diskMenuOnClick(activity.config, id));
-    }
-
     private void bindCopy(@NonNull TextRowWidget tr) {
         tr.setOnClickListener(v -> showCopyDialog(tr.getTitle(), tr.getValue()));
     }
@@ -146,6 +203,7 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
     public void onConfigLoaded() {
         var config = activity.config;
         if (config == null) return;
+        populateActions(config);
         var name = config.getName();
         var folder = config.item.optString("folder", "");
         var format = config.getFormat();

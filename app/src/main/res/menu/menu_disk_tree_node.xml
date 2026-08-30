@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-node actions inside the branch tree dialog. -->
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <item
+        android:id="@+id/menu_disk_create_increment"
+        android:icon="@drawable/ic_file_multiple"
+        android:title="@string/disk_create_increment" />
+
+    <item
+        android:id="@+id/menu_disk_merge"
+        android:icon="@drawable/ic_card_multiple"
+        android:title="@string/disk_merge" />
+
+    <item
+        android:id="@+id/menu_disk_flatten"
+        android:icon="@drawable/ic_file_swap"
+        android:title="@string/disk_flatten" />
+
+    <item
+        android:id="@+id/menu_disk_reset"
+        android:icon="@drawable/ic_eraser"
+        android:title="@string/disk_reset" />
+
+    <item
+        android:id="@+id/menu_disk_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="@string/disk_delete" />
+
+</menu>

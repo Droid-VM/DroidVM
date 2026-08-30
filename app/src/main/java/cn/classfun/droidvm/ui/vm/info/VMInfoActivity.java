@@ -58,6 +58,7 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.vm.VMActions;
+import cn.classfun.droidvm.ui.vm.VMDeletion;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
@@ -453,22 +454,23 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     }
 
     private void doDelete() {
-        DialogInterface.OnClickListener cb = (d, w) -> {
+        VMDeletion.confirm(this, config, deleteDisks -> {
             store.removeById(vmId);
-            runOnPool(() -> store.save(this));
-            Toast.makeText(
-                this,
-                R.string.vm_info_delete_success,
-                LENGTH_SHORT
-            ).show();
-            setResult(RESULT_OK);
-            finish();
-        };
-        new MaterialAlertDialogBuilder(this)
-            .setTitle(config.getName())
-            .setMessage(R.string.vm_delete_confirm)
-            .setPositiveButton(R.string.vm_delete, cb)
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+            var appContext = getApplicationContext();
+            runOnPool(() -> {
+                boolean saved = store.save(appContext);
+                VMDeletion.releaseDaemonAndMaybeDeleteDisks(
+                    appContext, config, deleteDisks, saved);
+                mainHandler.post(() -> {
+                    Toast.makeText(
+                        this,
+                        R.string.vm_info_delete_success,
+                        LENGTH_SHORT
+                    ).show();
+                    setResult(RESULT_OK);
+                    finish();
+                });
+            });
+        });
     }
 }

@@ -42,6 +42,9 @@
         <attr name="android:hint" format="string|reference" />
         <attr name="android:text" format="string|reference" />
         <attr name="android:icon" format="reference" />
+        <!-- Long-press a card to drag it into a new position. Off unless the order means
+             something to the user (disk order = /dev/vdX, NIC order = eth index). -->
+        <attr name="reorderable" format="boolean" />
     </declare-styleable>
 
     <declare-styleable name="TextRowWidget">

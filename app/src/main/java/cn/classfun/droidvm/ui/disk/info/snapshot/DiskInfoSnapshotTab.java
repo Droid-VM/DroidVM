@@ -11,6 +11,7 @@ import static java.text.DateFormat.MEDIUM;
 import static java.text.DateFormat.SHORT;
 import static java.text.DateFormat.getDateTimeInstance;
 import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
+import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -39,7 +40,11 @@ import java.util.ArrayList;
 import java.util.Date;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
+import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.disk.info.DiskInfoActivity;
 import cn.classfun.droidvm.ui.disk.info.base.DiskInfoBaseTab;
@@ -197,7 +202,58 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
             }
             inputLayout.setError(null);
             dialog.dismiss();
-            runSnapshotCommand("-c", name);
+            warnIfUsedByCrosvm(() -> runSnapshotCommand("-c", name));
+        });
+    }
+
+    /**
+     * crosvm has no qcow2 snapshot support and refuses to open a snapshotted disk for writing,
+     * so a snapshot silently makes any crosvm VM holding this disk writable un-startable (until
+     * the pre-start prompt flattens it away again). Say so before creating one; QEMU-only and
+     * read-only users are unaffected and see no dialog. The store scan is off the main thread.
+     */
+    private void warnIfUsedByCrosvm(@NonNull Runnable proceed) {
+        var config = activity.config;
+        if (config == null) return;
+        var fullPath = config.getFullPath();
+        runOnPool(() -> {
+            String vmName = null;
+            try {
+                var store = new VMStore();
+                store.load(activity);
+                for (int i = 0; i < store.size() && vmName == null; i++) {
+                    var vm = store.get(i);
+                    if (optEnum(vm.item, "backend", VMBackend.DEFAULT) != VMBackend.CROSVM)
+                        continue;
+                    var disks = vm.item.opt("disks", null);
+                    if (disks == null || !disks.is(DataItem.Type.ARRAY)) continue;
+                    for (var disk : disks.asArray()) {
+                        if (fullPath.equals(disk.optString("path", ""))
+                            && !disk.optBoolean("readonly", false)) {
+                            vmName = vm.getName();
+                            break;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to scan VMs for this disk", e);
+            }
+            final var attachedTo = vmName;
+            activity.runOnUiThread(() -> {
+                if (activity.isFinishing()) return;
+                if (attachedTo == null) {
+                    proceed.run();
+                    return;
+                }
+                new MaterialAlertDialogBuilder(activity)
+                    .setTitle(R.string.disk_snapshot_crosvm_warning_title)
+                    .setMessage(activity.getString(
+                        R.string.disk_snapshot_crosvm_warning_message, attachedTo))
+                    .setPositiveButton(R.string.disk_snapshot_crosvm_warning_create,
+                        (d, w) -> proceed.run())
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+            });
         });
     }
 
@@ -246,6 +302,30 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
         if (config == null) return;
         var fullPath = config.getFullPath();
         runOnPool(() -> {
+            // Snapshot commands rewrite the image; a disk other images overlay is locked.
+            try {
+                var diskStore = new DiskStore();
+                if (!diskStore.load(activity)) {
+                    activity.runOnUiThread(() -> Toast.makeText(
+                        activity, R.string.disk_info_load_failed, LENGTH_SHORT).show());
+                    return;
+                }
+                int n = diskStore.childrenOf(config.getId()).size();
+                if (n > 0) {
+                    activity.runOnUiThread(() -> {
+                        if (activity.isFinishing()) return;
+                        new MaterialAlertDialogBuilder(activity)
+                            .setTitle(R.string.disk_locked_title)
+                            .setMessage(activity.getString(
+                                R.string.disk_locked_message, config.getName(), n))
+                            .setPositiveButton(android.R.string.ok, null)
+                            .show();
+                    });
+                    return;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to check disk children", e);
+            }
             try {
                 var result = runList(
                     getPrebuiltBinaryPath("qemu-img"),
@@ -283,4 +363,3 @@ public final class DiskInfoSnapshotTab extends DiskInfoBaseTab {
         if (tvLog != null) tvLog.append(message.trim());
     }
 }
-
