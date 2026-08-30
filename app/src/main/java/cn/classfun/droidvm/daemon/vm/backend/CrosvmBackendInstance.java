@@ -27,7 +27,9 @@ import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
@@ -35,6 +37,7 @@ import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
+import cn.classfun.droidvm.daemon.vm.UsbAcmPool;
 import cn.classfun.droidvm.daemon.vm.VMBackendInstance;
 import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
@@ -46,6 +49,9 @@ import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.lib.store.vm.SerialBackend;
+import cn.classfun.droidvm.lib.store.vm.SerialHardware;
+import cn.classfun.droidvm.lib.store.vm.VMSerialConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
@@ -57,30 +63,57 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 public final class CrosvmBackendInstance extends VMBackendInstance {
     private static final String TAG = "CrosvmBackendInstance";
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
-    private SerialPipe uart = null;
     private String controlSocketPath = null;
     /** Set by prepareGpuCgroup() once the cpuset exists and holds cores; else null. */
     private String gpuCgroupPath = null;
     /** Owns the per-VM native-display input sockets (crosvm-facing + UI-facing); see start(). */
     private final NativeDisplayInputBridge inputBridge = new NativeDisplayInputBridge();
-    private final FDPipeConsoleStream uartStream;
     private final InputConsoleStream stdoutStream;
     private final InputConsoleStream stderrStream;
     private final SimpleConsoleStream stdioStream;
+
+    /**
+     * One configured serial port resolved for a run: its config plus whatever host resource
+     * backs it this time. The daemon owns every resource here; the UI only ever sees the
+     * config and the console stream. The pty backend holds nothing -- that is crosvm's own
+     * serial type.
+     */
+    private static final class ResolvedSerial {
+        final VMSerialConfig port;
+        SerialPipe pipe;   // APP_CONSOLE
+        String acmDevPath; // USB_ACM: pool member's ttyGSn that crosvm opens
+
+        ResolvedSerial(@NonNull VMSerialConfig port) {
+            this.port = port;
+        }
+    }
+
+    private final List<ResolvedSerial> resolvedSerials = new ArrayList<>();
+    /** Console streams for APP_CONSOLE ports, keyed by stream name; registered once. */
+    private final Map<String, FDPipeConsoleStream> serialStreams = new LinkedHashMap<>();
 
     public CrosvmBackendInstance(
         @NonNull ServerContext context,
         @NonNull VMConfig config
     ) {
         super(context, config);
-        uartStream = new FDPipeConsoleStream(config, "uart", -1, -1);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);
         stdioStream = new SimpleConsoleStream(config, "stdio");
         addStream(stdoutStream);
         addStream(stderrStream);
         addStream(stdioStream);
-        addStream(uartStream);
+        // One text console per app-console serial port. Registered here, like the old fixed
+        // "uart" stream, so the stream list is stable across VM restarts.
+        VMSerialConfig.ensureDefaults(config.item);
+        for (var port : VMSerialConfig.listOf(config.item)) {
+            if (port.getBackend() != SerialBackend.APP_CONSOLE) continue;
+            var name = port.getStreamName();
+            if (serialStreams.containsKey(name)) continue;
+            var stream = new FDPipeConsoleStream(config, name, -1, -1);
+            serialStreams.put(name, stream);
+            addStream(stream);
+        }
     }
 
     @NonNull
@@ -90,15 +123,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (!new File(RUN_PATH).mkdirs())
             Log.w(TAG, fmt("Failed to create run directory: %s", RUN_PATH));
         try {
-            uart = new SerialPipe(uartStream, "uart");
-            if (!uart.isReady()) {
-                Log.w(TAG, "UART pipe not ready, discarding");
-                uart.close();
-                uart = null;
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to create UART pipe", e);
-            uart = null;
+            resolveSerialPorts();
+        } catch (IOException e) {
+            // A refused serial slot fails the whole start; the reason lands on the stdio
+            // console where every other boot failure already goes.
+            Log.e(TAG, "Serial setup refused", e);
+            stdioStream.appendBuffer(fmt("serial setup failed: %s\n", e.getMessage()));
+            closeSerialPorts();
+            return result;
         }
         controlSocketPath = pathJoin(RUN_PATH, fmt("%s.sock", config.getName()));
         deleteFile(controlSocketPath);
@@ -123,27 +155,86 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         try {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
             prepareProcess(builder);
-            if (uart != null) {
-                builder.preserveFd(uart.getOutputRemoteFd());
-                builder.preserveFd(uart.getInputRemoteFd());
+            for (var rs : resolvedSerials) {
+                if (rs.pipe != null) {
+                    builder.preserveFd(rs.pipe.getOutputRemoteFd());
+                    builder.preserveFd(rs.pipe.getInputRemoteFd());
+                }
             }
             var process = builder.start();
-            if (uart != null)
-                uart.closeRemoteFd();
+            for (var rs : resolvedSerials)
+                if (rs.pipe != null) rs.pipe.closeRemoteFd();
             result.setProcess(process);
             stdoutStream.setInputStream(process.getInputStream());
             stderrStream.setInputStream(process.getErrorStream());
         } catch (IOException e) {
             Log.e(TAG, "Failed to start crosvm process", e);
-            if (uart != null) {
-                uart.close();
-                uart = null;
-            }
+            closeSerialPorts();
             controlSocketPath = null;
             inputBridge.release();
             return result;
         }
         return result;
+    }
+
+    /**
+     * Turns the config's serial list into live host resources for this run: a daemon pipe pair
+     * per app-console port. A port whose pipes cannot be opened degrades to a sink in
+     * buildSerialCommand rather than failing the start.
+     */
+    private void resolveSerialPorts() throws IOException {
+        closeSerialPorts();
+        for (var port : VMSerialConfig.listOf(config.item)) {
+            var rs = new ResolvedSerial(port);
+            var backend = port.getBackend();
+            if (backend == SerialBackend.APP_CONSOLE) {
+                var stream = serialStreams.get(port.getStreamName());
+                if (stream != null) {
+                    try {
+                        var pipe = new SerialPipe(stream, port.getStreamName());
+                        if (pipe.isReady()) {
+                            rs.pipe = pipe;
+                        } else {
+                            Log.w(TAG, fmt("Serial pipe %s not ready, discarding",
+                                port.getStreamName()));
+                            pipe.close();
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, fmt("Failed to create serial pipe %s",
+                            port.getStreamName()), e);
+                    }
+                }
+            } else if (backend == SerialBackend.USB_ACM) {
+                // Attaches the configured slot of the daemon-wide ACM pool; only the pool's
+                // first-time build rebinds USB. A busy or out-of-range slot aborts the start
+                // (SlotUnavailableException propagates): a VM silently landing on another
+                // host COM port -- or stealing one -- is worse than not booting. Only a
+                // broken gadget degrades to a sink.
+                try {
+                    rs.acmDevPath = UsbAcmPool.acquire(port.getUsbSlot(),
+                        acmOwnerToken(port), context.appConfig);
+                } catch (UsbAcmPool.SlotUnavailableException e) {
+                    throw e;
+                } catch (IOException e) {
+                    Log.w(TAG, fmt("USB ACM for %s unavailable; port degrades to sink",
+                        port.getStreamName()), e);
+                }
+            }
+            resolvedSerials.add(rs);
+        }
+    }
+
+    @NonNull
+    private String acmOwnerToken(@NonNull VMSerialConfig port) {
+        return fmt("%s/%s", config.getId(), port.getStreamName());
+    }
+
+    private void closeSerialPorts() {
+        for (var rs : resolvedSerials) {
+            if (rs.pipe != null) rs.pipe.close();
+            if (rs.acmDevPath != null) UsbAcmPool.release(acmOwnerToken(rs.port));
+        }
+        resolvedSerials.clear();
     }
 
     @NonNull
@@ -559,16 +650,112 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
         args.add("--vnc-server");
         args.add(vncArg.toString());
+    /** One port's crosvm argument pieces, resolved from its backend. */
+    private static final class SerialArg {
+        String type = "sink";
+        String path;
+        String input;
+        boolean interactive;
     }
 
+    @NonNull
+    private SerialArg serialArgOf(@NonNull ResolvedSerial rs) {
+        var arg = new SerialArg();
+        var port = rs.port;
+        switch (port.getBackend()) {
+            case APP_CONSOLE:
+                if (rs.pipe != null) {
+                    arg.type = "file";
+                    arg.path = fmt("/proc/self/fd/%d", rs.pipe.getOutputRemoteFd());
+                    arg.input = fmt("/proc/self/fd/%d", rs.pipe.getInputRemoteFd());
+                    arg.interactive = true;
+                }
+                break;
+            case PTY:
+                // crosvm's own pty type: it holds the master; the optional path becomes
+                // a symlink to the slave for external consumers.
+                arg.type = "pty";
+                if (!port.getPath().isEmpty()) arg.path = port.getPath();
+                arg.interactive = true;
+                break;
+            case FILE:
+                arg.type = "file";
+                arg.path = port.getPath();
+                break;
+            case UNIX:
+                arg.type = "unix";
+                arg.path = port.getPath();
+                break;
+            case UNIX_STREAM:
+                // crosvm is the connecting side: the consumer must already listen there.
+                arg.type = "unix-stream";
+                arg.path = port.getPath();
+                arg.interactive = true;
+                break;
+            case STDOUT:
+                arg.type = "stdout";
+                break;
+            case SYSLOG:
+                arg.type = "syslog";
+                break;
+            case USB_ACM:
+                // A pool member was attached in resolveSerialPorts; crosvm opens the
+                // ttyGSn raw and non-blocking (drops output when the external host is
+                // not draining, so the guest console never stalls).
+                if (rs.acmDevPath != null) {
+                    arg.type = "dev";
+                    arg.path = rs.acmDevPath;
+                    arg.interactive = true;
+                }
+                break;
+            case SINK:
+            default:
+                break;
+        }
+        return arg;
+    }
+
+    /**
+     * One --serial per configured port. Exactly one port carries console+earlycon -- that is
+     * what crosvm's FDT stdout-path (and so EDK2's SPCR, and so Windows EMS/SAC) points at.
+     * The port the user marked as console wins, whatever its backend: a sink console is a
+     * deliberate "discard the guest console". Only configs from before the explicit flag
+     * fall back to the historical rule, the first port that can carry a conversation.
+     */
     private void buildSerialCommand(@NonNull List<String> args) {
-        if (uart == null) return;
-        var serial = fmt(
-            "type=file,hardware=serial,num=1,earlycon,console,path=/proc/self/fd/%d,input=/proc/self/fd/%d",
-            uart.getOutputRemoteFd(), uart.getInputRemoteFd()
-        );
-        args.add("--serial");
-        args.add(serial);
+        var serialArgs = new ArrayList<SerialArg>(resolvedSerials.size());
+        for (var rs : resolvedSerials)
+            serialArgs.add(serialArgOf(rs));
+        var consoleIdx = -1;
+        for (int i = 0; i < resolvedSerials.size(); i++)
+            if (resolvedSerials.get(i).port.isConsole()) {
+                consoleIdx = i;
+                break;
+            }
+        if (consoleIdx < 0)
+            for (int i = 0; i < serialArgs.size(); i++)
+                if (serialArgs.get(i).interactive) {
+                    consoleIdx = i;
+                    break;
+                }
+        for (int i = 0; i < resolvedSerials.size(); i++) {
+            var port = resolvedSerials.get(i).port;
+            var arg = serialArgs.get(i);
+            var serial = new StringBuilder(fmt(
+                "type=%s,hardware=%s,num=%d",
+                arg.type, port.getHardware().getCrosvmName(), port.getNum()
+            ));
+            if (arg.path != null) serial.append(fmt(",path=%s", arg.path));
+            if (arg.input != null) serial.append(fmt(",input=%s", arg.input));
+            if (i == consoleIdx) {
+                serial.append(",console");
+                // earlycon is a UART notion; a virtio-console has no early MMIO registers.
+                if (port.getHardware() != SerialHardware.VIRTIO_CONSOLE)
+                    serial.append(",earlycon");
+            }
+            args.add("--serial");
+            args.add(serial.toString());
+        }
     }
 
     @Nullable
@@ -645,5 +832,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             controlSocketPath = null;
         }
         inputBridge.release();
+        closeSerialPorts();
     }
 }

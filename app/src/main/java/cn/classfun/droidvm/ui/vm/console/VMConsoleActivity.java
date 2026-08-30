@@ -54,7 +54,10 @@ public final class VMConsoleActivity extends AppCompatActivity {
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_STREAM = "stream";
     public static final String EXTRA_LOGS = "logs";
-    private static final String DEFAULT_STREAM = "uart";
+    // Every backend registers stdio; "uart" only exists on the QEMU backend these days, and
+    // the crosvm serial streams are named per port (serialN/sbsaN/vconN) so none is a safe
+    // universal fallback.
+    private static final String DEFAULT_STREAM = "stdio";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ActivityResultLauncher<String> saveLogLauncher;
     private TerminalPanelView terminalPanel;

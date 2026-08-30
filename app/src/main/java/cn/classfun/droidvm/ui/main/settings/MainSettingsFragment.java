@@ -30,7 +30,11 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.os.LocaleListCompat;
 
+import android.widget.RadioGroup;
+
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.radiobutton.MaterialRadioButton;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -47,6 +51,7 @@ import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
+import cn.classfun.droidvm.daemon.vm.UsbAcmPool;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.data.Language;
@@ -95,6 +100,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private SwitchRowWidget itemVMClearLogsBeforeStart;
     private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
+    private TextRowWidget itemUsbAcmPorts;
     private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
@@ -153,6 +159,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
+        itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
         itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
@@ -190,6 +197,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
+        bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
+        refreshUsbAcmPortsSummary();
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
@@ -266,7 +275,69 @@ public final class MainSettingsFragment extends MainBaseFragment {
             optimizeCompressionLabel(getOptimizeCompression(requireContext())));
     }
 
+    /** Whether the USB ACM feature is switched on; VMs with an ACM port refuse to boot
+     *  without it, so the serial editor uses this to warn at configuration time. */
+    public static boolean isUsbAcmEnabled(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(UsbAcmPool.KEY_USB_ACM_ENABLE, UsbAcmPool.DEFAULT_ENABLE);
+    }
+
+    /**
+     * USB ACM pool size the daemon pre-binds; the same clamp the daemon applies, so the
+     * serial-port slot picker never offers a slot the pool will refuse.
+     */
+    public static int getUsbAcmPorts(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        var n = prefs.getInt(UsbAcmPool.KEY_USB_ACM_PORTS, UsbAcmPool.DEFAULT_PORTS);
+        return Math.max(1, Math.min(UsbAcmPool.MAX_PORTS, n));
+    }
+
+    private void refreshUsbAcmPortsSummary() {
+        itemUsbAcmPorts.setSubtitle(isUsbAcmEnabled(requireContext())
+            ? getString(R.string.settings_usb_acm_ports_summary, getUsbAcmPorts(requireContext()))
+            : getString(R.string.settings_usb_acm_disabled));
+    }
+
+    // One dialog for the whole feature: the enable toggle on top (the daemon builds or tears
+    // the pool down as soon as the config lands), pool sizes below. The re-enumeration note
+    // sits under the toggle permanently instead of nagging through a second dialog.
+    private void showUsbAcmPortsDialog() {
+        var context = requireContext();
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        var view = getLayoutInflater().inflate(R.layout.dialog_usb_acm_ports, null);
+        MaterialSwitch enable = view.findViewById(R.id.switch_acm_enable);
+        RadioGroup group = view.findViewById(R.id.group_acm_ports);
+        for (int i = 1; i <= UsbAcmPool.MAX_PORTS; i++) {
+            var radio = new MaterialRadioButton(context);
+            radio.setId(i);
+            radio.setText(getString(R.string.settings_usb_acm_ports_summary, i));
+            radio.setMinHeight(48);
+            group.addView(radio);
+        }
+        enable.setChecked(isUsbAcmEnabled(context));
+        group.check(getUsbAcmPorts(context));
+        for (int i = 0; i < group.getChildCount(); i++)
+            group.getChildAt(i).setEnabled(enable.isChecked());
+        enable.setOnCheckedChangeListener((btn, checked) -> {
+            prefs.edit().putBoolean(UsbAcmPool.KEY_USB_ACM_ENABLE, checked).apply();
+            VMEventHandler.sendAppConfig(requireActivity());
+            for (int i = 0; i < group.getChildCount(); i++)
+                group.getChildAt(i).setEnabled(checked);
+            refreshUsbAcmPortsSummary();
+        });
+        group.setOnCheckedChangeListener((g, checkedId) -> {
+            if (checkedId <= 0) return;
+            prefs.edit().putInt(UsbAcmPool.KEY_USB_ACM_PORTS, checkedId).apply();
+            VMEventHandler.sendAppConfig(requireActivity());
+            refreshUsbAcmPortsSummary();
+        });
+        new MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.settings_usb_acm_ports_title)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
     // Ask + every crosvm-supported compression; the list grows as CROSVM_SUPPORTED does.
     private void showOptimizeCompressionDialog() {
         var values = new ArrayList<String>();
