@@ -36,12 +36,20 @@ public final class CpuUtils {
         public final long maxFreqKHz; // 0 when unknown
         public final int tier;        // 0 = lowest-freq cluster, ascending
         public final boolean big;     // true when not in the lowest-freq cluster
+        /**
+         * Scheduler capacity on the kernel's 1024-per-biggest-core scale, as
+         * crosvm's {@code --cpu-capacity} wants it. Read from sysfs when the
+         * kernel exports it, otherwise derived from the frequency ratio; 0 only
+         * when neither is available.
+         */
+        public final long capacity;
 
-        CpuCore(int index, long maxFreqKHz, int tier, boolean big) {
+        CpuCore(int index, long maxFreqKHz, int tier, boolean big, long capacity) {
             this.index = index;
             this.maxFreqKHz = maxFreqKHz;
             this.tier = tier;
             this.big = big;
+            this.capacity = capacity;
         }
     }
 
@@ -54,20 +62,33 @@ public final class CpuUtils {
     public static List<CpuCore> getCores() {
         var indices = listCoreIndices();
         var freqs = new long[indices.size()];
+        var caps = new long[indices.size()];
         var distinct = new TreeSet<Long>();
+        long maxFreq = 0;
         for (int i = 0; i < indices.size(); i++) {
             freqs[i] = readMaxFreqKHz(indices.get(i));
+            caps[i] = readCapacity(indices.get(i));
             if (freqs[i] > 0) distinct.add(freqs[i]);
+            maxFreq = Math.max(maxFreq, freqs[i]);
         }
         // Ascending tier index per distinct frequency; unknown (0) stays tier 0.
         var tierOf = new ArrayList<>(distinct);
         var cores = new ArrayList<CpuCore>(indices.size());
         for (int i = 0; i < indices.size(); i++) {
             int tier = freqs[i] > 0 ? tierOf.indexOf(freqs[i]) : 0;
-            cores.add(new CpuCore(indices.get(i), freqs[i], tier, tier > 0));
+            // No cpu_capacity in sysfs (common outside big.LITTLE-aware kernels):
+            // fall back to the frequency ratio against the fastest core, which is
+            // what the arm64 kernel itself does when the DT omits capacities.
+            long cap = caps[i];
+            if (cap <= 0 && freqs[i] > 0 && maxFreq > 0)
+                cap = Math.max(1, Math.round(MAX_CAPACITY * (double) freqs[i] / maxFreq));
+            cores.add(new CpuCore(indices.get(i), freqs[i], tier, tier > 0, cap));
         }
         return cores;
     }
+
+    /** Capacity of the biggest core on the kernel's scale. */
+    public static final long MAX_CAPACITY = 1024;
 
     /** Number of distinct frequency clusters (1 when frequencies are unknown). */
     public static int tierCount(@NonNull List<CpuCore> cores) {
@@ -151,19 +172,38 @@ public final class CpuUtils {
         return mask.signum() == 0 ? "" : mask.toString(16);
     }
 
+    /**
+     * Parse a crosvm CPUSET spec -- a comma-separated list of indices and
+     * {@code low-high} ranges, e.g. {@code "0,1-3,5"} -- into ascending unique
+     * indices. Unparsable or reversed parts are skipped rather than throwing,
+     * matching the best-effort style of the rest of this class; callers that
+     * need to reject bad input compare the result against the input instead.
+     */
     @NonNull
-    private static List<Integer> parseCsv(@NonNull String csv) {
-        var out = new ArrayList<Integer>();
-        if (csv.isEmpty()) return out;
-        for (var part : csv.split(",")) {
+    public static List<Integer> parseCpuSet(@NonNull String spec) {
+        var set = new TreeSet<Integer>();
+        for (var part : spec.split(",")) {
             part = part.trim();
             if (part.isEmpty()) continue;
+            int dash = part.indexOf('-', 1);
             try {
-                out.add(Integer.parseInt(part));
+                if (dash < 0) {
+                    set.add(Integer.parseInt(part));
+                    continue;
+                }
+                int lo = Integer.parseInt(part.substring(0, dash).trim());
+                int hi = Integer.parseInt(part.substring(dash + 1).trim());
+                if (lo > hi) continue;
+                for (int i = lo; i <= hi; i++) set.add(i);
             } catch (NumberFormatException ignored) {
             }
         }
-        return out;
+        return new ArrayList<>(set);
+    }
+
+    @NonNull
+    private static List<Integer> parseCsv(@NonNull String csv) {
+        return parseCpuSet(csv);
     }
 
     @NonNull
@@ -190,16 +230,20 @@ public final class CpuUtils {
         return out;
     }
 
+    private static long readCapacity(int index) {
+        return tryReadLong(fmt("%s/cpu%d/cpu_capacity", CPU_ROOT, index));
+    }
+
     private static long readMaxFreqKHz(int index) {
         // cpuinfo_max_freq is the hardware ceiling; scaling_max_freq is the
         // policy ceiling (usually equal). Try the direct read first, then a
         // root-backed read, before giving up on this core.
-        long v = tryReadFreq(fmt("%s/cpu%d/cpufreq/cpuinfo_max_freq", CPU_ROOT, index));
+        long v = tryReadLong(fmt("%s/cpu%d/cpufreq/cpuinfo_max_freq", CPU_ROOT, index));
         if (v > 0) return v;
-        return tryReadFreq(fmt("%s/cpu%d/cpufreq/scaling_max_freq", CPU_ROOT, index));
+        return tryReadLong(fmt("%s/cpu%d/cpufreq/scaling_max_freq", CPU_ROOT, index));
     }
 
-    private static long tryReadFreq(@NonNull String path) {
+    private static long tryReadLong(@NonNull String path) {
         String raw = null;
         try {
             raw = FileUtils.readFile(path);

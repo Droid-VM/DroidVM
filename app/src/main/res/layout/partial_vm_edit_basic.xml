@@ -30,6 +30,9 @@
             app:ti_mode="size"
             app:ti_precision="1MiB" />
 
+        <!-- The icon button opens the per-vCPU affinity editor: its row list is a
+             function of this field's value, so it reads the count on open instead
+             of tracking edits to it. -->
         <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
             android:id="@+id/input_cpu"
             android:layout_width="match_parent"
@@ -37,6 +40,8 @@
             android:hint="@string/create_vm_cpu_hint"
             android:icon="@drawable/ic_cpu"
             android:inputType="number"
+            app:ti_iconButtonHint="@string/create_vm_cpu_affinity_title"
+            app:ti_iconButtonIcon="@drawable/ic_tune"
             app:ti_max="64"
             app:ti_min="1"
             app:ti_mode="number" />
