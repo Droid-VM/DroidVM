@@ -568,6 +568,10 @@ public final class VMEditBootTab extends VMEditBaseTab {
      * just-changed selection is reflected, then the stored config, then
      * the backend default. In such a VM a guest kernel without
      * CONFIG_DMA_RESTRICTED_POOL cannot drive virtio.
+     *
+     * <p>{@code PSEUDO_UNPROTECTED} is deliberately not in this list: its RAM is
+     * shared to the guest rather than lent, so there is no bounce pool and a
+     * stock kernel boots. Adding it here would warn about nothing.
      */
     private boolean isProtectedVm() {
         ProtectedVM pvm = null;
