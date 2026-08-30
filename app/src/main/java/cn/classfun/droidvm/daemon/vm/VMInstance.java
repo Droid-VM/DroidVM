@@ -20,6 +20,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -478,8 +480,30 @@ public final class VMInstance extends VMConfig {
             scheduleRelaunch();
             return;
         }
+        nprocGuardResetBestEffort();
         setState(VMState.STOPPED);
         fireEvent("exited", null);
+    }
+
+    /**
+     * Best-effort, run by the daemon once a VM's process has fully exited: ask nproc_guard to
+     * recompute the app uid's RLIMIT_NPROC ucounts counter back to its true live count. crosvm
+     * drops its real uid to the app's (setresuid, to reach the camera/mic/app-scoped files), and
+     * on some kernels that real-uid switching leaves the per-uid NPROC accounting slightly off;
+     * left to drift across many VM runs it eventually blocks the app from launching until a
+     * reboot. Doing it here -- process gone, uid idle -- is the exact, race-free moment to correct
+     * it. The guard module is loaded with this app's uid, so a bare "1" is enough; if it is not
+     * loaded the sysfs node is absent and this is a no-op.
+     */
+    private static void nprocGuardResetBestEffort() {
+        var reset = new File("/sys/kernel/nproc_guard/reset");
+        if (!reset.exists())
+            return;
+        try (var os = new FileOutputStream(reset)) {
+            os.write('1');
+        } catch (Exception e) {
+            Log.d(TAG, "nproc_guard reset skipped", e);
+        }
     }
 
     // Relaunch off the worker thread: start() joins workerThread (this thread),
