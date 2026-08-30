@@ -79,6 +79,12 @@
                     android:subtitle="@string/settings_optimize_compression_ask"
                     android:text="@string/settings_optimize_compression_title" />
 
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_usb_acm_ports"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_serial_port"
+                    android:text="@string/settings_usb_acm_ports_title" />
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                     android:id="@+id/item_optimize_sdcard"
