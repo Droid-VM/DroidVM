@@ -171,6 +171,7 @@ public final class DiskResizeDialog {
     @NonNull
     private Intent createAutoGrowIntent() {
         var agentVM = new AgentVM(VMBackend.QEMU, VMHypervisor.SOFT);
+        agentVM.setOperationConsole("uart", "/dev/ttyAMA0");
         new AutoGrowAction(agentVM);
         agentVM.addDisk(config);
         return AgentOperationActivity.createIntent(context, agentVM);
