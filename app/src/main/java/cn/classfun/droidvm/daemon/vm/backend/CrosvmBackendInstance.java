@@ -281,12 +281,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 break;
             default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
         }
-        switch (optEnum(item, "protected_vm", defProtectedMode)) {
+        var protectedVm = optEnum(item, "protected_vm", defProtectedMode);
+        switch (protectedVm) {
             case PROTECTED_PROTECTED:
                 args.add("--protected-vm");
                 break;
             case PROTECTED_WITHOUT_FIRMWARE:
                 args.add("--protected-vm-without-firmware");
+                break;
+            case PSEUDO_UNPROTECTED:
+                args.add("--protected-vm-pseudo-unprotected");
                 break;
             default:
                 break;
@@ -318,6 +322,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 break;
         }
         var swiotlbMb = item.optLong("swiotlb_mb", 0);
+        // A pseudo-unprotected VM has nothing to bounce through -- its RAM is shared to it, so the
+        // host can already reach every buffer the guest hands a device. A pool here would do only
+        // harm: it puts a restricted-dma-pool node in the tree of a guest that was never built to
+        // honour one, which is the exact thing this mode exists to avoid. Ignore the stored value
+        // rather than asking everyone who switches to this mode to zero it by hand.
+        if (protectedVm == ProtectedVM.PSEUDO_UNPROTECTED)
+            swiotlbMb = 0;
         if (swiotlbMb > 0) {
             args.add("--swiotlb");
             args.add(String.valueOf(swiotlbMb));

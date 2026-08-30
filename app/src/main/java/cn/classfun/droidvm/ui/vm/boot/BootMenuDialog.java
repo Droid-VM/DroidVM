@@ -328,6 +328,11 @@ public final class BootMenuDialog {
      * protected-without-firmware) -- read from the stored config, where a
      * guest kernel without CONFIG_DMA_RESTRICTED_POOL cannot drive virtio.
      * Mirrors {@code VMEditBootTab.isProtectedVm}.
+     *
+     * <p>{@code PSEUDO_UNPROTECTED} is deliberately not in this list. It is a
+     * protected VM to the hypervisor, but its RAM is shared to it rather than
+     * lent, so there is no bounce pool and a stock kernel boots -- the warning
+     * would be false there.
      */
     private static boolean isProtectedVm(@NonNull VMConfig config) {
         var pvm = optEnum(config.item, "protected_vm",
