@@ -152,6 +152,8 @@
     <string name="vm_info_state_active">Process active</string>
     <string name="vm_info_console_not_found">No any console found</string>
     <string name="vm_info_console_text_select">Text Console %1$s</string>
+    <!-- Backend process stdio, not a guest console: "CrosVM stdio" / "QEMU stdio". -->
+    <string name="vm_info_console_stdio_select" translatable="false">%1$s stdio</string>
     <string name="vm_info_console_vnc_select">VNC Console</string>
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
     <string name="vm_info_console_native_select">Native Display</string>

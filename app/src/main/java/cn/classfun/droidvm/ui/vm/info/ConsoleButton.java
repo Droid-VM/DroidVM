@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.ui.vm.info;
 
 import static android.widget.Toast.LENGTH_SHORT;
+import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.content.Context;
@@ -34,6 +35,7 @@ import java.util.function.Consumer;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
@@ -161,10 +163,17 @@ public final class ConsoleButton {
     /**
      * Pretty title for a text-console stream. Names minted by the serial-port config
      * (serialN/sbsaN/vconN) are shown the way the editor names the port; anything else --
-     * QEMU's legacy "uart", stdio -- shows its raw name, as before.
+     * QEMU's legacy "uart" -- shows its raw name, as before.
+     *
+     * <p>stdio is the exception, and is named after the backend process instead: it is
+     * not a console the guest ever writes to, it is crosvm's or QEMU's own stdout and
+     * stderr. Calling it a text console promised a guest terminal that isn't there.
      */
     @NonNull
     private String streamTitle(@NonNull String name) {
+        if (name.equals("stdio"))
+            return parent.getString(R.string.vm_info_console_stdio_select,
+                parent.getString(backend().getStringId()));
         var pretty = name;
         if (name.matches("serial[0-9]+"))
             pretty = fmt("%s %s",
@@ -176,6 +185,13 @@ public final class ConsoleButton {
             pretty = fmt("%s %s",
                 parent.getString(R.string.edit_vm_serial_hw_virtio_console), name.substring(4));
         return parent.getString(R.string.vm_info_console_text_select, pretty);
+    }
+
+    /** The configured backend, defaulting the way the rest of the app defaults it. */
+    @NonNull
+    private VMBackend backend() {
+        return optEnum(parent.config == null ? DataItem.newObject() : parent.config.item,
+            "backend", VMBackend.DEFAULT);
     }
 
     private void buildConsoleChooserDialog(@Nullable JSONArray streams) {
