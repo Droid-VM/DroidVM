@@ -14,6 +14,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 
 /**
  * Is the huge-page reserve able to back this VM <em>right now</em>?
@@ -116,7 +117,8 @@ public final class PoolPreflight {
      * as of the per-pool {@code consume_system_mem} tag so are the three renderer host pools --
      * whichever of them a route uses, the VM still costs what its memory field says. Only the guest
      * pool is added on top, because it is video memory the user asked for beside the RAM rather
-     * than out of it.
+     * than out of it - and only when the backend will actually pass one, which
+     * {@link GuestPoolSizing} decides for both sides.
      *
      * <p>Growth grants (the runtime SHARE path) are deliberately not counted -- they happen later,
      * one blob at a time, and a VM that cannot grow still boots. That is also why the guest pool
@@ -124,20 +126,9 @@ public final class PoolPreflight {
      */
     public static long neededPages(@NonNull DataItem item) {
         long mb = Math.max(item.optLong("memory_mb", 512), 64);
-            var backend = item.optString("gpu_backend", "");
-            long guestPool = item.optLong("gpu_guest_pool_mb", 0);
-            long guestPrealloc = guestPool > 0
-                ? item.optLong("gpu_guest_prealloc_mb", guestPool)
-                : 0;
-            if ("gpu_gfxstream".equals(backend)) {
-                // The guest pool is only pre-allocated when the guest can create its own
-                // handles, which is what udmabuf gates.
-                if (item.optBoolean("gpu_udmabuf", false))
-                    mb += guestPrealloc;
-            } else if ("gpu_virglrenderer".equals(backend)) {
-                mb += guestPrealloc;
-            }
-        }
+        // Exactly what the backend will pre-allocate: nothing for a host-visible-RAM VM, and
+        // for gfxstream only with udmabuf. One rule, shared with the command builder.
+        mb += GuestPoolSizing.bootGuestPreallocMb(item);
         return (mb + PAGE_MB - 1) / PAGE_MB;
     }
 

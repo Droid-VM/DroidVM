@@ -9,8 +9,6 @@ import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_VARS;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
-import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.SIMPLEFB;
-import static cn.classfun.droidvm.lib.store.vm.DisplayBackend.VIRTIO_GPU;
 import static cn.classfun.droidvm.lib.store.vm.GpuApi.VULKAN;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
@@ -46,12 +44,17 @@ import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.daemon.audio.HostAudioTable;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
-import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
+import cn.classfun.droidvm.lib.store.vm.GpuMode;
+import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
@@ -66,6 +69,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -148,11 +152,28 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // the VM is up - so the daemon is the only process that can both bind the socket before
         // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
         // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
-            if (!inputBridge.startListening(NativeDisplay.serviceName(config))) {
         // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
+        // args in buildCommand(), and touchscreenScreens()/nativeInputScreens() decide which
+        // screens get which per-screen device in both places, so the sockets and devices never
+        // diverge. The two lists differ: a VNC-exported screen's tablet and keyboard are crosvm's,
+        // not ours.
         if (isInputBridgeNeeded()) {
+            try {
+                if (!inputBridge.startListening(config.getId().toString(),
+                    touchscreenScreens(), nativeInputScreens())) {
                     Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
                 }
+            } catch (IllegalArgumentException e) {
+                // A socket path too long for sun_path. crosvm would refuse the command line and
+                // our own bind() would truncate it in silence, so there is no half-working start
+                // to attempt: fail here, with the path and its length on the console the user is
+                // already looking at, the way a refused serial slot does.
+                Log.e(TAG, "Display input socket path refused", e);
+                stdioStream.appendBuffer(fmt("display input setup failed: %s\n", e.getMessage()));
+                inputBridge.release();
+                closeSerialPorts();
+                controlSocketPath = null;
+                return result;
             }
         }
         // Must happen before buildCommand(): crosvm opens <cgroup>/tasks and never
@@ -163,6 +184,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         try {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
             prepareProcess(builder);
+            applyGfxstreamEnv(builder);
+            applyDisplayBlitEnv(builder);
+            applyGpuRtPrioEnv(builder);
             for (var rs : resolvedSerials) {
                 if (rs.pipe != null) {
                     builder.preserveFd(rs.pipe.getOutputRemoteFd());
@@ -245,6 +269,29 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         resolvedSerials.clear();
     }
 
+    /**
+     * Appends the guest-owned VRAM pool settings. Older configs only have the total pool size;
+     * their defaults keep the whole pool preallocated and leave dynamic grants disabled. The
+     * editor writes exactly those values (prealloc = pool, step 0, no grants) whenever its
+     * dynamic-vram switch is off over a guest pool, so a non-zero step here means the user
+     * asked for runtime growth. Only called under Gunyah.
+     */
+    private static void appendGuestPoolOptions(
+        @NonNull StringBuilder preAlloc,
+        @NonNull DataItem item,
+        long guestPool
+    ) {
+        if (guestPool <= 0) return;
+        long step = item.optLong("gpu_guest_step_mb", 0);
+        if (preAlloc.length() > 0) preAlloc.append(',');
+        preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
+        preAlloc.append(fmt(",gpu-guest-prealloc-mb=%d",
+            item.optLong("gpu_guest_prealloc_mb", guestPool)));
+        preAlloc.append(fmt(",gpu-guest-step-mb=%d", step));
+        preAlloc.append(fmt(",gpu-guest-max-grants=%d",
+            item.optLong("gpu_guest_max_grants", 0)));
+    }
+
     @NonNull
     private List<String> buildCommand() {
         var item = config.item;
@@ -273,8 +320,30 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 args.add("kvm");
                 break;
             case GUNYAH: {
+                boolean hasGpu = VMScreenConfig.hasGpuDevice(item);
+                boolean gfxstreamGpu = hasGpu
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
+                boolean drm2kgslGpu = hasGpu
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
+                    && effectiveGpuMode(item) == GpuMode.NATIVE;
+                boolean venusGpu = hasGpu
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_VIRGLRENDERER
+                    && effectiveGpuMode(item) == GpuMode.VULKAN;
+                // Dynamic mappings keep the normal RegisterMemory interface. The Gunyah backend
+                // transparently supplies the protected-VM SHARE/accept transport.
                 args.add("gunyah");
+                // The guest-alloc pool buys the host access to buffers the guest allocated, which
+                // in an ordinary protected VM it does not otherwise have. When the host can
+                // already reach the guest's RAM -- an unprotected VM, or a pseudo-unprotected one
+                // whose window is shared back before the payload runs -- the pool is memory taken
+                // from the guest to solve a problem that is not happening, and virtio-gpu with no
+                // pool node to find allocates from system RAM instead, which the host can read
+                // for the same reason. The editor hides the field in those modes; a config from
+                // the daemon API, or one saved before switching mode, still arrives with a size
+                // in it, so it is zeroed here rather than trusted.
+                // GuestPoolSizing holds that rule, shared with the huge-page preflight so the
+                // reserve is budgeted for exactly what is passed here.
+                long guestPool = GuestPoolSizing.bootGuestPoolMb(item);
                 // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
@@ -282,6 +351,48 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
                         var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
+                        if (udmabuf)
+                            appendGuestPoolOptions(preAlloc, item, guestPool);
+                        args.add("--pre-alloc");
+                        args.add(preAlloc.toString());
+                    }
+                }
+                // DRM native context. Two pools, and they hold different things:
+                //   drm-host-mb  the host arena, now only the per-context msm shmem rings, so
+                //                single-digit MB rather than the gigabyte the BOs used to need.
+                //   gpu-guest-mb the guest's drm_buddy pool, where every BO comes from. Same
+                //                region and flag as the gfxstream guest pool -- the guest driver
+                //                keeps one allocator and cannot tell the renderers apart.
+                // The guest pool needs udmabuf=true as well; that is what gates
+                // VIRTIO_GPU_F_CREATE_GUEST_HANDLE, and without it guest mesa silently keeps a
+                // host-allocating path this host no longer implements.
+                if (drm2kgslGpu) {
+                    long drmHostPool = item.optLong("gpu_drm2kgsl_pool_mb", 0);
+                    var preAlloc = new StringBuilder();
+                    if (drmHostPool > 0)
+                        preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
+                    appendGuestPoolOptions(preAlloc, item, guestPool);
+                    if (preAlloc.length() > 0) {
+                        args.add("--pre-alloc");
+                        args.add(preAlloc.toString());
+                    }
+                }
+                // Venus host pool: the venus command-stream transport shmems (per-instance ring +
+                // CS/reply chunks) live here (venus-host-mb -> VenusPool). vkr sub-allocates every
+                // blob_id==0 shmem from this pre-shared region and the guest maps pool_base+offset
+                // with no runtime SHARE. venus's real VkDeviceMemory is separately guest-alloc and
+                // comes from the shared guest pool (gpu-guest-mb) -- the same region/flag drm2kgsl
+                // and gfxstream guest-alloc use; the guest driver keeps one allocator and cannot
+                // tell the renderers apart. Default sized for the KDE+vkmark transport peak (cs
+                // pool alone is >=8M/instance): too small forces a per-blob memfd fallback ->
+                // runtime SHARE, which SoC-resets the fragile sm8650 (8gen3) RM.
+                if (venusGpu) {
+                    long venusHostPool = item.optLong("gpu_venus_pool_mb", 256);
+                    var preAlloc = new StringBuilder();
+                    if (venusHostPool > 0)
+                        preAlloc.append(fmt("venus-host-mb=%d", venusHostPool));
+                    appendGuestPoolOptions(preAlloc, item, guestPool);
+                    if (preAlloc.length() > 0) {
                         args.add("--pre-alloc");
                         args.add(preAlloc.toString());
                     }
@@ -371,7 +482,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildNetCommand(args);
         buildSharedDirCommand(args);
         buildGpuCommand(args);
-        buildVncCommand(args);
+        buildScreenExportersCommand(args);
         // The evdev --input devices ride along whenever any app display path is active: the native
         // display routes everything through them; the VNC display routes its MOUSE (relative) and
         // TOUCH (multi-touch) modes here while the tablet pointer + keyboard stay on RFB.
@@ -601,123 +712,593 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return hypervisor == VMHypervisor.GUNYAH;
     }
 
+    /**
+     * What the guest hands to the host: the {@code gpu_mode} row of the editor's three-level
+     * GPU section (renderer / mode / provider).
+     *
+     * <p>Configs written before that split carry only {@code gpu_api}, whose meaning depended on
+     * the renderer, so fall back to the same migration the editor shows. Reading {@code gpu_api}
+     * directly is what this replaces: a VM configured through the new rows stores
+     * {@code gpu_mode=native} and no longer sets {@code gpu_api=drm2kgsl}, so the drm2kgsl branch below
+     * would silently not fire and the VM would come up without context-types=drm.
+     */
+    @NonNull
+    private static GpuMode effectiveGpuMode(@NonNull DataItem item) {
+        var mode = optEnum(item, "gpu_mode", GpuMode.NONE);
+        if (mode != GpuMode.NONE) return mode;
+        return GpuMode.fromLegacyApi(optEnum(item, "gpu_api", GpuApi.NONE));
+    }
+
+    /**
+     * The two display devices: {@code --gpu} for the virtio-gpu screen, {@code --simplefb} for the
+     * simplefb screen, each emitted exactly when its own switch is on.
+     *
+     * <p>One predicate per device, which is the whole point of the split. The arbitration-era
+     * version emitted the GPU device's {@code displays=} for either screen, because back then the
+     * simplefb bridge had no display of its own and handed its frames to this device -- so a VM
+     * with only the simplefb screen on still got a virtio-gpu scanout, a Linux guest saw a
+     * virtio-gpu output, drew its desktop onto it, and nobody exported it. That bridge is gone
+     * (crosvm's simplefb screen opens its own sink), so the geometry belongs to the screen it
+     * describes and to nothing else.</p>
+     *
+     * <p>{@code --gpu} and its {@code displays=} are one thing, never two: a virtio-gpu device
+     * with no scanout was tried and no guest desktop ever came up on it, so it is not a
+     * configuration this emits.</p>
+     */
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
-        var useGpu = item.optBoolean("gpu_enabled", false);
-        var useDisplay = item.optBoolean("display_enabled", false);
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
+        var gpuScreen = isScreenEnabled(VMScreenConfig.ID_GPU0);
+        var fbScreen = isScreenEnabled(VMScreenConfig.ID_SIMPLEFB);
         var api = optEnum(item, "gpu_api", GpuApi.NONE);
-        if (!useGpu && !useDisplay) return;
-        if (useGpu) {
+        if (!gpuScreen && !fbScreen) return;
+        if (gpuScreen) {
+            var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
+            var isGfxstream = gpuBackend == GpuBackend.GPU_GFXSTREAM;
             var gpuArg = new StringBuilder();
             gpuArg.append(gpuBackend.getName());
-            if (useDisplay && backend == VIRTIO_GPU) {
-                gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
-                    item.optLong("display_width", 1280),
-                    item.optLong("display_height", 720)));
-                gpuArg.append(fmt(",refresh-rate=%d",
-                    item.optLong("display_refresh_rate", 60)));
-                gpuArg.append(fmt(",dpi=[%d,%d]]]",
-                    item.optLong("display_dpi_h", 160),
-                    item.optLong("display_dpi_v", 160)));
+            // gfxstream host-visible Vulkan: the guest turnip (VK) + zink (GL-on-VK)
+            // stack needs the gfxstream-vulkan context type.
+            if (isGfxstream) {
+                gpuArg.append(",context-types=gfxstream-vulkan");
             }
+            // This screen's own geometry, unconditionally: the device and its scanout are emitted
+            // together or not at all. What the guest is told here is what it gets -- crosvm turns
+            // it into the EDID and the display-info a Linux guest picks its mode from -- and it no
+            // longer has anything to do with the simplefb screen, which now carries its own size
+            // to its own device below.
+            gpuArg.append(fmt(",displays=[[mode=windowed[%d,%d]",
+                gpu0.getWidth(), gpu0.getHeight()));
+            gpuArg.append(fmt(",refresh-rate=%d", gpu0.getRefreshRate()));
+            gpuArg.append(fmt(",dpi=[%d,%d]]]", gpu0.getDpiH(), gpu0.getDpiV()));
 
-            gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
-            switch (api) {
-                case EGL:
-                    gpuArg.append(",egl=true");
-                    break;
-                case OPENGLES:
-                    gpuArg.append(",gles=true");
-                    break;
-                case ANGLE:
-                    gpuArg.append(",angle=true");
-                    break;
+            if (isGfxstream) {
+                // gfxstream serves both VK (turnip) and GL (zink) clients, so both
+                // capsets are on. pci-bar-size is the host-visible BAR window and
+                // doubles as the GPU memory ceiling (the guest has no
+                // device-local-only memory type); default 4 GiB.
+                gpuArg.append(",vulkan=true,gles=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
+                // Dynamic vram: a defined vram-limit is what enables runtime-shared host-visible
+                // memory (and, with a pre-alloc pool, fusion routing); leaving it undefined keeps
+                // every allocation inside the pool. crosvm ignores it in guest-alloc mode, where
+                // the guest pool is the cap, so only send it for host-alloc.
+                boolean udmabufGpu = item.optBoolean("gpu_udmabuf", true);
+                boolean dynamicVram = !udmabufGpu && item.optBoolean("gpu_dynamic_vram", false);
+                if (dynamicVram) {
+                    // vram-limit supplies gfxstream's folio quota, the VK_EXT_memory_budget
+                    // capacity handed to the guest driver, and -- by being defined and non-zero
+                    // at all -- enables fusion routing. All are ignored under guest-alloc.
+                    gpuArg.append(
+                        fmt(",vram-limit=%d", item.optLong("gpu_vram_quota_mb", 2048)));
+                    // gfxstream allocation policy: only its fresh host-visible shmem is eligible
+                    // for folio backing. Driver-exported DMA-BUFs remain untouched.
+                    gpuArg.append(fmt(",vram-folio-threshold-kb=%d",
+                        item.optLong("gpu_vram_folio_threshold_kb", 1024)));
+                    // Fusion size gate: host-visible allocations up to this try the pre-alloc
+                    // pool first, larger ones go straight to the runtime-SHARE path.
+                    gpuArg.append(fmt(",pool-blob-max-kb=%d",
+                        item.optLong("gpu_pool_blob_max_kb", 4096)));
+                }
                 // gunyah-pvm pins the RingBlob backing so the permanent Gunyah SHARE mapping
                 // stays stable. Only meaningful under the Gunyah hypervisor; other SoCs skip it.
                 if (isGunyahHypervisor()) {
                     gpuArg.append(",gunyah-pvm=true");
                 }
+                // Guest-allocated blobs: the guest owns the host-visible pool and hands
+                // dma-bufs to gfxstream via udmabuf, instead of the host growing the arena.
+                if (udmabufGpu) {
+                    gpuArg.append(",udmabuf=true");
+                }
+            } else if (effectiveGpuMode(item) == GpuMode.NATIVE) {
+                // DRM native context: the guest runs its own turnip over vdrm and virglrenderer
+                // translates the msm protocol to KGSL ioctls, so nothing is remoted at the
+                // GL/VK level and the host exposes no Vulkan capset.
+                //
+                // Only the DRM capset is advertised. rutabaga now keeps vrend (classic 2D
+                // resources: fbcon, dumb buffers, llvmpipe scanout) initialised for every
+                // virglrenderer configuration, so "drm" alone no longer fails the first
+                // CREATE_2D. Not advertising VIRGL2 matters for a stock guest: with it, stock
+                // Mesa picks host-GL virgl and our CPU-copy scanout cannot read those frames
+                // back (black until the guest additions + mesa-guest-drm2kgsl are installed);
+                // without it stock Mesa falls back to llvmpipe, which displays fine.
+                gpuArg.append(",context-types=drm");
+                // No external-blob: create_gpu_device overwrites it with
+                // `is_sandboxed || fixed_blob_mapping` regardless of what the CLI said, so
+                // passing it would only suggest it does something.
+                gpuArg.append(",vulkan=false,egl=true,gles=true");
+                // udmabuf builds the dma-buf for a guest-allocated blob, and -- less obviously --
+                // it is what gates VIRTIO_GPU_F_CREATE_GUEST_HANDLE. Without it the feature is
+                // never offered, the guest reports has_create_guest_handle=0, and guest mesa
+                // falls back to a host-allocating path this host no longer implements. The VM
+                // boots and the desktop comes up; the failure waits for the first large buffer.
+                gpuArg.append(",udmabuf=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
+            } else if (effectiveGpuMode(item) == GpuMode.VULKAN) {
+                // Venus: virglrenderer's Vulkan proxy (capset venus, guest-allocated blobs).
+                // Only the venus capset is advertised (see the drm branch above: rutabaga keeps
+                // vrend initialised for the classic 2D path regardless, and not advertising
+                // VIRGL2 keeps a stock guest on llvmpipe instead of an unreadable host-GL
+                // virgl). vulkan=true maps to use_venus on the virgl path; the venus capset also
+                // forces use_venus and use_guest_vram host-side, so this is belt-and-suspenders.
+                gpuArg.append(",context-types=venus");
+                gpuArg.append(",vulkan=true,egl=true,gles=true");
+                // udmabuf gates VIRTIO_GPU_F_CREATE_GUEST_HANDLE, the guest-alloc blob path venus
+                // uses (guest owns the pool, hands the host dma-bufs) -- same contract as drm2kgsl.
+                // No external-blob: create_gpu_device forces it from is_sandboxed||fixed_blob_mapping
+                // (false under --disable-sandbox), so passing the CLI key would be inert.
+                gpuArg.append(",udmabuf=true");
+                gpuArg.append(fmt(",pci-bar-size=%d",
+                    item.optLong("gpu_pci_bar_size", 0x100000000L)));
+            } else {
+                gpuArg.append(fmt(",vulkan=%s", String.valueOf(api == VULKAN)));
+                switch (api) {
+                    case EGL:
+                        gpuArg.append(",egl=true");
+                        break;
+                    case OPENGLES:
+                        gpuArg.append(",gles=true");
+                        break;
+                    case ANGLE:
+                        // crosvm has no `angle` --gpu key and rejects unknown ones outright, so
+                        // emitting it would stop the VM from starting. Treat a config that
+                        // still carries ANGLE as GLES, which is what the editor migrates it to.
+                        gpuArg.append(",gles=true");
+                        break;
+                }
             }
             args.add("--gpu");
             args.add(gpuArg.toString());
         }
-        if (useDisplay && backend == SIMPLEFB) {
+        // The simplefb device is its own screen, so it rides on its own switch and carries its own
+        // size -- which is no longer required to equal the GPU screen's, and usually should not be.
+        //
+        // poll-hz is this screen's whole answer to "how often is there a picture": nothing in the
+        // device announces a frame, the guest maps the region write-combining and no write traps,
+        // so the host's sampling rate is the frame rate. Sent explicitly rather than left to
+        // crosvm's default, because it is a value the user can see in the editor and a default
+        // that only one of the two sides knows is a value nobody can check.
+        if (fbScreen) {
+            var fb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
             args.add("--simplefb");
             args.add(fmt(
-                "width=%d,height=%d",
-                item.optLong("display_width", 1280),
-                item.optLong("display_height", 720)
+                "width=%d,height=%d,poll-hz=%d",
+                fb.getWidth(), fb.getHeight(), fb.getPollHz()
             ));
-        }
-        // Native display: crosvm registers an ICrosvmAndroidDisplayService binder under a per-VM
-        // name and renders the gfxstream/virtio-gpu output straight into the Android Surface the UI
-        // hands it. Requires the GPU (virtio-gpu) path above. Touch/keyboard come back over the
-        // per-VM unix sockets the root service listens on; their paths must match NativeDisplay.
-        // Single source of truth for the enable check; isNativeDisplayEnabled() also gates the
-        // socket pre-bind in start(), so the two must never diverge.
-        if (isNativeDisplayEnabled()) {
-            buildNativeDisplayCommand(args);
-                    args.add("--android-display-service");
         }
     }
 
-    private void buildNativeDisplayCommand(@NonNull List<String> args) {
-        var item = config.item;
-        var serviceName = NativeDisplay.serviceName(config);
-        args.add("--input");
-        args.add(fmt(
-        ));
+    /**
+     * One exporter per screen: {@code --android-display-service} or {@code --vnc-server}, each
+     * naming the screen it is bound to.
+     *
+     * <p>Native display means crosvm registers an ICrosvmAndroidDisplayService binder under that
+     * screen's name and renders its output straight into the Android Surface the UI hands it.
+     * Touch/keyboard come back over the VM's input sockets, whose paths must match NativeDisplay.
+     *
+     * <p>Every binding names its screen explicitly. crosvm still accepts an exporter with no
+     * {@code screen=} and resolves it to whichever screen a pre-screens command line would have
+     * landed on, but writing it out means the app and the VMM agree in the config file rather
+     * than in two copies of the same defaulting rule. crosvm rejects an exporter naming a screen
+     * whose device is not configured, which is why every binding here is gated on
+     * {@link #isScreenEnabled} -- the same predicate that decides whether {@code --gpu} and
+     * {@code --simplefb} are emitted at all.</p>
+     */
+    private void buildScreenExportersCommand(@NonNull List<String> args) {
+        for (var screen : VMScreenConfig.listOf(config.item)) {
+            if (!isScreenEnabled(screen.id)) continue;
+            switch (screen.getExporter()) {
+                case NATIVE:
+                    args.add("--android-display-service");
+                    args.add(fmt("name=%s,screen=%s%s",
+                        NativeDisplay.serviceName(config, screen.id), screen.id,
+                        transportCapArg(screen)));
+                    break;
+                case VNC:
+                    args.add("--vnc-server");
+                    args.add(buildVncArg(screen) + transportCapArg(screen));
+                    break;
+                default:
+                    // A screen nobody is watching. Legal, and not the same thing as no screen.
+                    break;
+            }
+        }
+    }
+
+    /**
+     * The ceiling on this binding's transport, as a key-value fragment for its exporter flag --
+     * or nothing at all, which is what a default configuration gets.
+     *
+     * <p>A ceiling is emitted only where it asks for <em>less</em> than the pipeline would have
+     * given anyway; see {@link DisplayTransportCap#emittedToken}, which is where the rule lives so
+     * that a test can read the whole table off it. A flag whose presence and absence mean the same
+     * thing is worse than no flag, so the top rung of each ladder is spelt by saying nothing.</p>
+     *
+     * <p>VNC's ladder gained a middle now that the encoder is above it, and {@code gpu} is that
+     * middle: "blit this screen, but do not stand an encoder behind it". crosvm's
+     * {@code transport-cap} enum grew the same way -- new tokens added beside {@code cpu}, nothing
+     * re-spelt -- so this stays a lookup rather than a translation.</p>
+     */
+    @NonNull
+    private static String transportCapArg(@NonNull VMScreenConfig screen) {
+        var token = DisplayTransportCap.emittedToken(
+            screen.id, screen.getExporter(), screen.getTransportCap());
+        return token == null ? "" : fmt(",transport-cap=%s", token);
+    }
+
+    // The virtio-input devices the UI drives; the daemon pre-binds the matching sockets (see
+    // start()) and the UI ships evdev records to them via vm_input / the direct sink.
+    //
+    // One of them is the VM's and three are each screen's. Only the relative pointer has no output
+    // binding at all -- the guest compositor routes it by focus and it walks from one output to
+    // the next -- so there is one of it for the VM. An absolute coordinate is only meaningful
+    // against one output's geometry, so multi-touch and the absolute pointer exist once per screen
+    // that has them, and each carries a name= built from the screen id: evdev has no "I belong to
+    // output N" field, so the guest is told which touchscreen is which output by hand, keyed on
+    // that name, in every guest OS. That is why the name is derived and never allocated -- it has
+    // to come back identical after a reboot or the user's mapping quietly stops matching. The
+    // keyboard is per screen on different grounds: input belongs to the scanout, so the screen's
+    // switch has to be able to turn typing off on that screen and only that screen.
+    //
+    // The three per-screen devices do not cover the same screens. The touchscreen is ours on
+    // either exporter, because multi-touch has no RFB representation -- the app synthesises it
+    // and injects it into that screen's socket while its console is up. The absolute pointer and
+    // the keyboard are ours only where the screen is exported natively: crosvm builds a
+    // VNC-exported screen's pair itself, behind that screen's own VNC server, and drives them from
+    // that server's RFB pointer and key events (see buildVncArg). Emitting either here too would
+    // hand the guest two devices under one evdev name, and the socket one would be the half
+    // nothing ever writes to.
     private void buildInputDevicesCommand(@NonNull List<String> args) {
+        var vmId = config.getId().toString();
+        // No screen for this one, and the empty string says exactly that: its socket name does not
+        // take one, so there is no screen a console could name that would move it.
+        //
         // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
         // the cursor, which is what relative-motion consumers (FPS games) need.
         args.add("--input");
         args.add(fmt(
-            "keyboard[path=%s]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
             "mouse[path=%s]",
+            NativeDisplay.inputSocketPath(vmId, "", NativeDisplay.MOUSE)
         ));
-            ));
+        // multi-touch + absolute-mouse advertise a fixed normalized ABS range (crosvm
+        // NORMALIZED_ABS_MAX) because width/height are OMITTED here; the UI scales view coords to
+        // that range (EvdevEncoder.NORMALIZED_ABS_MAX / TouchScaleCalculator), so the mapping is
+        // resolution-independent and survives guest auto-resize -- no display size needed.
+        //
+        // crosvm's VM-global RFB device set is gone: --vnc-server no longer turns on
+        // display_window_mouse and no longer creates the "DroidVM VNC Touch"/Tablet/Mouse trio or
+        // the display-window keyboard. Those were one set for the whole VM, so with two VNC
+        // screens up both normalised into the same tablet and the guest had no way to tell which
+        // output a coordinate came from; and the set only ever reached the guest at all when no
+        // GPU device was configured. Each VNC binding now carries its own pair instead.
+        var nativeInputs = nativeInputScreens();
+        for (var screenId : touchscreenScreens()) {
             args.add("--input");
             args.add(fmt(
+                "multi-touch[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.MULTITOUCH),
+                NativeDisplay.touchDeviceName(screenId)
             ));
+            // Tablet = crosvm's absolute-pointing mouse (qemu usb-tablet): ABS position + buttons
+            // + wheel, so it gives the guest pointer hover, right-click and scroll -- which
+            // single-touch (a BTN_TOUCH touchscreen) can't. The UI maps a host mouse/stylus onto
+            // it in TABLET mode.
+            //
+            // The tablet and the keyboard below are only for the natively exported screens; that
+            // list is a subset of the one being walked, so the gate sits inside the loop rather
+            // than beside it.
+            //
+            // It carries a name= for the same reason the touchscreen does. It could not before:
+            // crosvm's AbsoluteMouse option had no name field and its enum is deny_unknown_fields,
+            // so `absolute-mouse[...,name=X]` was not a device with an odd name but a command line
+            // crosvm refuses, and this screen's tablet fell back to the generated "Crosvm Virtio
+            // Absolute Mouse <idx>" -- an idx that counts emission order here and so moves when
+            // another screen's input is switched off. Both devices of the pair are pinnable now.
+            if (!nativeInputs.contains(screenId)) continue;
+            args.add("--input");
+            args.add(fmt(
+                "absolute-mouse[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.TABLET),
+                NativeDisplay.tabletDeviceName(screenId)
+            ));
+            // This screen's keyboard. There is no VM-wide one any more: a keyboard shared by every
+            // screen could not be switched off by any one of them, so a screen with its input off
+            // still typed, which is not what the switch says. Now typing on a console goes to that
+            // console's screen's keyboard and a screen with input off has none -- and the guest
+            // sees several keyboards, which costs it nothing, because unlike an absolute device a
+            // keyboard needs no output binding to be routed correctly: focus decides.
+            args.add("--input");
+            args.add(fmt(
+                "keyboard[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.KEYBOARD),
+                NativeDisplay.keyboardDeviceName(screenId)
+            ));
+        }
     }
 
-    /** True iff the per-VM crosvm command will reference native-display input sockets. */
-    private boolean isNativeDisplayEnabled() {
-        var item = config.item;
-        if (!item.optBoolean("display_enabled", false)) return false;
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        return item.optBoolean("native_display_enabled", false);
+    /**
+     * The screens that get their own multi-touch device, in schema order: the screen exists,
+     * something is watching it, and its input switch is on.
+     *
+     * <p>Both exporters, because multi-touch is not an RFB protocol event: the app is what turns
+     * finger contacts into evdev slots, on the VNC console exactly as on the native one, and
+     * injects them into this screen's socket while that console is up. So a VNC-exported screen
+     * keeps its touchscreen socket and its {@code --input multi-touch} on the same terms it
+     * always had.</p>
+     *
+     * <p>One list, read by both the socket pre-bind and the {@code --input} args, because a screen
+     * in one and not the other is either a device crosvm cannot connect to (the VM does not
+     * start) or a socket nothing ever opens.</p>
+     */
+    @NonNull
+    private List<String> touchscreenScreens() {
+        var out = new ArrayList<String>();
+        for (var screen : VMScreenConfig.absoluteInputOf(config.item))
+            out.add(screen.id);
+        return out;
     }
 
-    private void buildVncCommand(@NonNull List<String> args) {
+    /**
+     * The screens whose absolute pointer and keyboard are ours to bind -- a subset of
+     * {@link #touchscreenScreens}: the natively exported ones.
+     *
+     * <p>A VNC-exported screen has both of those too, but crosvm builds them behind that screen's
+     * VNC server and writes the RFB pointer and key events straight into them, which is what makes
+     * a coordinate land under the geometry of the binding it arrived on and a keystroke reach the
+     * screen the client is looking at. There is no socket for the daemon to bind and no
+     * {@code --input} for it to emit; the whole of the daemon's say in them is the
+     * {@code view-only} flag on that screen's exporter (see {@link #buildVncArg}).</p>
+     *
+     * <p>One list for the pair, because the pair has one rule: both are the screen's, both exist
+     * only where the screen's input switch is on, and both are crosvm's on a VNC binding. Read by
+     * the socket pre-bind and the {@code --input} args alike, for the same reason the touchscreen
+     * list is.</p>
+     */
+    @NonNull
+    private List<String> nativeInputScreens() {
+        var out = new ArrayList<String>();
+        for (var screen : VMScreenConfig.absoluteInputOf(config.item))
+            if (screen.getExporter() == DisplayExporter.NATIVE) out.add(screen.id);
+        return out;
+    }
+
+    // crosvm can promote the virtio-gpu worker to SCHED_FIFO (CROSVM_GPU_RT_PRIO). On gfxstream its
+    // per-context render threads inherit that policy and, spin-waiting on the guest command ring,
+    // can starve the normal-priority vCPU that feeds them -- a priority inversion that caps the
+    // native-display present rate. So RT is opt-in and off by default: the graphics tab's
+    // "real-time scheduling" switch (inside the GPU Worker Cpuset section) stores gpu_rt_prio
+    // ("97" on / "" off); pass it through only when set so crosvm leaves scheduling normal
+    // otherwise.
+    //
+    // Requires the cpuset: RT confined to the picked cores trades vCPU latency for render
+    // throughput on those cores, which is the point of the switch. RT with no cpuset is a
+    // different thing entirely -- FIFO 97 threads eligible for every host core, above everything
+    // else Android is running -- so it is refused rather than silently applied. Called after
+    // prepareGpuCgroup(), whose gpuCgroupPath is non-null only once the cpuset exists, holds
+    // cores and is about to be handed to crosvm.
+    private void applyGpuRtPrioEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
-        if (!item.optBoolean("vnc_enabled", false)) return;
+        if (!VMScreenConfig.hasGpuDevice(item)) return;
+        // gpu_rt_prio is the SCHED_FIFO level as a string, "" (unset) by default. Empty means leave
+        // CROSVM_GPU_RT_PRIO unset so crosvm applies no real-time scheduling (RT is opt-in).
+        String prio = item.optString("gpu_rt_prio", "");
+        if (prio.isEmpty()) return;
+        // The editor cannot save this combination; a config built straight through the daemon
+        // API can still carry it, as can one whose cpuset setup soft-failed (no root, bad path).
+        if (gpuCgroupPath == null) {
+            Log.w(TAG, "gpu_rt_prio set without a GPU worker cpuset; skipping real-time "
+                + "scheduling rather than leaving FIFO GPU threads free on every core");
+            return;
+        }
+        builder.environment("CROSVM_GPU_RT_PRIO", prio);
+    }
+
+    /**
+     * The host-Vulkan renderers (gfxstream, and venus on virglrenderer) need their host ICD
+     * selected, gfxstream its host-visible folio/blob env, and both a raised udmabuf import cap.
+     * No-op for OpenGL, Native and 2D.
+     */
+    private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
+        var item = config.item;
+        if (!VMScreenConfig.hasGpuDevice(item)) return;
+        var backend = optEnum(item, "gpu_backend", GpuBackend.NONE);
+        boolean gfxstream = backend == GpuBackend.GPU_GFXSTREAM;
+        // Venus is Vulkan-on-virglrenderer: it drives the host GPU through the same host ICD
+        // and the same guest-alloc udmabuf blobs as gfxstream, so it needs this env too.
+        boolean venus = backend == GpuBackend.GPU_VIRGLRENDERER
+            && effectiveGpuMode(item) == GpuMode.VULKAN;
+        if (!gfxstream && !venus) return;
+        // gfxstream-only: advertise a device-local memory type to the guest. The folio budget
+        // (vram-limit) and Gunyah RingBlob pin (gunyah-pvm) are on the --gpu line.
+        if (gfxstream)
+            builder.environment("GFXSTREAM_DEVICE_LOCAL_MEMORY_TYPE", "1");
+        // Host Vulkan driver, for gfxstream and venus alike (both dlopen ANDROID_EMU_VK_LOADER_PATH
+        // ahead of the system loader: gfxstream's VulkanDispatch, venus's vkr_library). It follows
+        // gpu_api, which the editor derives from the provider row: VULKAN_SYSTEM / VULKAN_PANVK use
+        // the SoC's stock HAL (leave the env unset so the system loader picks the vendor ICD),
+        // anything else -- VULKAN_TURNIP, or plain VULKAN from a pre-provider config -- the
+        // bundled turnip. Either way the env falls back to the system HAL if the turnip file is
+        // missing.
+        var api = optEnum(item, "gpu_api", GpuApi.NONE);
+        boolean systemDriver = api == GpuApi.VULKAN_SYSTEM || api == GpuApi.VULKAN_PANVK;
+        if (!systemDriver) {
+            var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
+            if (new File(turnip).exists()) {
+                builder.environment("ANDROID_EMU_VK_LOADER_PATH", turnip);
+            }
+        }
+        // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
+        // whole host-visible allocation can be wrapped as one dma-buf. The glob covers
+        // both the in-tree driver (/sys/module/udmabuf) and the app-shipped fallback
+        // module for kernels without CONFIG_UDMABUF (/sys/module/udmabuf_gki_6.1 etc.).
+        RunUtils.run("for p in /sys/module/udmabuf*/parameters/size_limit_mb; do " +
+                "echo %d > \"$p\"; done 2>/dev/null || true",
+            item.optLong("gpu_udmabuf_limit_mb", 4096));
+    }
+
+    /**
+     * Host Vulkan provider for the GPU blit ({@link GpuBlitProvider}) -- the dmabuf-import path
+     * every sink that does not memcpy goes through. It belongs to no one screen and to no one
+     * exporter: the same driver imports the virtio-gpu scanout and the simplefb framebuffer, and
+     * it is dlopened by the native bridge to blit into a Surface and by the VNC sink to blit into
+     * a headless target of its own. Any of those needs this pointed somewhere before it can use
+     * the GPU. This is a separate axis from the render host driver ({@link #applyGfxstreamEnv});
+     * the two can name the same turnip .so or differ.
+     *
+     * <p>TURNIP points the crosvm bridge at the bundled turnip. OFF -- and, until they are wired,
+     * PANVK/SYSTEM -- forces crosvm's CPU copy so a stale or hand-edited value degrades cleanly
+     * instead of half-loading a wrong driver. (SYSTEM will instead leave the library unset and let
+     * the bridge load the SoC driver once the capability probe that gates it exists.)
+     */
+    private void applyDisplayBlitEnv(@NonNull NativeProcess.Builder builder) {
+        var item = config.item;
+        // Any binding this VM actually has whose transport could be a GPU one -- not the native
+        // display's in particular. The env var is process-wide, so it is set from whether that
+        // path exists at all, and it exists for the VNC sink just as much since it grew a blit of
+        // its own: same driver, same dma-buf import, a headless target instead of a Surface.
+        // Naming the native display here was the rule from when it was the only sink that blitted.
+        if (!VMScreenConfig.hasGpuBlitBinding(item)) return;
+        var provider = optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP);
+        switch (provider) {
+            case TURNIP: {
+                var turnip = pathJoin(DATA_DIR, "usr", "lib", "libvulkan_freedreno.so");
+                if (new File(turnip).exists())
+                    builder.environment("CROSVM_DISPLAY_VULKAN_LIBRARY", turnip);
+                break;
+            }
+            case SYSTEM: {
+                // The SoC's stock Vulkan performs the blit. The bridge dlopens whatever it is
+                // pointed at as a hwvulkan HMI, and the vendor driver under /vendor/lib64/hw is one,
+                // so aim it there instead of turnip. The bridge's own extension probe drops to the
+                // CPU copy when the stock driver lacks raw-dmabuf import (as Qualcomm's does) or
+                // cannot be loaded -- so SYSTEM attempts the system Vulkan and degrades, it never
+                // forces the CPU path.
+                var sysVk = resolveSystemVulkanHal();
+                if (sysVk != null)
+                    builder.environment("CROSVM_DISPLAY_VULKAN_LIBRARY", sysVk);
+                break;
+            }
+            case OFF:
+            case PANVK:
+            default:
+                // OFF is explicit; PANVK is not built yet (and is bounced in the editor). Force the
+                // CPU copy rather than letting the bridge load the wrong driver.
+                builder.environment("GPU_DISPLAY_COPY_MODE", "cpu");
+                break;
+        }
+    }
+
+    /**
+     * The SoC's stock Vulkan hwvulkan HAL under {@code /vendor/lib64/hw} -- a real hwvulkan HMI the
+     * display bridge can dlopen -- or null if only a software rasteriser is present. Used by the
+     * SYSTEM {@link GpuBlitProvider}.
+     */
+    private static String resolveSystemVulkanHal() {
+        var files = new File("/vendor/lib64/hw").listFiles(
+            (d, name) -> name.startsWith("vulkan.") && name.endsWith(".so"));
+        if (files == null) return null;
+        for (var vf : files) {
+            var n = vf.getName();
+            // Skip the software fallbacks (lvp/swiftshader/pastel); we want the GPU driver.
+            if (n.contains("lvp") || n.contains("swiftshader") || n.contains("pastel")) continue;
+            return vf.getAbsolutePath();
+        }
+        return null;
+    }
+
+    /** Whether this VM has [screenId]'s display device -- the screen's own switch, and nothing else. */
+    private boolean isScreenEnabled(@NonNull String screenId) {
+        var screen = VMScreenConfig.find(config.item, screenId);
+        return screen != null && screen.isEnabled();
+    }
+
     /**
      * The evdev input bridge (and matching --input devices) is needed by both app display paths:
      * native uses it for every input; the VNC display uses it for MOUSE/TOUCH modes (tablet
+     * pointer + keyboard ride the RFB channel instead). So: any screen with any exporter on it.
+     *
+     * <p>Single source of truth: this gates both the socket pre-bind in start() and the --input
+     * args in buildCommand(), so the sockets and the devices never diverge. It is the gate on the
+     * VM-wide relative pointer; which screens additionally get a touchscreen is
+     * {@link #touchscreenScreens} and which get a socket tablet and keyboard is
+     * {@link #nativeInputScreens}, and a VM with every screen's input switched off still gets the
+     * relative pointer -- it is not a screen's to switch off. The keyboard used to be in that
+     * sentence and no longer is.</p>
      */
     private boolean isInputBridgeNeeded() {
+        for (var screen : VMScreenConfig.listOf(config.item)) {
+            if (!isScreenEnabled(screen.id)) continue;
+            if (screen.getExporter() != DisplayExporter.NONE) return true;
+        }
+        return false;
     }
 
+    @NonNull
+    private static String buildVncArg(@NonNull VMScreenConfig screen) {
         var vncArg = new StringBuilder();
-        var host = item.optString("vnc_host", "");
+        var host = screen.getVncHost();
         if (!host.isEmpty()) {
             vncArg.append("host=");
             vncArg.append(host);
             vncArg.append(",");
         }
         vncArg.append("port=");
-        vncArg.append(Math.max(item.optLong("vnc_port", -1), 1));
-        var password = item.optString("vnc_password", "");
+        vncArg.append(Math.max(screen.getVncPort(), 1));
+        var password = screen.getVncPassword();
         if (!password.isEmpty()) {
             vncArg.append(",password=");
             vncArg.append(password);
         }
-        args.add("--vnc-server");
-        args.add(vncArg.toString());
+        // No "h264-port=" here, and it must not come back: the hardware H.264 stream is served on
+        // the RFB port as encoding 50, so there is no second listener to place. crosvm now refuses
+        // to parse a command line that names the old key rather than ignoring it, which is what
+        // makes a mixed deploy fail loudly at start instead of running with a silently dropped
+        // flag. A config left over from before the change still carries the number; nothing reads
+        // it (see VMScreenConfig).
+        // This screen's input switch, spelt for the other side. false makes crosvm build one
+        // tablet and one keyboard for this binding and inject its RFB pointer/key events into
+        // them; true makes it build neither and drop both, which is the only way to say "watch,
+        // don't touch" now that the devices belong to the binding rather than to the VM.
+        //
+        // The devices are the binding's, so a coordinate is read against the geometry of the
+        // screen the client is actually looking at -- which is what the retired VM-global set
+        // could not do with two VNC screens up. Pointer semantics stay absolute-tablet for every
+        // client, third-party or the app's own console; the app's VNC console is an RFB client
+        // like any other for pointer and keys, and reaches around RFB only for its TOUCH mode
+        // (this screen's multi-touch socket) and its MOUSE mode (the VM's relative pointer).
+        //
+        // The old "input=tablet" key is not merely unused now: crosvm's VncConfig is
+        // deny_unknown_fields, so emitting it would be a command line it refuses rather than a
+        // flag it ignores. That is deliberate -- a half-updated pair fails at start.
+        vncArg.append(",view-only=");
+        vncArg.append(!screen.isInputEnabled());
+        vncArg.append(",screen=");
+        vncArg.append(screen.id);
+        return vncArg.toString();
+    }
+
     /**
      * Attaches the VM's peripherals. One peripheral is one guest device.
      *
@@ -1050,8 +1631,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     @Override
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
-        return inputBridge.writeNativeInput(channel, data);
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
+        return inputBridge.writeNativeInput(screenId, channel, data);
     }
 
     @Override
