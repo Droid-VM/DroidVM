@@ -492,6 +492,7 @@ final class ScreenBindingRow {
         transportMenuBuilt = true;
         chooseTransport.setDisabledItems(
             chooseTransport.getContext().getString(
+                R.string.create_vm_option_not_implemented),
             DisplayTransportCap.unimplementedFor(screenId, exporter));
         // want != null is a load: restore the stored ceiling if this edge still offers it. want ==
         // null is a fresh row or an exporter switch, and then the ceiling is re-evaluated to the

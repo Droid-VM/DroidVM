@@ -33,6 +33,7 @@ public final class VMCreationDefaultsTest {
         assertEquals(HostAudioDevices.SYSTEM_DEFAULT_KEY,
             endpoints.get(1).getHostDevice());
     }
+
     /**
      * What Customize opens with, against what the editor would fall back to on its own.
      *
