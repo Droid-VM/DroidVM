@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.utils;
 
 import static android.os.Build.SUPPORTED_ABIS;
@@ -292,7 +295,27 @@ public final class AssetUtils {
         }
     }
 
+    /**
+     * Serialises extraction. This writes into the data dir, so two callers at once are two
+     * writers interleaving mkdir and file creation on the same tree -- observed as one thread
+     * failing on "Failed to mkdir .../usr/bin" while the other completed, two milliseconds
+     * apart. The up-to-date check inside the lock is what makes the second caller cheap: by the
+     * time it gets in, the work is done and it returns immediately.
+     *
+     * <p>Held here rather than at each call site because "only one extraction at a time" is a
+     * property of the operation, not something every caller should have to remember.
+     */
+    private static final Object EXTRACT_LOCK = new Object();
+
     public static void extractPrebuilt(
+        @NonNull Context context
+    ) throws IOException, JSONException {
+        synchronized (EXTRACT_LOCK) {
+            extractPrebuiltLocked(context);
+        }
+    }
+
+    private static void extractPrebuiltLocked(
         @NonNull Context context
     ) throws IOException, JSONException {
         if (!needsExtractPrebuilt(context)) {
