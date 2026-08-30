@@ -63,7 +63,7 @@ public class VMConfig extends DataConfig {
         var item = config.item;
         item.set("memory_mb", 512L);
         item.set("cpu_count", 1L);
-        item.set("swiotlb_mb", 64L);
+        item.set("swiotlb_mb", 256L);
         item.set("balloon", false);
         item.set("pmu", NEW_VM_DEFAULT_PMU);
         item.set("rng", NEW_VM_DEFAULT_RNG);

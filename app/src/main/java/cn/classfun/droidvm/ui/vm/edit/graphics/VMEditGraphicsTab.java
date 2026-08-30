@@ -346,8 +346,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         //
         // The DRM route's host pool holds only the per-context msm shmem rings: 16 KiB each,
         // 192 KiB measured across a desktop plus Minecraft, on top of the 2 MiB the RM base guard
-        // takes at the head of the pool. 8 MiB is room for ~380 contexts.
-        etGpuDrm2KgslPoolMb.setText(String.valueOf(item.optLong("gpu_drm2kgsl_pool_mb", 8)));
+        // takes at the head of the pool -- so the need is single-digit MB and 64 MiB is a wide
+        // margin, matching what the gfxstream pool below reserves for the same kind of traffic.
+        etGpuDrm2KgslPoolMb.setText(String.valueOf(item.optLong("gpu_drm2kgsl_pool_mb", 64)));
         // gfxstream's holds its ASG rings, one per guest context, at 1036 KiB each -- a desktop
         // plus Minecraft was 16 of them, 18.2 MiB including the guard. 64 MiB is room for ~61
         // contexts, and this is mlocked physical memory, so the spare is not free.

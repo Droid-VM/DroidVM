@@ -140,7 +140,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         inputName.setText(config.getName());
         inputMemory.setValue(item.optLong("memory_mb", 512), SizeUnit.MB);
         inputCpu.setValue(item.optLong("cpu_count", 1));
-        inputSwiotlb.setValue(item.optLong("swiotlb_mb", 64), SizeUnit.MB);
+        inputSwiotlb.setValue(item.optLong("swiotlb_mb", 256), SizeUnit.MB);
         swBalloon.setChecked(item.optBoolean("balloon", false));
         swPmu.setChecked(item.optBoolean("pmu", false));
         swRng.setChecked(item.optBoolean("rng", false));

@@ -192,7 +192,14 @@ public final class VMEditActivity extends SwipeableTabActivity {
         fab.setOnClickListener(v -> doSave());
         setupTabs();
         tabs.forEach(VMEditBaseTab::initValue);
+        // Both paths load a config. Without this a new VM showed whatever android:text the
+        // layout happened to carry, so every numeric field had two defaults -- the XML one the
+        // user actually got, and the optLong fallback that only applied when editing an older
+        // VM missing that key. They had already drifted: the DRM pool offered 1024 in the form
+        // while the code said 8, and nothing could notice, because each is only reachable from
+        // a path the other never takes.
         if (editMode) loadExistingConfig();
+        else tabs.forEach(tab -> tab.loadConfig(VMConfig.createWithCustomizeDefaults(this)));
     }
 
     private void loadExistingConfig() {
