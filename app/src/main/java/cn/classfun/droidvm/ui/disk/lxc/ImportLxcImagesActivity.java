@@ -1260,14 +1260,48 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
     }
 
     private void setupImageDropdowns() {
-        dropdownDistro.setOnItemClickListener((p, v, pos, id) ->
-            onDistroSelected(dropdownDistro.getText()));
+        dropdownDistro.setOnItemClickListener((p, v, pos, id) -> {
+            onDistroSelected(dropdownDistro.getText());
+            autoSelectNewestImage();
+        });
         dropdownVersion.setOnItemClickListener((p, v, pos, id) ->
             onVersionSelected(dropdownVersion.getText()));
         dropdownVariant.setOnItemClickListener((p, v, pos, id) ->
             onVariantSelected(dropdownVariant.getText()));
         dropdownBuild.setOnItemClickListener((p, v, pos, id) ->
             onBuildSelected(dropdownBuild.getText()));
+    }
+
+    /**
+     * Quick-create convenience: tapping a distro completes the rest of the
+     * image choice in one go - newest version, cloud-first variant, newest
+     * build - and every dropdown stays manually changeable afterwards. Only a
+     * real distro tap triggers this; a session restore replays the cascade
+     * with its saved values instead.
+     */
+    private void autoSelectNewestImage() {
+        if (!linuxVmMode) return;
+        String version = null;
+        for (var v : displayVersionToRelease.keySet()) version = v; // ascending: last = newest
+        if (version == null) return;
+        dropdownVersion.setText(version);
+        var variants = onVersionSelected(version);
+        if (variants.length == 0) return;
+        var variant = pickAutoVariant(variants);
+        dropdownVariant.setText(variant);
+        var builds = onVariantSelected(variant);
+        if (builds.length == 0) return;
+        var build = builds[0]; // build list is reverse-sorted: first = newest
+        dropdownBuild.setText(build);
+        onBuildSelected(build);
+    }
+
+    /** cloud boots leanest for a VM, default is the stock image; else the list's last entry. */
+    @NonNull
+    private static String pickAutoVariant(@NonNull String[] variants) {
+        for (var v : variants) if (v.equalsIgnoreCase("cloud")) return v;
+        for (var v : variants) if (v.equalsIgnoreCase("default")) return v;
+        return variants[variants.length - 1];
     }
 
     private void populateDistros() {
@@ -1299,7 +1333,8 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         setOutputEnabled(false);
     }
 
-    private void onVersionSelected(String displayVersion) {
+    /** Populates the variant dropdown; returns its items for the auto-select chain. */
+    private String[] onVersionSelected(String displayVersion) {
         var distro = dropdownDistro.getText();
         var release = displayVersionToRelease.get(displayVersion);
         if (release == null) release = displayVersion;
@@ -1307,14 +1342,17 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         for (var img : allImages)
             if (img.getDistro().equals(distro) && img.getDistroVersion().equals(release))
                 variants.add(img.getVariant());
-        setDropdownItems(dropdownVariant, variants.toArray(new String[0]), R.drawable.ic_package);
+        var items = variants.toArray(new String[0]);
+        setDropdownItems(dropdownVariant, items, R.drawable.ic_package);
         dropdownVariant.setEnabled(true);
         clearDropdown(dropdownBuild, R.drawable.ic_wrench);
         dropdownBuild.setEnabled(false);
         setOutputEnabled(false);
+        return items;
     }
 
-    private void onVariantSelected(String variant) {
+    /** Populates the build dropdown (newest first); returns its items for auto-select. */
+    private String[] onVariantSelected(String variant) {
         var distro = dropdownDistro.getText();
         var displayVersion = dropdownVersion.getText();
         var release = displayVersionToRelease.get(displayVersion);
@@ -1326,9 +1364,11 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
                 img.getVariant().equals(variant)
             ) builds.add(img.getBuildSerial());
         }
-        setDropdownItems(dropdownBuild, builds.toArray(new String[0]), R.drawable.ic_wrench);
+        var items = builds.toArray(new String[0]);
+        setDropdownItems(dropdownBuild, items, R.drawable.ic_wrench);
         dropdownBuild.setEnabled(true);
         setOutputEnabled(false);
+        return items;
     }
 
     private void onBuildSelected(String build) {
@@ -1727,6 +1767,7 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             var disk = diskStore.findById(diskId);
             if (disk == null) throw new IllegalStateException("Downloaded disk is not registered");
             var agentVM = new AgentVM(VMBackend.QEMU, VMHypervisor.SOFT);
+            agentVM.setOperationConsole("uart", "/dev/ttyAMA0");
             var password = new PasswordAction(agentVM);
             password.setPassword(pendingLinuxRootPassword);
             password.setChangeNormalUsers(false);
