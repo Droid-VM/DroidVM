@@ -105,10 +105,21 @@ public class VMConfig extends DataConfig {
 
         var gpu = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
         gpu.setEnabled(false);
-        gpu.setExporter(DisplayExporter.NONE);
+        // Set even though the screen is off, because this is what the editor shows the moment the
+        // user turns virtio-gpu on -- the row's own default stopped being reachable when a new VM
+        // started going through loadConfig like an existing one. Nothing is exported until the
+        // screen is enabled: save() writes NONE for a screen that is off, and the backend emits
+        // exporters only for enabled screens.
+        gpu.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         gpu.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_GPU0, DisplayExporter.NATIVE));
+            VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         gpu.setInputEnabled(true);
+        // Written even though the screen is off and its exporter is not VNC, for the same reason
+        // the exporter above is: the editor loads this config over its rows, so what it shows the
+        // moment the user switches this screen to VNC is what is written here. The two screens get
+        // different ports because they can be exported at once and two servers may not share one.
+        gpu.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        gpu.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
         gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
         gpu.setRefreshRate(VMScreenConfig.DEFAULT_REFRESH_RATE);
@@ -117,10 +128,12 @@ public class VMConfig extends DataConfig {
 
         var simpleFb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
         simpleFb.setEnabled(true);
-        simpleFb.setExporter(DisplayExporter.NATIVE);
+        simpleFb.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_SIMPLEFB, DisplayExporter.NATIVE));
+            VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         simpleFb.setInputEnabled(true);
+        simpleFb.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        simpleFb.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
         simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
         simpleFb.setPollHz(VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);

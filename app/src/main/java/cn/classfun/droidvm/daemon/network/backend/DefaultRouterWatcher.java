@@ -43,17 +43,14 @@ public final class DefaultRouterWatcher {
      */
     private static final int RULE_PRIORITY_BASE = 9000;
     /**
-     * Interface-name prefixes whose IPv4 addresses count as the phone's own
-     * reachable IPs for port-forward DNAT scoping: Wi-Fi, cellular, VPN,
-     * ethernet, and hotspot/USB/BT tethering. Passed to netbox, which also
-     * drops bridge devices and pbridge-offload addresses. Cellular names other
-     * than rmnet_data (ccmni, pdp_ip...) are intentionally not matched -- same
-     * assumption the iptables EXT_IFACES list already makes.
+     * The prefixes whose addresses count as the phone's own, for port-forward
+     * DNAT scoping. Passed to netbox, which also drops bridge devices and
+     * pbridge-offload addresses. Shared with {@link HostAddressScan}, which
+     * answers the same question for the VNC listen-address picker and applies
+     * the rest of the same policy in Java; the list lives there.
      */
-    private static final List<String> HOST_IFACE_PREFIXES = List.of(
-        "wlan", "rmnet_data", "tun", "eth",
-        "ap", "swlan", "softap", "rndis", "usb", "bt-pan"
-    );
+    private static final List<String> HOST_IFACE_PREFIXES =
+        HostAddressScan.HOST_IFACE_PREFIXES;
     private final ServerContext context;
     private final List<Runnable> listeners = new CopyOnWriteArrayList<>();
     private final List<Runnable> hostIpListeners = new CopyOnWriteArrayList<>();

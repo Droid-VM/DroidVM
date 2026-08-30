@@ -20,6 +20,7 @@ import androidx.annotation.Nullable;
 import com.google.android.material.textfield.TextInputEditText;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.natives.VulkanBlitProbe;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -134,21 +135,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         chooseDisplayBlitProvider = view.findViewById(R.id.choose_display_blit_provider);
         // A new VM comes up with the simplefb screen on and no virtio-gpu device at all until the
-        // user asks for one. This is where a new screen's exporter default lives -- the stored
-        // config's fallback is a separate question and stays at NONE, see
-        // VMScreenConfig.getExporter -- and it is NATIVE rather than the VNC it used to be: the
-        // viewer for that one is this app, already installed, so it is the only exporter whose
-        // first boot can be looked at without setting something up first. The gpu-0 row's default
-        // is inert while its screen is off (save() writes NONE for a screen that is off) and is
-        // there for the moment the user turns the device on.
+        // user asks for one. The exporter a new screen gets is VMScreenConfig.NEW_VM_DEFAULT_EXPORTER,
+        // shared with the config VMConfig.createWithCustomizeDefaults hands us: that config is
+        // loaded over these rows, so a second opinion here would only ever be the losing one. The
+        // gpu-0 row's default is inert while its screen is off (save() writes NONE for a screen
+        // that is off) and is there for the moment the user turns the device on.
         screenGpu0 = new ScreenBindingRow(VMScreenConfig.ID_GPU0,
             view.findViewById(R.id.screen_gpu0_block),
             view.findViewById(R.id.sw_screen_gpu0_enabled),
-            false, DisplayExporter.NATIVE);
+            false, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         screenFb = new ScreenBindingRow(VMScreenConfig.ID_SIMPLEFB,
             view.findViewById(R.id.screen_fb_block),
             view.findViewById(R.id.sw_screen_fb_enabled),
-            true, DisplayExporter.NATIVE);
+            true, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
@@ -164,6 +163,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     public void initValue() {
         screenGpu0.init(this::updateDisplayVisibility);
         screenFb.init(this::updateDisplayVisibility);
+        loadHostAddresses();
         // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
         // Acceleration decides which host drivers make sense and which memory knobs exist,
         // so it drives both of the rows under it.
@@ -220,6 +220,36 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateDisplayVisibility();
         updateVramAllocVisibility();
         initGpuCgroup();
+    }
+
+    /**
+     * Asks the daemon for the phone's own addresses and hands them to both screen rows, so the VNC
+     * host menu can offer somewhere real to listen.
+     *
+     * <p>Fired once when the tab is built and answered whenever it is answered: the rows come up
+     * with their two fixed entries and gain the rest when this lands, which is also what happens
+     * when it never does. A daemon that is not up is not an error to report here -- the picker
+     * works without it, and the editor has no business demanding root to show a menu.</p>
+     *
+     * <p>The daemon rather than {@code NetworkInterface} because the exclusions are netlink's; see
+     * {@code HostAddressScan}.</p>
+     */
+    private void loadHostAddresses() {
+        DaemonConnection.getInstance().buildRequest("network_list_host_addresses")
+            .onResponse(resp -> {
+                var scanned = VncHostOptions.parse(resp.optJSONArray("data"));
+                if (scanned.isEmpty()) return;
+                parent.runOnUiThread(() -> {
+                    if (parent.isFinishing() || parent.isDestroyed()) return;
+                    screenGpu0.setScannedHosts(scanned);
+                    screenFb.setScannedHosts(scanned);
+                });
+            })
+            .onUnsuccessful(r -> {
+            })
+            .onError(e -> {
+            })
+            .invoke();
     }
 
     private void initGpuCgroup() {
@@ -838,6 +868,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (row.getExporter() == DisplayExporter.NATIVE && !crosvm)
                 return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
             if (row.getExporter() != DisplayExporter.VNC) continue;
+            if (!row.validateVncHost()) return false;
             if (!checkInputField(row.portField(), true, 1024, 65535)) return false;
         }
         return validateNoPortCollision();

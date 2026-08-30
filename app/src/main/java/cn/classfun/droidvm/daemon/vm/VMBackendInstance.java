@@ -51,9 +51,11 @@ public abstract class VMBackendInstance {
 
     /**
      * Writes pre-encoded evdev bytes to the running backend's native-display input channel on
-     * behalf of the UI. Only the crosvm backend implements this; others report not-delivered.
+     * behalf of the UI. [screenId] is the screen the console sending them is showing; it selects
+     * the device for the absolute channels and is ignored by the VM-wide ones. Only the crosvm
+     * backend implements this; others report not-delivered.
      */
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         return false;
     }
 

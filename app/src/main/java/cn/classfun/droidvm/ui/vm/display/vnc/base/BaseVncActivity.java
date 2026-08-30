@@ -17,8 +17,6 @@ import static cn.classfun.droidvm.ui.vm.display.base.X11Keymap.*;
 
 import android.annotation.SuppressLint;
 import android.content.ActivityNotFoundException;
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -34,6 +32,7 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -50,6 +49,7 @@ import java.util.concurrent.ExecutorService;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
+import cn.classfun.droidvm.lib.ui.CopyableField;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
@@ -58,6 +58,17 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected final String TAG = getClass().getSimpleName();
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_VM_ID = "vm_id";
+    /**
+     * Which screen's VNC server to connect to. A VM can run one per screen on different ports,
+     * so the daemon is asked for that screen's settings rather than for "the VM's VNC".
+     */
+    public static final String EXTRA_SCREEN = "screen";
+    /**
+     * Whether that screen was configured with its own absolute input devices. Used only to say
+     * why an input mode is doing nothing; where the events go is the daemon's answer, not this
+     * one. Modes that ride RFB (the tablet pointer, the keyboard) are unaffected either way.
+     */
+    public static final String EXTRA_INPUT_ENABLED = "input_enabled";
     protected static final int DEFAULT_PORT = 5900;
     private static final int MAX_RECONNECT_ATTEMPTS = 5;
     private static final long RECONNECT_DELAY_MS = 2000;
@@ -74,6 +85,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected VncExtraKeysPanel vncExtraKeys;
     protected String vmName = "";
     protected String vmId = "";
+    /** Screen whose VNC server this view shows; empty means "the VM's first bound one". */
+    protected String screenId = "";
+    /** Whether that screen has absolute input devices at all; see {@link #EXTRA_INPUT_ENABLED}. */
+    protected boolean screenInputEnabled = true;
     protected String vncHost = "127.0.0.1";
     // Phone LAN address the daemon resolved for an IPv4-wildcard bind (offload
     // proxy IPs already excluded); empty when not applicable. Preferred over
@@ -146,6 +161,9 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (vmName == null) vmName = "";
         vmId = intent.getStringExtra(EXTRA_VM_ID);
         if (vmId == null) vmId = "";
+        screenId = intent.getStringExtra(EXTRA_SCREEN);
+        if (screenId == null) screenId = "";
+        screenInputEnabled = intent.getBooleanExtra(EXTRA_INPUT_ENABLED, true);
         bindViews();
         setupToolbar();
         // Before onSetupActivity() so subclasses can wire views (e.g. the physical keyboard)
@@ -244,6 +262,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             });
         };
         DaemonConnection.OnResponse res = resp -> {
+            // Adopt the screen the daemon resolved. Asking for "the VM's VNC" is answered with a
+            // particular screen's server, and input has to agree with that answer: the absolute
+            // devices are per screen, so a console still holding "" would have nowhere to send a
+            // touch even though it is showing a screen that has one.
+            var resolved = resp.optString("screen", "");
+            if (!resolved.isEmpty()) screenId = resolved;
             vncHost = resp.optString("host", "127.0.0.1");
             vncRemoteHost = resp.optString("remote_host", "");
             vncPort = resp.optInt("port", DEFAULT_PORT);
@@ -253,6 +277,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         };
         DaemonConnection.getInstance().buildRequest("vm_vnc_info")
             .put("vm_id", vmId)
+            .put("screen", screenId)
             .onResponse(res)
             .onUnsuccessful(f)
             .onError(err)
@@ -667,23 +692,42 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         return sb.toString();
     }
 
+    /**
+     * The one connection dialog: what to point a viewer at, and the handoff to one.
+     *
+     * <p>It shows the {@code vnc://} URI for this device and, when the server is bound wider than
+     * loopback, the one another machine on the network would use -- the pair the separate "view
+     * URL" dialog used to show, which is why there is no longer a separate dialog: a bare
+     * {@code host:port} said nothing the URI does not already say. Connect hands the network URI
+     * to whatever app claims {@code vnc://}; the password rides in it as a query parameter, and
+     * the copy button is there for the viewers that ignore it.</p>
+     */
     protected void openWithExternalApp() {
-        var url = generateVncUri(false);
-        var host = resolveVncHost(false);
-        var target = fmt("%s:%d", host, vncPort);
+        var localUrl = generateVncUri(true);
+        var remoteUrl = generateVncUri(false);
+        boolean sameUrl = localUrl.equals(remoteUrl);
         boolean hasPassword = vncPassword != null && !vncPassword.isEmpty();
         var view = getLayoutInflater().inflate(R.layout.dialog_vnc_external, null);
-        TextView etTarget = view.findViewById(R.id.et_target);
+        EditText etLocal = view.findViewById(R.id.et_local);
+        EditText etRemote = view.findViewById(R.id.et_remote);
         TextView etPassword = view.findViewById(R.id.et_password);
+        TextInputLayout tilRemote = view.findViewById(R.id.til_remote);
         TextInputLayout tilPassword = view.findViewById(R.id.til_password);
-        etTarget.setText(target);
+        etLocal.setText(localUrl);
+        CopyableField.setupReadOnly(etLocal, getString(R.string.vnc_external_hint_local));
+        if (sameUrl) {
+            tilRemote.setVisibility(GONE);
+        } else {
+            etRemote.setText(remoteUrl);
+            CopyableField.setupReadOnly(etRemote, getString(R.string.vnc_external_hint_remote));
+        }
         if (hasPassword) {
             etPassword.setText(vncPassword);
         } else {
             tilPassword.setVisibility(GONE);
         }
         DialogInterface.OnClickListener onConnect = (d, w) -> {
-            var intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            var intent = new Intent(Intent.ACTION_VIEW, Uri.parse(remoteUrl));
             try {
                 startActivity(intent);
             } catch (ActivityNotFoundException e) {
@@ -698,41 +742,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (hasPassword)
             builder.setNeutralButton(R.string.vnc_external_copy_password, null);
         var dialog = builder.show();
-        if (hasPassword) dialog.getButton(BUTTON_NEUTRAL).setOnClickListener(v -> {
-            var cm = getSystemService(ClipboardManager.class);
-            if (cm == null) return;
-            cm.setPrimaryClip(ClipData.newPlainText("VNC Password", vncPassword));
-            Toast.makeText(this, R.string.vnc_menu_url_copied, Toast.LENGTH_SHORT).show();
-        });
-    }
-
-    protected void showVncUrl() {
-        var local = generateVncUri(true);
-        var remote = generateVncUri(false);
-        boolean sameUrl = local.equals(remote);
-        boolean hasPassword = vncPassword != null && !vncPassword.isEmpty();
-        var view = getLayoutInflater().inflate(R.layout.dialog_vnc_url, null);
-        TextView etLocal = view.findViewById(R.id.et_local);
-        TextView etRemote = view.findViewById(R.id.et_remote);
-        TextView etPassword = view.findViewById(R.id.et_password);
-        TextInputLayout tilPassword = view.findViewById(R.id.til_password);
-        TextInputLayout tilRemote = view.findViewById(R.id.til_remote);
-        etLocal.setText(local);
-        if (sameUrl) {
-            tilRemote.setVisibility(GONE);
-        } else {
-            etRemote.setText(remote);
-        }
-        if (hasPassword) {
-            etPassword.setText(vncPassword);
-        } else {
-            tilPassword.setVisibility(GONE);
-        }
-        new MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.vnc_menu_view_url)
-            .setView(view)
-            .setPositiveButton(android.R.string.ok, null)
-            .show();
+        if (hasPassword) dialog.getButton(BUTTON_NEUTRAL).setOnClickListener(v ->
+            CopyableField.copy(this, vncPassword, getString(R.string.vnc_external_hint_password)));
     }
 
     protected void reconnect() {
@@ -773,9 +784,6 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             return true;
         } else if (id == R.id.menu_external) {
             openWithExternalApp();
-            return true;
-        } else if (id == R.id.menu_view_url) {
-            showVncUrl();
             return true;
         }
         return false;

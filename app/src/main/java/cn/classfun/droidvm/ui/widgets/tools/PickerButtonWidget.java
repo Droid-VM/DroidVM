@@ -18,6 +18,8 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.enums.EnumPicker;
 import cn.classfun.droidvm.lib.store.enums.EnumPicker.EnumPickerChanged;
 
+import java.util.List;
+
 public final class PickerButtonWidget extends RelativeLayout {
     private final Context context;
     private MaterialButton buttonView;
@@ -127,6 +129,21 @@ public final class PickerButtonWidget extends RelativeLayout {
                 throw new IllegalArgumentException("All items must be of the same enum type");
         var picker = setItems(cls);
         picker.setItems(items);
+    }
+
+    /**
+     * Items the picker lists but refuses, annotated with {@code note}; see
+     * {@link EnumPicker#setDisabledItems}. Call after the {@code setItems} that installs them --
+     * a new item set clears the refusals, because the same constant can be reachable under one
+     * set and not under another.
+     */
+    @SafeVarargs
+    public final <E extends Enum<E>> void setDisabledItems(
+        @Nullable CharSequence note, @NonNull E... refused
+    ) {
+        if (picker == null)
+            throw new IllegalStateException("Items not set");
+        this.<E>getPicker().setDisabledItems(note, List.of(refused));
     }
 
     private void onValueChanged(Enum<?> oldVal, Enum<?> newVal) {

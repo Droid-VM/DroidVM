@@ -11,6 +11,8 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.function.Supplier;
+
 import cn.classfun.droidvm.display.INativeDisplayRootService;
 
 /**
@@ -20,11 +22,17 @@ import cn.classfun.droidvm.display.INativeDisplayRootService;
  * {@code connectto} that su-domain socket nor receive its fd over binder, but it can hand the bytes
  * across binder. Falls back to {@code fallback} on any failure so the feature degrades to the
  * original IPC path instead of dropping input.
+ *
+ * <p>Every write carries the screen the owning console is showing, because the absolute devices
+ * are per screen. The screen is read from the console rather than copied in at construction: a
+ * VNC console opened without one named learns which screen it got only when the daemon answers
+ * {@code vm_vnc_info}, and that answer can arrive after the broker binder does.</p>
  */
 public final class DirectInputSink implements InputForwarder.InputSink {
     private static final String TAG = "DirectInputSink";
 
     private final String vmId;
+    private final Supplier<String> screenId;
     private final INativeDisplayRootService rootService;
     private final InputForwarder.InputSink fallback;
     private volatile boolean closed = false;
@@ -34,12 +42,19 @@ public final class DirectInputSink implements InputForwarder.InputSink {
 
     /**
      * @param vmId        the VM id, used by the daemon to find the running VM's input channel.
+     * @param screenId    the screen this console is currently showing; picks between two screens'
+     *                    absolute devices and their keyboards, and is ignored by the VM-wide
+     *                    relative pointer alone. Sent on every channel, so which channels are per
+     *                    screen stays {@link cn.classfun.droidvm.lib.store.vm.NativeDisplay}'s
+     *                    decision rather than something this side has to be taught.
      * @param rootService daemon broker binder that writes the bytes; null disables the direct path.
      * @param fallback    sink used when the direct path is unavailable or errors.
      */
-    public DirectInputSink(@NonNull String vmId, @Nullable INativeDisplayRootService rootService,
+    public DirectInputSink(@NonNull String vmId, @NonNull Supplier<String> screenId,
+                           @Nullable INativeDisplayRootService rootService,
                            @Nullable InputForwarder.InputSink fallback) {
         this.vmId = vmId;
+        this.screenId = screenId;
         this.rootService = rootService;
         this.fallback = fallback;
     }
@@ -49,7 +64,8 @@ public final class DirectInputSink implements InputForwarder.InputSink {
         if (closed || channel < 0 || channel >= CHANNEL_COUNT) return false;
         if (rootService != null) {
             try {
-                if (rootService.writeInput(vmId, channel, data)) {
+                var screen = screenId.get();
+                if (rootService.writeInput(vmId, screen == null ? "" : screen, channel, data)) {
                     lastWriteDirect = true;
                     return true;
                 }
