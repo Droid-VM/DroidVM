@@ -4,12 +4,10 @@
 package cn.classfun.droidvm.lib.store.vm;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
 import org.junit.Test;
 
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
-import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public final class VMCreationDefaultsTest {
     @Test
@@ -28,16 +26,4 @@ public final class VMCreationDefaultsTest {
             endpoints.get(1).getHostDevice());
     }
 
-    @Test
-    public void legacyGunyahFolioThresholdMovesToGfxstream() {
-        var legacy = DataItem.newObject();
-        legacy.set("gunyah_dynamic_share", true);
-        legacy.set("gunyah_hugepage_threshold_kb", 2048L);
-
-        VMConfig.migrateLegacySettings(legacy);
-
-        assertEquals(2048L, legacy.optLong("gpu_vram_folio_threshold_kb", -1));
-        assertNull(legacy.opt("gunyah_dynamic_share", null));
-        assertNull(legacy.opt("gunyah_hugepage_threshold_kb", null));
-    }
 }

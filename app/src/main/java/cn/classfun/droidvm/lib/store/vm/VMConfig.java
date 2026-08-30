@@ -37,7 +37,6 @@ public class VMConfig extends DataConfig {
 
     public VMConfig(@NonNull JSONObject obj) throws JSONException {
         item.set(obj);
-        migrateLegacySettings(item);
         if (!obj.has("use_uefi") && obj.optString("kernel", "").equals(PATH_EDK2_FIRMWARE)) {
             item.set("use_uefi", true);
             item.remove("kernel");
@@ -51,19 +50,6 @@ public class VMConfig extends DataConfig {
         // Configs from before "serial_ports" implicitly meant "COM1 = app console, rest sinks";
         // make that explicit so every reader sees the same list.
         VMSerialConfig.ensureDefaults(item);
-    }
-
-    static void migrateLegacySettings(@NonNull DataItem item) {
-        // The old Gunyah-wide threshold actually controlled only gfxstream's own host-visible
-        // shmem allocation. Move it to that owner and drop the switch that used to pretend
-        // RegisterMemory itself was optional.
-        if (item.opt("gpu_vram_folio_threshold_kb", null) == null
-            && item.opt("gunyah_hugepage_threshold_kb", null) != null) {
-            item.set("gpu_vram_folio_threshold_kb",
-                item.optLong("gunyah_hugepage_threshold_kb", 1024));
-        }
-        item.remove("gunyah_hugepage_threshold_kb");
-        item.remove("gunyah_dynamic_share");
     }
 
     /**

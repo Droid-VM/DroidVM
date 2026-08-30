@@ -367,8 +367,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // than reserving any. Only read when guest-alloc is off.
         etGpuVramQuotaMb.setText(String.valueOf(item.optLong("gpu_vram_quota_mb", 2048)));
         etGpuVramFolioThresholdKb.setText(String.valueOf(
-            item.optLong("gpu_vram_folio_threshold_kb",
-                item.optLong("gunyah_hugepage_threshold_kb", 1024))));
+            item.optLong("gpu_vram_folio_threshold_kb", 1024)));
         long guestPool = item.optLong("gpu_guest_pool_mb", 1024);
         etGpuGuestPoolMb.setText(String.valueOf(guestPool));
         etGpuGuestPreallocMb.setText(String.valueOf(
@@ -651,8 +650,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             item.set("gpu_vram_quota_mb", parseInt(getEditText(etGpuVramQuotaMb)));
             item.set("gpu_vram_folio_threshold_kb",
                 parseInt(getEditText(etGpuVramFolioThresholdKb)));
-            item.remove("gunyah_hugepage_threshold_kb");
-            item.remove("gunyah_dynamic_share");
             int guestPool = parseInt(getEditText(etGpuGuestPoolMb));
             item.set("gpu_guest_pool_mb", guestPool);
             // With dynamic vram off over a guest pool the growth knobs collapse to "fully

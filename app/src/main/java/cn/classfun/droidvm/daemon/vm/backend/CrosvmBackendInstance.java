@@ -797,8 +797,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     // gfxstream allocation policy: only its fresh host-visible shmem is eligible
                     // for folio backing. Driver-exported DMA-BUFs remain untouched.
                     gpuArg.append(fmt(",vram-folio-threshold-kb=%d",
-                        item.optLong("gpu_vram_folio_threshold_kb",
-                            item.optLong("gunyah_hugepage_threshold_kb", 1024))));
+                        item.optLong("gpu_vram_folio_threshold_kb", 1024)));
                     // Fusion size gate: host-visible allocations up to this try the pre-alloc
                     // pool first, larger ones go straight to the runtime-SHARE path.
                     gpuArg.append(fmt(",pool-blob-max-kb=%d",
