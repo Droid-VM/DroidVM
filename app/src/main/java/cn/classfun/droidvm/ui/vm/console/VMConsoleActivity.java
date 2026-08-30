@@ -3,8 +3,6 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.console;
 
-import static android.view.HapticFeedbackConstants.KEYBOARD_TAP;
-import static android.view.KeyEvent.*;
 import static android.widget.Toast.LENGTH_SHORT;
 import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.ui.MaterialMenu.setupToolbarMenu;
@@ -25,12 +23,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.KeyEvent;
 import android.view.MenuItem;
-import android.view.MotionEvent;
-import android.view.View;
-import android.view.inputmethod.InputMethodManager;
-import android.widget.Button;
 import android.widget.Toast;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -44,8 +37,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
-import com.termux.view.TerminalView;
-import com.termux.view.TerminalViewClient;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -56,13 +47,11 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
-import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
-import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 
-public final class VMConsoleActivity extends AppCompatActivity implements ImeInsetsExempt {
+public final class VMConsoleActivity extends AppCompatActivity {
     private static final String TAG = "VMConsoleActivity";
     public static final String EXTRA_VM_ID = "vm_id";
     public static final String EXTRA_VM_NAME = "vm_name";
@@ -74,18 +63,11 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
     // the crosvm serial streams are named per port (serialN/sbsaN/vconN) so none is a safe
     // universal fallback.
     private static final String DEFAULT_STREAM = "stdio";
-    private static final String PREFS_NAME = "droidvm_prefs";
-    private static final String KEY_FONT_SIZE = "console_font_size";
-    private static final float MIN_FONT_SIZE = 2;
-    private static final float MAX_FONT_SIZE = 48;
-    private static final float DEFAULT_FONT_SIZE = 5;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ActivityResultLauncher<String> saveLogLauncher;
     private MaterialToolbar toolbar;
-    private TerminalView terminalView;
+    private TerminalPanelView terminalPanel;
     private TerminalSession terminalSession;
-    private boolean ctrlDown = false;
-    private boolean altDown = false;
     /** True for the history dump, false for the live console. Decides the command either way. */
     private boolean logsMode = false;
     /** The text every shown line must contain; empty is no filter. Never null. */
@@ -98,52 +80,8 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
-                if (terminalView != null)
-                    terminalView.onScreenUpdated();
+                if (terminalPanel != null) terminalPanel.refresh();
             });
-        }
-    };
-
-    private float currentFontSize = DEFAULT_FONT_SIZE;
-    private final TerminalViewClient viewClient = new SimpleTerminalViewClient() {
-        @Override
-        public float onScale(float scale) {
-            var dampened = 1.0f + (scale - 1.0f) * 0.1f;
-            currentFontSize = Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, currentFontSize * dampened));
-            if (terminalView != null) {
-                var density = getResources().getDisplayMetrics().density;
-                terminalView.setTextSize((int) (currentFontSize * density));
-            }
-            return dampened;
-        }
-
-        @Override
-        public void onSingleTapUp(MotionEvent e) {
-            var imm = getSystemService(InputMethodManager.class);
-            if (imm != null && terminalView != null) {
-                terminalView.requestFocus();
-                imm.showSoftInput(terminalView, 0);
-            }
-        }
-
-        @Override
-        public boolean readControlKey() {
-            if (ctrlDown) {
-                ctrlDown = false;
-                updateToggleButtons();
-                return true;
-            }
-            return false;
-        }
-
-        @Override
-        public boolean readAltKey() {
-            if (altDown) {
-                altDown = false;
-                updateToggleButtons();
-                return true;
-            }
-            return false;
         }
     };
 
@@ -169,17 +107,9 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         var item = setupToolbarMenu(toolbar, R.menu.menu_vm_console, this::onMenuItemClicked);
         item.setIconTintList(ColorStateList.valueOf(Color.WHITE));
         item.setIconTintMode(PorterDuff.Mode.SRC_IN);
-        terminalView = findViewById(R.id.terminal_view);
-        terminalView.setTerminalViewClient(viewClient);
-        currentFontSize = loadFontSize();
-        var density = getResources().getDisplayMetrics().density;
+        terminalPanel = findViewById(R.id.terminal_panel);
+        terminalPanel.setInteractive(true);
         startSession();
-        terminalView.setTextSize((int) (currentFontSize * density));
-        TerminalFonts.apply(terminalView);
-        terminalView.setFocusable(true);
-        terminalView.setFocusableInTouchMode(true);
-        terminalView.requestFocus();
-        setupExtraKeys();
     }
 
     /**
@@ -225,7 +155,7 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         };
         var session = new TerminalSession(shell, cwd, args, env, null, sessionClient);
         terminalSession = session;
-        terminalView.attachSession(session);
+        terminalPanel.attachSession(session);
     }
 
     private void stopSession() {
@@ -236,6 +166,7 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
         } catch (Exception ignored) {
         }
         terminalSession.finishIfRunning();
+        terminalPanel.clearSession(terminalSession);
         terminalSession = null;
     }
 
@@ -291,88 +222,9 @@ public final class VMConsoleActivity extends AppCompatActivity implements ImeIns
     }
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        saveFontSize();
-    }
-
-    private float loadFontSize() {
-        var saved = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .getFloat(KEY_FONT_SIZE, DEFAULT_FONT_SIZE);
-        return Math.max(MIN_FONT_SIZE, Math.min(MAX_FONT_SIZE, saved));
-    }
-
-    private void saveFontSize() {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-            .edit()
-            .putFloat(KEY_FONT_SIZE, currentFontSize)
-            .apply();
-    }
-
-    @Override
     protected void onDestroy() {
         super.onDestroy();
         stopSession();
-    }
-
-    private void sendKey(int keyCode) {
-        if (terminalSession != null) {
-            var down = new KeyEvent(ACTION_DOWN, keyCode);
-            var up = new KeyEvent(ACTION_UP, keyCode);
-            terminalView.onKeyDown(keyCode, down);
-            terminalView.onKeyUp(keyCode, up);
-        }
-    }
-
-    private void sendChar(char ch) {
-        if (terminalSession != null)
-            terminalSession.write(String.valueOf(ch));
-    }
-
-    private void updateToggleButtons() {
-        setToggleStyle(findViewById(R.id.btn_ctrl), ctrlDown);
-        setToggleStyle(findViewById(R.id.btn_alt), altDown);
-    }
-
-    private void setToggleStyle(Button btn, boolean active) {
-        if (btn == null) return;
-        if (active) {
-            btn.setBackgroundColor(getColor(R.color.extra_key_bg_active));
-            btn.setTextColor(getColor(R.color.extra_key_text_active));
-        } else {
-            btn.setBackground(null);
-            btn.setTextColor(getColor(R.color.extra_key_text));
-        }
-    }
-
-    private void setupExtraKeys() {
-        setExtraKeyClick(R.id.btn_esc, v -> sendKey(KEYCODE_ESCAPE));
-        setExtraKeyClick(R.id.btn_slash, v -> sendChar('/'));
-        setExtraKeyClick(R.id.btn_dash, v -> sendChar('-'));
-        setExtraKeyClick(R.id.btn_home, v -> sendKey(KEYCODE_MOVE_HOME));
-        setExtraKeyClick(R.id.btn_up, v -> sendKey(KEYCODE_DPAD_UP));
-        setExtraKeyClick(R.id.btn_end, v -> sendKey(KEYCODE_MOVE_END));
-        setExtraKeyClick(R.id.btn_pgup, v -> sendKey(KEYCODE_PAGE_UP));
-        setExtraKeyClick(R.id.btn_tab, v -> sendKey(KEYCODE_TAB));
-        setExtraKeyClick(R.id.btn_ctrl, v -> {
-            ctrlDown = !ctrlDown;
-            updateToggleButtons();
-        });
-        setExtraKeyClick(R.id.btn_alt, v -> {
-            altDown = !altDown;
-            updateToggleButtons();
-        });
-        setExtraKeyClick(R.id.btn_left, v -> sendKey(KEYCODE_DPAD_LEFT));
-        setExtraKeyClick(R.id.btn_down, v -> sendKey(KEYCODE_DPAD_DOWN));
-        setExtraKeyClick(R.id.btn_right, v -> sendKey(KEYCODE_DPAD_RIGHT));
-        setExtraKeyClick(R.id.btn_pgdn, v -> sendKey(KEYCODE_PAGE_DOWN));
-    }
-
-    private void setExtraKeyClick(int id, View.OnClickListener listener) {
-        findViewById(id).setOnClickListener(v -> {
-            v.performHapticFeedback(KEYBOARD_TAP);
-            listener.onClick(v);
-        });
     }
 
     private void saveLogToFile() {

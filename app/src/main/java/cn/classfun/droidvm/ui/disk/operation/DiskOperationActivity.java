@@ -35,8 +35,6 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
-import com.termux.view.TerminalView;
-import com.termux.view.TerminalViewClient;
 
 import org.json.JSONObject;
 
@@ -47,8 +45,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
-import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
-import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
+import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
@@ -65,7 +62,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
     /** Explicit in-app activity to launch only after this disk operation succeeds. */
     public static final String EXTRA_SUCCESS_INTENT = "success_intent";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private TerminalView terminalView;
+    private TerminalPanelView terminalPanel;
     private ProgressBar progressSpinner;
     private ImageView ivStatus;
     private TextView tvFilename;
@@ -86,8 +83,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
-                if (terminalView != null)
-                    terminalView.onScreenUpdated();
+                if (terminalPanel != null) terminalPanel.refresh();
             });
         }
 
@@ -95,9 +91,6 @@ public final class DiskOperationActivity extends AppCompatActivity {
         public void onSessionFinished(@NonNull TerminalSession s) {
             mainHandler.post(() -> onProcessFinished());
         }
-    };
-
-    private final TerminalViewClient viewClient = new SimpleTerminalViewClient() {
     };
 
     @NonNull
@@ -247,8 +240,8 @@ public final class DiskOperationActivity extends AppCompatActivity {
         tvFilename = findViewById(R.id.tv_filename);
         tvStatus = findViewById(R.id.tv_status);
         btnCancel = findViewById(R.id.btn_cancel);
-        terminalView = findViewById(R.id.terminal_view);
-        terminalView.setTerminalViewClient(viewClient);
+        terminalPanel = findViewById(R.id.terminal_panel);
+        terminalPanel.setInteractive(false);
         btnCancel.setOnClickListener(v -> confirmCancel());
         initialize();
     }
@@ -442,10 +435,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             fmt("HOME=%s", cwd),
         };
         session = new TerminalSession(shell, cwd, args, env, null, sessionClient);
-        float density = getResources().getDisplayMetrics().density;
-        terminalView.setTextSize((int) (10 * density));
-        TerminalFonts.apply(terminalView);
-        terminalView.attachSession(session);
+        terminalPanel.attachSession(session);
     }
 
     private void onProcessFinished() {

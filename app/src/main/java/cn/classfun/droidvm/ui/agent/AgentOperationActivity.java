@@ -5,9 +5,11 @@ package cn.classfun.droidvm.ui.agent;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
+import static cn.classfun.droidvm.lib.utils.AssetUtils.getAssetBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
+import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleep;
@@ -31,7 +33,6 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.terminal.TerminalSession;
-import com.termux.view.TerminalView;
 
 import org.json.JSONObject;
 
@@ -45,11 +46,9 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
-import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalViewClient;
-import cn.classfun.droidvm.lib.ui.termux.TerminalFonts;
+import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
 import cn.classfun.droidvm.ui.agent.base.AgentVM;
 import cn.classfun.droidvm.ui.agent.base.BaseAction;
-import cn.classfun.droidvm.ui.vm.console.VMConsoleActivity;
 
 /** Runs a maintenance action in the bundled initramfs under QEMU TCG. */
 public final class AgentOperationActivity extends AppCompatActivity
@@ -58,9 +57,10 @@ public final class AgentOperationActivity extends AppCompatActivity
     public static final String EXTRA_AGENT_VM_JSON = "agent_vm_json";
     public static final String EXTRA_AUTOFINISH_ON_SUCCESS = "autofinish_on_success";
     private static final String AGENT_MARKER = "__DROIDVM_AGENT__:";
-    private static final String READY_MARKER = AGENT_MARKER + "READY";
-    private static final String RESULT_OK_MARKER = AGENT_MARKER + "RESULT:OK";
-    private static final String RESULT_ERROR_MARKER = AGENT_MARKER + "RESULT:ERROR:";
+    private static final String READY_MARKER = AGENT_MARKER + "READY"; // concat-ok: compile-time constant
+    private static final String RESULT_OK_MARKER = AGENT_MARKER + "RESULT:OK"; // concat-ok: compile-time constant
+    private static final String RESULT_ERROR_MARKER = AGENT_MARKER + "RESULT:ERROR:"; // concat-ok: compile-time constant
+    private static final String ACTION_SKIPPED_MARKER = AGENT_MARKER + "ACTION:SKIPPED:"; // concat-ok: compile-time constant
     private static final int AGENT_BUFFER_LIMIT = 64 * 1024;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -70,10 +70,9 @@ public final class AgentOperationActivity extends AppCompatActivity
     private ImageView ivStatus;
     private TextView tvTitle;
     private TextView tvStatus;
-    private TerminalView terminalView;
+    private TerminalPanelView terminalPanel;
     private TerminalSession terminalSession;
     private MaterialButton btnCancel;
-    private MaterialButton btnLogs;
     private MaterialToolbar toolbar;
     private volatile boolean bootstrapSent = false;
     private volatile boolean actionSent = false;
@@ -85,7 +84,6 @@ public final class AgentOperationActivity extends AppCompatActivity
     private volatile boolean vmExited = false;
     private boolean autoFinishOnSuccess = false;
     private String vmId = null;
-    private String vmName = null;
     private AgentVM agentVM = null;
     private String actionPayload = null;
 
@@ -93,12 +91,9 @@ public final class AgentOperationActivity extends AppCompatActivity
         @Override
         public void onTextChanged(@NonNull TerminalSession s) {
             mainHandler.post(() -> {
-                if (terminalView != null) terminalView.onScreenUpdated();
+                if (terminalPanel != null) terminalPanel.refresh();
             });
         }
-    };
-
-    private final SimpleTerminalViewClient viewClient = new SimpleTerminalViewClient() {
     };
 
     @NonNull
@@ -124,11 +119,10 @@ public final class AgentOperationActivity extends AppCompatActivity
         ivStatus = findViewById(R.id.iv_status);
         tvTitle = findViewById(R.id.tv_title);
         tvStatus = findViewById(R.id.tv_status);
-        terminalView = findViewById(R.id.terminal_view);
+        terminalPanel = findViewById(R.id.terminal_panel);
+        terminalPanel.setInteractive(false);
         btnCancel = findViewById(R.id.btn_cancel);
-        btnLogs = findViewById(R.id.btn_logs);
         btnCancel.setOnClickListener(v -> confirmCancel());
-        btnLogs.setOnClickListener(v -> openLogs());
         initialize();
     }
 
@@ -165,48 +159,37 @@ public final class AgentOperationActivity extends AppCompatActivity
             finish();
             return;
         }
-        terminalView.setTerminalViewClient(viewClient);
-        initTerminal();
         tvTitle.setText(R.string.agent_operation_title);
         tvStatus.setText(R.string.agent_operation_preparing);
-        appendLog(getString(R.string.agent_operation_log_preparing));
         runOnPool(this::startAgent);
     }
 
-    private void initTerminal() {
-        var shell = findExecute("sh");
+    /** Connects the embedded panel to the rescue VM's UART without enabling input yet. */
+    private void startConsoleSession() {
+        stopConsoleSession();
+        if (vmId == null || vmId.isEmpty() || closing || vmExited) return;
+        var shell = findExecute("su", "/system/bin/su");
         var cwd = getFilesDir().getAbsolutePath();
-        var args = new String[]{"sh", "-c", "while true; do sleep 86400; done"};
+        var command = fmt(
+            "exec %s console --raw %s uart",
+            escapedString(getAssetBinaryPath("droidvm")),
+            escapedString(vmId)
+        );
+        var args = new String[]{"su", "-c", command};
         var env = new String[]{
             "TERM=xterm-256color",
             "PATH=/system/bin",
             fmt("HOME=%s", cwd),
         };
         terminalSession = new TerminalSession(shell, cwd, args, env, null, sessionClient);
-        float density = getResources().getDisplayMetrics().density;
-        terminalView.setTextSize((int) (4 * density));
-        TerminalFonts.apply(terminalView);
-        terminalView.attachSession(terminalSession);
-    }
-
-    private void appendLog(@NonNull String text) {
-        if (terminalSession == null) return;
-        var emulator = terminalSession.getEmulator();
-        if (emulator == null) return;
-        if (text.contains("\n") && !text.contains("\r"))
-            text = text.replace("\n", "\r\n");
-        var bytes = text.getBytes(StandardCharsets.UTF_8);
-        emulator.append(bytes, bytes.length);
-        terminalView.onScreenUpdated();
+        terminalPanel.attachSession(terminalSession);
     }
 
     private void startAgent() {
         runOnUiThread(() -> {
             tvStatus.setText(R.string.agent_operation_creating_vm);
-            appendLog(getString(R.string.agent_operation_log_creating_vm));
         });
         var vmConfig = agentVM.buildVM();
-        vmName = vmConfig.getName();
         var conn = DaemonConnection.getInstance();
         try {
             registerEventListeners();
@@ -222,7 +205,6 @@ public final class AgentOperationActivity extends AppCompatActivity
             if (vmId.isEmpty()) throw new RuntimeException("vm_create returned empty vm_id");
             runOnUiThread(() -> {
                 tvStatus.setText(R.string.agent_operation_starting_vm);
-                appendLog(getString(R.string.agent_operation_log_starting_vm));
             });
             var startReq = new JSONObject();
             startReq.put("command", "vm_start");
@@ -233,8 +215,8 @@ public final class AgentOperationActivity extends AppCompatActivity
                 throw new RuntimeException(fmt("vm_start failed: %s", msg));
             }
             runOnUiThread(() -> {
+                startConsoleSession();
                 tvStatus.setText(R.string.agent_operation_running);
-                appendLog(getString(R.string.agent_operation_log_running));
             });
         } catch (Exception e) {
             Log.e(TAG, "Failed to create/start agent VM", e);
@@ -265,13 +247,11 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (!eventVmId.equals(vmId)) return;
         var event = data.optString("event", "");
         if (event.equals("output")) {
-            var text = URLDecoder.decode(data.optString("data", ""), StandardCharsets.UTF_8);
             var stream = data.optString("stream", "");
+            if (!stream.equals("agent")) return;
+            var text = URLDecoder.decode(data.optString("data", ""), StandardCharsets.UTF_8);
             if (text.isEmpty()) return;
-            if (stream.equals("uart"))
-                mainHandler.post(() -> appendLog(text));
-            else if (stream.equals("agent"))
-                handleAgentOutput(text);
+            handleAgentOutput(text);
         } else if (event.equals("exited")) {
             int exitCode = data.optInt("exit_code", -1);
             mainHandler.post(() -> onVMFinished(exitCode));
@@ -286,16 +266,16 @@ public final class AgentOperationActivity extends AppCompatActivity
                 agentOutput.delete(0, agentOutput.length() - AGENT_BUFFER_LIMIT);
             snapshot = agentOutput.toString();
         }
-        if (snapshot.contains(AGENT_MARKER + "ACTION:SKIPPED:"))
+        if (snapshot.contains(ACTION_SKIPPED_MARKER))
             actionSkipped = true;
         if (!bootstrapSent && (snapshot.contains("~ #")
             || snapshot.contains("Run /bin/sh as init process"))) {
             bootstrapSent = true;
-            sendAgentCommand("stty -echo 2>/dev/null; "
+            sendAgentCommand(fmt("stty -echo 2>/dev/null; "
                 + "mount -t proc proc /proc 2>/dev/null || true; "
                 + "mount -t sysfs sysfs /sys 2>/dev/null || true; "
                 + "mount -t devtmpfs devtmpfs /dev 2>/dev/null || true; "
-                + "busybox mdev -s; printf '\\n" + READY_MARKER + "\\n'", true);
+                + "busybox mdev -s; printf '\\n%s\\n'", READY_MARKER), true);
         }
         if (bootstrapSent && !actionSent && snapshot.contains(READY_MARKER)) {
             actionSent = true;
@@ -306,12 +286,12 @@ public final class AgentOperationActivity extends AppCompatActivity
                     getString(R.string.agent_operation_prepare_failed), true));
                 return;
             }
-            var command = "printf '%s' '" + payload
-                + "' | busybox base64 -d > /run/droidvm-rescue.sh && "
+            var command = fmt(
+                "printf '%%s' '%s' | busybox base64 -d > /run/droidvm-rescue.sh && "
                 + "busybox sh /run/droidvm-rescue.sh; rc=$?; "
                 + "rm -f /run/droidvm-rescue.sh; "
-                + "[ $rc -eq 0 ] || printf '\\n" + RESULT_ERROR_MARKER
-                + "SCRIPT_FAILED\\n'";
+                + "[ $rc -eq 0 ] || printf '\\n%sSCRIPT_FAILED\\n'",
+                payload, RESULT_ERROR_MARKER);
             sendAgentCommand(command, true);
         }
         if (!resultShown && snapshot.contains(RESULT_OK_MARKER)) {
@@ -330,7 +310,7 @@ public final class AgentOperationActivity extends AppCompatActivity
     private void sendAgentCommand(@NonNull String command, boolean failOnError) {
         runOnPool(() -> {
             try {
-                writeConsole("agent", command + "\n");
+                writeConsole("agent", fmt("%s\n", command));
             } catch (Exception e) {
                 Log.e(TAG, "Failed to write agent console", e);
                 if (failOnError) mainHandler.post(() -> showFailed(
@@ -393,11 +373,14 @@ public final class AgentOperationActivity extends AppCompatActivity
         tvStatus.setText(actionSkipped
             ? R.string.agent_operation_success_skipped
             : R.string.agent_operation_success);
-        appendLog(getString(actionSkipped
-            ? R.string.agent_operation_log_skipped
-            : R.string.agent_operation_log_success));
-        if (autoFinishOnSuccess) finishAgent(true);
-        else showResultButtons();
+        if (autoFinishOnSuccess) {
+            // The Linux VM creation chain must return immediately. Never start the optional
+            // rescue shell on this path or wait for terminal interaction.
+            finishAgent(true);
+            return;
+        }
+        showResultButtons();
+        enableInteractiveConsole();
     }
 
     private void showFailed(@NonNull String message, boolean logsAvailable) {
@@ -407,45 +390,41 @@ public final class AgentOperationActivity extends AppCompatActivity
         ivStatus.setVisibility(VISIBLE);
         ivStatus.setImageResource(R.drawable.ic_large_error);
         tvStatus.setText(getString(R.string.agent_operation_failed_detail, message));
-        appendLog(getString(R.string.agent_operation_log_failed));
-        btnLogs.setVisibility(logsAvailable && !vmExited ? VISIBLE : GONE);
         btnCancel.setText(android.R.string.ok);
         btnCancel.setOnClickListener(v -> finishAgent());
+        if (logsAvailable && !vmExited) enableInteractiveConsole();
     }
 
     private void showResultButtons() {
-        btnLogs.setVisibility(vmExited ? GONE : VISIBLE);
         btnCancel.setText(android.R.string.ok);
         btnCancel.setOnClickListener(v -> finishAgent());
     }
 
-    private void openLogs() {
+    /** Starts the optional UART shell only for a result page that remains on screen. */
+    private void enableInteractiveConsole() {
         if (vmExited || vmId == null || closing) return;
-        btnLogs.setEnabled(false);
+        if (shellStarted) {
+            terminalPanel.setInteractive(true);
+            return;
+        }
         runOnPool(() -> {
             try {
-                if (!shellStarted) {
-                    writeConsole("agent", "ROOT_DEVICE=$(cat /run/droidvm-root-device 2>/dev/null); "
-                        + "if [ -n \"$ROOT_DEVICE\" ] && ! mountpoint -q /mnt; then "
-                        + "mount -o rw \"$ROOT_DEVICE\" /mnt >/dev/null 2>&1 || true; fi; "
-                        + "printf '\\nDroidVM rescue shell; target root: /mnt\\n' > /dev/ttyAMA0; "
-                        + "setsid sh -c 'exec sh -i </dev/ttyAMA0 >/dev/ttyAMA0 2>&1' &\n");
-                    shellStarted = true;
-                }
+                writeConsole("agent", "ROOT_DEVICE=$(cat /run/droidvm-root-device 2>/dev/null); "
+                    + "if [ -n \"$ROOT_DEVICE\" ] && ! mountpoint -q /mnt; then "
+                    + "mount -o rw \"$ROOT_DEVICE\" /mnt >/dev/null 2>&1 || true; fi; "
+                    + "printf '\\nDroidVM rescue shell; target root: /mnt\\n' > /dev/ttyAMA0; "
+                    + "setsid sh -c 'exec sh -i </dev/ttyAMA0 >/dev/ttyAMA0 2>&1' &\n");
+                shellStarted = true;
                 runOnUiThread(() -> {
-                    btnLogs.setEnabled(true);
-                    var intent = new Intent(this, VMConsoleActivity.class);
-                    intent.putExtra(VMConsoleActivity.EXTRA_VM_ID, vmId);
-                    intent.putExtra(VMConsoleActivity.EXTRA_VM_NAME, vmName);
-                    intent.putExtra(VMConsoleActivity.EXTRA_STREAM, "uart");
-                    intent.putExtra(VMConsoleActivity.EXTRA_LOGS, false);
-                    startActivity(intent);
+                    if (!closing && !vmExited) terminalPanel.setInteractive(true);
                 });
             } catch (Exception e) {
-                Log.e(TAG, "Failed to open rescue shell", e);
+                Log.e(TAG, "Failed to enable rescue shell", e);
                 runOnUiThread(() -> {
-                    btnLogs.setEnabled(true);
-                    showFailed(getString(R.string.agent_operation_control_failed), false);
+                    if (!closing) tvStatus.setText(getString(
+                        R.string.agent_operation_failed_detail,
+                        getString(R.string.agent_operation_control_failed)
+                    ));
                 });
             }
         });
@@ -459,7 +438,8 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (closing) return;
         closing = true;
         btnCancel.setEnabled(false);
-        btnLogs.setEnabled(false);
+        terminalPanel.setInteractive(false);
+        stopConsoleSession();
         tvStatus.setText(R.string.agent_operation_stopping);
         runOnPool(() -> {
             if (!vmExited) {
@@ -492,11 +472,8 @@ public final class AgentOperationActivity extends AppCompatActivity
     private void onVMFinished(int exitCode) {
         if (activityDone) return;
         vmExited = true;
-        appendLog(fmt(
-            "\n--- %s (exit code: %d) ---\n",
-            getString(R.string.agent_operation_vm_exited), exitCode
-        ));
-        btnLogs.setVisibility(GONE);
+        terminalPanel.setInteractive(false);
+        stopConsoleSession();
         if (closing) return;
         if (resultShown) {
             tvStatus.setText(R.string.agent_operation_vm_stopped);
@@ -516,15 +493,16 @@ public final class AgentOperationActivity extends AppCompatActivity
                 getString(R.string.agent_operation_daemon_disconnected), false));
     }
 
-    private void killTerminalSession() {
+    private void stopConsoleSession() {
         if (terminalSession == null) return;
+        var session = terminalSession;
+        terminalSession = null;
         try {
-            if (terminalSession.isRunning())
-                shellKillProcess(terminalSession.getPid(), SIGHUP);
+            if (session.isRunning()) shellKillProcess(session.getPid(), SIGHUP);
         } catch (Exception ignored) {
         }
-        terminalSession.finishIfRunning();
-        terminalSession = null;
+        session.finishIfRunning();
+        terminalPanel.clearSession(session);
     }
 
     private void cleanupVM() {
@@ -574,7 +552,7 @@ public final class AgentOperationActivity extends AppCompatActivity
     private void finishActivity(boolean returnSuccess) {
         if (activityDone) return;
         activityDone = true;
-        killTerminalSession();
+        stopConsoleSession();
         if (returnSuccess) setResult(RESULT_OK);
         finish();
     }
@@ -603,7 +581,7 @@ public final class AgentOperationActivity extends AppCompatActivity
             closing = true;
             runOnPool(() -> {
                 cleanupVM();
-                killTerminalSession();
+                stopConsoleSession();
             });
         }
     }

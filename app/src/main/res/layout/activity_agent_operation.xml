@@ -72,16 +72,6 @@
         </LinearLayout>
 
         <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_logs"
-            style="@style/Widget.Material3.Button.TextButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:text="@string/agent_operation_logs"
-            android:textColor="@android:color/white"
-            android:visibility="gone" />
-
-        <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_cancel"
             style="@style/Widget.Material3.Button.TextButton"
             android:layout_width="wrap_content"
@@ -91,10 +81,11 @@
             android:textColor="#FF6B6B" />
     </LinearLayout>
 
-    <com.termux.view.TerminalView
-        android:id="@+id/terminal_view"
+    <cn.classfun.droidvm.lib.ui.termux.TerminalPanelView
+        android:id="@+id/terminal_panel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:layout_margin="8dp"
         android:background="@android:color/black" />
 
