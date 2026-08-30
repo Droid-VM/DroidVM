@@ -37,10 +37,13 @@ public final class ServerContext {
     public ServerContext() {
         Log.i(TAG, "loading config files...");
         var filesDir = pathJoin(DATA_DIR, "files");
-        vms.load(new File(filesDir, vms.getFileName()));
+        // Networks first, and wire the store in BEFORE loading VMs: loading builds each VMInstance
+        // against a throwaway store (see VMInstanceStore.createEmpty), so the link has to exist by
+        // then or the instances never see it.
         networks.load(new File(filesDir, networks.getFileName()));
-        Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         vms.setNetworkStore(networks);
+        vms.load(new File(filesDir, vms.getFileName()));
+        Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         // Strays survive a daemon crash or a forced (SIGKILL) takeover: the
         // children are orphaned, not killed. Reap any left over from a previous
         // daemon before we start fresh and auto-up. VM backends are matched by
