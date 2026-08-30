@@ -47,6 +47,12 @@ public final class VMScreenConfig {
 
     /** Sub-object holding this screen's VNC server settings, when its exporter is VNC. */
     private static final String KEY_VNC = "vnc";
+    // The VNC sub-object used to carry an "h264_port" for the H.264 side channel. There is no side
+    // channel any more -- the stream rides the RFB connection as encoding 50 -- so nothing reads
+    // the key. A config written before the change still has it, and that is not a migration:
+    // DataItem returns what it is asked for, so a key nobody asks about is a key that costs
+    // nothing. What must not happen is the daemon passing it on; see CrosvmBackendInstance, where
+    // the flag is gone, because the new crosvm refuses to start on a command line that names it.
     /**
      * Whether this screen gets its own absolute input devices. Absent means on, which is how
      * every config written before this key existed keeps the devices it already had: the default
@@ -423,12 +429,51 @@ public final class VMScreenConfig {
     }
 
     /**
+     * Whether a binding to [exporter], capped at [ceiling], is one the host might blit for.
+     *
+     * <p>The two exporters answer differently, and it is not a leftover asymmetry. The native
+     * display's bridge is pointed at a driver whatever the ceiling says -- naming one for a VM
+     * that will not blit costs nothing, since a capped binding never dlopens it, while failing to
+     * name one costs the GPU path in silence. VNC's sink reaches the same driver only where its
+     * ceiling leaves the GPU rung available, because the CPU cap on a VNC binding is the one thing
+     * a user sets to mean "do not blit this screen at all".</p>
+     *
+     * <p>Which is why the test is "not the bottom rung" rather than a list of rungs: the encoder
+     * ceiling blits too -- it is the same blit with the encoder's input surface as its destination
+     * -- so it needed no clause of its own here, and would have been silently missed by a
+     * predicate that named {@link DisplayTransportCap#GPU} outright.</p>
+     */
+    public static boolean isGpuBlitBinding(@NonNull DisplayExporter exporter,
+                                           @NonNull DisplayTransportCap ceiling) {
+        switch (exporter) {
+            case NATIVE:
+                return true;
+            case VNC:
+                return ceiling != DisplayTransportCap.CPU;
+            default:
+                return false;
+        }
+    }
+
+    /** This screen's own answer: the device is there, something is watching it, and it may blit. */
+    public boolean hasGpuBlitBinding() {
+        return isEnabled() && isGpuBlitBinding(getExporter(), getTransportCap());
+    }
+
+    /**
+     * Whether any screen this VM has could run a GPU pipeline to its exporter.
      *
      * <p>For the host-process settings that belong to that path rather than to one screen -- the
      * Vulkan library the display bridge dlopens is the one -- because an environment variable is
      * process-wide and cannot be set per screen even when the thing it configures runs per screen.
+     * Which is why the question has to be asked of all of them, and why it is not "has this VM a
+     * native binding": both sinks dlopen that same driver now, the VNC one to blit into a headless
+     * target instead of a Surface, so a VM whose only binding is a VNC screen at the GPU rung needs
+     * the env exactly as much as one exported natively.</p>
      */
+    public static boolean hasGpuBlitBinding(@NonNull DataItem config) {
         for (var screen : boundOf(config))
+            if (screen.hasGpuBlitBinding()) return true;
         return false;
     }
 

@@ -49,6 +49,11 @@ public final class VncInfoHandler extends RequestHandler {
         res.put("host", !host.isEmpty() ? host : "127.0.0.1");
         res.put("port", screen.getVncPort());
         res.put("password", screen.getVncPassword());
+        // What this binding's transport ceiling permits. A permit and not a promise, which is why
+        // there is no port beside it any more: whether an encoder is actually standing there is
+        // answered on the RFB connection itself, by the capabilities rect, and a second port for
+        // the console to be told about is exactly what that change removed.
+        res.put("transport_cap", screen.getTransportCap().getToken());
         // When VNC binds to the IPv4 wildcard, resolve the phone's own LAN
         // address here from the router watcher's filtered host-IP set, which
         // already drops pbridge offload-proxy addresses parked on the uplink.
