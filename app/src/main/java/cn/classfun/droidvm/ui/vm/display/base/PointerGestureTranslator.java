@@ -19,12 +19,15 @@ import androidx.annotation.NonNull;
  *
  * Gestures:
  * <ul>
+ *   <li>One finger -- MOUSE: drag = relative cursor motion (the guest renders the cursor), quick tap
  *       = left click, tap-and-a-half (tap, then touch-and-move within the tap-drag window) = left
  *       drag with no leading click, libinput-style. TABLET: press is committed as a left-button-down
  *       at the absolute position after a short defer window (so a second finger can still turn it
  *       into a right-click), then drag draws; quick tap = left click.</li>
+ *   <li>Two fingers -- a quick second-finger tap (contact count 1-&gt;2-&gt;1 where finger 2's press
  *       time &lt; threshold and it barely moved) = right click, positioned at finger 1 (tablet).
  *       Two fingers panning together = scroll-wheel notches.</li>
+ *   <li>Three fingers -- local display zoom/pan: emitted as view-space transform deltas, applied to
  *       the display view only, never sent to the guest.</li>
  * </ul>
  *

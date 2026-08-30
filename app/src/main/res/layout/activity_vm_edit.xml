@@ -88,6 +88,13 @@
                 android:layout_height="wrap_content"
                 android:visibility="gone" />
 
+            <include
+                android:id="@+id/tab_content_peripheral"
+                layout="@layout/partial_vm_edit_peripheral"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:visibility="gone" />
+
         </FrameLayout>
 
     </androidx.core.widget.NestedScrollView>

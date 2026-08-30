@@ -25,6 +25,7 @@ public final class VMSharedDirEditViewHolder extends RecyclerView.ViewHolder {
     final MaterialSwitch switchWriteback;
     final MaterialSwitch switchDax;
     final MaterialSwitch switchPosixAcl;
+    final MaterialSwitch switchRootAccess;
     final ImageButton btnBrowse;
     final ImageButton btnDelete;
     TextWatcher pathWatcher;
@@ -41,6 +42,7 @@ public final class VMSharedDirEditViewHolder extends RecyclerView.ViewHolder {
         switchWriteback = itemView.findViewById(R.id.switch_shared_dir_writeback);
         switchDax = itemView.findViewById(R.id.switch_shared_dir_dax);
         switchPosixAcl = itemView.findViewById(R.id.switch_shared_dir_posix_acl);
+        switchRootAccess = itemView.findViewById(R.id.switch_shared_dir_root_access);
         btnBrowse = itemView.findViewById(R.id.btn_shared_dir_browse);
         btnDelete = itemView.findViewById(R.id.btn_shared_dir_delete);
     }
