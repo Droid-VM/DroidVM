@@ -535,13 +535,13 @@
     <string name="key_down" translatable="false">\u2193</string>
     <string name="key_right" translatable="false">\u2192</string>
     <string name="key_pgdn" translatable="false">PGDN</string>
-    <string name="key_ime" translatable="false">IM</string>
     <string name="key_desc_backspace">Backspace</string>
     <string name="key_desc_win">Windows key</string>
     <string name="key_del" translatable="false">DEL</string>
     <string name="key_ins" translatable="false">INS</string>
     <string name="key_desc_shift">Shift</string>
     <string name="key_desc_enter">Enter</string>
+    <string name="key_desc_ime">Show keyboard</string>
     <string name="key_fnx" translatable="false">Fn</string>
     <string name="key_f1" translatable="false">F1</string>
     <string name="key_f2" translatable="false">F2</string>

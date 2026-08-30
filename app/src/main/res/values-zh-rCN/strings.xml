@@ -508,6 +508,7 @@
     <string name="key_desc_win">Windows 键</string>
     <string name="key_desc_shift">Shift 键</string>
     <string name="key_desc_enter">Enter 键</string>
+    <string name="key_desc_ime">显示键盘</string>
     <string name="settings_check_update_title">检查更新</string>
     <string name="settings_check_update_summary">立即检查新版本</string>
     <string name="settings_check_update_checking">正在检查更新\u2026</string>

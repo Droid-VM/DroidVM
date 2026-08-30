@@ -279,10 +279,11 @@
             android:text="@string/key_fnx"
             tools:ignore="TouchTargetSizeCheck" />
 
-        <Button
+        <ImageButton
             android:id="@+id/btn_show_ime"
-            style="@style/ExtraKey"
-            android:text="@string/key_ime"
+            style="@style/ExtraKeyIcon"
+            android:contentDescription="@string/key_desc_ime"
+            android:src="@drawable/ic_key_keyboard"
             android:visibility="gone"
             tools:ignore="TouchTargetSizeCheck" />
 
