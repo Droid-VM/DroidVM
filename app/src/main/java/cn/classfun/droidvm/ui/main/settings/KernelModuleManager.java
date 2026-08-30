@@ -146,7 +146,23 @@ public final class KernelModuleManager {
 
     /** {@code insmod} the module; true on success. */
     public static boolean load(@NonNull String path) {
-        return RunUtils.run("insmod %s", RunUtils.escapedString(path)).isSuccess();
+        return RunUtils.run("insmod %s%s", RunUtils.escapedString(path), insmodArgsFor(path))
+                .isSuccess();
+    }
+
+    /**
+     * Extra {@code insmod} parameters for modules that need per-device runtime configuration.
+     *
+     * nproc_guard must be told which app uid to guard: it differs per device (and per user
+     * profile), so it is not hardcoded, and a bare insmod leaves the module inert. Pass this
+     * app's own uid -- the same uid crosvm and Zygote run the app's processes as, and the one
+     * whose RLIMIT_NPROC ucounts counter can wedge.
+     */
+    @NonNull
+    private static String insmodArgsFor(@NonNull String path) {
+        if (new File(path).getName().startsWith("nproc-guard"))
+            return fmt(" uid=%d", android.os.Process.myUid());
+        return "";
     }
 
     /**
@@ -205,6 +221,12 @@ public final class KernelModuleManager {
     /**
      * Loads every autostart-enabled module that isn't already loaded. Call off the main thread.
      * Safe to call repeatedly (skips already-loaded modules).
+     *
+     * nproc_guard (the no-reboot rescue for the app-launch wedge) is opt-in like any other module:
+     * not every device exhibits the RLIMIT_NPROC drift, so it is loaded only when the user enables
+     * it in the Kernel Module tab. That single toggle is the whole opt-in -- while it is loaded the
+     * daemon also nudges its reset after each VM stop; while it is not, that reset is a no-op
+     * (the sysfs node is absent), so the default is to do nothing.
      */
     public static void applyAutostart(@NonNull Context ctx) {
         var enabled = autostartSet(ctx);
