@@ -69,6 +69,7 @@ import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.perf.SystemGestureGuard;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeKeyboardEditText;
@@ -1022,10 +1023,24 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         });
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // A VM display is on screen and rendering: tell the platform this is sustained heavy
+        // gameplay so its power policy raises clocks (see GamePerfHint).
+        GamePerfHint.enterGameplay(this);
         // And keep the host's full-screen touch gestures (OEM three-finger screenshot etc.)
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();

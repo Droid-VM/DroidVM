@@ -211,6 +211,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             default:
                 break;
         }
+        var swiotlbMb = item.optLong("swiotlb_mb", 0);
+        if (swiotlbMb > 0) {
+            args.add("--swiotlb");
+            args.add(String.valueOf(swiotlbMb));
+        }
         var boot = BootPlan.of(config);
         if (!boot.initrd.isEmpty()) {
             args.add("--initrd");
@@ -223,6 +228,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (controlSocketPath != null) {
             args.add("--socket");
             args.add(controlSocketPath);
+        }
+        // Real host CPU name for the guest: crosvm forwards it via FDT /chosen and EDK2 publishes
+        // it as SMBIOS Type 4 processor version, so UEFI guests (Windows) show e.g.
+        // "Qualcomm Snapdragon 8 Elite" instead of the firmware default "Gunyah vCPU".
+        var socName = HostSocName.get();
+        if (socName != null) {
+            args.add("--smbios");
+            args.add(fmt("processor-version=%s", socName));
         }
         buildDiskCommand(args);
         buildNetCommand(args);

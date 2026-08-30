@@ -167,7 +167,14 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     @NonNull
     @Override
     protected DataStore<VMInstance> createEmpty() {
-        return new VMInstanceStore(context);
+        var store = new VMInstanceStore(context);
+        // DataStore.load() parses into this throwaway store and then replace()s the items over,
+        // but each VMInstance keeps the store it was constructed with -- so whatever the loaded
+        // instances need to reach through their store has to be inherited here, or it is null for
+        // the rest of their life. That is how a VM with NICs ended up failing to start with
+        // "has networks but no network store".
+        store.networkStore = networkStore;
+        return store;
     }
 
     @NonNull

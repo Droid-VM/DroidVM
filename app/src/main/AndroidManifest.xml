@@ -16,6 +16,7 @@
     <application
         android:name=".DroidVMApp"
         android:allowBackup="true"
+        android:appCategory="game"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
