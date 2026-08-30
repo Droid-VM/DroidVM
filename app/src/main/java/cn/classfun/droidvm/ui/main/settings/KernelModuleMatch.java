@@ -85,15 +85,30 @@ public final class KernelModuleMatch {
 
     /** Read both rule files once. Does file I/O and getprop: call off the main thread. */
     static synchronized void preload(@NonNull Context ctx) {
-        if (loadTried) return;
-        loadTried = true;
-        var builtin = parse(readAsset(ctx));
-        var device = parse(readDeviceFile());
-        builtinRules = builtin == null ? null : builtin.optJSONObject("modules");
-        deviceRules = device == null ? null : device.optJSONObject("modules");
-        builtinNames = builtin == null ? null : builtin.optJSONObject("names");
-        deviceNames = device == null ? null : device.optJSONObject("names");
-        SocIdentity.vendor(); // warm the cache while we are off the main thread anyway
+        if (!loadTried) {
+            loadTried = true;
+            var builtin = parse(readAsset(ctx));
+            builtinRules = builtin == null ? null : builtin.optJSONObject("modules");
+            builtinNames = builtin == null ? null : builtin.optJSONObject("names");
+            SocIdentity.vendor(); // warm the cache while we are off the main thread anyway
+        }
+        // The device file is retried until it is actually read, and only then latched. It lives
+        // in the extracted payload, so "not there" and "not there YET" are the same failure at
+        // this level -- readDeviceFile's own comment says so -- and latching the first attempt
+        // makes a temporary state permanent for the life of the process. That is what happened:
+        // something asked before the payload finished extracting, the rules stayed null, and
+        // every later call fell back to the built-in copy, which silently dropped nproc_guard
+        // from the module list because the built-in had no rule for it.
+        //
+        // The asset above is different and stays a one-shot: it ships inside the APK, so a
+        // failure there is real and will not fix itself by being asked again.
+        if (deviceRules == null) {
+            var device = parse(readDeviceFile());
+            if (device != null) {
+                deviceRules = device.optJSONObject("modules");
+                deviceNames = device.optJSONObject("names");
+            }
+        }
     }
 
     /** Does this module (normalized .ko basename) apply to this device? */
