@@ -322,7 +322,10 @@
                     android:layout_height="wrap_content"
                     android:hint="@string/linux_vm_root_password_hint"
                     android:icon="@drawable/ic_lock"
-                    android:inputType="textPassword" />
+                    android:inputType="textPassword"
+                    app:ti_endIcon="@drawable/ic_content_copy"
+                    app:ti_iconButtonHint="@string/linux_vm_root_password_toggle"
+                    app:ti_iconButtonIcon="@drawable/ic_eye" />
 
                 <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
                     android:id="@+id/dropdown_vm_network"

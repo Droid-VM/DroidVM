@@ -682,6 +682,7 @@
     <string name="linux_vm_category_settings">设置</string>
     <string name="linux_vm_disk_size_hint">磁盘大小</string>
     <string name="linux_vm_root_password_hint">Root 密码</string>
+    <string name="linux_vm_root_password_toggle">显示或隐藏 Root 密码</string>
     <string name="linux_vm_network_hint">网络</string>
     <string name="linux_vm_network_none">不使用网络</string>
     <string name="linux_vm_network_unavailable">选择的网络已不存在。</string>
@@ -791,6 +792,7 @@
     <string name="change_password_confirm">确认</string>
     <string name="change_password_error_empty">密码不能为空</string>
     <string name="change_password_error_mismatch">两次输入的密码不一致</string>
+    <string name="change_password_error_unsafe">仅支持字母、数字与以下符号：%1$s</string>
 
     <string name="agent_operation_title">代理操作</string>
     <string name="agent_operation_preparing">准备中\u2026</string>

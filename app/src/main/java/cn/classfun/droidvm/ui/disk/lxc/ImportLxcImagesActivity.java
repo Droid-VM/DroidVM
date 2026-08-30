@@ -16,9 +16,13 @@ import static cn.classfun.droidvm.lib.utils.NetUtils.BROWSER_USER_AGENT;
 import static cn.classfun.droidvm.lib.utils.NetUtils.LXC_USER_AGENT;
 import static cn.classfun.droidvm.lib.utils.NetUtils.fetchJSON;
 import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomMac;
+import static cn.classfun.droidvm.lib.utils.StringUtils.SHELL_SAFE_PASSWORD_SYMBOLS;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.generateGroupedPassword;
+import static cn.classfun.droidvm.lib.utils.StringUtils.isShellSafePassword;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
+import static cn.classfun.droidvm.lib.utils.StringUtils.shellSafePasswordFilter;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimizeAfterImport;
 import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimizeAfterImportForResult;
@@ -82,6 +86,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.ui.CopyableField;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.lib.ui.NotificationPermission;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
@@ -182,9 +187,11 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
     private ActivityResultLauncher<Uri> folderPickerLauncher;
     private ActivityResultLauncher<Intent> optimizeLauncher;
     private ActivityResultLauncher<Intent> passwordLauncher;
+    private ActivityResultLauncher<Intent> linuxOptimizeLauncher;
     private ActivityResultLauncher<Intent> linuxResizeLauncher;
     private ActivityResultLauncher<Intent> linuxMaintenanceLauncher;
     private boolean linuxVmMode = false;
+    private boolean vmRootPasswordVisible = false;
     @Nullable
     private UUID pendingPasswordDiskId;
     @NonNull
@@ -257,6 +264,11 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         passwordLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result ->
                 completePendingImport());
+        linuxOptimizeLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(), result -> {
+                if (result.getResultCode() == RESULT_OK) launchLinuxResize();
+                else finishLinuxVmFlow(false);
+            });
         linuxResizeLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() == RESULT_OK) launchLinuxMaintenance();
@@ -365,12 +377,33 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         tvOutputHeader.setVisibility(linuxVmMode ? GONE : VISIBLE);
         dividerSettings.setVisibility(linuxVmMode ? VISIBLE : GONE);
         tvSettingsHeader.setVisibility(linuxVmMode ? VISIBLE : GONE);
+        // Both password fields ride through the temp rescue VM's chpasswd
+        // script; only characters that script may carry can be entered.
+        inputResetPassword.setFilters(shellSafePasswordFilter());
+        inputVmRootPassword.setFilters(shellSafePasswordFilter());
         if (!linuxVmMode) return;
         inputVmCpu.setValue(1);
         inputVmMemory.setValue(512, SizeUnit.MB);
         inputVmDiskSize.setValue(16, SizeUnit.GB);
+        inputVmRootPassword.setEndIconContentDescription(getString(R.string.field_copy));
+        inputVmRootPassword.setEndIconOnClickListener(v -> copyVmRootPassword());
+        inputVmRootPassword.setIconButtonOnClickListener(this::toggleVmRootPasswordVisible);
         fabImport.setText(R.string.linux_vm_create_action);
         setOutputEnabled(false);
+    }
+
+    private void copyVmRootPassword() {
+        var password = inputVmRootPassword.getText();
+        if (password.isEmpty()) return;
+        CopyableField.copySensitive(
+            this, password, getString(R.string.linux_vm_root_password_hint));
+    }
+
+    private void toggleVmRootPasswordVisible() {
+        vmRootPasswordVisible = !vmRootPasswordVisible;
+        inputVmRootPassword.setPasswordVisible(vmRootPasswordVisible);
+        inputVmRootPassword.setIconButtonIcon(
+            vmRootPasswordVisible ? R.drawable.ic_eye_off : R.drawable.ic_eye);
     }
 
     private void setupVmNetworkDropdown() {
@@ -1322,6 +1355,10 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         if (linuxVmMode) {
             if (inputVmName.getText().isEmpty())
                 inputVmName.setText(defaultLinuxVmName(img));
+            // Offer a generated default, but never replace what the user typed
+            // (a session restore re-applies the saved password right after this).
+            if (inputVmRootPassword.getText().isEmpty())
+                inputVmRootPassword.setText(generateGroupedPassword());
             kernelAnalysis.setVisibility(VISIBLE);
             kernelAnalysis.reset();
             return;
@@ -1383,6 +1420,13 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             return;
         }
         inputFolder.setError(null);
+        var resetPassword = inputResetPassword.getText();
+        if (!resetPassword.isEmpty() && !isShellSafePassword(resetPassword)) {
+            inputResetPassword.setError(getString(
+                R.string.change_password_error_unsafe, SHELL_SAFE_PASSWORD_SYMBOLS));
+            return;
+        }
+        inputResetPassword.setError(null);
         var downloadBaseUrl = getDownloadBaseUrl();
         if (downloadBaseUrl.isEmpty()) {
             if (getSelectedDlSourceKey().equals(SOURCE_CUSTOM))
@@ -1443,6 +1487,11 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         inputVmRootPassword.setError(null);
         if (password.isEmpty()) {
             inputVmRootPassword.setError(getString(R.string.change_password_error_empty));
+            return;
+        }
+        if (!isShellSafePassword(password)) {
+            inputVmRootPassword.setError(getString(
+                R.string.change_password_error_unsafe, SHELL_SAFE_PASSWORD_SYMBOLS));
             return;
         }
         if (!selectedVmNetworkId.isEmpty()) {
@@ -1626,12 +1675,36 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         inputVmRootPassword.setText("");
         var s = getSession();
         if (s != null) s.vmRootPassword = "";
+        // Published images usually carry compressed clusters, but the VM this
+        // flow creates boots on crosvm, which reads only uncompressed qcow2.
+        // Link the chain and rewrite now, inside the wait the user already
+        // expects, instead of leaving it to the pre-start guard's "start
+        // anyway" countdown. Declining the rewrite prompt continues unconverted
+        // (that guard still stands); a rewrite that ran and failed aborts.
+        var diskId = result.diskId;
+        var diskPath = pathJoin(result.folder, result.name);
+        BackingChainLinker.link(this, diskId, () ->
+            startOptimizeAfterImportForResult(
+                this,
+                diskId,
+                diskPath,
+                linuxOptimizeLauncher,
+                this::launchLinuxResize,
+                this::launchLinuxResize));
+    }
+
+    private void launchLinuxResize() {
+        var diskId = pendingLinuxDiskId;
+        if (diskId == null) {
+            finishLinuxVmFlow(false);
+            return;
+        }
         try {
             var task = new JSONObject();
             task.put("action", "resize");
             task.put("size", String.valueOf(pendingLinuxDiskBytes));
             var intent = cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.createIntent(
-                this, result.diskId, task);
+                this, diskId, task);
             intent.putExtra(
                 cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.EXTRA_AUTOFINISH,
                 true);

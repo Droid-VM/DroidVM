@@ -15,6 +15,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import android.system.Os;
+import android.text.InputFilter;
 import android.widget.EditText;
 
 import androidx.annotation.NonNull;
@@ -237,6 +238,75 @@ public final class StringUtils {
         for (int i = 0; i < length; i++)
             sb.append(CHARS.charAt(random.nextInt(CHARS.length())));
         return sb.toString();
+    }
+
+    /**
+     * The only symbols allowed in passwords that ride through the temp rescue
+     * VM's generated chpasswd script. Everything quoting- or expansion-related
+     * (' " \ $ `), whitespace, and shell/script metacharacters stay out, so a
+     * password cannot break the script even if an escaping layer regresses.
+     */
+    public static final String SHELL_SAFE_PASSWORD_SYMBOLS = "!@#%^*+-=_.,:?";
+
+    public static final String GROUPED_PASSWORD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    public static final String GROUPED_PASSWORD_LOWER = "abcdefghijkmnpqrstuvwxyz";
+    public static final String GROUPED_PASSWORD_DIGITS = "23456789";
+    public static final String GROUPED_PASSWORD_SYMBOLS = "!@#%*+-=?";
+
+    public static boolean isShellSafePasswordChar(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            || (c >= '0' && c <= '9')
+            || SHELL_SAFE_PASSWORD_SYMBOLS.indexOf(c) >= 0;
+    }
+
+    /** Gate for the rescue-VM password path: letters, digits and the safe symbols only. */
+    public static boolean isShellSafePassword(@NonNull CharSequence password) {
+        for (int i = 0; i < password.length(); i++)
+            if (!isShellSafePasswordChar(password.charAt(i))) return false;
+        return true;
+    }
+
+    /** Whitelist filter for password fields feeding {@link #isShellSafePassword}. */
+    @NonNull
+    public static InputFilter shellSafePasswordFilter() {
+        return (source, start, end, dest, dstart, dend) -> {
+            boolean clean = true;
+            for (int i = start; i < end && clean; i++)
+                clean = isShellSafePasswordChar(source.charAt(i));
+            if (clean) return null; // accept unchanged
+            var sb = new StringBuilder(end - start);
+            for (int i = start; i < end; i++)
+                if (isShellSafePasswordChar(source.charAt(i)))
+                    sb.append(source.charAt(i));
+            return sb.toString();
+        };
+    }
+
+    /**
+     * Grouped as 2 uppercase + 3 lowercase + 4 digits + 2 symbols, so the value
+     * stays strong yet easy to read back and retype on a VM console. Glyphs that
+     * are ambiguous on screen (I/O vs l/o vs 0/1) are left out of every group,
+     * and each group draws only from the shell-safe whitelist above.
+     */
+    @NonNull
+    public static String generateGroupedPassword() {
+        var random = new SecureRandom();
+        var sb = new StringBuilder(11);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_UPPER, 2);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_LOWER, 3);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_DIGITS, 4);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_SYMBOLS, 2);
+        return sb.toString();
+    }
+
+    private static void appendRandomChars(
+        @NonNull StringBuilder sb,
+        @NonNull SecureRandom random,
+        @NonNull String charset,
+        int count
+    ) {
+        for (int i = 0; i < count; i++)
+            sb.append(charset.charAt(random.nextInt(charset.length())));
     }
 
     @NonNull

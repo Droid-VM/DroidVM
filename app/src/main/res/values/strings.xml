@@ -718,6 +718,7 @@
     <string name="linux_vm_category_settings">Settings</string>
     <string name="linux_vm_disk_size_hint">Disk size</string>
     <string name="linux_vm_root_password_hint">Root password</string>
+    <string name="linux_vm_root_password_toggle">Show or hide the root password</string>
     <string name="linux_vm_network_hint">Network</string>
     <string name="linux_vm_network_none">No network</string>
     <string name="linux_vm_network_unavailable">The selected network is no longer available.</string>
@@ -828,6 +829,7 @@
     <string name="change_password_confirm">Confirm</string>
     <string name="change_password_error_empty">Password cannot be empty</string>
     <string name="change_password_error_mismatch">Passwords do not match</string>
+    <string name="change_password_error_unsafe">Only letters, digits and these symbols are supported: %1$s</string>
 
     <string name="agent_operation_title">Agent Operation</string>
     <string name="agent_operation_preparing">Preparing\u2026</string>

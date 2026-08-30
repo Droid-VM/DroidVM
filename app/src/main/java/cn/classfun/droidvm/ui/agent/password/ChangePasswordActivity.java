@@ -3,11 +3,15 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.agent.password;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.SHELL_SAFE_PASSWORD_SYMBOLS;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.isShellSafePassword;
+import static cn.classfun.droidvm.lib.utils.StringUtils.shellSafePasswordFilter;
 
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.text.InputFilter;
 import android.util.Log;
 import android.widget.TextView;
 
@@ -107,12 +111,22 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             return;
         }
         tvDiskName.setText(getString(R.string.change_password_disk_label, diskConfig.getName()));
+        // The password rides through the rescue VM's chpasswd shell script;
+        // only characters that script may carry can be entered.
+        etPassword.setFilters(new InputFilter[]{shellSafePasswordFilter()});
+        etConfirmPassword.setFilters(new InputFilter[]{shellSafePasswordFilter()});
         var quickPassword = getIntent().getStringExtra(EXTRA_QUICK_PASSWORD);
         // Do not retain the password in this Activity's explicit intent.
         getIntent().removeExtra(EXTRA_QUICK_PASSWORD);
         if (isFreshStart && quickPassword != null && !quickPassword.isEmpty()) {
-            startPasswordChange(quickPassword, false, true);
-            return;
+            if (isShellSafePassword(quickPassword)) {
+                startPasswordChange(quickPassword, false, true);
+                return;
+            }
+            // Never hand an unvetted password to the script; fall back to the form.
+            Log.w(TAG, "Quick password contains unsupported characters; showing form");
+            tilPassword.setError(getString(
+                R.string.change_password_error_unsafe, SHELL_SAFE_PASSWORD_SYMBOLS));
         }
         fabConfirm.setOnClickListener(v -> onConfirm());
     }
@@ -125,6 +139,11 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             etConfirmPassword.getText().toString() : "";
         if (password.isEmpty()) {
             tilPassword.setError(getString(R.string.change_password_error_empty));
+            return;
+        }
+        if (!isShellSafePassword(password)) {
+            tilPassword.setError(getString(
+                R.string.change_password_error_unsafe, SHELL_SAFE_PASSWORD_SYMBOLS));
             return;
         }
         if (!password.equals(confirmPassword)) {
