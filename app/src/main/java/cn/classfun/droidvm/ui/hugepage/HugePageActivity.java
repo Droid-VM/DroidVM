@@ -96,6 +96,7 @@ public final class HugePageActivity extends AppCompatActivity {
     // to fill (avail+served < want); disabled at target, unloaded, or soft-disabled.
     private boolean acquireEnabled = false;
     private MaterialButton btnViewProcesses;
+    private TextRowWidget rowAdvanced;
     private View btnAcquireV1;
     private View btnAcquireV2;
     private View btnAcquireV3;
@@ -162,6 +163,7 @@ public final class HugePageActivity extends AppCompatActivity {
         rowStatTotalServed = findViewById(R.id.row_stat_total_served);
         rowStatTotalRefilled = findViewById(R.id.row_stat_total_refilled);
         rowStatActiveVms = findViewById(R.id.row_stat_active_vms);
+        rowAdvanced = findViewById(R.id.row_advanced);
         initialize();
     }
 
@@ -207,6 +209,10 @@ public final class HugePageActivity extends AppCompatActivity {
         });
         btnViewProcesses.setOnClickListener(v -> startActivity(
             new Intent(this, HugePageProcessActivity.class)));
+        // The loader-fed knobs live on their own screen: they are insmod-time
+        // policy, not something this dashboard should invite a tap on.
+        rowAdvanced.setOnClickListener(v -> startActivity(
+            new Intent(this, HugePageAdvancedActivity.class)));
         // Acquire-mode slots: each button starts its mode; each spinner (shown
         // while a run is in flight) interrupts it. Listeners are static -- the
         // slots aren't recycled -- and the idle/running visibility toggle is
@@ -898,7 +904,7 @@ public final class HugePageActivity extends AppCompatActivity {
                     : R.string.hugepage_pool_size_saved;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
                 // Re-seed BOTH inputs from the module's readback, because the
-                // pair is coupled (§4): the kernel clamps each to pool_size_max
+                // pair is coupled (sec. 4): the kernel clamps each to pool_size_max
                 // AND links them - writing pool_want up drags pool_want_with_cma
                 // up with it; a with-CMA total below the pool is lifted back to
                 // it; both round up to a multiple of S. So one save can move the
