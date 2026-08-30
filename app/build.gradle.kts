@@ -98,6 +98,16 @@ android {
         aidl = true
         buildConfig = true
     }
+    testOptions {
+        unitTests {
+            // Lets a unit test cover a class that logs. The alternative -- keeping every testable
+            // class free of android.util.Log -- stopped being tenable at the H.264 side channel,
+            // whose whole subject is a socket and a thread outliving the object that owned them,
+            // and which says so out loud when they do. Nothing here asserts on a stub's return
+            // value; the stubs are only there so the class under test can be built at all.
+            isReturnDefaultValues = true
+        }
+    }
     packaging {
         jniLibs {
             // Extract native libs to a real on-disk dir so lbx (shipped as
