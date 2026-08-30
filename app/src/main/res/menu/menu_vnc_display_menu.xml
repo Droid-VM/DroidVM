@@ -2,21 +2,6 @@
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
 
     <item
-        android:id="@+id/menu_keyboard"
-        android:icon="@drawable/ic_keyboard"
-        android:title="@string/vnc_menu_keyboard" />
-
-    <item
-        android:id="@+id/menu_extra_keys"
-        android:icon="@drawable/ic_keyboard_esc"
-        android:title="@string/vnc_menu_extra_keys" />
-
-    <item
-        android:id="@+id/menu_input_mode"
-        android:icon="@drawable/ic_touchpad"
-        android:title="@string/vnc_menu_input_mode_mouse" />
-
-    <item
         android:id="@+id/menu_fullscreen"
         android:icon="@drawable/ic_fullscreen"
         android:title="@string/vnc_menu_fullscreen" />

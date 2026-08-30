@@ -105,9 +105,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // the VM is up - so the daemon is the only process that can both bind the socket before
         // crosvm starts and stay alive to feed it. We pre-bind + accept here; the UI forwards evdev
         // to us via the vm_input IPC command (see InputHandler). Server fds released on cleanup().
-        if (isNativeDisplayEnabled()) {
             if (!inputBridge.startListening(NativeDisplay.serviceName(config))) {
-                Log.e(TAG, "Native display input sockets unavailable; crosvm will likely fail");
+        // Single source of truth: isInputBridgeNeeded() gates both this pre-bind and the --input
+        if (isInputBridgeNeeded()) {
+                    Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
+                }
             }
         }
         var args = buildCommand();
@@ -228,6 +230,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildSharedDirCommand(args);
         buildGpuCommand(args);
         buildVncCommand(args);
+        // The evdev --input devices ride along whenever any app display path is active: the native
+        // display routes everything through them; the VNC display routes its MOUSE (relative) and
+        // TOUCH (multi-touch) modes here while the tablet pointer + keyboard stay on RFB.
+        if (isInputBridgeNeeded()) {
+            buildInputDevicesCommand(args);
+        }
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
@@ -387,6 +395,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // socket pre-bind in start(), so the two must never diverge.
         if (isNativeDisplayEnabled()) {
             buildNativeDisplayCommand(args);
+                    args.add("--android-display-service");
         }
     }
 
@@ -395,8 +404,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var serviceName = NativeDisplay.serviceName(config);
         var width = item.optLong("display_width", 1280);
         var height = item.optLong("display_height", 720);
-        args.add("--android-display-service");
-        args.add(serviceName);
         // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
         // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
         args.add("--input");
@@ -404,11 +411,19 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             "multi-touch[path=%s,width=%d,height=%d]",
             NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH), width, height
         ));
+    private void buildInputDevicesCommand(@NonNull List<String> args) {
+        // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
+        // the cursor, which is what relative-motion consumers (FPS games) need.
         args.add("--input");
         args.add(fmt(
             "keyboard[path=%s]",
             NativeDisplay.inputSocketPath(serviceName, NativeDisplay.KEYBOARD)
+            "mouse[path=%s]",
         ));
+            ));
+            args.add("--input");
+            args.add(fmt(
+            ));
     }
 
     /** True iff the per-VM crosvm command will reference native-display input sockets. */
@@ -424,6 +439,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void buildVncCommand(@NonNull List<String> args) {
         var item = config.item;
         if (!item.optBoolean("vnc_enabled", false)) return;
+    /**
+     * The evdev input bridge (and matching --input devices) is needed by both app display paths:
+     * native uses it for every input; the VNC display uses it for MOUSE/TOUCH modes (tablet
+     */
+    private boolean isInputBridgeNeeded() {
+    }
+
         var vncArg = new StringBuilder();
         var host = item.optString("vnc_host", "");
         if (!host.isEmpty()) {

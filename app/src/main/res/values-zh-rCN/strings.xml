@@ -215,6 +215,10 @@
     <string name="create_vm_display_backend">显示后端</string>
     <string name="create_vm_display_backend_simplefb">SimpleFB</string>
     <string name="create_vm_display_backend_virtio_gpu">Virtio-GPU</string>
+    <string name="create_vm_gpu_api_vulkan_system">Vulkan(系统原生)</string>
+    <string name="create_vm_gpu_api_vulkan_turnip">Vulkan(Turnip)</string>
+    <string name="create_vm_gpu_api_vulkan_panvk">Vulkan(PanVK)</string>
+    <string name="create_vm_gpu_api_not_implemented">此 GPU 驱动尚未实现</string>
     <string name="create_vm_display_width">显示宽度</string>
     <string name="create_vm_display_height">显示高度</string>
     <string name="create_vm_display_refresh_rate">刷新率 (Hz)</string>
@@ -393,6 +397,7 @@
     <string name="settings_category_update">更新</string>
     <string name="settings_auto_check_update_title">自动检查更新</string>
     <string name="settings_auto_check_update_summary">启动应用时自动检查更新</string>
+    <string name="key_desc_ime">显示键盘</string>
     <string name="settings_check_update_title">检查更新</string>
     <string name="settings_check_update_summary">立即检查新版本</string>
     <string name="settings_check_update_checking">正在检查更新\u2026</string>
@@ -836,9 +841,13 @@
 
     <string name="vnc_menu_keyboard">软键盘</string>
     <string name="vnc_menu_extra_keys">额外按键</string>
+    <string name="keyboard_mode_none">无键盘</string>
+    <string name="keyboard_mode_system">系统键盘</string>
+    <string name="keyboard_mode_laptop">笔记本键盘</string>
     <string name="vnc_menu_fullscreen">全屏</string>
     <string name="vnc_menu_input_mode_touch">触摸模式</string>
     <string name="vnc_menu_input_mode_mouse">鼠标模式</string>
+    <string name="vnc_menu_input_mode_tablet">手写板模式</string>
     <string name="usb_input_no_device">未找到USB键盘或鼠标</string>
     <string name="usb_input_status">USB输入：%1$d个键盘，%2$d个鼠标</string>
     <string name="vnc_menu_rotate">旋转屏幕</string>

@@ -11,6 +11,7 @@ public final class X11Keymap {
     public static final int XK_Tab =                              0xff09;  /* U+0009 CHARACTER TABULATION */
     public static final int XK_Clear =                            0xff0b;  /* U+000B LINE TABULATION */
     public static final int XK_Return =                           0xff0d;  /* U+000D CARRIAGE RETURN */
+    public static final int XK_Pause =                            0xff13;
     public static final int XK_Scroll_Lock =                      0xff14;
     public static final int XK_Sys_Req =                          0xff15;
     public static final int XK_Escape =                           0xff1b;  /* U+001B ESCAPE */
@@ -235,10 +236,12 @@ public final class X11Keymap {
                 return XK_Num_Lock;
             case KeyEvent.KEYCODE_FUNCTION:
                 return XF86XK_Fn;
+            // The unmodified keys: X servers derive Sys_Req/Break themselves when Alt/Ctrl is
+            // held, and VNC-server keymaps often only know the unmodified symbols.
             case KeyEvent.KEYCODE_SYSRQ:
-                return XK_Sys_Req;
+                return XK_Print;
             case KeyEvent.KEYCODE_BREAK:
-                return XK_Break;
+                return XK_Pause;
             case KeyEvent.KEYCODE_SPACE:
                 return XK_space;
             case KeyEvent.KEYCODE_GRAVE:
