@@ -540,6 +540,17 @@ final class ScreenBindingRow {
         return swEnabled.isChecked();
     }
 
+    /**
+     * Whether this row currently describes a binding the host might blit for -- the same question
+     * the daemon asks the stored config before it names a blit driver, asked of the live widgets
+     * so the row that names that driver appears while the user is still choosing.
+     */
+    boolean isGpuBlitBinding() {
+        var transport = currentTransport();
+        return swEnabled.isChecked() && transport != null
+            && VMScreenConfig.isGpuBlitBinding(getExporter(), transport);
+    }
+
     @NonNull
     DisplayExporter getExporter() {
         return chooseExporter.getSelectedItem();
@@ -675,7 +686,12 @@ final class ScreenBindingRow {
 
     /** The port typed into this row, or -1 for "let the daemon pick one". */
     int typedVncPort() {
+        return typedPort(etPort);
+    }
+
+    private static int typedPort(@NonNull TextInputEditText field) {
         try {
+            var portStr = getEditText(field);
             return portStr.isEmpty() ? -1 : parseInt(portStr);
         } catch (Exception ignored) {
             return -1;

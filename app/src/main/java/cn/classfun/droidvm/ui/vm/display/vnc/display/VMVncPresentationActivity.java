@@ -51,10 +51,24 @@ public final class VMVncPresentationActivity
     @Override
     public void onDisplayRemoved(int displayId) {
         if (pres != null && pres.getDisplayId() == displayId) {
-            pres.dismiss();
-            pres = null;
+            dismissPresentation();
             Toast.makeText(this, R.string.display_lost, Toast.LENGTH_SHORT).show();
             finish();
+        }
+    }
+
+    /**
+     * Drops the presentation window, and the decoder that was drawing into it first.
+     *
+     * <p>Order matters and only in this direction: the decoder's Surface belongs to a view in that
+     * window, so dismissing first would leave the pipeline holding a Surface whose window is gone
+     * and a socket the server still counts as its one client.</p>
+     */
+    private void dismissPresentation() {
+        setH264View(null);
+        if (pres != null) {
+            pres.dismiss();
+            pres = null;
         }
     }
 
@@ -174,12 +188,20 @@ public final class VMVncPresentationActivity
     @Override
     protected void onDestroyExtra() {
         stopInputCapture();
-        if (pres != null) {
-            pres.dismiss();
-            pres = null;
-        }
+        dismissPresentation();
         if (displayManager != null)
             displayManager.unregisterDisplayListener(this);
+    }
+
+    /**
+     * The stream's picture is the presentation's picture, so the decoder view is fitted to it the
+     * way the RFB {@link android.widget.ImageView} beneath is fitted by its scale type. Nothing
+     * else about the H.264 path is different here -- the probe, the fallback, the retry ladder and
+     * the liveness timeout are all the base console's, working against a view on another display.
+     */
+    @Override
+    protected void onH264StreamChanged(boolean live, int width, int height) {
+        if (pres != null) pres.fitH264(live ? width : 0, live ? height : 0);
     }
 
     @Override
@@ -208,6 +230,11 @@ public final class VMVncPresentationActivity
             return;
         }
         startInputCapture();
+        // The decoder's view exists only now, with the window that holds it -- which is why this is
+        // not in onSetupActivity: until a display has been chosen there is nowhere for a decoded
+        // frame to go. Nothing to ask for afterwards: the stream, if there is one, has been
+        // arriving on the RFB connection all along, and the next rect finds this pipeline.
+        setH264View(pres.getH264View());
         synchronized (bitmapLock) {
             if (displayBitmap != null && !displayBitmap.isRecycled())
                 pres.updateBitmap(displayBitmap);
