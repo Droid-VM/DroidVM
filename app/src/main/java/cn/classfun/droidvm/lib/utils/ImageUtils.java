@@ -64,4 +64,50 @@ public final class ImageUtils {
             return false;
         }
     }
+
+    /** Whether the image declares a backing file (i.e. it is an overlay). Failures read false. */
+    public static boolean hasBackingFile(String path) {
+        try {
+            return !getImageInfo(path).optString("backing-filename", "").isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether the image carries qcow2 internal snapshots ({@code qemu-img snapshot -c}). crosvm
+     * refuses to open such an image for writing - it has no snapshot support, and writing would
+     * damage the snapshots rather than ignore them - so a VM disk must be flattened first.
+     * Detection failures return {@code false}: an image we can't read tells us nothing, and a
+     * real start would surface the problem anyway.
+     */
+    public static boolean hasInternalSnapshots(String path) {
+        try {
+            var snapshots = getImageInfo(path).optJSONArray("snapshots");
+            return snapshots != null && snapshots.length() > 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * The image's effective compression as qemu names it: {@code "none"} unless the image
+     * actually stores compressed clusters (see {@link #hasCompressedClusters}); the qcow2
+     * header's {@code compression-type} then picks {@code "zlib"} vs {@code "zstd"} (that header
+     * field alone can't - it reads "zlib" for every v3 image). Detection failures return
+     * {@code "none"}: an undetectable image is treated as uncompressed.
+     */
+    @NonNull
+    public static String detectCompression(String path) {
+        try {
+            if (!hasCompressedClusters(path)) return "none";
+            var info = getImageInfo(path);
+            var fmtSpecific = info.optJSONObject("format-specific");
+            var data = fmtSpecific == null ? null : fmtSpecific.optJSONObject("data");
+            var type = data == null ? "" : data.optString("compression-type", "");
+            return "zstd".equals(type) ? "zstd" : "zlib";
+        } catch (Exception e) {
+            return "none";
+        }
+    }
 }

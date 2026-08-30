@@ -10,6 +10,7 @@ import android.widget.ImageButton;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.textfield.TextInputEditText;
 
@@ -22,6 +23,7 @@ public final class VMDiskEditViewHolder extends RecyclerView.ViewHolder {
     final MaterialSwitch switchReadonly;
     final ImageButton btnBrowse;
     final ImageButton btnDelete;
+    final MaterialButton btnBranches;
     TextWatcher pathWatcher;
 
     VMDiskEditViewHolder(@NonNull View itemView) {
@@ -31,6 +33,7 @@ public final class VMDiskEditViewHolder extends RecyclerView.ViewHolder {
         switchReadonly = itemView.findViewById(R.id.switch_readonly);
         btnBrowse = itemView.findViewById(R.id.btn_browse);
         btnDelete = itemView.findViewById(R.id.btn_delete);
+        btnBranches = itemView.findViewById(R.id.btn_branches);
     }
 
     void unbindWatcher() {

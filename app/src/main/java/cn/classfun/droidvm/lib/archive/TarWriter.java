@@ -26,6 +26,9 @@ import java.util.zip.GZIPOutputStream;
 
 public final class TarWriter implements AutoCloseable {
     private static final int BLOCK = 512;
+    // Fixed zstd worker count: each one costs roughly jobSize * 2 of extra
+    // memory, and the export runs next to whatever else the host is doing.
+    private static final int ZSTD_WORKERS = 4;
     private final OutputStream out;
     private boolean closed = false;
 
@@ -159,7 +162,11 @@ public final class TarWriter implements AutoCloseable {
             case XZ:
                 return new XZOutputStream(out, new LZMA2Options());
             case ZSTD:
-                return new ZstdOutputStream(out, 3);
+                // setWorkers must be called before the first write, otherwise
+                // zstd-jni rejects it with IllegalStateException. Workers only
+                // affect encoder internals: the output stays a single standard
+                // zstd frame that any reader can decode.
+                return new ZstdOutputStream(out, 3).setWorkers(ZSTD_WORKERS);
             default:
                 throw new IllegalArgumentException(fmt("unknown compression: %s", c));
         }

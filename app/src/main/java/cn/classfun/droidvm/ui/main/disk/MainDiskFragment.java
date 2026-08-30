@@ -61,10 +61,14 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
 
     @Override
     protected int getItemMenuResId(@NonNull DiskConfig config) {
-        var fmt = config.getFormat();
-        if (!DiskConfig.supportsExtraOperations(fmt))
-            return R.menu.menu_disk_actions_simple;
-        return R.menu.menu_disk_actions;
+        return DiskActionDialog.getMenuResId(config);
+    }
+
+    @Override
+    protected void onPrepareItemMenu(@NonNull DiskConfig config, @NonNull MaterialMenu menu) {
+        // Reset is for writable leaf overlays only; a base with overlays never shows it.
+        menu.setItemVisible(R.id.menu_disk_reset,
+            config.getParentId() != null && !adapter.items.hasChildren(config.getId()));
     }
 
     @Override
@@ -80,5 +84,12 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
         filePicker = registerForActivityResult(
             new OpenDocument(), uri -> dialog.onFileImported(uri)
         );
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        // Enables collapse persistence for the overlay tree.
+        adapter.attachContext(requireContext());
     }
 }

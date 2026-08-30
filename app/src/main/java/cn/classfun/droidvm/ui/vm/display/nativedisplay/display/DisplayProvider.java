@@ -6,6 +6,7 @@ package cn.classfun.droidvm.ui.vm.display.nativedisplay.display;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.crosvm.DisplayConfig;
 import android.crosvm.ICrosvmAndroidDisplayService;
+import android.os.Build;
 import android.os.DeadObjectException;
 import android.os.Handler;
 import android.os.IBinder;
@@ -132,7 +133,9 @@ final class DisplayProvider {
             fetchBinder();
         });
 
-        mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        }
         mainView.getHolder().addCallback(new Callback());
 
         var surface = mainView.getHolder().getSurface();
@@ -143,6 +146,12 @@ final class DisplayProvider {
         fetchBinder();
     }
 
+    /* Tear down and re-create a SurfaceView's surface (fresh BufferQueue). On Android 14+ the main
+     * view uses SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT, so visibility does not govern the surface (a
+     * GONE/VISIBLE bounce was seen to do nothing, or to destroy the surface tens of seconds later
+     * and never bring it back). Android 13 keeps the platform's default lifecycle, but detaching is
+     * still the reliable way to force surfaceDestroyed. Re-adding then creates a brand-new surface
+     * and the usual send-once-per-surface path delivers it once the binder is back. */
     private void recreateSurface(@NonNull SurfaceView view) {
         var parent = view.getParent();
         if (!(parent instanceof android.view.ViewGroup)) {

@@ -14,7 +14,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
-import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimize;
+import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimizeAfterImport;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -52,6 +52,7 @@ import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.NotificationPermission;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.lib.utils.NetUtils.HttpException;
+import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.tools.DownloadWidget;
 import cn.classfun.droidvm.ui.widgets.tools.KernelAnalysisWidget;
@@ -438,8 +439,15 @@ public final class ImportURLActivity extends AppCompatActivity {
         var resultData = new Intent();
         resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
         setResult(RESULT_OK, resultData);
-        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2)
-            startOptimize(this, result.diskId);
+        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2) {
+            // Resolve the backing chain first (may prompt once), then rewrite only when the
+            // compression can't boot on crosvm; finish once everything is decided.
+            var diskId = result.diskId;
+            var diskPath = pathJoin(result.folder, result.name);
+            BackingChainLinker.link(this, diskId, () ->
+                startOptimizeAfterImport(this, diskId, diskPath, this::finish));
+            return;
+        }
         finish();
     }
 

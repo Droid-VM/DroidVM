@@ -62,8 +62,15 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         var act = new ActivityResultContracts.StartActivityForResult();
         diskActivityLauncher = parent.registerForActivityResult(act, this::activityResult);
         diskAdapter = listDisks.setAdapter(VMDiskEditAdapter.class);
-        diskAdapter.setOnBrowseFileListener(this::diskAdapterOnBrowseFile);
         diskAdapter.setOnImportOrCreateListener(this::diskAdapterOnImportOrCreate);
+        // The boot tab points at a disk by its position in this list.
+        diskAdapter.setOnItemMovedListener((from, to) -> {
+            try {
+                var boot = (VMEditBootTab) parent.getTab(VMEditTab.TAB_BOOT);
+                if (boot != null) boot.onDiskMoved(from, to);
+            } catch (Exception ignored) {
+            }
+        });
         // no PFLASH while the boot tab's UEFI vars pflash is enabled
         diskAdapter.setUefiVarsEnabledProvider(() -> {
             try {
@@ -82,6 +89,13 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         if (diskAdapter != null) diskAdapter.notifyDataSetChanged();
     }
 
+    @Override
+    public void onTabShown() {
+        // Merges and flattens run in other screens; re-derive which disks are overlay bases so
+        // a row's read-only lock reflects the tree as it is now.
+        if (diskAdapter != null) diskAdapter.reloadLockedPaths();
+    }
+
     private void diskAdapterOnImportOrCreate(int pos) {
         Runnable onImportPickerUi = () -> parent.runOnUiThread(this::onImportPicker);
         pendingBrowsePosition = pos;
@@ -89,20 +103,6 @@ public final class VMEditStorageTab extends VMEditBaseTab {
             parent, null, onImportPickerUi, diskActivityLauncher
         );
         pendingImportDialog.showImportDialog();
-    }
-
-    private void diskAdapterOnBrowseFile(int pos) {
-        pendingBrowsePosition = pos;
-        if (parent.currentPicker != null) return;
-        parent.currentPicker = uri -> {
-            if (uri != null && pendingBrowsePosition >= 0) {
-                var path = resolveUriPath(parent, uri);
-                diskAdapter.setPathAt(pendingBrowsePosition, path);
-            }
-            pendingBrowsePosition = -1;
-            parent.currentPicker = null;
-        };
-        parent.filePickerLauncher.launch(new String[]{"*/*"});
     }
 
     private void sharedDirAdapterOnBrowse(int pos) {
@@ -147,6 +147,9 @@ public final class VMEditStorageTab extends VMEditBaseTab {
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
+        // The rows stand in for this VM's own saved slots: those must not count as "another
+        // VM attaches this disk" when deriving forced read-only.
+        diskAdapter.setEditingVm(parent.editMode ? config.getId() : null, config.getName());
         listDisks.setItems(config.item.opt("disks", DataItem.newArray()));
         listSharedDirs.setItems(config.item.opt("shared_dirs", DataItem.newArray()));
     }
@@ -193,6 +196,9 @@ public final class VMEditStorageTab extends VMEditBaseTab {
 
     @Override
     public void saveConfig(@NonNull VMConfig config) {
+        // Effective read-only (forced by overlays/sharing, or chosen) for every row, including
+        // ones never bound since their disk's situation last changed.
+        diskAdapter.commitReadonly();
         config.item.set("disks", listDisks.getItems());
         config.item.set("shared_dirs", listSharedDirs.getItems());
     }

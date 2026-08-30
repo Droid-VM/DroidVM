@@ -6,6 +6,7 @@ package cn.classfun.droidvm.lib.store.disk;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -28,6 +29,27 @@ public final class DiskConfig extends DataConfig {
     @NonNull
     public String getFullPath() {
         return pathJoin(item.optString("folder", ""), getName());
+    }
+
+    /**
+     * The registered disk this one is an overlay of (mirrors the qcow2 header's backing file;
+     * the header stays the ground truth, this link is what the UI trees and lock rules read).
+     * Null for a standalone disk or when the parent isn't registered.
+     */
+    @Nullable
+    public UUID getParentId() {
+        var s = item.optString("parent", "");
+        if (s.isEmpty()) return null;
+        try {
+            return UUID.fromString(s);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    public void setParentId(@Nullable UUID id) {
+        if (id == null) item.remove("parent");
+        else item.set("parent", id.toString());
     }
 
     @NonNull

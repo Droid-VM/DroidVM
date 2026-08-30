@@ -4,7 +4,6 @@
 package cn.classfun.droidvm.ui.main.home;
 
 import static android.content.Intent.ACTION_VIEW;
-import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.Constants.GITHUB_ISSUE_URL;
 import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
@@ -17,7 +16,6 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
@@ -47,6 +45,7 @@ import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 import cn.classfun.droidvm.ui.update.UpdateDialog;
 import cn.classfun.droidvm.ui.update.UpdateInfo;
 import cn.classfun.droidvm.ui.update.VersionCheck;
+import cn.classfun.droidvm.ui.vm.VMCreateMenu;
 import cn.classfun.droidvm.ui.vm.pkg.imports.VMPkgImportActivity;
 
 public final class MainHomeFragment extends MainBaseFragment
@@ -342,7 +341,7 @@ public final class MainHomeFragment extends MainBaseFragment
     }
 
     private void openWizard() {
-        Toast.makeText(requireContext(), R.string.unimplement, LENGTH_SHORT).show();
+        VMCreateMenu.show(requireContext());
     }
 
     private void openImport() {

@@ -10,11 +10,13 @@ import android.text.Editable;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.text.method.PasswordTransformationMethod;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
+import androidx.annotation.DrawableRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
@@ -404,6 +406,25 @@ public final class TextInputRowWidget extends FrameLayout {
         @Nullable OnClickListener listener
     ) {
         textInputLayout.setEndIconOnClickListener(listener);
+    }
+
+    /** Accessibility label for the in-field end icon (see {@code ti_endIcon}). */
+    public void setEndIconContentDescription(@Nullable CharSequence description) {
+        textInputLayout.setEndIconContentDescription(description);
+    }
+
+    /** Swaps the outside icon button's image (e.g. a show/hide password toggle). */
+    public void setIconButtonIcon(@DrawableRes int icon) {
+        iconButtonView.setIconResource(icon);
+    }
+
+    /** Shows or hides a password field's characters, keeping the selection. */
+    public void setPasswordVisible(boolean visible) {
+        int start = editText.getSelectionStart();
+        int end = editText.getSelectionEnd();
+        editText.setTransformationMethod(
+            visible ? null : PasswordTransformationMethod.getInstance());
+        if (start >= 0 && end >= 0) editText.setSelection(start, end);
     }
 
     public void addTextChangedListener(@NonNull TextWatcher watcher) {
