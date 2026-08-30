@@ -147,8 +147,10 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (vmId == null) vmId = "";
         bindViews();
         setupToolbar();
-        onSetupActivity();
+        // Before onSetupActivity() so subclasses can wire views (e.g. the physical keyboard)
+        // to the adapter during their setup.
         vncExtraKeys = new VncExtraKeysPanel(extraKeysPanel);
+        onSetupActivity();
         fetchVncInfoAndConnect();
     }
 
@@ -156,7 +158,6 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected void onDestroy() {
         super.onDestroy();
         onDestroyExtra();
-        extraKeysPanel.stopKeyRepeat();
         running = false;
         if (vncClient != null) vncClient.requestStop();
         executor.shutdown();
@@ -421,6 +422,12 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
         int keyCode = event.getKeyCode();
+        // A hardware-mouse right-click the framework (or OEM ROM) failed to see consumed gets
+        // synthesized as a mouse-sourced BACK key. Inside the VM display that must never navigate
+        // back - the right-click itself is delivered to the guest by the pointer handlers.
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK
+            && (event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0)
+            return true;
         if (keyCode == KEYCODE_VOLUME_UP || keyCode == KEYCODE_VOLUME_DOWN)
             return super.dispatchKeyEvent(event);
         int keysym = androidKeyToXKeysym(keyCode);
@@ -540,10 +547,26 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     protected void toggleSoftKeyboard() {
         var imm = getSystemService(InputMethodManager.class);
-        if (imm != null && ivDisplay != null) {
-            ivDisplay.requestFocus();
-            imm.showSoftInput(ivDisplay, 0);
-        }
+        if (imm == null || ivDisplay == null) return;
+        // Post so the fab-menu popup has finished tearing down: called inline right after the item
+        // click, the popup still owns the focus transition and showSoftInput lands before ivDisplay
+        // is the served view and does nothing. (The letterbox onClick path already has focus, but
+        // routing both through the same retry keeps them consistent.)
+        mainHandler.post(() -> tryShowKeyboard(imm, 15));
+    }
+
+    // showSoftInput() can return true for a view the IMM isn't serving yet and show nothing, so the
+    // success test is imm.isActive(view), retried on a short delay until the input connection is
+    // live. The last few rounds force the IME (some ROMs ignore the implicit request).
+    private void tryShowKeyboard(@NonNull InputMethodManager imm, int attemptsLeft) {
+        if (attemptsLeft <= 0 || isFinishing() || ivDisplay == null) return;
+        ivDisplay.requestFocusFromTouch();
+        ivDisplay.requestFocus();
+        int flag = attemptsLeft <= 3
+            ? InputMethodManager.SHOW_FORCED : InputMethodManager.SHOW_IMPLICIT;
+        imm.showSoftInput(ivDisplay, flag);
+        if (ivDisplay.isFocused() && imm.isActive(ivDisplay)) return;
+        mainHandler.postDelayed(() -> tryShowKeyboard(imm, attemptsLeft - 1), 60);
     }
 
     protected VncDisplayView.TextCommitListener createTextCommitListener() {
@@ -727,10 +750,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     protected boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_keyboard) {
-            toggleSoftKeyboard();
-            return true;
-        } else if (id == R.id.menu_rotate) {
+        if (id == R.id.menu_rotate) {
             rotateScreen();
             return true;
         } else if (id == R.id.menu_reconnect) {

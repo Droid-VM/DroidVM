@@ -140,4 +140,11 @@
         android:gravity="bottom"
         android:orientation="vertical" />
 
+    <cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView
+        android:id="@+id/phy_keyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
 </LinearLayout>

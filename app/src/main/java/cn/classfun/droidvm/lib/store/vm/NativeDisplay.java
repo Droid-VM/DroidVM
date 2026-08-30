@@ -19,10 +19,15 @@ import androidx.annotation.NonNull;
  * registers (--android-display-service) and the VM's input-socket set.
  */
 public final class NativeDisplay {
-    /** Input channels (MVP: multi-touch + keyboard). */
+    /**
+     * Input channels. Each maps to one crosvm {@code --input <kind>} virtio-input device and one
+     * channel ids shared with the daemon's InputHandler; append new channels, never renumber.
+     */
     public static final int MULTITOUCH = 0;
     public static final int KEYBOARD = 1;
-    public static final int CHANNEL_COUNT = 2;
+    public static final int MOUSE = 2;
+    public static final int TABLET = 3;
+    public static final int CHANNEL_COUNT = 4;
 
     /**
      * Broadcast the daemon (running as root) sends to hand its INativeDisplayRootService binder to
@@ -38,7 +43,6 @@ public final class NativeDisplay {
     /** Per-attach random token; the UI only accepts a broadcast carrying the nonce it requested. */
     public static final String EXTRA_NONCE = "nonce";
 
-    private static final String[] KINDS = {"multitouch", "keyboard"};
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
 
     private NativeDisplay() {

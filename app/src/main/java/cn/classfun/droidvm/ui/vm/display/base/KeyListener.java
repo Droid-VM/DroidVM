@@ -4,18 +4,14 @@
 package cn.classfun.droidvm.ui.vm.display.base;
 
 public interface KeyListener {
-    @SuppressWarnings("unused")
-    void onKeyRepeat(int androidKeyCode);
+    /**
+     * A non-modifier key went down ({@code down=true}) or up. The guest sees the real hold, so
+     * auto-repeat and hold semantics (e.g. WASD movement) are the guest's own; several keys may
+     * be held at once.
+     */
+    void onKey(int androidKeyCode, boolean down);
 
-    @SuppressWarnings("unused")
-    void onCharRepeat(char ch);
-
-    @SuppressWarnings("unused")
-    void onCapsToggle(boolean active);
-
-    @SuppressWarnings("unused")
     void onModifierClick(int androidKeyCode);
 
-    @SuppressWarnings("unused")
     void onModifierLongClick(int androidKeyCode);
 }

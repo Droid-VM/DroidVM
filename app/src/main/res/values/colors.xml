@@ -13,6 +13,8 @@
     <color name="extra_key_text">#FFCCCCCC</color>
     <color name="extra_key_text_active">#FF4FC3F7</color>
     <color name="extra_key_bg_active">#FF37474F</color>
+    <!-- Pressed key feedback: the key surface is always dark, so pressed always lightens. -->
+    <color name="extra_key_bg_pressed">#FF777777</color>
 
     <color name="vnc_fab_background">#FF4FC3F7</color>
     <color name="vnc_touchpad_background">#FF2A2A2A</color>

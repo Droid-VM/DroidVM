@@ -41,10 +41,32 @@ public final class EvdevEncoder {
     private static final short ABS_MT_POSITION_Y = 0x36;
     private static final short ABS_MT_TRACKING_ID = 0x39;
 
+    /**
+     * Fixed ABS_X/ABS_Y (and ABS_MT_POSITION_X/Y) maximum the guest absolute-mouse / multi-touch
+     * devices advertise when the daemon omits an explicit resolution ({@code --input
+     * absolute-mouse}/{@code multi-touch} with no width/height). View coordinates are scaled to this
+     * range against the on-screen view size, so the guest maps them 1:1 to its screen at any
+     * resolution -- resolution-independent and auto-resize-proof. MUST equal crosvm's
+     * {@code NORMALIZED_ABS_MAX} (config.rs) and {@code VNC_ABS_MAX} (gpu_display_vnc.rs).
+     */
+    public static final int NORMALIZED_ABS_MAX = 0x7FFF;
+
     private static final short BTN_TOUCH = 0x14a;
+
+    // Relative mouse (InputMode.MOUSE).
+    private static final short EV_REL = 0x02;
+    private static final short REL_X = 0x00;
+    private static final short REL_Y = 0x01;
+    private static final short REL_WHEEL = 0x08;
+    private static final short REL_HWHEEL = 0x06;
+    public static final short BTN_LEFT = 0x110;
+    public static final short BTN_RIGHT = 0x111;
+    public static final short BTN_MIDDLE = 0x112;
 
     /** Live Android pointer id -> evdev MT slot. Touched only on the worker thread. */
     private final Map<Integer, Integer> pointerSlots = new HashMap<>();
+    /** Last guest-space position sent per live pointer id, for the keepalive re-send. */
+    private final Map<Integer, int[]> pointerPos = new HashMap<>();
 
     public EvdevEncoder() {
     }
@@ -86,6 +108,93 @@ public final class EvdevEncoder {
         return encode(events);
     }
 
+    /** Relative pointer motion for {@code InputMode.MOUSE}; null if there is no movement. */
+    @Nullable
+    public static byte[] encodeMouseMove(int dx, int dy) {
+        if (dx == 0 && dy == 0) return null;
+        var events = new ArrayList<Event>(3);
+        if (dx != 0) events.add(new Event(EV_REL, REL_X, dx));
+        if (dy != 0) events.add(new Event(EV_REL, REL_Y, dy));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    /** Mouse button ({@link #BTN_LEFT}/{@link #BTN_RIGHT}/{@link #BTN_MIDDLE}) press or release. */
+    @NonNull
+    public static byte[] encodeMouseButton(short button, boolean down) {
+        var events = new ArrayList<Event>(2);
+        events.add(new Event(EV_KEY, button, down ? 1 : 0));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    /** Scroll wheel: vertical (REL_WHEEL, +up/-down) and horizontal (REL_HWHEEL) notches; null if 0. */
+    @Nullable
+    public static byte[] encodeMouseWheel(int vNotches, int hNotches) {
+        if (vNotches == 0 && hNotches == 0) return null;
+        var events = new ArrayList<Event>(3);
+        if (vNotches != 0) events.add(new Event(EV_REL, REL_WHEEL, vNotches));
+        if (hNotches != 0) events.add(new Event(EV_REL, REL_HWHEEL, hNotches));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    /**
+     * Absolute-mouse "tablet" ({@code InputMode.TABLET}): the primary pointer mapped onto the guest
+     * absolute mouse's ABS_X/ABS_Y, with BTN_LEFT for the touch/click. Because the guest device is an
+     * absolute pointer (qemu usb-tablet), not a BTN_TOUCH touchscreen, the same device also carries
+     * hover ({@link #encodeAbsMove}), right/middle click ({@link #encodeMouseButton}) and scroll
+     * ({@link #encodeMouseWheel}). ABS range must equal the guest resolution
+     * ({@code --input absolute-mouse[width=guestW,height=guestH]}).
+     *
+     * @param scaleX guestWidth / viewWidth
+     * @param scaleY guestHeight / viewHeight
+     */
+    @Nullable
+    public byte[] encodeTablet(@NonNull MotionEvent event, float scaleX, float scaleY) {
+        int x = (int) (event.getX() * scaleX);
+        int y = (int) (event.getY() * scaleY);
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN: {
+                var events = new ArrayList<Event>(4);
+                events.add(new Event(EV_ABS, ABS_X, x));
+                events.add(new Event(EV_ABS, ABS_Y, y));
+                events.add(new Event(EV_KEY, BTN_LEFT, 1));
+                events.add(new Event(EV_SYN, SYN_REPORT, 0));
+                return encode(events);
+            }
+            case MotionEvent.ACTION_MOVE: {
+                var events = new ArrayList<Event>(3);
+                events.add(new Event(EV_ABS, ABS_X, x));
+                events.add(new Event(EV_ABS, ABS_Y, y));
+                events.add(new Event(EV_SYN, SYN_REPORT, 0));
+                return encode(events);
+            }
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL: {
+                var events = new ArrayList<Event>(2);
+                events.add(new Event(EV_KEY, BTN_LEFT, 0));
+                events.add(new Event(EV_SYN, SYN_REPORT, 0));
+                return encode(events);
+            }
+            default:
+                return null;
+        }
+    }
+
+    /**
+     * Absolute pointer position with no button held (hover) for the absolute-mouse/tablet device.
+     * Coordinates are already in guest space.
+     */
+    @NonNull
+    public static byte[] encodeAbsMove(int x, int y) {
+        var events = new ArrayList<Event>(3);
+        events.add(new Event(EV_ABS, ABS_X, x));
+        events.add(new Event(EV_ABS, ABS_Y, y));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
     /**
      * Encodes a touch {@link MotionEvent} into multi-touch evdev records, or null if there is
      * nothing to send. The multi-touch device's ABS range must equal the guest resolution passed
@@ -106,6 +215,7 @@ public final class EvdevEncoder {
                     if (slot == null) continue; // no DOWN seen for this pointer; ignore
                     int x = (int) (event.getX(i) * scaleX);
                     int y = (int) (event.getY(i) * scaleY);
+                    pointerPos.put(id, new int[]{x, y});
                     events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
                     events.add(new Event(EV_ABS, ABS_MT_POSITION_X, x));
                     events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, y));
@@ -125,6 +235,7 @@ public final class EvdevEncoder {
                 int slot = allocSlot(id);
                 int x = (int) (event.getX(idx) * scaleX);
                 int y = (int) (event.getY(idx) * scaleY);
+                pointerPos.put(id, new int[]{x, y});
                 var events = new ArrayList<Event>(8);
                 // Only the first contact toggles BTN_TOUCH; further fingers must not re-assert it.
                 if (pointerSlots.size() == 1)
@@ -145,6 +256,7 @@ public final class EvdevEncoder {
                 int id = event.getPointerId(event.getActionIndex());
                 Integer slot = pointerSlots.remove(id);
                 if (slot == null) return null;
+                pointerPos.remove(id);
                 var events = new ArrayList<Event>(4);
                 events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
                 events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, -1));
@@ -163,6 +275,7 @@ public final class EvdevEncoder {
                     events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, -1));
                 }
                 pointerSlots.clear();
+                pointerPos.clear();
                 events.add(new Event(EV_KEY, BTN_TOUCH, 0));
                 events.add(new Event(EV_SYN, SYN_REPORT, 0));
                 return encode(events);
@@ -170,6 +283,39 @@ public final class EvdevEncoder {
             default:
                 return null;
         }
+    }
+
+    /** Whether any touch contact is currently down (keepalive needed while true). */
+    public boolean hasTouchContacts() {
+        return !pointerSlots.isEmpty();
+    }
+
+    /**
+     * Re-sends every live contact at its last position, or null if there are no contacts. Real
+     * touch hardware reports at scan rate for as long as a finger is on the glass, even when
+     * nothing changes, and guests rely on that: the Windows touch stack ages out a contact whose
+     * reports stop (a stationary finger otherwise reads as a lift, then its next micro-movement
+     * as a fresh touchdown). This frame is what a quiet scan cycle would have produced.
+     */
+    @Nullable
+    public byte[] encodeTouchKeepalive() {
+        if (pointerSlots.isEmpty()) return null;
+        var events = new ArrayList<Event>(pointerSlots.size() * 3 + 3);
+        for (var entry : pointerSlots.entrySet()) {
+            int[] pos = pointerPos.get(entry.getKey());
+            if (pos == null) continue;
+            int slot = entry.getValue();
+            events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
+            events.add(new Event(EV_ABS, ABS_MT_POSITION_X, pos[0]));
+            events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, pos[1]));
+            if (slot == 0) {
+                events.add(new Event(EV_ABS, ABS_X, pos[0]));
+                events.add(new Event(EV_ABS, ABS_Y, pos[1]));
+            }
+        }
+        if (events.isEmpty()) return null;
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
     }
 
     /** Maps a pointer id to a stable slot, allocating the lowest free slot index if new. */
