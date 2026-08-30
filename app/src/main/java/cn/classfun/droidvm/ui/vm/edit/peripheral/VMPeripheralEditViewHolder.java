@@ -32,6 +32,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final PickerButtonWidget btnUnderrun;
     // intel hda
     final View groupIntelHda;
+    final View groupVirtioCamera;
+    final MaterialButton btnCameraDevice;
     final MaterialButton btnHdaOut;
     final MaterialButton btnHdaIn;
 
@@ -49,6 +51,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         btnBuffer = itemView.findViewById(R.id.btn_sound_buffer);
         btnUnderrun = itemView.findViewById(R.id.btn_sound_underrun);
         groupIntelHda = itemView.findViewById(R.id.group_intel_hda);
+        groupVirtioCamera = itemView.findViewById(R.id.group_virtio_camera);
+        btnCameraDevice = itemView.findViewById(R.id.btn_camera_device);
         btnHdaOut = itemView.findViewById(R.id.btn_hda_out);
         btnHdaIn = itemView.findViewById(R.id.btn_hda_in);
     }

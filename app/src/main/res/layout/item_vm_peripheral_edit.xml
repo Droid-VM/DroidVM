@@ -200,6 +200,36 @@
 
         </LinearLayout>
 
+        <!-- One camera device, one host camera: a virtio-media device registers exactly one
+             /dev/videoX, so there is nothing here to add rows to. -->
+        <LinearLayout
+            android:id="@+id/group_virtio_camera"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_vm_peripheral_host_camera"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_camera_device"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="@string/host_camera_default"
+                android:textSize="12sp"
+                tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tv_peripheral_warning"
             android:layout_width="match_parent"
