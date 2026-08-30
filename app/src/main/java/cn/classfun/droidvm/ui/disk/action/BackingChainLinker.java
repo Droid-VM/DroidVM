@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.action;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
@@ -244,6 +246,7 @@ public final class BackingChainLinker {
                 "-u", "-b", absBacking, "-F", format, overlay);
             if (!result.isSuccess()) result.printLog(TAG);
         } catch (Exception e) {
+            Log.w(TAG, fmt("rebase -u failed for %s", overlay), e);
         }
     }
 

@@ -25,6 +25,7 @@ public final class PickerButtonWidget extends RelativeLayout {
     private EnumPickerChanged<Enum<?>> listener = null;
     private String title = null;
     private Mode mode = Mode.DIALOG;
+    private Runnable unavailable = null;
 
     public enum Mode {
         DIALOG,
@@ -66,6 +67,10 @@ public final class PickerButtonWidget extends RelativeLayout {
         initAttrs(attrs);
         if (isInEditMode()) return;
         buttonView.setOnClickListener(v -> {
+            if (unavailable != null) {
+                unavailable.run();
+                return;
+            }
             if (picker == null) return;
             switch (mode) {
                 case DIALOG:
@@ -182,6 +187,19 @@ public final class PickerButtonWidget extends RelativeLayout {
     @SuppressWarnings("unused")
     public void setTitle(@StringRes int title) {
         this.title = context.getString(title);
+    }
+
+    /**
+     * Marks the control present but inert: the current value stays readable, the picker never
+     * opens, and a tap runs {@code onTap} instead -- for an option the config format still
+     * carries but this build cannot honour. {@code null} restores normal picker behaviour.
+     *
+     * <p>Deliberately not {@link #setEnabled(boolean)}: a disabled button swallows the tap, so
+     * there is nowhere left to explain why the option does nothing.
+     */
+    public void setUnavailable(@Nullable Runnable onTap) {
+        this.unavailable = onTap;
+        buttonView.setAlpha(onTap == null ? 1f : 0.5f);
     }
 
     @Override

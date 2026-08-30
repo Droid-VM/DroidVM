@@ -14,6 +14,7 @@ public enum GpuApi implements StringEnum {
     EGL(2, "egl", R.string.create_vm_gpu_api_egl),
     OPENGLES(3, "gles", R.string.create_vm_gpu_api_opengles),
     ANGLE(4, "angle", R.string.create_vm_gpu_api_angle);
+    // Vulkan HAL; TURNIP = bundled Mesa turnip (Adreno); PANVK = Mesa PanVK (Mali) -- not yet wired.
 
     private final int value;
     private final String name;

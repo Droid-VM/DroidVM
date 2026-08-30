@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.nativedisplay.display;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.crosvm.ICrosvmAndroidDisplayService;
 import android.os.Handler;
 import android.os.Looper;
@@ -108,6 +110,7 @@ final class CursorPositionStream implements AutoCloseable {
         } catch (IOException e) {
             if (!closed) {
                 // Normal at VM shutdown: crosvm exits and the write end closes.
+                Log.i(TAG, fmt("cursor position stream ended: %s", e.getMessage()));
             }
         }
     }

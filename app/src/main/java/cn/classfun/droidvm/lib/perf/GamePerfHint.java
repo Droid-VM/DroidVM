@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.perf;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import android.app.GameManager;
 import android.app.GameState;
 import android.content.Context;
@@ -56,8 +58,10 @@ public final class GamePerfHint {
             var manager = context.getSystemService(GameManager.class);
             if (manager == null) return;
             manager.setGameState(new GameState(false, mode));
+            Log.i(TAG, fmt("declared game state: %s", what));
         } catch (Exception e) {
             // Not fatal: without it we simply run at whatever clocks the governor picks.
+            Log.w(TAG, fmt("failed to declare game state %s", what), e);
         }
     }
 }

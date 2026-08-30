@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.SecureRandom;
+import java.util.Collection;
 import java.util.Formatter;
 import java.util.Locale;
 
@@ -202,6 +203,18 @@ public final class StringUtils {
             if (sb.length() > 0) sb.append(sep);
             sb.append(p);
         }
+        return sb.toString();
+    }
+
+    /**
+     * A {@code "\n- a\n- b"} bullet list, the shape the disk and VM dialogs paste
+     * into a message resource. The leading newline is part of it: the list always
+     * follows a sentence, and every caller was writing that newline by hand.
+     */
+    @NonNull
+    public static String bulletList(@NonNull Collection<String> items) {
+        var sb = new StringBuilder();
+        for (var item : items) sb.append("\n- ").append(item);
         return sb.toString();
     }
 
