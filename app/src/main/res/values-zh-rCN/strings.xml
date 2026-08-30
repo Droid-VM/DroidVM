@@ -784,7 +784,7 @@
     <string name="disk_operation_cancel_title">取消操作？</string>
     <string name="disk_operation_cancel_message">磁盘操作仍在进行中，确定要取消吗？</string>
 
-    <string name="disk_change_password">修改密码</string>
+    <string name="disk_change_password">修改客体 Linux 密码</string>
     <string name="change_password_title">修改密码</string>
     <string name="change_password_disk_label">磁盘：%1$s</string>
     <string name="change_password_hint">新密码</string>

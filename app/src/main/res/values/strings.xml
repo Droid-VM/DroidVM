@@ -822,7 +822,7 @@
     <string name="disk_operation_cancel_title">Cancel operation?</string>
     <string name="disk_operation_cancel_message">The disk operation is still in progress. Are you sure you want to cancel?</string>
 
-    <string name="disk_change_password">Change Password</string>
+    <string name="disk_change_password">Change Guest Linux Password</string>
     <string name="change_password_title">Change Password</string>
     <string name="change_password_disk_label">Disk: %1$s</string>
     <string name="change_password_hint">New password</string>
