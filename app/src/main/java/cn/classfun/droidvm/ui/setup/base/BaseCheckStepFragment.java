@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.setup.base;
 
 import static android.view.View.GONE;
@@ -33,9 +36,25 @@ public abstract class BaseCheckStepFragment extends BaseStepFragment {
         runCheck();
     }
 
+    /**
+     * onViewCreated has already run the check by the time the first onResume arrives, and every
+     * runCheck() here starts a worker thread. Re-running it immediately means two workers doing
+     * the same job: harmless for the read-only steps, but the extract step writes files, and two
+     * of those racing produced "extraction failed" followed by "extraction succeeded" -- the
+     * loser tripping over the directories the winner was creating.
+     *
+     * <p>Later resumes still re-check, which is the point of doing it here at all: the user
+     * leaves to grant root or a permission and comes back expecting the step to notice.
+     */
+    private boolean resumedBefore;
+
     @Override
     public void onResume() {
         super.onResume();
+        if (!resumedBefore) {
+            resumedBefore = true;
+            return;
+        }
         runCheck();
     }
 
