@@ -275,6 +275,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             case GUNYAH: {
                     && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
                 args.add("gunyah");
+                // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
+                // pool). Only meaningful for gfxstream on Gunyah.
+                if (gfxstreamGpu) {
+                    boolean udmabuf = item.optBoolean("gpu_udmabuf", true);
+                    long hostPool = item.optLong("gpu_host_pool_mb", 0);
+                    if (hostPool > 0 || udmabuf) {
+                        var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
+                        args.add("--pre-alloc");
+                        args.add(preAlloc.toString());
+                    }
+                }
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
                 break;
             }
