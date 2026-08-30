@@ -13,6 +13,9 @@ app/src/main/res/values-*/strings.xml
 # Privacy policy, one file per language.
 app/src/main/assets/privacy/*.txt
 
+# In-app description pages: prose, with an en/zh-CN/zh-TW block per page.
+app/src/main/assets/descr/*.html
+
 # Localized data: repo-listing display names and language endonyms.
 app/src/main/assets/data/repo.yaml
 app/src/main/assets/data/languages.yaml
