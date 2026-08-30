@@ -8,6 +8,7 @@ import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -44,6 +45,7 @@ public final class TabSwipeHelper {
     private float touchStartX, touchStartY;
     private boolean isDragging = false;
     private boolean touchDecided = false;
+    private boolean gestureDeclined = false;
     private boolean settling = false;
     private View dragPrevView, dragCurrentView, dragNextView;
     private Runnable animationEndCallback;
@@ -66,6 +68,8 @@ public final class TabSwipeHelper {
         touchStartY = ev.getY();
         isDragging = false;
         touchDecided = false;
+        gestureDeclined = touchesHorizontalScroller(
+            activity.getWindow().getDecorView(), ev.getRawX(), ev.getRawY());
         if (velocityTracker == null) velocityTracker = VelocityTracker.obtain();
         else velocityTracker.clear();
         velocityTracker.addMovement(ev);
@@ -76,6 +80,7 @@ public final class TabSwipeHelper {
         @NonNull MotionEvent ev,
         @NonNull TouchDispatcher superDispatch
     ) {
+        if (gestureDeclined) return false;
         if (velocityTracker != null)
             velocityTracker.addMovement(ev);
         if (!touchDecided) {
@@ -158,6 +163,25 @@ public final class TabSwipeHelper {
                 return onMotionEventUp(ev, superDispatch);
             case MotionEvent.ACTION_CANCEL:
                 return onMotionEventCancel(ev, superDispatch);
+        }
+        return false;
+    }
+
+    /**
+     * True if the point is over a view that scrolls horizontally on its own, e.g. an
+     * overflowing tab bar. Those gestures belong to that view, not to tab switching.
+     */
+    private static boolean touchesHorizontalScroller(@NonNull View v, float rawX, float rawY) {
+        if (v.getVisibility() != View.VISIBLE) return false;
+        int[] loc = new int[2];
+        v.getLocationOnScreen(loc);
+        if (rawX < loc[0] || rawX >= loc[0] + v.getWidth() ||
+            rawY < loc[1] || rawY >= loc[1] + v.getHeight()) return false;
+        if (v.canScrollHorizontally(1) || v.canScrollHorizontally(-1)) return true;
+        if (v instanceof ViewGroup) {
+            var group = (ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++)
+                if (touchesHorizontalScroller(group.getChildAt(i), rawX, rawY)) return true;
         }
         return false;
     }

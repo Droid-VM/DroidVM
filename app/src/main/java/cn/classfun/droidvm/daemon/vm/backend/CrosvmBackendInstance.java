@@ -272,10 +272,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             case KVM:
                 args.add("kvm");
                 break;
-            case GUNYAH:
+            case GUNYAH: {
+                    && optEnum(item, "gpu_backend", GpuBackend.NONE) == GpuBackend.GPU_GFXSTREAM;
                 args.add("gunyah");
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
                 break;
+            }
             case GENIEZONE:
                 args.add("geniezone");
                 break;
@@ -579,7 +581,15 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
     }
 
+    // Resolve the effective hypervisor (mirrors buildCommand's --hypervisor logic) to gate
+    // Gunyah-only GPU behavior such as gunyah-pvm.
+    private boolean isGunyahHypervisor() {
+        var hyp = config.item.optString("hypervisor", "auto");
+        var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
         hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
+        return hypervisor == VMHypervisor.GUNYAH;
+    }
+
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
         var useGpu = item.optBoolean("gpu_enabled", false);
@@ -613,6 +623,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case ANGLE:
                     gpuArg.append(",angle=true");
                     break;
+                // gunyah-pvm pins the RingBlob backing so the permanent Gunyah SHARE mapping
+                // stays stable. Only meaningful under the Gunyah hypervisor; other SoCs skip it.
+                if (isGunyahHypervisor()) {
+                    gpuArg.append(",gunyah-pvm=true");
+                }
             }
             args.add("--gpu");
             args.add(gpuArg.toString());
@@ -640,14 +655,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     private void buildNativeDisplayCommand(@NonNull List<String> args) {
         var item = config.item;
         var serviceName = NativeDisplay.serviceName(config);
-        var width = item.optLong("display_width", 1280);
-        var height = item.optLong("display_height", 720);
-        // multi-touch ABS range must equal the guest resolution so view coords scale straight onto
-        // ABS_X/ABS_Y (see EvdevEncoder / TouchScaleCalculator).
         args.add("--input");
         args.add(fmt(
-            "multi-touch[path=%s,width=%d,height=%d]",
-            NativeDisplay.inputSocketPath(serviceName, NativeDisplay.MULTITOUCH), width, height
         ));
     private void buildInputDevicesCommand(@NonNull List<String> args) {
         // Relative-pointer mouse (REL_X/Y + buttons + wheel) for InputMode.MOUSE; the guest renders
@@ -667,10 +676,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     /** True iff the per-VM crosvm command will reference native-display input sockets. */
     private boolean isNativeDisplayEnabled() {
         var item = config.item;
-        if (!item.optBoolean("gpu_enabled", false)) return false;
         if (!item.optBoolean("display_enabled", false)) return false;
         var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        if (backend != DisplayBackend.VIRTIO_GPU) return false;
         return item.optBoolean("native_display_enabled", false);
     }
 
