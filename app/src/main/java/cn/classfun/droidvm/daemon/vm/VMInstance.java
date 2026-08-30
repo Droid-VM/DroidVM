@@ -27,6 +27,7 @@ import java.util.UUID;
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
 import cn.classfun.droidvm.lib.data.CrosvmExit;
+import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -50,6 +51,10 @@ public final class VMInstance extends VMConfig {
     private BootPlan bootPlan;
     private String bootEntryOverride;
     private volatile boolean rebootRequested = false;
+    /** Set while a start that failed on unpinnable memory is being tried a second time. */
+    private volatile boolean pinRetryUsed = false;
+    /** A run this long counts as "the VM started", re-arming the one-shot pin retry. */
+    private static final long PIN_RETRY_RESET_MS = 60_000;
 
     // Delay before relaunching on reboot: lets the kernel settle same-name TAP
     // teardown/recreate and throttles a guest reboot-loop (no restart cap).
@@ -116,7 +121,7 @@ public final class VMInstance extends VMConfig {
     }
 
     private void fireEvent(@NonNull String event, @Nullable JSONObject extra) {
-        var cb = store.eventCallback;
+        var cb = store.context.vmEventCallback;
         if (cb == null) return;
         try {
             var data = new JSONObject();
@@ -412,7 +417,9 @@ public final class VMInstance extends VMConfig {
                 startReaderThread(vmId, stream);
         }
         setState(VMState.RUNNING);
+        long ranFrom = System.currentTimeMillis();
         int code = process.waitFor();
+        long ranForMs = System.currentTimeMillis() - ranFrom;
         for (var stream : inst.streams.values()) {
             var reader = stream.getReaderThread();
             if (reader != null && reader.isAlive()) {
@@ -433,6 +440,24 @@ public final class VMInstance extends VMConfig {
         // A guest-requested reset (crosvm exit 32) or a host-issued reboot both
         // relaunch the VM; an explicit user stop never does and wins over both.
         boolean wantRestart = !stoppedByUser && (code == CrosvmExit.RESET.getCode() || rebootRequested);
+        // ... and so does a start that died because the memory it was given could not be pinned.
+        // That is the VMM refusing to hand the hypervisor pages the host may still move, and it
+        // is worth exactly one more attempt: the condition is a moment in time (the reserve had
+        // not finished taking the previous VM's pages back, or the allocation drew from CMA), and
+        // measured on device the identical configuration started cleanly on the retry. Beyond one
+        // attempt it is not a moment, it is a shortage, and repeating would only hide it.
+        // RUNNING is set the moment the process is spawned, so it says nothing about whether the
+        // VM got off the ground: a pin refusal happens inside VM creation, seconds later. A start
+        // that lasted is what clears the one-shot, so a VM that ran for an hour and then died can
+        // still be retried, while a VM failing in three seconds cannot loop.
+        if (code == 0 || ranForMs > PIN_RETRY_RESET_MS) pinRetryUsed = false;
+        boolean pinFailure = !stoppedByUser && !wantRestart && code != 0 && !pinRetryUsed
+            && exitLogSuggestsPinFailure();
+        if (pinFailure) {
+            pinRetryUsed = true;
+            wantRestart = true;
+            Log.w(TAG, fmt("VM %s exited on unpinnable memory; retrying once", getName()));
+        }
         if (stoppedByUser && code != 0) {
             Log.i(TAG, fmt("VM %s stopped by user", getName()));
             exitCode = 0;
@@ -459,6 +484,22 @@ public final class VMInstance extends VMConfig {
 
     // Relaunch off the worker thread: start() joins workerThread (this thread),
     // and the short sleep settles same-name TAP recreation before re-setup.
+    /**
+     * Whether this exit was the VMM refusing memory it could not pin (see crosvm's pin.rs).
+     *
+     * Read off the console rather than the exit code, because there is no distinct code for it:
+     * crosvm reports a plain failure to create the VM. The two lines below are the ones that
+     * distinguish it from every other start failure -- a bad disk path, a missing kernel -- which
+     * must not be retried.
+     */
+    private boolean exitLogSuggestsPinFailure() {
+        var stream = getStream("stdio");
+        if (stream == null) return false;
+        var log = stream.getBuffer();
+        if (log == null) return false;
+        return log.contains("GH-PIN[") && log.contains("cannot be long-term pinned");
+    }
+
     private void scheduleRelaunch() {
         var t = new Thread(() -> {
             try {
@@ -467,6 +508,17 @@ public final class VMInstance extends VMConfig {
                 return;
             }
             if (state != VMState.REBOOTING) return; // user changed state meanwhile
+            // The VM we are relaunching has only just let go of its memory, and the huge-page
+            // reserve takes a few seconds to get it back. Relaunching into that gap is the one
+            // way a reboot turns into a dead VM: the pages come from ordinary movable memory
+            // instead, the VMM refuses to hand memory it cannot pin to the hypervisor, and the
+            // relaunch exits with ENOMEM (measured: reserve at 526 of 2542 pages when the
+            // relaunch started, full again nine seconds later). Nobody is watching a reboot, so
+            // it waits like any other background start -- see PoolPreflight.waitForPool.
+            if (!PoolPreflight.waitForPool(item, PoolPreflight.RELAUNCH_ATTEMPTS,
+                PoolPreflight.BACKGROUND_INTERVAL_MS, PoolPreflight.BACKGROUND_ACQUIRE_AT))
+                Log.w(TAG, fmt("VM %s relaunching with the reserve still short", getName()));
+            if (state != VMState.REBOOTING) return; // stopped while we waited
             if (!start()) {
                 Log.w(TAG, fmt("VM %s relaunch failed", getName()));
                 // Surface the failure as a real exit so attached consoles / UI stop

@@ -219,6 +219,12 @@
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustNothing" />
 
+        <activity
+            android:name=".ui.hugepage.HugePageAdvancedActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustNothing" />
 
         <activity
             android:name=".ui.hugepage.HugePageProcessActivity"

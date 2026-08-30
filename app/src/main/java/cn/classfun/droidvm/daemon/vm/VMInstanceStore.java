@@ -17,6 +17,7 @@ import org.json.JSONObject;
 
 import java.util.ArrayList;
 
+import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
@@ -28,7 +29,6 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 public final class VMInstanceStore extends DataStore<VMInstance> {
     private static final String TAG = "VMInstanceStore";
     public final ServerContext context;
-    volatile VMInstance.VMEventCallback eventCallback = null;
     NetworkInstanceStore networkStore;
 
     public VMInstanceStore(@NonNull ServerContext context) {
@@ -39,7 +39,7 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     }
 
     public void setEventCallback(@Nullable VMInstance.VMEventCallback cb) {
-        this.eventCallback = cb;
+        context.vmEventCallback = cb;
     }
 
     public void setNetworkStore(@Nullable NetworkInstanceStore networkStore) {
@@ -146,6 +146,15 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     public void autoUp() {
         forEach((id, inst) -> {
             if (!inst.item.optBoolean("auto_up", false) || inst.getState() != VMState.STOPPED) return;
+            // Nobody is watching a background start, so instead of asking (which is what the GUI
+            // does) we wait for the huge-page reserve to cover this VM: a pool that is short only
+            // because the previous VM has just exited recovers in about two seconds, and starting
+            // into the gap is what makes the hypervisor migrate memory out of CMA -- observed to
+            // stall the whole host for minutes, or reset the phone. Half way through the wait we
+            // ask the module to go and fetch more. If it never gets there we start regardless:
+            // an auto-start that silently does not happen is worse than a slow one, and the VMM
+            // checks again at the point where it actually hands the memory over.
+            PoolPreflight.waitForPool(inst.item);
             Log.i(TAG, fmt("Auto-starting VM %s [%s]", inst.getName(), id));
             if (!inst.start())
                 Log.w(TAG, fmt("Failed to auto-start VM %s [%s]", inst.getName(), id));

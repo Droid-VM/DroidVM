@@ -96,6 +96,7 @@ public final class HugePageActivity extends AppCompatActivity {
     // to fill (avail+served < want); disabled at target, unloaded, or soft-disabled.
     private boolean acquireEnabled = false;
     private MaterialButton btnViewProcesses;
+    private TextRowWidget rowAdvanced;
     private View btnAcquireV1;
     private View btnAcquireV2;
     private View btnAcquireV3;
@@ -162,6 +163,7 @@ public final class HugePageActivity extends AppCompatActivity {
         rowStatTotalServed = findViewById(R.id.row_stat_total_served);
         rowStatTotalRefilled = findViewById(R.id.row_stat_total_refilled);
         rowStatActiveVms = findViewById(R.id.row_stat_active_vms);
+        rowAdvanced = findViewById(R.id.row_advanced);
         initialize();
     }
 
@@ -207,6 +209,10 @@ public final class HugePageActivity extends AppCompatActivity {
         });
         btnViewProcesses.setOnClickListener(v -> startActivity(
             new Intent(this, HugePageProcessActivity.class)));
+        // The loader-fed knobs live on their own screen: they are insmod-time
+        // policy, not something this dashboard should invite a tap on.
+        rowAdvanced.setOnClickListener(v -> startActivity(
+            new Intent(this, HugePageAdvancedActivity.class)));
         // Acquire-mode slots: each button starts its mode; each spinner (shown
         // while a run is in flight) interrupts it. Listeners are static -- the
         // slots aren't recycled -- and the idle/running visibility toggle is
@@ -749,34 +755,46 @@ public final class HugePageActivity extends AppCompatActivity {
 
     private void loadPoolSize() {
         runOnPool(() -> {
-            Map<String, String> settings;
-            try {
-                var result = shellReadFile(SETTINGS_PROP);
-                settings = parseProp(result);
-            } catch (Exception e) {
-                Log.w(TAG, "Failed to read settings.prop", e);
-                return;
+            // Seed from the MODULE's live readback first: the kernel clamps an
+            // oversized write to pool_size_max, so settings.prop may say 10G
+            // while the target actually in force is 8.71G. The prop keeps the
+            // bigger wish (insmod re-clamps it every boot); the input must show
+            // the effective value. settings.prop is only the fallback while the
+            // module is not loaded (nothing to read back from).
+            long pages = -1;
+            var snap = model.state();
+            if (snap.loaded && snap.statsOk) pages = snap.targetIdeal;
+            if (pages < 0) {
+                Map<String, String> settings;
+                try {
+                    var result = shellReadFile(SETTINGS_PROP);
+                    settings = parseProp(result);
+                } catch (Exception e) {
+                    Log.w(TAG, "Failed to read settings.prop", e);
+                    return;
+                }
+                // Prefer pool_want; fall back to legacy pool_target.
+                var cur = settings.getOrDefault("pool_want",
+                    settings.getOrDefault("pool_target", "1024"));
+                if (cur == null || cur.isEmpty()) cur = "1024";
+                try {
+                    pages = Long.parseLong(cur.trim());
+                } catch (NumberFormatException e) {
+                    Log.w(TAG, "Failed to parse pool_want", e);
+                    return;
+                }
             }
-            // Prefer pool_want; fall back to legacy pool_target.
-            var cur = settings.getOrDefault("pool_want",
-                settings.getOrDefault("pool_target", "1024"));
-            if (cur == null || cur.isEmpty()) cur = "1024";
-            try {
-                var pages = Long.parseLong(cur);
-                var bytes = BigInteger.valueOf(pages * PAGE_SIZE);
-                runOnUiThread(() -> {
-                    // Programmatic seed - don't count it as a user edit for
-                    // the pool<->with-CMA size link.
-                    sizeLinkSyncing = true;
-                    try {
-                        inputPoolSize.setBigValue(bytes);
-                    } finally {
-                        sizeLinkSyncing = false;
-                    }
-                });
-            } catch (NumberFormatException e) {
-                Log.w(TAG, "Failed to parse pool_want", e);
-            }
+            var bytes = BigInteger.valueOf(pages * PAGE_SIZE);
+            runOnUiThread(() -> {
+                // Programmatic seed - don't count it as a user edit for
+                // the pool<->with-CMA size link.
+                sizeLinkSyncing = true;
+                try {
+                    inputPoolSize.setBigValue(bytes);
+                } finally {
+                    sizeLinkSyncing = false;
+                }
+            });
         });
     }
 
@@ -885,7 +903,15 @@ public final class HugePageActivity extends AppCompatActivity {
                     : appliedNow ? R.string.hugepage_pool_size_applied
                     : R.string.hugepage_pool_size_saved;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
-                refreshStatus();
+                // Re-seed BOTH inputs from the module's readback, because the
+                // pair is coupled (sec. 4): the kernel clamps each to pool_size_max
+                // AND links them - writing pool_want up drags pool_want_with_cma
+                // up with it; a with-CMA total below the pool is lifted back to
+                // it; both round up to a multiple of S. So one save can move the
+                // OTHER field too - show what actually stuck on each.
+                cmaInputLoaded = false;   // updateUI reseeds the CMA total from
+                refreshStatus();          //   snap.wantWithCma on its next pass
+                loadPoolSize();           // reseed the pool input (clamped want)
             });
         });
     }

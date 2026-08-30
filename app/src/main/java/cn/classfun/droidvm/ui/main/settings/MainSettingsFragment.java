@@ -103,6 +103,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemPrivacy;
     private TextRowWidget itemApiManager;
     private TextRowWidget itemHugepageReserve;
+    private TextRowWidget itemKernelModules;
     private TextRowWidget itemExportConfig;
     private TextRowWidget itemImportConfig;
     private DaemonHelper daemon;
@@ -160,6 +161,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemPrivacy = view.findViewById(R.id.item_privacy);
         itemApiManager = view.findViewById(R.id.item_api_manager);
         itemHugepageReserve = view.findViewById(R.id.item_hugepage_reserve);
+        itemKernelModules = view.findViewById(R.id.item_kernel_modules);
         itemExportConfig = view.findViewById(R.id.item_export_config);
         itemImportConfig = view.findViewById(R.id.item_import_config);
         exportConfigLauncher = registerForActivityResult(
@@ -194,6 +196,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
         bindOnClick(itemApiManager, this::showApiManager);
         bindOnClick(itemHugepageReserve, this::showHugePageReserve);
+        bindOnClick(itemKernelModules, this::showKernelModules);
         bindOnClick(itemExportConfig, this::exportConfig);
         bindOnClick(itemImportConfig, this::importConfig);
         itemDaemonStatus.setSubtitle(R.string.settings_daemon_checking);
@@ -510,6 +513,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showHugePageReserve() {
         startActivity(new Intent(requireContext(), HugePageActivity.class));
+    }
+
+    private void showKernelModules() {
+        KernelModuleDialog.show(getChildFragmentManager());
     }
 
     private void exportConfig() {
