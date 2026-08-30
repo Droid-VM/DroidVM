@@ -121,6 +121,13 @@ add_library(unixhelper SHARED unixhelper/unixhelper.c unixhelper/native_process.
 target_link_libraries(unixhelper log)
 target_compile_options(unixhelper PRIVATE -Wall -Wextra -O2)
 
+# Capability probe for the native-display GPU-blit provider (GpuBlitProvider.SYSTEM). Loads the
+# platform Vulkan loader at runtime (dlopen, not linked) and reports which blit extensions the
+# stock driver lacks, so the UI can warn before the bridge silently degrades to a CPU copy.
+add_library(vkprobe SHARED vkprobe/vkprobe.cpp)
+target_link_libraries(vkprobe log)
+target_compile_options(vkprobe PRIVATE -Wall -Wextra -O2)
+
 
 add_executable(daemon unixhelper/daemon.c)
 target_compile_options(daemon PRIVATE -Wall -Wextra -O2)
