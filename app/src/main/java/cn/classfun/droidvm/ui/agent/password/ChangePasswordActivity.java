@@ -166,9 +166,10 @@ public final class ChangePasswordActivity extends AppCompatActivity {
             finish();
             return;
         }
-        // Password rescue deliberately uses QEMU's private virtio-console transport. AgentVM
-        // itself remains backend-agnostic so other agent users can make their own choice.
+        // Password rescue deliberately selects QEMU TCG and its human UART. AgentVM carries the
+        // explicit console mapping so other operations can select a different backend and tty.
         var agentVM = new AgentVM(VMBackend.QEMU, VMHypervisor.SOFT);
+        agentVM.setOperationConsole("uart", "/dev/ttyAMA0");
         var action = new PasswordAction(agentVM);
         action.setPassword(password);
         action.setChangeNormalUsers(changeNormalUsers);

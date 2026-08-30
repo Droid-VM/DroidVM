@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.base.JSONSerialize;
@@ -35,10 +36,16 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
 
 public final class AgentVM implements JSONSerialize {
+    private static final Pattern CONSOLE_STREAM_PATTERN =
+        Pattern.compile("[A-Za-z0-9._-]+");
+    private static final Pattern CONSOLE_DEVICE_PATTERN =
+        Pattern.compile("/dev/[A-Za-z0-9._/-]+");
     private List<DiskConfig> disks = new ArrayList<>();
     private List<AgentActionSpec> actions = new ArrayList<>();
     private Map<String, String> vars = new HashMap<>();
     private String randomId = null;
+    private String operationConsoleStream = null;
+    private String operationConsoleDevice = null;
     private VMBackend backend;
     private VMHypervisor hypervisor;
 
@@ -74,6 +81,12 @@ public final class AgentVM implements JSONSerialize {
             jo, "actions", v -> new AgentActionSpec((JSONObject) v));
         if (jo.has("vars"))
             this.vars = JsonUtils.objectToStringMap(jo, "vars");
+        var operationConsole = jo.optJSONObject("operation_console");
+        if (operationConsole != null)
+            setOperationConsole(
+                operationConsole.getString("stream"),
+                operationConsole.getString("device")
+            );
     }
 
     @NonNull
@@ -96,6 +109,12 @@ public final class AgentVM implements JSONSerialize {
         for (var entry : vars.entrySet())
             varsObj.put(entry.getKey(), entry.getValue());
         jo.put("vars", varsObj);
+        if (operationConsoleStream != null && operationConsoleDevice != null) {
+            var operationConsole = new JSONObject();
+            operationConsole.put("stream", operationConsoleStream);
+            operationConsole.put("device", operationConsoleDevice);
+            jo.put("operation_console", operationConsole);
+        }
         return jo;
     }
 
@@ -151,12 +170,35 @@ public final class AgentVM implements JSONSerialize {
         this.hypervisor = hypervisor;
     }
 
+    /**
+     * Declares the one host stream and matching guest tty shared by automation and the user.
+     * The operation owner chooses both values because neither one can be inferred from a backend.
+     */
+    public void setOperationConsole(@NonNull String stream, @NonNull String device) {
+        if (!CONSOLE_STREAM_PATTERN.matcher(stream).matches())
+            throw new IllegalArgumentException("Invalid operation console stream");
+        if (!CONSOLE_DEVICE_PATTERN.matcher(device).matches())
+            throw new IllegalArgumentException("Invalid operation console device");
+        operationConsoleStream = stream;
+        operationConsoleDevice = device;
+    }
+
+    @Nullable
+    public String getOperationConsoleStream() {
+        return operationConsoleStream;
+    }
+
+    @Nullable
+    public String getOperationConsoleDevice() {
+        return operationConsoleDevice;
+    }
+
     @NonNull
     public VMConfig buildVM() {
         var vm = new VMConfig();
         vm.setName(getName());
         vm.item.set("temporary", true);
-        vm.item.set("agent_mode", backend == VMBackend.QEMU);
+        vm.item.set("agent_mode", false);
         vm.item.set("backend", backend);
         vm.item.set("hypervisor", hypervisor);
         vm.item.set("cpu_count", 1);
@@ -174,9 +216,10 @@ public final class AgentVM implements JSONSerialize {
         boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
         boot.setKernel(PATH_BUILTIN_KERNEL);
         boot.setInitrd(PATH_BUILTIN_INITRD);
-        // hvc0 is the private virtio-serial control terminal; ttyAMA0 remains the human-facing
-        // boot log and rescue shell. The last console= owns /dev/console, hence the ordering.
-        boot.setCmdline("console=ttyAMA0 console=hvc0 rdinit=/bin/sh panic=-1");
+        if (operationConsoleStream == null || operationConsoleDevice == null)
+            throw new IllegalStateException("Operation console is not configured");
+        var console = operationConsoleDevice.substring("/dev/".length());
+        boot.setCmdline(fmt("console=%s rdinit=/bin/sh panic=-1", console));
         var diskItems = DataItem.newArray();
         for (var disk : disks) {
             var item = DataItem.newObject();

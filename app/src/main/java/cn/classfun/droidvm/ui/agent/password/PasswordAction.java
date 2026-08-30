@@ -35,12 +35,15 @@ public final class PasswordAction extends BaseAction {
     }
 
     @NonNull
+    public String getPassword() {
+        return spec.getParam("password", "");
+    }
+
+    @NonNull
     @Override
     protected String buildActionScript() {
-        var password = spec.getParam("password", "");
         var changeNormalUsers = spec.getParam("normal_users", "false");
         var script = String.join("\n",
-            "PASSWORD=%s",
             "CHANGE_NORMAL_USERS=%s",
             "FILESYSTEMS=$(blkid)",
             "echo \"$FILESYSTEMS\" | grep -q 'TYPE=\"btrfs\"' && modprobe btrfs >/dev/null 2>&1 || true",
@@ -60,10 +63,17 @@ public final class PasswordAction extends BaseAction {
             "[ -n \"$TARGET_DEVICE\" ] || fail ROOT_NOT_FOUND",
             "printf '%%s\\n' \"$TARGET_DEVICE\" > /run/droidvm-root-device",
             "marker \"ROOT:$TARGET_DEVICE\"",
+            "[ -d /mnt/dev ] || fail PASSWD_FAILED",
+            "[ -d /mnt/proc ] || fail PASSWD_FAILED",
+            "mount -o bind /dev /mnt/dev || fail PASSWD_FAILED",
+            "mount -t proc proc /mnt/proc || fail PASSWD_FAILED",
             "change_password() {",
             "    marker \"PASSWD:$1\"",
-            "    printf '%%s:%%s\\n' \"$1\" \"$PASSWORD\" |",
-            "        busybox chpasswd --crypt-method SHA256 --root /mnt || fail PASSWD_FAILED",
+            "    command_log \"LC_ALL=C busybox chroot /mnt /usr/bin/passwd $1\"",
+            "    LC_ALL=C busybox chroot /mnt /usr/bin/passwd \"$1\"",
+            "    rc=$?",
+            "    marker \"COMMAND:RC:PASSWD:$1:$rc\"",
+            "    [ \"$rc\" -eq 0 ] || fail PASSWD_FAILED",
             "}",
             "change_password root",
             "if [ \"$CHANGE_NORMAL_USERS\" = true ]; then",
@@ -71,12 +81,13 @@ public final class PasswordAction extends BaseAction {
             "        change_password \"$user\"",
             "    done",
             "fi",
-            "PASSWORD=",
             "sync",
+            "umount /mnt/proc >/dev/null 2>&1 || fail UNMOUNT_FAILED",
+            "umount /mnt/dev >/dev/null 2>&1 || fail UNMOUNT_FAILED",
             "umount /mnt >/dev/null 2>&1 || fail UNMOUNT_FAILED",
             ""
         );
-        return fmt(script, escapedString(password), escapedString(changeNormalUsers));
+        return fmt(script, escapedString(changeNormalUsers));
     }
 
     @Override
