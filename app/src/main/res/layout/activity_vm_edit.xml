@@ -30,12 +30,11 @@
 
         </com.google.android.material.appbar.CollapsingToolbarLayout>
 
-        <com.google.android.material.tabs.TabLayout
+        <cn.classfun.droidvm.lib.ui.AdaptiveTabLayout
             android:id="@+id/tab_layout"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:tabGravity="start"
-            app:tabMode="scrollable"
+            app:tabMinWidth="72dp"
             tools:ignore="SpeakableTextPresentCheck" />
 
     </com.google.android.material.appbar.AppBarLayout>

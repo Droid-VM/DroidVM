@@ -12,6 +12,7 @@ import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGHUP;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.res.ColorStateList;
@@ -32,6 +33,8 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputEditText;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
@@ -54,14 +57,21 @@ public final class VMConsoleActivity extends AppCompatActivity {
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_STREAM = "stream";
     public static final String EXTRA_LOGS = "logs";
+    /** Initial value of the filter; empty or absent opens the page unfiltered. */
+    public static final String EXTRA_FILTER = "filter";
     // Every backend registers stdio; "uart" only exists on the QEMU backend these days, and
     // the crosvm serial streams are named per port (serialN/sbsaN/vconN) so none is a safe
     // universal fallback.
     private static final String DEFAULT_STREAM = "stdio";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ActivityResultLauncher<String> saveLogLauncher;
+    private MaterialToolbar toolbar;
     private TerminalPanelView terminalPanel;
     private TerminalSession terminalSession;
+    /** True for the history dump, false for the live console. Decides the command either way. */
+    private boolean logsMode = false;
+    /** The text every shown line must contain; empty is no filter. Never null. */
+    private String filter = "";
     public String vmId;
     public String vmName;
     public String streamName;
@@ -85,50 +95,120 @@ public final class VMConsoleActivity extends AppCompatActivity {
         vmId = intent.getStringExtra(EXTRA_VM_ID);
         vmName = intent.getStringExtra(EXTRA_VM_NAME);
         streamName = intent.getStringExtra(EXTRA_STREAM);
-        var logs = intent.getBooleanExtra(EXTRA_LOGS, false);
+        logsMode = intent.getBooleanExtra(EXTRA_LOGS, false);
+        filter = intent.getStringExtra(EXTRA_FILTER);
         if (vmId == null) vmId = "";
         if (vmName == null) vmName = "";
+        if (filter == null) filter = "";
         if (streamName == null || streamName.isEmpty()) streamName = DEFAULT_STREAM;
-        MaterialToolbar toolbar = findViewById(R.id.toolbar);
-        toolbar.setTitle(fmt("%s - %s", vmName, streamName));
+        toolbar = findViewById(R.id.toolbar);
+        updateTitle();
         toolbar.setNavigationOnClickListener(v -> finish());
         var item = setupToolbarMenu(toolbar, R.menu.menu_vm_console, this::onMenuItemClicked);
         item.setIconTintList(ColorStateList.valueOf(Color.WHITE));
         item.setIconTintMode(PorterDuff.Mode.SRC_IN);
-        var consoleBin = getAssetBinaryPath("droidvm");
-        var shell = findExecute("su", "/system/bin/su");
-        var cwd = getFilesDir().getAbsolutePath();
-        var cmd = fmt(
-            logs ? "%s logs %s %s; sleep 2" : "exec %s console --raw %s %s",
-            escapedString(consoleBin),
         terminalPanel = findViewById(R.id.terminal_panel);
         terminalPanel.setInteractive(true);
+        startSession();
+    }
+
+    /**
+     * The shell line the terminal runs, for the current mode and filter.
+     *
+     * <p>Filtering is a pipe because the page has nothing else to filter: what is on screen is a
+     * pty a subprocess writes to, not a buffer this activity holds. {@code grep -F} is toybox's,
+     * and {@code --} keeps a filter that starts with a dash from being read as an option.</p>
+     *
+     * <p>No {@code --line-buffered} on the live path. toybox 0.8.12-android does accept the
+     * option, but its grep already flushes each matching line as it produces it -- measured on
+     * device, a matching line was in a redirected file two seconds into a producer that had not
+     * exited, with and without the option -- so it would buy nothing here while breaking the page
+     * outright on any toybox whose grep lacks it, since an unknown long option is exit 2 rather
+     * than a warning.</p>
+     */
+    @NonNull
+    private String buildCommand() {
+        var base = fmt(
+            logsMode ? "%s logs %s %s" : "%s console --raw %s %s",
+            escapedString(getAssetBinaryPath("droidvm")),
             escapedString(vmId),
             escapedString(streamName)
         );
-        var args = new String[]{"su", "-c", cmd};
+        if (!filter.isEmpty())
+            base = fmt("%s | grep -F -- %s", base, escapedString(filter));
+        // The dump's `sleep 2` keeps the last lines on screen after the command ends. The live
+        // path replaces the shell instead, which it can only do while there is no pipeline for
+        // the shell to wait on.
+        if (logsMode) return fmt("%s; sleep 2", base);
+        return filter.isEmpty() ? fmt("exec %s", base) : base;
+    }
+
+    private void startSession() {
+        stopSession();
+        var shell = findExecute("su", "/system/bin/su");
+        var cwd = getFilesDir().getAbsolutePath();
+        var args = new String[]{"su", "-c", buildCommand()};
         var env = new String[]{
             "TERM=xterm-256color",
             "PATH=/system/bin",
             fmt("HOME=%s", cwd),
         };
-        currentFontSize = loadFontSize();
-        var density = getResources().getDisplayMetrics().density;
         var session = new TerminalSession(shell, cwd, args, env, null, sessionClient);
         terminalSession = session;
-        terminalView.setTextSize((int) (currentFontSize * density));
-        TerminalFonts.apply(terminalView);
-        terminalView.setFocusable(true);
-        terminalView.setFocusableInTouchMode(true);
-        terminalView.requestFocus();
-        setupExtraKeys();
         terminalPanel.attachSession(session);
+    }
+
+    private void stopSession() {
+        if (terminalSession == null) return;
+        try {
+            if (terminalSession.isRunning())
+                shellKillProcess(terminalSession.getPid(), SIGHUP);
+        } catch (Exception ignored) {
+        }
+        terminalSession.finishIfRunning();
         terminalPanel.clearSession(terminalSession);
+        terminalSession = null;
+    }
+
+    private void updateTitle() {
+        toolbar.setTitle(filter.isEmpty()
+            ? fmt("%s - %s", vmName, streamName)
+            : getString(R.string.logs_title_filtered, vmName, streamName, filter));
+    }
+
+    /**
+     * Applies a new filter, which means running the command again -- for the dump that re-reads
+     * the same history, for the live console it is a reconnect and the backlog it had on screen
+     * is not read again.
+     */
+    private void applyFilter(@NonNull String value) {
+        if (value.equals(filter)) return;
+        filter = value;
+        updateTitle();
+        startSession();
+    }
+
+    private void showFilterDialog() {
+        var view = getLayoutInflater().inflate(R.layout.dialog_console_filter, null);
+        TextInputEditText etFilter = view.findViewById(R.id.et_console_filter);
+        etFilter.setText(filter);
+        etFilter.setSelection(filter.length());
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.logs_filter_title)
+            .setMessage(R.string.logs_filter_message)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok, (d, w) -> applyFilter(getEditText(etFilter)))
+            .setNegativeButton(android.R.string.cancel, null)
+            .setNeutralButton(R.string.logs_filter_show_all, (d, w) -> applyFilter(""))
+            .show();
     }
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.action_save_log) {
+        if (id == R.id.action_filter) {
+            showFilterDialog();
+            return true;
+        } else if (id == R.id.action_save_log) {
             saveLogToFile();
             return true;
         } else if (id == R.id.action_share_log) {
@@ -144,14 +224,7 @@ public final class VMConsoleActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (terminalSession != null) try {
-            if (terminalSession.isRunning())
-                shellKillProcess(terminalSession.getPid(), SIGHUP);
-        } catch (Exception ignored) {
-        }
-        terminalSession = null;
-    }
-
+        stopSession();
     }
 
     private void saveLogToFile() {
