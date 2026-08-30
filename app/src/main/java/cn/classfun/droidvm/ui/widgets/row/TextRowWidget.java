@@ -165,6 +165,7 @@ public final class TextRowWidget extends FrameLayout {
         super.setOnClickListener(l);
         setClickable(l != null);
         setFocusable(l != null);
+        RowTouchFeedback.apply(this, l != null);
     }
 }
 

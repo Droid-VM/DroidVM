@@ -102,6 +102,17 @@ public final class SwitchRowWidget extends FrameLayout {
     }
 
     /**
+     * The row is clickable from {@code init} (tapping anywhere toggles the
+     * switch) and stops being so under {@link #setSwitchEnabled}; routing both
+     * through one override keeps the ripple honest about which it is.
+     */
+    @Override
+    public void setOnClickListener(@Nullable OnClickListener l) {
+        super.setOnClickListener(l);
+        RowTouchFeedback.apply(this, l != null);
+    }
+
+    /**
      * Locks interaction without greying the switch: it keeps its normal
      * on/off colour (so a forced-on state reads as on, not disabled) but
      * can't be tapped or dragged. Pass true to restore normal interaction.
