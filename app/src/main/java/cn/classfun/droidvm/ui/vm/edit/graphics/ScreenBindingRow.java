@@ -469,8 +469,11 @@ final class ScreenBindingRow {
     void load(@NonNull DataItem config) {
         var screen = VMScreenConfig.find(config, screenId);
         if (screen == null) {
+            // No entry at all: the screen has never been configured, so the row answers with
+            // what a new one gets rather than with the sentinel for "watched by nobody".
             swEnabled.setChecked(false);
-            chooseExporter.setSelectedItem(DisplayExporter.NONE);
+            chooseExporter.setSelectedItem(defaultExporter);
+            applyTransportOptions(defaultExporter, null);
             return;
         }
         swEnabled.setChecked(screen.isEnabled());
@@ -499,9 +502,15 @@ final class ScreenBindingRow {
 
     void save(@NonNull DataItem config) {
         var screen = VMScreenConfig.of(config, screenId);
-        var enabled = swEnabled.isChecked();
-        var exporter = enabled ? getExporter() : DisplayExporter.NONE;
-        screen.setEnabled(enabled);
+        // The switch stores the switch, and nothing else. It used to also write NONE over the
+        // exporter of a screen it was turning off, which read back as a choice the next time the
+        // editor opened: turning the device on again showed it bound to nobody, with the pick the
+        // user had made gone. Every reader already asks whether a screen is on before asking what
+        // it is bound to -- directly (isInputBridgeNeeded, buildScreenExportersCommand) or through
+        // a filter that does (boundOf, hasAbsoluteInput) -- so "off" needs no second spelling in
+        // the fields underneath, the same way the geometry below has never needed one.
+        var exporter = getExporter();
+        screen.setEnabled(swEnabled.isChecked());
         screen.setExporter(exporter);
         // Written whatever the exporter is, so a rung picked under one exporter is still there
         // after a detour through another -- and so a rung that is refused today is remembered for
