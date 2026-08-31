@@ -319,10 +319,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             surfaceView, guestWidth, guestHeight,
             () -> {
                 var svc = displayAttach.getService();
-        // Hardware cursor: give crosvm a Surface for the guest's cursor plane and follow the
-        // positions it reports. Both are no-ops on a guest that never uses the cursor plane.
-        displaySource.setCursorView(cursorView);
-        displaySource.setCursorListener(this::onGuestCursorMoved);
                 if (svc == null) return null;
                 try {
                     return svc.waitForDisplayBinder(vmKey);
@@ -348,6 +344,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     onDisplayStateChanged(state);
                 }
             });
+        // Hardware cursor: give crosvm a Surface for the guest's cursor plane and follow the
+        // positions it reports. Both are no-ops on a guest that never uses the cursor plane.
+        // This must run here, on the main thread with displaySource assigned -- it used to sit
+        // inside the binder-supplier lambda above, where the first invocation raced the field
+        // assignment on a background thread and the cursor layer was wired only by luck.
+        displaySource.setCursorView(cursorView);
+        displaySource.setCursorListener(this::onGuestCursorMoved);
         displaySource.start();
     }
 
