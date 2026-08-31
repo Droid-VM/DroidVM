@@ -112,31 +112,31 @@ public final class PoolPreflight {
     /**
      * The 2 MB pages this VM's <em>boot-time</em> regions will take out of the reserve.
      *
-     * <p>Mirrors what the crosvm backend passes: guest RAM plus, per GPU route, the host pool it
-     * pre-shares and the guest pool it pre-allocates, plus swiotlb. Growth grants (the runtime
-     * SHARE path) are deliberately not counted -- they happen later, one blob at a time, and a
-     * VM that cannot grow still boots.
+     * <p>The memory size plus the guest pool, and nothing else. Everything else the backend passes
+     * is already inside {@code --mem}: crosvm carves the swiotlb and the framebuffer out of it, and
+     * as of the per-pool {@code consume_system_mem} tag so are the three renderer host pools --
+     * whichever of them a route uses, the VM still costs what its memory field says. Only the guest
+     * pool is added on top, because it is video memory the user asked for beside the RAM rather
+     * than out of it.
+     *
+     * <p>Growth grants (the runtime SHARE path) are deliberately not counted -- they happen later,
+     * one blob at a time, and a VM that cannot grow still boots. That is also why the guest pool
+     * contributes its pre-allocation and not its window.
      */
     public static long neededPages(@NonNull DataItem item) {
         long mb = Math.max(item.optLong("memory_mb", 512), 64);
-        mb += item.optLong("swiotlb_mb", 0);
         if (VMScreenConfig.hasGpuDevice(item)) {
             var backend = item.optString("gpu_backend", "");
-            var mode = item.optString("gpu_mode", "");
             long guestPool = item.optLong("gpu_guest_pool_mb", 0);
             long guestPrealloc = guestPool > 0
                 ? item.optLong("gpu_guest_prealloc_mb", guestPool)
                 : 0;
             if ("gpu_gfxstream".equals(backend)) {
-                mb += item.optLong("gpu_host_pool_mb", 0);
                 // The guest pool is only pre-allocated when the guest can create its own
                 // handles, which is what udmabuf gates.
                 if (item.optBoolean("gpu_udmabuf", false))
                     mb += guestPrealloc;
             } else if ("gpu_virglrenderer".equals(backend)) {
-                mb += "vulkan".equals(mode)
-                    ? item.optLong("gpu_venus_pool_mb", 256)
-                    : item.optLong("gpu_drm2kgsl_pool_mb", 0);
                 mb += guestPrealloc;
             }
         }
