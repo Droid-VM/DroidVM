@@ -105,9 +105,14 @@ public class VMConfig extends DataConfig {
 
         var gpu = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
         gpu.setEnabled(false);
-        gpu.setExporter(DisplayExporter.NONE);
+        // Set even though the screen is off, because this is what the editor shows the moment the
+        // user turns virtio-gpu on -- the row's own default stopped being reachable when a new VM
+        // started going through loadConfig like an existing one. Nothing is exported until the
+        // screen is enabled: save() writes NONE for a screen that is off, and the backend emits
+        // exporters only for enabled screens.
+        gpu.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         gpu.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_GPU0, DisplayExporter.NATIVE));
+            VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         gpu.setInputEnabled(true);
         gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
@@ -117,9 +122,9 @@ public class VMConfig extends DataConfig {
 
         var simpleFb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
         simpleFb.setEnabled(true);
-        simpleFb.setExporter(DisplayExporter.NATIVE);
+        simpleFb.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_SIMPLEFB, DisplayExporter.NATIVE));
+            VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         simpleFb.setInputEnabled(true);
         simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);

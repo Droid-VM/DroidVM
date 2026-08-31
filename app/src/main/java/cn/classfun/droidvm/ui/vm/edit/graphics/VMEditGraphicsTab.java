@@ -134,21 +134,19 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         etGpuPoolBlobMaxKb = view.findViewById(R.id.et_gpu_pool_blob_max_kb);
         chooseDisplayBlitProvider = view.findViewById(R.id.choose_display_blit_provider);
         // A new VM comes up with the simplefb screen on and no virtio-gpu device at all until the
-        // user asks for one. This is where a new screen's exporter default lives -- the stored
-        // config's fallback is a separate question and stays at NONE, see
-        // VMScreenConfig.getExporter -- and it is NATIVE rather than the VNC it used to be: the
-        // viewer for that one is this app, already installed, so it is the only exporter whose
-        // first boot can be looked at without setting something up first. The gpu-0 row's default
-        // is inert while its screen is off (save() writes NONE for a screen that is off) and is
-        // there for the moment the user turns the device on.
+        // user asks for one. The exporter a new screen gets is VMScreenConfig.NEW_VM_DEFAULT_EXPORTER,
+        // shared with the config VMConfig.createWithCustomizeDefaults hands us: that config is
+        // loaded over these rows, so a second opinion here would only ever be the losing one. The
+        // gpu-0 row's default is inert while its screen is off (save() writes NONE for a screen
+        // that is off) and is there for the moment the user turns the device on.
         screenGpu0 = new ScreenBindingRow(VMScreenConfig.ID_GPU0,
             view.findViewById(R.id.screen_gpu0_block),
             view.findViewById(R.id.sw_screen_gpu0_enabled),
-            false, DisplayExporter.NATIVE);
+            false, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         screenFb = new ScreenBindingRow(VMScreenConfig.ID_SIMPLEFB,
             view.findViewById(R.id.screen_fb_block),
             view.findViewById(R.id.sw_screen_fb_enabled),
-            true, DisplayExporter.NATIVE);
+            true, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);

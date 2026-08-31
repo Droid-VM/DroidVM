@@ -93,6 +93,23 @@ public final class VMScreenConfig {
     public static final long DEFAULT_POLL_HZ = 30;
     /** Initial SimpleFB polling rate shown when creating a VM. */
     public static final long NEW_VM_DEFAULT_POLL_HZ = 60;
+
+    /**
+     * What a screen on a brand-new VM is bound to, in the one place both writers can see it.
+     *
+     * <p>Two of them write it and they must agree: {@link VMConfig#createWithCustomizeDefaults}
+     * materialises the config the editor is then handed, and the editor's own screen rows carry a
+     * default for the case where that config says nothing. They disagreed once -- the config said
+     * NONE while the row said NATIVE -- and because the config is loaded over the row, turning
+     * virtio-gpu on showed a screen bound to nothing. Neither side is wrong to have a default; the
+     * fix is for there to be one value.
+     *
+     * <p>NATIVE rather than VNC because the viewer for it is this app, already installed: it is
+     * the only exporter whose first boot can be looked at without setting something up first. This
+     * is not {@link #getExporter}'s fallback, which answers a different question -- what a stored
+     * config that does not mention an exporter meant -- and stays NONE.
+     */
+    public static final DisplayExporter NEW_VM_DEFAULT_EXPORTER = DisplayExporter.NATIVE;
     public static final long MIN_POLL_HZ = 1;
     /**
      * crosvm's MAX_SIMPLEFB_POLL_HZ. A sanity bound on a knob whose cost is linear in it, not a
