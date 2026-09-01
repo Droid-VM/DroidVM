@@ -377,7 +377,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // a guest pool "on" just exposes the three growth fields above -- their own defaults
         // (prealloc = pool, step 0) still describe a fully pre-shared pool, so an older config
         // loads with the same behaviour it had.
-        swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", true));
+        swGpuDynamicVram.setChecked(item.optBoolean("gpu_dynamic_vram", false));
         etGpuPoolBlobMaxKb.setText(String.valueOf(item.optLong("gpu_pool_blob_max_kb", 4096)));
         screenGpu0.load(item);
         screenFb.load(item);

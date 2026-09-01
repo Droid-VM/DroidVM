@@ -787,7 +787,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // every allocation inside the pool. crosvm ignores it in guest-alloc mode, where
                 // the guest pool is the cap, so only send it for host-alloc.
                 boolean udmabufGpu = item.optBoolean("gpu_udmabuf", true);
-                boolean dynamicVram = !udmabufGpu && item.optBoolean("gpu_dynamic_vram", true);
+                boolean dynamicVram = !udmabufGpu && item.optBoolean("gpu_dynamic_vram", false);
                 if (dynamicVram) {
                     // vram-limit supplies gfxstream's folio quota, the VK_EXT_memory_budget
                     // capacity handed to the guest driver, and -- by being defined and non-zero
