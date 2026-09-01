@@ -675,6 +675,7 @@
     <string name="vm_create_mode_title">新增虚拟机</string>
     <string name="vm_create_linux">Linux VM</string>
     <string name="vm_create_windows">Windows VM</string>
+    <string name="vm_create_import">从 .vmpkg 导入</string>
     <string name="vm_create_customize">自定义</string>
     <string name="windows_vm_unavailable_title">Windows VM 尚不可用</string>
     <string name="windows_vm_unavailable_message">此功能尚在实现中，目前不可用。请先使用 windows_build.ps1 脚本构建 Windows 镜像。</string>

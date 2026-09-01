@@ -712,6 +712,7 @@
     <string name="vm_create_mode_title">Create virtual machine</string>
     <string name="vm_create_linux">Linux VM</string>
     <string name="vm_create_windows">Windows VM</string>
+    <string name="vm_create_import">Import from .vmpkg</string>
     <string name="vm_create_customize">Customize</string>
     <string name="windows_vm_unavailable_title">Windows VM is not available yet</string>
     <string name="windows_vm_unavailable_message">This feature is still being implemented and is currently unavailable. For now, build a Windows image with the windows_build.ps1 script.</string>

@@ -38,6 +38,7 @@ import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
 import cn.classfun.droidvm.ui.vm.pkg.exports.VMPkgExportActivity;
+import cn.classfun.droidvm.ui.vm.pkg.imports.VMPkgImportActivity;
 
 public final class MainVMFragment
     extends MainStatefulFragment<VMConfig, VMStore, VMAdapter, VMState>
@@ -90,6 +91,8 @@ public final class MainVMFragment
                     startActivity(new Intent(context, CreateLinuxVmActivity.class));
                 } else if (id == R.id.menu_vm_create_windows) {
                     showWindowsVmUnavailableDialog();
+                } else if (id == R.id.menu_vm_create_import) {
+                    startActivity(new Intent(context, VMPkgImportActivity.class));
                 } else if (id == R.id.menu_vm_create_customize) {
                     startActivity(new Intent(context, VMEditActivity.class));
                 } else {

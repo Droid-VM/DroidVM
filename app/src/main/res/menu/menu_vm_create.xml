@@ -12,6 +12,11 @@
         android:title="@string/vm_create_windows" />
 
     <item
+        android:id="@+id/menu_vm_create_import"
+        android:icon="@drawable/ic_import"
+        android:title="@string/vm_create_import" />
+
+    <item
         android:id="@+id/menu_vm_create_customize"
         android:icon="@drawable/ic_tune"
         android:title="@string/vm_create_customize" />
