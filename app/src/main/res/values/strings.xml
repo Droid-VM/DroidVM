@@ -331,6 +331,9 @@
     <string name="create_vm_screen_input_enabled">Input devices</string>
     <string name="create_vm_error_vnc_port_conflict">Two listeners cannot share the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
+    <string name="create_vm_vnc_host_iface_fmt">%1$s (%2$s)</string>
+    <string name="create_vm_vnc_host_custom_title">Custom address</string>
+    <string name="create_vm_error_invalid_host">Enter an address with no spaces, commas, quotes or brackets.</string>
     <string name="create_vm_vnc_port">Port</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>
     <string name="create_vm_vnc_password">Password</string>

@@ -110,6 +110,29 @@ public final class VMScreenConfig {
      * config that does not mention an exporter meant -- and stays NONE.
      */
     public static final DisplayExporter NEW_VM_DEFAULT_EXPORTER = DisplayExporter.NATIVE;
+    /**
+     * What a brand-new VM's VNC server is told to listen on, in the one place both writers can
+     * see it -- {@link VMConfig#createWithCustomizeDefaults} and the editor's own screen row --
+     * for exactly the reason {@link #NEW_VM_DEFAULT_EXPORTER} is shared: the config is loaded over
+     * the row, so a second opinion here would be the losing one and the disagreement invisible.
+     *
+     * <p>The loopback rather than the wildcard. A screen that is reachable from whatever network
+     * the phone is on the moment the VM first boots is not a default's decision to make; widening
+     * it is one pick in the host menu, and the app's own console dials the phone itself either
+     * way.</p>
+     */
+    public static final String NEW_VM_DEFAULT_VNC_HOST = "127.0.0.1";
+    /** The virtio-gpu screen's port on a new VM: RFB display :0, where a client looks first. */
+    public static final long NEW_VM_DEFAULT_VNC_PORT_GPU0 = 5900;
+    /**
+     * The simplefb screen's port on a new VM: RFB display :9.
+     *
+     * <p>Nine displays up rather than one, because the two are defaults and not assignments: both
+     * screens can be bound to VNC at once, crosvm refuses a command line whose servers share a
+     * port, and the editor refuses the save before that (see {@code validateNoPortCollision}). The
+     * gap also leaves :1..:8 to a user handing them out by hand.</p>
+     */
+    public static final long NEW_VM_DEFAULT_VNC_PORT_SIMPLEFB = 5909;
     public static final long MIN_POLL_HZ = 1;
     /**
      * crosvm's MAX_SIMPLEFB_POLL_HZ. A sanity bound on a knob whose cost is linear in it, not a
@@ -276,6 +299,12 @@ public final class VMScreenConfig {
     /** True for the screen the virtio-gpu device provides, as opposed to simplefb's. */
     public boolean isGpu() {
         return ID_GPU0.equals(id);
+    }
+
+    /** The port a brand-new VM's [id] screen is given; see the two constants it picks between. */
+    public static long newVmDefaultVncPort(@NonNull String id) {
+        return ID_GPU0.equals(id)
+            ? NEW_VM_DEFAULT_VNC_PORT_GPU0 : NEW_VM_DEFAULT_VNC_PORT_SIMPLEFB;
     }
 
     /** This screen's VNC sub-object, created if it is not there yet. */

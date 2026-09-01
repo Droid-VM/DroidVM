@@ -83,7 +83,8 @@ final class ScreenBindingRow {
     private final ChooseRowWidget chooseTransport;
     private final SwitchRowWidget swInputEnabled;
     private final View vncOptions;
-    private final TextInputEditText etHost;
+    private final TextInputLayout tilHost;
+    private final AutoCompleteTextView ddHost;
     private final TextInputEditText etPort;
     private final SwitchRowWidget swPasswordAuth;
     private final View passwordOptions;
@@ -103,6 +104,24 @@ final class ScreenBindingRow {
     /** The sizes this device offers, settled once in {@link #init}. */
     @NonNull
     private List<ScreenResolutionOptions.Option> sizes = List.of();
+    /**
+     * The listen address as picked, rather than as typed -- the host field is a menu now, for the
+     * same reason the two above it are.
+     *
+     * <p>May be "", which is not the same as {@link VncHostOptions#WILDCARD} even though it does
+     * the same thing: a config that names no host is one this app has never written, and rewriting
+     * it on a save the user made for some other reason is not this row's business. So the empty
+     * string survives a load and a save untouched, and only the menu's own label resolves it -- to
+     * the wildcard, because that is what both backends do with a host left unset.</p>
+     */
+    @NonNull
+    private String vncHost = VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST;
+    /** The phone's own addresses, once the daemon has answered; see {@link #setScannedHosts}. */
+    @NonNull
+    private List<VncHostOptions.Option> scannedHosts = List.of();
+    /** The entries the host menu currently offers, in the order it offers them. */
+    @NonNull
+    private List<VncHostOptions.Option> hostOptions = List.of();
 
     /**
      * @param block  the root of this screen's {@code partial_vm_screen_binding} include, and also
@@ -132,7 +151,8 @@ final class ScreenBindingRow {
         chooseTransport = block.findViewById(R.id.choose_screen_transport);
         swInputEnabled = block.findViewById(R.id.sw_screen_input_enabled);
         vncOptions = block.findViewById(R.id.screen_vnc_options);
-        etHost = block.findViewById(R.id.et_screen_vnc_host);
+        tilHost = block.findViewById(R.id.til_screen_vnc_host);
+        ddHost = block.findViewById(R.id.dd_screen_vnc_host);
         etPort = block.findViewById(R.id.et_screen_vnc_port);
         swPasswordAuth = block.findViewById(R.id.sw_screen_vnc_password_auth);
         passwordOptions = block.findViewById(R.id.screen_vnc_password_options);
@@ -173,6 +193,7 @@ final class ScreenBindingRow {
         // moves.
         bindSizeMenu(onChanged);
         bindRateMenu(onChanged);
+        bindHostMenu();
         chooseExporter.setOnValueChangedListener(() -> {
             // The ladder belongs to the edge, so changing who is on the far end of it changes
             // which rungs exist -- not just which are reachable.
@@ -233,6 +254,104 @@ final class ScreenBindingRow {
             applyRateText();
         });
         applyRateText();
+    }
+
+    /**
+     * The host menu: the two fixed addresses, the phone's own once they are known, then "custom".
+     *
+     * <p>Rebuilt rather than filtered when the scan lands, because the scan is what most of the
+     * list is. Nothing here calls {@code onChanged}: no other row depends on which address this
+     * screen listens on -- unlike the port, which the tab checks pairwise across screens.</p>
+     */
+    private void bindHostMenu() {
+        var ctx = ddHost.getContext();
+        hostOptions = VncHostOptions.build(scannedHosts, displayHost());
+        var labels = new ArrayList<String>(hostOptions.size() + 1);
+        for (var option : hostOptions) labels.add(hostLabel(ctx, option));
+        labels.add(ctx.getString(R.string.create_vm_display_custom));
+        ddHost.setAdapter(IconItemAdapter.create(ctx, labels, R.drawable.ic_ip_network));
+        ddHost.setOnItemClickListener((parent, view, pos, id) -> {
+            if (pos < hostOptions.size()) {
+                vncHost = hostOptions.get(pos).addr;
+                tilHost.setError(null);
+            } else {
+                askCustomHost(ctx);
+            }
+            // Same as the two menus above: the entry wrote its own label into the field on its way
+            // out, and after "custom" that label would sit there reading "Custom..." while the
+            // dialog is still open.
+            applyHostText();
+        });
+        applyHostText();
+    }
+
+    /**
+     * The phone's own addresses, from the daemon. Arrives after the row is built and possibly
+     * after a config has been loaded over it, so it rebuilds the menu and leaves the selection
+     * alone -- what was picked stays picked, and only gains the interface name beside it if the
+     * scan found the same address.
+     */
+    void setScannedHosts(@NonNull List<VncHostOptions.Option> scanned) {
+        scannedHosts = scanned;
+        bindHostMenu();
+    }
+
+    /**
+     * The address the menu shows as selected: the stored one, or the wildcard when nothing is
+     * stored, which is what a host left unset already means to both backends.
+     */
+    @NonNull
+    private String displayHost() {
+        return vncHost.isEmpty() ? VncHostOptions.WILDCARD : vncHost;
+    }
+
+    /** How one entry reads: the address, and the interface it was found on when there is one. */
+    @NonNull
+    private static String hostLabel(@NonNull Context ctx, @NonNull VncHostOptions.Option option) {
+        return option.ifname.isEmpty() ? option.addr
+            : ctx.getString(R.string.create_vm_vnc_host_iface_fmt, option.addr, option.ifname);
+    }
+
+    private void applyHostText() {
+        var host = displayHost();
+        var label = host;
+        for (var option : hostOptions)
+            if (option.addr.equals(host)) {
+                label = hostLabel(ddHost.getContext(), option);
+                break;
+            }
+        ddHost.setText(label, false);
+    }
+
+    /**
+     * The host menu's last entry: one address, checked for what would break the option string it
+     * ends up inside rather than for being reachable. Accepting it adds it to the list, so the
+     * field shows an entry rather than a value the menu cannot highlight.
+     */
+    private void askCustomHost(@NonNull Context ctx) {
+        var view = LayoutInflater.from(ctx).inflate(R.layout.dialog_vnc_host, null);
+        TextInputLayout til = view.findViewById(R.id.til_custom_vnc_host);
+        TextInputEditText etCustom = view.findViewById(R.id.et_custom_vnc_host);
+        etCustom.setText(displayHost());
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.create_vm_vnc_host_custom_title)
+            .setView(view)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+        // Wired after show() for the same reason the size dialog is: a refused value has to stay
+        // on screen with its error, and the listener setPositiveButton takes dismisses regardless.
+        dialog.getButton(BUTTON_POSITIVE).setOnClickListener(v -> {
+            var host = getEditText(etCustom).trim();
+            if (!VncHostOptions.isLiteral(host)) {
+                til.setError(ctx.getString(R.string.create_vm_error_invalid_host));
+                return;
+            }
+            vncHost = host;
+            tilHost.setError(null);
+            bindHostMenu();
+            dialog.dismiss();
+        });
     }
 
     /** How a size reads, whether the menu offers it, a dialog produced it or a config carried it. */
@@ -400,6 +519,24 @@ final class ScreenBindingRow {
         return chooseTransport.getSelectedItem();
     }
 
+    /**
+     * Whether the listen address this row holds is one the VM can be started with, said on the row
+     * that holds it.
+     *
+     * <p>Nothing the menu offers can fail this and the custom dialog checks before it returns, so
+     * what it catches is a config that arrived with something else in it -- hand-edited, or written
+     * back when the field was free text. Worth catching rather than passing on: crosvm refuses a
+     * host it cannot parse, so the VM would fail to start with the reason only in a log.</p>
+     */
+    boolean validateVncHost() {
+        tilHost.setError(null);
+        // Empty is the config that names no host, which is legal and means every address; the row
+        // shows it as the wildcard and writes it back unchanged.
+        if (vncHost.isEmpty() || VncHostOptions.isLiteral(vncHost)) return true;
+        tilHost.setError(tilHost.getContext().getString(R.string.create_vm_error_invalid_host));
+        return false;
+    }
+
     boolean isScreenEnabled() {
         return swEnabled.isChecked();
     }
@@ -493,7 +630,11 @@ final class ScreenBindingRow {
             rate = (int) screen.getPollHz();
         }
         applyRateText();
-        etHost.setText(screen.getVncHost());
+        // Straight through, empty included: see the field's own note. The menu is rebuilt because
+        // the entry list depends on what is selected -- a stored address the scan did not find is
+        // appended so it stays selectable.
+        vncHost = screen.getVncHost();
+        bindHostMenu();
         var port = screen.getVncPort();
         etPort.setText(port > 0 ? String.valueOf(port) : "");
         swPasswordAuth.setChecked(screen.isVncPasswordAuth());
@@ -535,7 +676,7 @@ final class ScreenBindingRow {
         // back finds its port and password where it left them. Only the auth switch is written
         // from the live state, since it is what decides whether the password is used at all.
         if (exporter == DisplayExporter.VNC) {
-            screen.setVncHost(getEditText(etHost));
+            screen.setVncHost(vncHost);
             var portStr = getEditText(etPort);
             screen.setVncPort(portStr.isEmpty() ? -1 : parseInt(portStr));
             var auth = swPasswordAuth.isChecked();

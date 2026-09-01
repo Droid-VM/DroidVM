@@ -555,6 +555,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         long displayNum = port - 5900;
         if (displayNum < 0) displayNum = 0;
         var vncArg = new StringBuilder();
+        // "host:display", so an IPv6 literal has to be bracketed or its own colons are read as the
+        // separator. Reachable now that the host field offers the phone's own addresses and half of
+        // those are v6; an IPv4 address is untouched.
+        if (host.indexOf(':') >= 0) host = fmt("[%s]", host);
         vncArg.append(fmt("%s:%d", host, displayNum));
         var password = bound.getVncPassword();
         if (!password.isEmpty()) {

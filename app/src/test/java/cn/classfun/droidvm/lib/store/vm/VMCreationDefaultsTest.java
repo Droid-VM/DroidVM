@@ -18,6 +18,9 @@ public final class VMCreationDefaultsTest {
     @Test
     public void requestedCreateVmDefaultsAreStable() {
         assertEquals(60, VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
+        assertEquals("127.0.0.1", VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        assertEquals(5900, VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
+        assertEquals(5909, VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
 
         var sound = VMPeripheralConfig.createDefaultVirtioSound();
         assertEquals(PeripheralType.VIRTIO_SOUND, sound.getType());
@@ -65,6 +68,12 @@ public final class VMCreationDefaultsTest {
         assertEquals(DisplayTransportCap.defaultFor(
                 VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER),
             gpu.getTransportCap());
+        // Written even while this screen is off and bound to something that is not VNC, for the
+        // same reason the exporter above it is: the editor loads this config over its rows, so
+        // this is what it shows the moment the user switches the screen to VNC. The two screens'
+        // ports differ because both can be exported at once and two servers may not share one.
+        assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST, gpu.getVncHost());
+        assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_PORT_GPU0, gpu.getVncPort());
 
         var fb = VMScreenConfig.find(item, VMScreenConfig.ID_SIMPLEFB);
         assertNotNull(fb);
@@ -73,6 +82,8 @@ public final class VMCreationDefaultsTest {
         assertEquals(DisplayTransportCap.defaultFor(
                 VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER),
             fb.getTransportCap());
+        assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST, fb.getVncHost());
+        assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_PORT_SIMPLEFB, fb.getVncPort());
 
         // The graphics pools: the editor owns these defaults (VMEditGraphicsTab.loadConfigLocked
         // passes each one to optLong), and the layout repeats them. Writing one here would take

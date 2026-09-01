@@ -207,22 +207,30 @@
                 android:baselineAligned="false"
                 android:orientation="horizontal">
 
+                <!-- Picked like the resolution above, and for the same reason: the addresses
+                     worth offering are the phone's own, and those are ones nobody could type
+                     without going to look them up. The two fixed entries are the ends of the range
+                     (this device only / everything the phone is on); the scanned ones come from
+                     the daemon, because the one address that must not be offered, a pseudo-bridged
+                     guest's IP parked on the uplink, is only distinguishable over netlink. The
+                     last entry still opens a dialog, so anything remains reachable. What is stored
+                     is unchanged: one address string, as before. -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/til_screen_vnc_host"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_marginEnd="8dp"
                     android:layout_weight="2"
                     android:hint="@string/create_vm_vnc_host">
 
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/et_screen_vnc_host"
+                    <AutoCompleteTextView
+                        android:id="@+id/dd_screen_vnc_host"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:inputType="text"
-                        android:text="127.0.0.1"
-                        tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+                        android:focusable="false"
+                        android:inputType="none"
+                        tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 

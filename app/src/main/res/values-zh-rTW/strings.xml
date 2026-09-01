@@ -327,6 +327,9 @@
     <string name="create_vm_screen_input_enabled">輸入裝置</string>
     <string name="create_vm_error_vnc_port_conflict">兩個監聽端不能用同一個埠。</string>
     <string name="create_vm_vnc_host">主機地址</string>
+    <string name="create_vm_vnc_host_iface_fmt">%1$s (%2$s)</string>
+    <string name="create_vm_vnc_host_custom_title">自訂位址</string>
+    <string name="create_vm_error_invalid_host">位址不能包含空格、逗號、引號或方括號。</string>
     <string name="create_vm_vnc_port">埠</string>
     <string name="create_vm_vnc_password_auth">密碼認證</string>
     <string name="create_vm_vnc_password">密碼</string>

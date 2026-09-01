@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     The VNC host dropdown's last entry: one address, typed. Checked for the characters that would
+     break the option string it ends up inside rather than for being a reachable address, since a
+     name the phone will only resolve later is a legitimate thing to put here.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_custom_vnc_host"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/create_vm_vnc_host">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_vnc_host"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textNoSuggestions"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

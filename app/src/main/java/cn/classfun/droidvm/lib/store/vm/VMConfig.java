@@ -114,6 +114,12 @@ public class VMConfig extends DataConfig {
         gpu.setTransportCap(DisplayTransportCap.defaultFor(
             VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         gpu.setInputEnabled(true);
+        // Written even though the screen is off and its exporter is not VNC, for the same reason
+        // the exporter above is: the editor loads this config over its rows, so what it shows the
+        // moment the user switches this screen to VNC is what is written here. The two screens get
+        // different ports because they can be exported at once and two servers may not share one.
+        gpu.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        gpu.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
         gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
         gpu.setRefreshRate(VMScreenConfig.DEFAULT_REFRESH_RATE);
@@ -126,6 +132,8 @@ public class VMConfig extends DataConfig {
         simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
             VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
         simpleFb.setInputEnabled(true);
+        simpleFb.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        simpleFb.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
         simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
         simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
         simpleFb.setPollHz(VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
