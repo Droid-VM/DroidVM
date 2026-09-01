@@ -53,13 +53,13 @@
                 android:id="@+id/rb_net_wifi"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:checked="true"
                 android:text="@string/setup_network_opt_wifi" />
 
             <com.google.android.material.radiobutton.MaterialRadioButton
                 android:id="@+id/rb_net_linux"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:checked="true"
                 android:text="@string/setup_network_opt_linux" />
 
             <com.google.android.material.radiobutton.MaterialRadioButton
