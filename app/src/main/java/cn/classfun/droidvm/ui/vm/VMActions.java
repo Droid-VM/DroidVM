@@ -168,10 +168,11 @@ public final class VMActions {
 
     /**
      * Pre-start check: a disk attached writable while registered overlays build on it must not
-     * be written - the overlays' copy-on-write base would shift under them - so offer to flip
-     * those attachments to read-only (persisted) and start. Backend-independent, unlike the
-     * crosvm-specific guards. Registry state can change after a VM was configured, which is why
-     * the disk editor's forced-readonly alone isn't enough.
+     * be written - the overlays' copy-on-write base would shift under them - and neither may a
+     * disk another VM also attaches; so offer to flip those attachments to read-only (persisted)
+     * and start. Backend-independent, unlike the crosvm-specific guards. Registry state and other
+     * VMs' configs can change after this VM was configured, which is why the disk editor's
+     * forced-readonly alone isn't enough.
      */
     private static void guardLockedParents(
         @NonNull VMConfig config,
@@ -191,9 +192,26 @@ public final class VMActions {
             // exactly the case where linking is right, and a broken one can't boot anyway.
             BackingChainLinker.repairAllBlocking(appContext, qcow2DiskPaths(config));
             var lockedPaths = new ArrayList<String>();
+            var sharedPaths = new ArrayList<String>();
             try {
                 var diskStore = new DiskStore();
                 diskStore.load(appContext);
+                // Disks any OTHER VM attaches, in any mode: two writers corrupt a disk, and a
+                // reader under a writer sees it change - so a shared disk is read-only for all.
+                var others = new HashSet<String>();
+                var vmStore = new VMStore();
+                if (vmStore.load(vmStore, appContext)) {
+                    for (int i = 0; i < vmStore.size(); i++) {
+                        var other = vmStore.get(i);
+                        if (other.getId().equals(config.getId())) continue;
+                        var otherDisks = other.item.opt("disks", null);
+                        if (otherDisks == null || !otherDisks.is(DataItem.Type.ARRAY)) continue;
+                        for (var disk : otherDisks.asArray()) {
+                            var path = disk.optString("path", "");
+                            if (!path.isEmpty()) others.add(path);
+                        }
+                    }
+                }
                 var disks = config.item.opt("disks", null);
                 if (disks != null && disks.is(DataItem.Type.ARRAY)) {
                     for (var disk : disks.asArray()) {
@@ -202,26 +220,41 @@ public final class VMActions {
                         var registered = diskStore.findByPath(path);
                         if (registered != null && diskStore.hasChildren(registered.getId()))
                             lockedPaths.add(path);
+                        else if (others.contains(path))
+                            sharedPaths.add(path);
                     }
                 }
             } catch (Exception e) {
                 Log.w(TAG, "locked-parent check failed", e);
             }
-            if (lockedPaths.isEmpty()) {
+            if (lockedPaths.isEmpty() && sharedPaths.isEmpty()) {
                 mainHandler.post(proceed);
                 return;
             }
             mainHandler.post(() -> {
                 if (!ui.isAlive()) return;
                 var ctx = ui.getContext();
-                var files = new StringBuilder();
-                for (var p : lockedPaths) files.append("\n- ").append(basename(p));
+                var message = new StringBuilder();
+                if (!lockedPaths.isEmpty()) {
+                    var files = new StringBuilder();
+                    for (var p : lockedPaths) files.append("\n- ").append(basename(p));
+                    message.append(ctx.getString(R.string.vm_locked_disk_message, files));
+                }
+                if (!sharedPaths.isEmpty()) {
+                    if (message.length() > 0) message.append("\n\n");
+                    var files = new StringBuilder();
+                    for (var p : sharedPaths) files.append("\n- ").append(basename(p));
+                    message.append(ctx.getString(R.string.vm_shared_disk_message, files));
+                }
+                var all = new ArrayList<>(lockedPaths);
+                all.addAll(sharedPaths);
                 new MaterialAlertDialogBuilder(ctx)
-                    .setTitle(R.string.vm_locked_disk_title)
-                    .setMessage(ctx.getString(R.string.vm_locked_disk_message, files.toString()))
+                    .setTitle(lockedPaths.isEmpty()
+                        ? R.string.vm_shared_disk_title : R.string.vm_locked_disk_title)
+                    .setMessage(message)
                     .setPositiveButton(R.string.vm_locked_disk_readonly_start, (d, w) ->
                         runOnPool(() -> {
-                            applyReadonly(appContext, config, lockedPaths);
+                            applyReadonly(appContext, config, all);
                             mainHandler.post(proceed);
                         }))
                     .setNegativeButton(android.R.string.cancel, null)

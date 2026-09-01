@@ -36,7 +36,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
 import cn.classfun.droidvm.ui.disk.info.DiskInfoActivity;
 import cn.classfun.droidvm.ui.disk.info.base.DiskInfoBaseTab;
-import cn.classfun.droidvm.ui.disk.tree.DiskTreeDialog;
+import cn.classfun.droidvm.ui.disk.tree.DiskBranchPanel;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
@@ -152,8 +152,14 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
             if (item == null) {
                 button.setText(R.string.disk_manage_branches);
                 button.setIconResource(R.drawable.ic_file_multiple);
-                button.setOnClickListener(v -> DiskTreeDialog.show(
-                    activity, activity.config.getFullPath(), null));
+                button.setOnClickListener(v -> DiskBranchPanel.open(
+                    activity, activity.config.getFullPath(), null,
+                    // The panel stays up until Close, even after its own disk is deleted (it
+                    // shows an empty tree then); only closing it takes this page down with it.
+                    result -> {
+                        if (result.subjectGone) activity.finish();
+                        else onDiskUpdated();
+                    }));
             } else {
                 button.setText(item.getTitle());
                 button.setIcon(item.getIcon());

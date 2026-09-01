@@ -7,6 +7,7 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -24,8 +25,10 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.radiobutton.MaterialRadioButton;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,11 +36,13 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 
 /**
- * Compact rendering of an overlay-relation tree, used inside dialogs (switch-branch, disk
+ * Compact rendering of an overlay-relation tree, used inside dialogs (branch panel, disk
  * picker) and info views. Feed it {@link DiskTree} roots; rows indent by depth, parents get a
  * working collapse chevron (in-memory state - the main list's persisted collapse is separate),
- * locked disks show the padlock, broken links a warning line. Optional single-selection with a
- * radio column and an optional per-node menu button.
+ * locked disks show the padlock, broken links a warning line, and an optional per-node label
+ * (which VMs attach it). Optional single-selection with a radio column and an optional per-node
+ * menu button. {@link #updateRoots} swaps the tree in place, keeping collapse and selection for
+ * nodes that survived.
  */
 public final class DiskTreeView extends RecyclerView {
     public interface Listener {
@@ -57,6 +62,7 @@ public final class DiskTreeView extends RecyclerView {
     private List<DiskTree.Node> roots = new ArrayList<>();
     private final List<DiskTree.Node> flat = new ArrayList<>();
     private final Set<UUID> collapsed = new HashSet<>();
+    private final Map<UUID, String> labels = new HashMap<>();
     private boolean selectable = false;
     private boolean showNodeMenu = false;
     @Nullable
@@ -106,6 +112,34 @@ public final class DiskTreeView extends RecyclerView {
         rebuild();
     }
 
+    /** Replace the tree contents, keeping collapse state of nodes still present. */
+    public void updateRoots(@NonNull List<DiskTree.Node> roots) {
+        this.roots = roots;
+        var present = new HashSet<UUID>();
+        for (var n : DiskTree.flatten(roots, Set.of())) present.add(n.id());
+        collapsed.retainAll(present);
+        if (selectedId != null && !present.contains(selectedId)) selectedId = null;
+        rebuild();
+    }
+
+    /** The node marked "attached" (the caller's own attachment). */
+    public void setCurrentId(@Nullable UUID currentId) {
+        this.currentId = currentId;
+        adapter.notifyDataSetChanged();
+    }
+
+    public void setSelectedId(@Nullable UUID id) {
+        this.selectedId = id;
+        adapter.notifyDataSetChanged();
+    }
+
+    /** Per-node text shown under the name (e.g. which VMs attach it). */
+    public void setCursorLabels(@NonNull Map<UUID, String> labels) {
+        this.labels.clear();
+        this.labels.putAll(labels);
+        adapter.notifyDataSetChanged();
+    }
+
     @Nullable
     public UUID getSelectedId() {
         return selectedId;
@@ -114,12 +148,12 @@ public final class DiskTreeView extends RecyclerView {
     @Nullable
     public DiskTree.Node getSelectedNode() {
         if (selectedId == null) return null;
-        for (var n : flat)
+        for (var n : DiskTree.flatten(roots, Set.of()))
             if (n.id().equals(selectedId)) return n;
         return null;
     }
 
-    @SuppressWarnings("NotifyDataSetChanged")
+    @SuppressLint("NotifyDataSetChanged")
     private void rebuild() {
         flat.clear();
         flat.addAll(DiskTree.flatten(roots, collapsed));
@@ -168,6 +202,7 @@ public final class DiskTreeView extends RecyclerView {
             menu = v.findViewById(R.id.tree_menu);
         }
 
+        @SuppressLint("NotifyDataSetChanged")
         void bind(@NonNull DiskTree.Node node) {
             var ctx = root.getContext();
             float density = ctx.getResources().getDisplayMetrics().density;
@@ -190,19 +225,15 @@ public final class DiskTreeView extends RecyclerView {
 
             lock.setVisibility(node.hasChildren() ? VISIBLE : GONE);
 
-            var subText = new StringBuilder();
-            if (node.brokenParent)
-                subText.append(ctx.getString(R.string.disk_tree_broken_parent));
-            if (isCollapsed && node.hasChildren()) {
-                if (subText.length() > 0) subText.append("  ");
-                subText.append(fmt("+%d", node.countDescendants()));
-            }
-            if (currentId != null && currentId.equals(node.id())) {
-                if (subText.length() > 0) subText.append("  ");
-                subText.append(ctx.getString(R.string.disk_tree_current_attached));
-            }
-            sub.setVisibility(subText.length() > 0 ? VISIBLE : GONE);
-            sub.setText(subText);
+            var parts = new ArrayList<String>();
+            if (node.brokenParent) parts.add(ctx.getString(R.string.disk_tree_broken_parent));
+            if (isCollapsed && node.hasChildren()) parts.add(fmt("+%d", node.countDescendants()));
+            if (currentId != null && currentId.equals(node.id()))
+                parts.add(ctx.getString(R.string.disk_tree_current_attached));
+            var label = labels.get(node.id());
+            if (label != null && !label.isEmpty()) parts.add(label);
+            sub.setVisibility(parts.isEmpty() ? GONE : VISIBLE);
+            sub.setText(String.join("  ", parts));
 
             radio.setVisibility(selectable ? VISIBLE : GONE);
             radio.setChecked(selectable && node.id().equals(selectedId));

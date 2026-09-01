@@ -61,6 +61,30 @@ public abstract class CardItemAdapter<
         createItem();
     }
 
+    /**
+     * Drag reorder step: the item at {@code from} now sits at {@code to}. Rows are looked up
+     * by binding position at event time, so nothing else needs rebinding until the drop.
+     */
+    public final void moveItem(int from, int to) {
+        if (from == to || from < 0 || to < 0 || from >= items.size() || to >= items.size())
+            return;
+        var list = items.asArray();
+        var moved = list.remove(from);
+        list.add(to, moved);
+        notifyItemMoved(from, to);
+        onItemMoved(from, to);
+    }
+
+    /** Called after {@link #moveItem}; adapters whose neighbours index into the list hook it. */
+    protected void onItemMoved(int from, int to) {
+    }
+
+    /** The drag ended: positions shifted for a whole range, so rebind everything. */
+    @SuppressLint("NotifyDataSetChanged")
+    public void onReorderFinished() {
+        notifyDataSetChanged();
+    }
+
     public final void removeItem(int position) {
         if (position < 0 || position >= items.size()) return;
         items.remove(position);

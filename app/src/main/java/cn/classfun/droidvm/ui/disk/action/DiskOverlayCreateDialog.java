@@ -3,11 +3,10 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.action;
 
-import static cn.classfun.droidvm.lib.utils.StringUtils.bulletList;
-
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
+import static cn.classfun.droidvm.lib.utils.StringUtils.bulletList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
@@ -26,8 +25,6 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
 
-import org.json.JSONObject;
-
 import java.io.File;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -35,37 +32,39 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.regex.Pattern;
-import java.util.function.Consumer;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
-import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
+import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors;
+import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors.LiveRows;
+import cn.classfun.droidvm.ui.disk.tree.CursorPlan;
 import cn.classfun.droidvm.ui.disk.tree.DiskTree;
+import cn.classfun.droidvm.ui.disk.tree.TreeShape;
 import cn.classfun.droidvm.ui.vm.VmRunningQuery;
 
 /**
  * Snapshot-feel overlay creation: one name field, instant {@code qemu-img create} (an overlay is
  * just a header), the base becomes a locked parent. Every decision is collected BEFORE anything
- * executes: VMs holding the base writable are found first and the user picks - per the whole
- * batch - whether they switch to the new overlay (the "took a snapshot, keep going" default) or
- * flip to read-only; a running affected VM blocks creation outright, since its writes would
- * shift the base underneath the overlay. After confirmation the create, registry link and VM
- * updates run unattended.
+ * executes: the {@link CursorPlan} says which VM slots would follow the new overlay down (the
+ * base's writable attachments - "took a snapshot, keep going") and the user picks, per the
+ * whole batch, whether they do or flip to read-only instead; a base held writable by a VM that
+ * isn't stopped blocks creation outright, since its writes would shift the base underneath the
+ * overlay. After confirmation the create, registry link and VM updates run unattended.
  */
 public final class DiskOverlayCreateDialog {
     private static final String TAG = "DiskOverlayCreate";
-    /** A name this dialog generated before: {@code -ov-yyyyMMdd-HHmm} at the very end. */
+    /**
+     * A name this dialog generated before, at the very end: {@code -ov-yyMMdd-HHmmss}, the older
+     * {@code -ov-yyyyMMdd-HHmm}, either with an optional {@code -N} collision bump.
+     */
     private static final Pattern OVERLAY_SUFFIX =
-        Pattern.compile("-ov-\\d{8}-\\d{4}$");
+        Pattern.compile("-ov-(\\d{8}-\\d{4}|\\d{6}-\\d{6})(-\\d+)?$");
     private final Handler mainLooper = new Handler(Looper.getMainLooper());
     private final Context context;
     private final DiskConfig parent;
@@ -74,7 +73,7 @@ public final class DiskOverlayCreateDialog {
     @Nullable
     private final Runnable onAdvanced;
     @Nullable
-    private Consumer<String> onSwitchedToOverlay;
+    private LiveRows live;
 
     public DiskOverlayCreateDialog(
         @NonNull Context context,
@@ -89,13 +88,14 @@ public final class DiskOverlayCreateDialog {
     }
 
     /**
-     * Notified (main thread, with the new overlay's path) when the user chose to move the VMs
-     * holding the base onto the overlay. A caller editing one of those VMs has its own in-memory
-     * copy of the attachment - without this it would keep showing the base, and saving would
-     * write that stale path back over the switch this flow just made.
+     * The disk editor's unsaved rows when opened from one. Their cursors are not written here
+     * (the editor applies them when its panel closes) and the editor's own saved slots are
+     * rewritten without being announced - the rows on screen stand in for them.
      */
-    public void setOnSwitchedToOverlay(@Nullable Consumer<String> listener) {
-        this.onSwitchedToOverlay = listener;
+    @NonNull
+    public DiskOverlayCreateDialog setLiveRows(@Nullable LiveRows live) {
+        this.live = live;
+        return this;
     }
 
     public void show() {
@@ -132,9 +132,10 @@ public final class DiskOverlayCreateDialog {
     }
 
     /**
-     * {@code <base>-ov-<stamp>}, except that stacking overlays replaces a trailing stamp instead
-     * of growing another one - a chain would otherwise read
-     * {@code disk-ov-20260101-0000-ov-20260102-0000-...}.
+     * {@code <base>-ov-<yyMMdd-HHmmss>}, to the second so two overlays taken in quick
+     * succession don't collide, and bumped with {@code -2, -3, ...} if a file of that name is
+     * already there. Stacking overlays replaces a trailing stamp instead of growing another one -
+     * a chain would otherwise read {@code disk-ov-260101-000000-ov-260102-000000-...}.
      */
     @NonNull
     private String defaultName() {
@@ -142,11 +143,16 @@ public final class DiskOverlayCreateDialog {
         int dot = base.lastIndexOf('.');
         if (dot > 0) base = base.substring(0, dot);
         base = OVERLAY_SUFFIX.matcher(base).replaceFirst("");
-        var stamp = new SimpleDateFormat("yyyyMMdd-HHmm", Locale.ROOT).format(new Date());
-        return fmt("%s-ov-%s", base, stamp);
+        var stamp = new SimpleDateFormat("yyMMdd-HHmmss", Locale.ROOT).format(new Date());
+        var folder = parent.item.optString("folder", "");
+        var candidate = fmt("%s-ov-%s", base, stamp);
+        var name = candidate;
+        for (int n = 2; new File(pathJoin(folder, name + ".qcow2")).exists(); n++)
+            name = fmt("%s-%d", candidate, n);
+        return name;
     }
 
-    // Phase 1, off the main thread: validate, find affected VMs and their run state.
+    // Phase 1, off the main thread: validate, plan where the base's attachments go.
     private void gather(@NonNull String name) {
         var folder = parent.item.optString("folder", "");
         var overlayPath = pathJoin(folder, name);
@@ -165,25 +171,25 @@ public final class DiskOverlayCreateDialog {
                 }
                 var vmStore = new VMStore();
                 vmStore.load(vmStore, context);
-                var parentPath = parent.getFullPath();
-                var affected = new ArrayList<VMConfig>();
-                for (int i = 0; i < vmStore.size(); i++) {
-                    var vm = vmStore.get(i);
-                    if (attachesWritable(vm, parentPath)) affected.add(vm);
-                }
-                if (affected.isEmpty()) {
-                    execute(name, overlayPath, List.of(), false);
+                var shape = TreeShape.of(store);
+                var family = shape.familyOf(parent.getId());
+                var inUse = VmRunningQuery.inUseAmong(
+                    AttachmentCursors.allVmNames(vmStore, live == null ? null : live.vmName));
+                var cursors = AttachmentCursors.collect(store, vmStore, family, live, inUse);
+                // The overlay's id isn't known yet; the plan only needs its path and parent.
+                var after = shape.withChild(UUID.randomUUID(), overlayPath, name, parent.getId());
+                var plan = CursorPlan.reconcile(cursors, List.of(), shape, after);
+                if (plan.isRefused()) {
+                    fail(context.getString(R.string.disk_overlay_vm_running,
+                        bulletList(AttachmentCursors.vmNames(plan.refused))));
                     return;
                 }
-                var running = runningNames(affected);
-                if (!running.isEmpty()) {
-                    fail(context.getString(
-                        R.string.disk_overlay_vm_running, bulletList(running)));
+                var announced = plan.announcedChanges();
+                if (announced.isEmpty()) {
+                    execute(name, overlayPath, plan, true);
                     return;
                 }
-                var names = new ArrayList<String>();
-                for (var vm : affected) names.add(vm.getName());
-                mainLooper.post(() -> askVmChoice(name, overlayPath, names));
+                mainLooper.post(() -> askVmChoice(name, overlayPath, plan));
             } catch (Exception e) {
                 Log.w(TAG, "overlay pre-checks failed", e);
                 fail(String.valueOf(e.getMessage()));
@@ -191,19 +197,21 @@ public final class DiskOverlayCreateDialog {
         });
     }
 
-    // Phase 2, main thread: the one decision point - switch the affected VMs to the overlay
-    // (default) or flip them read-only. Everything after runs unattended.
+    // Phase 2, main thread: the one decision point - other VMs' writable attachments follow the
+    // overlay (default) or stay on the base read-only. Everything after runs unattended.
     private void askVmChoice(
-        @NonNull String name, @NonNull String overlayPath, @NonNull List<String> vmNames) {
-        var list = bulletList(vmNames);
+        @NonNull String name, @NonNull String overlayPath, @NonNull CursorPlan plan) {
+        var lines = new ArrayList<String>();
+        for (var c : plan.announcedChanges())
+            lines.add(fmt("%s (#%d)", c.from.vmName, c.from.slot + 1));
         new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.disk_overlay_vm_choice_title)
             .setMessage(context.getString(
-                R.string.disk_overlay_vm_choice_message, parent.getName(), list))
+                R.string.disk_overlay_vm_choice_message, parent.getName(), bulletList(lines)))
             .setPositiveButton(R.string.disk_overlay_vm_switch, (d, w) ->
-                runOnPool(() -> execute(name, overlayPath, vmNames, true)))
+                runOnPool(() -> execute(name, overlayPath, plan, true)))
             .setNeutralButton(R.string.disk_overlay_vm_readonly, (d, w) ->
-                runOnPool(() -> execute(name, overlayPath, vmNames, false)))
+                runOnPool(() -> execute(name, overlayPath, plan, false)))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
     }
@@ -212,7 +220,7 @@ public final class DiskOverlayCreateDialog {
     private void execute(
         @NonNull String name,
         @NonNull String overlayPath,
-        @NonNull List<String> vmNames,
+        @NonNull CursorPlan plan,
         boolean switchVmsToOverlay
     ) {
         try {
@@ -238,14 +246,12 @@ public final class DiskOverlayCreateDialog {
             overlay.setParentId(parent.getId());
             store.add(overlay);
             store.save(context);
-            if (!vmNames.isEmpty())
-                updateVms(vmNames, parentPath, overlayPath, switchVmsToOverlay);
+            if (!DiskDependencyUpdater.applyPlan(context, vmPlan(plan, switchVmsToOverlay)))
+                Log.e(TAG, "overlay created but VM attachments could not be updated");
             mainLooper.post(() -> {
                 Toast.makeText(context,
                     context.getString(R.string.disk_overlay_created, name),
                     LENGTH_SHORT).show();
-                if (switchVmsToOverlay && !vmNames.isEmpty() && onSwitchedToOverlay != null)
-                    onSwitchedToOverlay.accept(overlayPath);
                 if (onUpdate != null) onUpdate.run();
             });
         } catch (Exception e) {
@@ -254,50 +260,29 @@ public final class DiskOverlayCreateDialog {
         }
     }
 
-    private void updateVms(
-        @NonNull List<String> vmNames,
-        @NonNull String parentPath,
-        @NonNull String overlayPath,
-        boolean switchToOverlay
-    ) {
-        var vmStore = new VMStore();
-        if (!vmStore.load(vmStore, context)) return;
-        for (int i = 0; i < vmStore.size(); i++) {
-            var vm = vmStore.get(i);
-            if (!vmNames.contains(vm.getName())) continue;
-            var disks = vm.item.opt("disks", null);
-            if (disks == null || !disks.is(DataItem.Type.ARRAY)) continue;
-            for (var disk : disks.asArray()) {
-                if (!parentPath.equals(disk.optString("path", ""))
-                    || disk.optBoolean("readonly", false)) continue;
-                if (switchToOverlay) disk.set("path", overlayPath);
-                else disk.set("readonly", true);
-            }
-        }
-        vmStore.save(context);
-    }
-
-    private static boolean attachesWritable(@NonNull VMConfig vm, @NonNull String path) {
-        var disks = vm.item.opt("disks", null);
-        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return false;
-        for (var disk : disks.asArray()) {
-            if (path.equals(disk.optString("path", ""))
-                && !disk.optBoolean("readonly", false)) return true;
-        }
-        return false;
-    }
-
-    /** Names of the given VMs the daemon reports as running; empty on daemon errors. */
+    /**
+     * The plan as the user chose it: with "make read-only", the announced slots stay on the base
+     * read-only instead of following the overlay. The editor's own saved slots (shadows) always
+     * follow - the rows on screen do, and a discarded edit must leave them consistent with what
+     * the user saw.
+     */
     @NonNull
-    private List<String> runningNames(@NonNull List<VMConfig> vms) {
-        var names = new ArrayList<String>();
-        for (var vm : vms) names.add(vm.getName());
-        return VmRunningQuery.runningAmong(names);
+    private static CursorPlan vmPlan(@NonNull CursorPlan plan, boolean switchVmsToOverlay) {
+        if (switchVmsToOverlay) return plan;
+        var alt = CursorPlan.reconcile(List.of(), List.of(), TreeShape.empty(), TreeShape.empty());
+        for (var c : plan.changes) {
+            if (c.from.isAnnounced() && c.moved())
+                alt.changes.add(new CursorPlan.Change(
+                    c.from, c.from.at(c.from.nodeId, c.from.path, true)));
+            else
+                alt.changes.add(c);
+        }
+        return alt;
     }
 
     private static int chainDepth(@NonNull DiskStore store, @NonNull DiskConfig config) {
         int depth = 0;
-        var visited = new HashSet<java.util.UUID>();
+        var visited = new HashSet<UUID>();
         var current = config;
         while (current != null && visited.add(current.getId())) {
             depth++;

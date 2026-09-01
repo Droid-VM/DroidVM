@@ -115,7 +115,7 @@
     <string name="vm_delete">刪除</string>
     <string name="vm_delete_confirm">確定要刪除此虛擬機器嗎？</string>
     <string name="vm_delete_writable_disks">同時刪除關聯的可寫入磁碟檔案（%1$d 個）</string>
-    <string name="vm_delete_disks_result">已刪除 %1$d 個可寫入磁碟檔案；另有 %2$d 個仍在使用、有磁碟相依關係或無法刪除，已保留。</string>
+    <string name="vm_delete_disks_result">已刪除 %1$d 個磁碟檔案；保留 %2$d 個被其他虛擬機器掛載、%3$d 個是增量基底、%4$d 個刪除失敗。</string>
     <string name="vm_state_stopped">已停止</string>
     <string name="vm_state_starting">啟動中</string>
     <string name="vm_state_running">執行中</string>
@@ -549,7 +549,7 @@
     <string name="disk_overlay_depth_error">增量層數已達上限（%1$d）</string>
     <string name="disk_overlay_vm_running">下列虛擬機器正在使用基底磁碟，請先關機：%1$s</string>
     <string name="disk_overlay_vm_choice_title">基底磁碟使用中</string>
-    <string name="disk_overlay_vm_choice_message">下列虛擬機器以可寫方式掛載「%1$s」：%2$s\n\n建立增量後基底將鎖定。要讓這些虛擬機器改掛新增量（接續目前狀態），還是維持掛載基底但改為唯讀？</string>
+    <string name="disk_overlay_vm_choice_message">下列虛擬機器磁碟以可寫方式掛載「%1$s」：%2$s\n\n建立增量後基底將鎖定。要讓這些虛擬機器改掛新增量（接續目前狀態），還是維持掛載基底但改為唯讀？</string>
     <string name="disk_overlay_vm_switch">改掛增量</string>
     <string name="disk_overlay_vm_readonly">改為唯讀</string>
     <string name="disk_overlay_created">已建立增量鏡像：%1$s</string>
@@ -568,13 +568,24 @@
     <string name="disk_flatten_confirm">會將基底資料複製進「%1$s」使其獨立（檔案將變大）；基底「%2$s」不受影響。</string>
     <string name="disk_manage_branches">管理增量分支</string>
     <string name="disk_branches_button">磁碟分支</string>
-    <string name="disk_tree_attachment_moves">\n\n本虛擬機器目前掛載此磁碟，將改掛「%1$s」。</string>
     <string name="disk_delete_tree_title">刪除整樹</string>
     <string name="disk_delete_tree_message">增量鏡像只存放與基底的差異，因此整棵樹會一併刪除。下列磁碟將被移除：%1$s</string>
     <string name="disk_delete_subtree_message">增量鏡像只存放與基底的差異，因此其下游增量會一併刪除。下列磁碟將被移除：%1$s</string>
-    <string name="disk_tree_attachment_rewritten">\n\n本虛擬機器掛載的「%1$s」，內容將被改寫為「%2$s」的目前狀態。</string>
-    <string name="disk_tree_attachment_cleared">\n\n本虛擬機器目前掛載此磁碟，其路徑將被清空。</string>
     <string name="disk_manage_branches_close">關閉</string>
+    <string name="disk_manage_branches_back">返回</string>
+    <string name="disk_tree_empty">這棵磁碟樹已不存在。</string>
+    <string name="disk_tree_attached_by">掛載：%1$s</string>
+    <string name="disk_tree_in_use">%1$s（使用中）</string>
+    <string name="disk_tree_changes_header">\n\n其他虛擬機器的掛載會一併變動：%1$s</string>
+    <string name="disk_tree_change_move">虛擬機器「%1$s」磁碟 #%2$d：%3$s → %4$s</string>
+    <string name="disk_tree_change_move_readonly">虛擬機器「%1$s」磁碟 #%2$d：%3$s → %4$s（改為唯讀）</string>
+    <string name="disk_tree_change_clear">虛擬機器「%1$s」磁碟 #%2$d：%3$s 將從該虛擬機器移除</string>
+    <string name="disk_tree_change_readonly">虛擬機器「%1$s」磁碟 #%2$d：%3$s 改為唯讀</string>
+    <string name="disk_tree_change_rewritten">虛擬機器「%1$s」磁碟 #%2$d：%3$s 的內容將被改寫為 %4$s 的目前狀態</string>
+    <string name="disk_tree_pinned">下列虛擬機器尚未關機，其掛載的磁碟會受此操作影響，請先關機：%1$s</string>
+    <string name="edit_vm_disk_shared_readonly">此磁碟也被其他虛擬機器掛載，已改為唯讀掛載</string>
+    <string name="vm_shared_disk_title">磁碟與其他虛擬機器共用</string>
+    <string name="vm_shared_disk_message">下列磁碟也被其他虛擬機器掛載，兩邊同時寫入會毀損磁碟。要改為唯讀掛載並啟動嗎？\n%1$s</string>
     <string name="disk_tree_not_registered">此磁碟未登記，無法使用分支功能</string>
     <string name="vm_compressed_disk_start_anyway">仍要啟動</string>
     <string name="vm_compressed_disk_start_countdown">仍要啟動 (%1$d)</string>
@@ -1429,7 +1440,7 @@
     <string name="create_vm_vpu_enabled">掛載硬體視訊編碼器與解碼器</string>
     <string name="create_vm_vpu_host_pool_mb">主機緩衝池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客戶機緩衝池大小 (MB)</string>
-    <string name="create_vm_vpu_note">佔位設定：這些值會隨 VM 一起儲存，但 crosvm 目前還沒有 virtio-media 編解碼裝置，因此不會掛載任何東西。</string>
+    <string name="create_vm_vpu_note">功能待實現：這些設定會隨 VM 一起儲存，但在功能完成前不會掛載任何視訊裝置。</string>
     <string name="edit_vm_peripheral_camera_missing">這台手機沒有這個相機，該裝置不會啟動。</string>
     <string name="edit_vm_peripheral_host_camera">主機相機</string>
     <string name="peripheral_fgs_title">外設使用中</string>
@@ -1443,7 +1454,7 @@
 
     <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
     <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
-    <string name="edit_vm_peripheral_unavailable">主機端尚未支援這個裝置，VM 啟動時會略過。</string>
+    <string name="edit_vm_peripheral_unavailable">功能待實現，VM 啟動時會略過這個裝置。</string>
     <string name="edit_vm_sound_endpoint_add">新增設備</string>
     <string name="edit_vm_sound_endpoint_remove">移除端點</string>
     <string name="edit_vm_sound_purpose_usage">用途</string>

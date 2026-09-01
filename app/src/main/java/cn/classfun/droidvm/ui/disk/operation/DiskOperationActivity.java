@@ -47,7 +47,11 @@ import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
+import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors;
+import cn.classfun.droidvm.ui.disk.tree.CursorPlan;
+import cn.classfun.droidvm.ui.disk.tree.TreeShape;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 
 public final class DiskOperationActivity extends AppCompatActivity {
@@ -359,10 +363,18 @@ public final class DiskOperationActivity extends AppCompatActivity {
                 Log.e(TAG, "Keeping committed overlay: failed to save child links");
                 return false;
             }
-            // Only slots pointing directly at the merged overlay move to its parent. Slots
-            // pointing at child overlays stay exactly where they are.
-            if (!DiskDependencyUpdater.redirectVmDisks(
-                this, java.util.Set.of(overlayPath), parentPath)) {
+            // Only slots pointing directly at the merged overlay move to its parent (the
+            // children were re-linked above, so their slots stay exactly where they are). A slot
+            // landing on a base that still has overlays, or joining another VM on the same
+            // disk, becomes read-only - the same rule the branch panel showed beforehand.
+            var vmStore = new VMStore();
+            vmStore.load(vmStore, this);
+            var shape = TreeShape.of(store);
+            var cursors = AttachmentCursors.collectPersisted(
+                store, vmStore, shape.familyOf(overlay.getId()), null, java.util.List.of());
+            var plan = CursorPlan.reconcile(cursors, java.util.List.of(),
+                shape, shape.withMerged(overlay.getId()));
+            if (!DiskDependencyUpdater.applyPlan(this, plan)) {
                 Log.e(TAG, "Keeping committed overlay: failed to save VM attachments");
                 return false;
             }

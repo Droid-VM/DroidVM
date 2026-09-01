@@ -63,6 +63,14 @@ public final class VMEditStorageTab extends VMEditBaseTab {
         diskActivityLauncher = parent.registerForActivityResult(act, this::activityResult);
         diskAdapter = listDisks.setAdapter(VMDiskEditAdapter.class);
         diskAdapter.setOnImportOrCreateListener(this::diskAdapterOnImportOrCreate);
+        // The boot tab points at a disk by its position in this list.
+        diskAdapter.setOnItemMovedListener((from, to) -> {
+            try {
+                var boot = (VMEditBootTab) parent.getTab(VMEditTab.TAB_BOOT);
+                if (boot != null) boot.onDiskMoved(from, to);
+            } catch (Exception ignored) {
+            }
+        });
         // no PFLASH while the boot tab's UEFI vars pflash is enabled
         diskAdapter.setUefiVarsEnabledProvider(() -> {
             try {
@@ -139,6 +147,9 @@ public final class VMEditStorageTab extends VMEditBaseTab {
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
+        // The rows stand in for this VM's own saved slots: those must not count as "another
+        // VM attaches this disk" when deriving forced read-only.
+        diskAdapter.setEditingVm(parent.editMode ? config.getId() : null, config.getName());
         listDisks.setItems(config.item.opt("disks", DataItem.newArray()));
         listSharedDirs.setItems(config.item.opt("shared_dirs", DataItem.newArray()));
     }
@@ -185,6 +196,9 @@ public final class VMEditStorageTab extends VMEditBaseTab {
 
     @Override
     public void saveConfig(@NonNull VMConfig config) {
+        // Effective read-only (forced by overlays/sharing, or chosen) for every row, including
+        // ones never bound since their disk's situation last changed.
+        diskAdapter.commitReadonly();
         config.item.set("disks", listDisks.getItems());
         config.item.set("shared_dirs", listSharedDirs.getItems());
     }

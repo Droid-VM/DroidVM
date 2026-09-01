@@ -70,6 +70,10 @@ public final class VMDeletion {
      * Releases the VM from the daemon, then optionally removes the disk registry entries and
      * files that belonged to writable attachments. The caller must remove and save the VM store
      * first so a fresh-store scan can reliably identify references from other VMs.
+     *
+     * <p>{@code vm_delete} is idempotent on the daemon side: a VM it never managed (created but
+     * never started) is a successful no-op, so the only failure that keeps the files is a VM it
+     * could not stop.
      */
     public static void releaseDaemonAndMaybeDeleteDisks(
         @NonNull Context context,
@@ -80,7 +84,7 @@ public final class VMDeletion {
         var appContext = context.getApplicationContext();
         var paths = writableDiskPaths(config);
         Runnable cleanup = () -> runOnPool(() -> cleanupDisks(appContext, paths));
-        Runnable skipped = () -> showResult(appContext, 0, paths.size());
+        Runnable skipped = () -> showResult(appContext, new Outcome(0, 0, 0, paths.size()));
 
         var request = DaemonConnection.getInstance().buildRequest("vm_delete")
             .put("vm_id", config.getId().toString());
@@ -88,12 +92,17 @@ public final class VMDeletion {
             if (!vmStoreSaved) {
                 skipped.run();
             } else {
-                // A successful response means DeleteHandler has stopped and removed the VM.
-                // If the daemon cannot be reached, its owned VM processes cannot still be
-                // running either, matching the disk-operation run-state guard's semantics.
+                // A successful response means DeleteHandler has stopped and removed the VM (or
+                // never had it). If the daemon cannot be reached, its owned VM processes cannot
+                // still be running either, matching the disk-operation run-state guard's
+                // semantics.
                 request
                     .onResponse(response -> cleanup.run())
-                    .onUnsuccessful(response -> skipped.run())
+                    .onUnsuccessful(response -> {
+                        Log.w(TAG, "daemon refused vm_delete; keeping disk files: "
+                            + response.optString("message", ""));
+                        skipped.run();
+                    })
                     .onError(error -> cleanup.run());
             }
         }
@@ -112,6 +121,21 @@ public final class VMDeletion {
         return paths;
     }
 
+    /** What happened to the requested files, by reason, for the one toast at the end. */
+    private static final class Outcome {
+        final int deleted;
+        final int attachedByOthers;
+        final int basesOfOverlays;
+        final int failed;
+
+        Outcome(int deleted, int attachedByOthers, int basesOfOverlays, int failed) {
+            this.deleted = deleted;
+            this.attachedByOthers = attachedByOthers;
+            this.basesOfOverlays = basesOfOverlays;
+            this.failed = failed;
+        }
+    }
+
     private static void cleanupDisks(
         @NonNull Context context,
         @NonNull LinkedHashSet<String> requestedPaths
@@ -120,7 +144,7 @@ public final class VMDeletion {
         try {
             var vmStore = new VMStore();
             if (!vmStore.load(context)) {
-                showResult(context, 0, requestedPaths.size());
+                showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
                 return;
             }
 
@@ -128,16 +152,22 @@ public final class VMDeletion {
             // including through a read-only attachment.
             var referencedPaths = new HashSet<String>();
             vmStore.forEach((id, vm) -> collectAllDiskPaths(vm, referencedPaths));
-            var candidates = new LinkedHashSet<>(requestedPaths);
-            candidates.removeAll(referencedPaths);
+            var candidates = new LinkedHashSet<String>();
+            int attachedByOthers = 0;
+            for (var path : requestedPaths) {
+                if (referencedPaths.contains(path)) attachedByOthers++;
+                else candidates.add(path);
+            }
 
             var diskStore = new DiskStore();
             if (!diskStore.load(context)) {
-                showResult(context, 0, requestedPaths.size());
+                showResult(context, new Outcome(0, attachedByOthers, 0, candidates.size()));
                 return;
             }
 
             var safePaths = new ArrayList<String>();
+            int bases = 0;
+            int failed = 0;
             boolean registryChanged = false;
             boolean madeProgress;
             do {
@@ -148,6 +178,7 @@ public final class VMDeletion {
                         // Duplicate registry entries are ambiguous; leave both the registry and
                         // file untouched instead of choosing one arbitrarily.
                         candidates.remove(path);
+                        failed++;
                         continue;
                     }
                     if (registrations.isEmpty()) {
@@ -165,11 +196,15 @@ public final class VMDeletion {
                     madeProgress = true;
                 }
             } while (madeProgress);
+            // Whatever is left is a base of overlays this VM did not own (or a base whose
+            // overlays are themselves bases): those stay, with their registry entries.
+            bases = candidates.size();
 
             // Persist the registry first. A save failure must never leave a registry entry that
             // points at a file already removed from storage.
             if (registryChanged && !diskStore.save(context)) {
-                showResult(context, 0, requestedPaths.size());
+                showResult(context, new Outcome(
+                    0, attachedByOthers, bases, failed + safePaths.size()));
                 return;
             }
 
@@ -177,11 +212,12 @@ public final class VMDeletion {
             for (var path : safePaths) {
                 var file = new File(path);
                 if (!file.exists() || file.isFile() && file.delete()) deleted++;
+                else failed++;
             }
-            showResult(context, deleted, requestedPaths.size() - deleted);
+            showResult(context, new Outcome(deleted, attachedByOthers, bases, failed));
         } catch (Exception e) {
             Log.w(TAG, "Failed to clean up disks after VM deletion", e);
-            showResult(context, 0, requestedPaths.size());
+            showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
         }
     }
 
@@ -210,8 +246,9 @@ public final class VMDeletion {
         return registrations;
     }
 
-    private static void showResult(@NonNull Context context, int deleted, int skipped) {
-        var message = context.getString(R.string.vm_delete_disks_result, deleted, skipped);
+    private static void showResult(@NonNull Context context, @NonNull Outcome outcome) {
+        var message = context.getString(R.string.vm_delete_disks_result,
+            outcome.deleted, outcome.attachedByOthers, outcome.basesOfOverlays, outcome.failed);
         new Handler(Looper.getMainLooper()).post(() ->
             Toast.makeText(context, message, Toast.LENGTH_LONG).show());
     }

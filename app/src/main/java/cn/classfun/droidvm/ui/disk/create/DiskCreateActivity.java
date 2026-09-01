@@ -303,6 +303,10 @@ public final class DiskCreateActivity extends AppCompatActivity {
             } else if (!backing.isEmpty() && format == DiskFormat.QCOW2)
                 obj.put("backing_path", backing);
             var intent = createIntent(this, config.getId(), obj);
+            // A create that worked needs no success screen: the new disk showing up (in the
+            // list, or in the VM row that asked for it) is the feedback. Failures still stay.
+            intent.putExtra(cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity
+                .EXTRA_AUTOFINISH, true);
             startActivity(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start create activity", e);

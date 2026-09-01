@@ -20,13 +20,14 @@ public final class VmRunningQuery {
     }
 
     /**
-     * Names among {@code candidates} the daemon reports as running. Blocking (up to 5s) - call
-     * off the main thread. Daemon errors read as "none running": these checks guard disk
+     * Names among {@code candidates} whose VM is anything but stopped - starting, running,
+     * suspended, stopping or rebooting all hold the disk files open. Blocking (up to 5s) - call
+     * off the main thread. Daemon errors read as "none in use": these checks guard disk
      * operations, and with the daemon down no VM can be running anyway.
      */
     @NonNull
-    public static List<String> runningAmong(@NonNull Collection<String> candidates) {
-        var running = new HashSet<String>();
+    public static List<String> inUseAmong(@NonNull Collection<String> candidates) {
+        var inUse = new HashSet<String>();
         var latch = new CountDownLatch(1);
         DaemonConnection.getInstance().buildRequest("vm_list")
             .onResponse(resp -> {
@@ -35,8 +36,8 @@ public final class VmRunningQuery {
                     for (int i = 0; i < arr.length(); i++) {
                         var obj = arr.optJSONObject(i);
                         if (obj != null
-                            && obj.optString("state").equalsIgnoreCase("running"))
-                            running.add(obj.optString("name", ""));
+                            && !obj.optString("state").equalsIgnoreCase("stopped"))
+                            inUse.add(obj.optString("name", ""));
                     }
                 }
                 latch.countDown();
@@ -52,7 +53,7 @@ public final class VmRunningQuery {
         }
         var out = new ArrayList<String>();
         for (var name : candidates)
-            if (running.contains(name)) out.add(name);
+            if (inUse.contains(name)) out.add(name);
         return out;
     }
 }
