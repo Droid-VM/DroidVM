@@ -77,6 +77,7 @@ final class DisplayProvider {
     private ICrosvmAndroidDisplayService displayService;
     private boolean needsSend = false;
     private boolean hasSavedFrame = false;
+    private boolean hasSavedCursorFrame = false;
     private CursorPositionStream cursorStream;
     private CursorPositionStream.Listener cursorListener;
     private SurfaceView cursorView;
@@ -114,6 +115,7 @@ final class DisplayProvider {
             needsSend = false;
             cursorSurfaceSent = false;
             hasSavedFrame = false;
+            hasSavedCursorFrame = false;
             if (cursorStream != null) {
                 cursorStream.close();
                 cursorStream = null;
@@ -382,6 +384,19 @@ final class DisplayProvider {
         // Above the scanout SurfaceView. Both are surfaces in their own layers, so ordinary view
         // z-order does not apply -- without this the cursor is composited BEHIND the display.
         view.setZOrderMediaOverlay(true);
+        // Same rule as the scanout: this Surface must outlive a visibility change. The guest hides
+        // and re-shows its pointer constantly -- KDE drops to a software cursor whenever the
+        // hardware plane cannot keep up with a fast move and hands the plane straight back -- and
+        // the image comes back in ONE UPDATE_CURSOR, whose pixels are flushed microseconds after
+        // the position that tells the app to show the overlay again. Re-creating a destroyed
+        // Surface takes a frame plus a binder round trip, so those pixels land in the backend's
+        // sink buffer and are dropped, and every later MOVE_CURSOR carries a position and no image
+        // -- the pointer stays blank until the guest happens to change its shape. The activity
+        // therefore parks the overlay off-screen rather than setting it GONE; on Android 14+ this
+        // makes the Surface immune to visibility for good measure.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            view.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        }
         view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
         view.getHolder().setFixedSize(CURSOR_PLANE_PX, CURSOR_PLANE_PX);
         view.getHolder().addCallback(new SurfaceHolder.Callback() {
@@ -397,6 +412,16 @@ final class DisplayProvider {
                 cursorSurfaceSent = false;
                 var svc = displayService;
                 if (svc == null) return;
+                // Keep the last pointer image the same way the scanout keeps its last frame. A
+                // cursor surface that really did die (the activity left the foreground, or the
+                // death path bounced it) comes back empty otherwise, and nothing repaints it: only
+                // UPDATE_CURSOR carries pixels, and a pointer that merely moves sends MOVE_CURSOR.
+                try {
+                    svc.saveFrameForSurface(true);
+                    hasSavedCursorFrame = true;
+                } catch (Exception e) {
+                    Log.w(TAG, "saveFrameForSurface(cursor) failed", e);
+                }
                 try {
                     svc.removeSurface(true);
                 } catch (Exception e) {
@@ -421,6 +446,14 @@ final class DisplayProvider {
             cursorSurfaceSent = true;
         } catch (Exception e) {
             Log.w(TAG, "setSurface(cursor) failed", e);
+            return;
+        }
+        if (hasSavedCursorFrame) {
+            try {
+                svc.drawSavedFrameForSurface(true);
+            } catch (Exception e) {
+                Log.w(TAG, "drawSavedFrameForSurface(cursor) failed", e);
+            }
         }
     }
 

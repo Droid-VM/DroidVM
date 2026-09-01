@@ -79,7 +79,12 @@
 
              64x64 is virtio-gpu's cursor plane size; a smaller cursor image arrives in the
              top-left with the rest transparent. Positioned from the guest's own cursor stream, so
-             layout_gravity is only the origin that the translation is applied from. -->
+             layout_gravity is only the origin that the translation is applied from.
+
+             Laid out GONE only so nothing flashes at the top-left corner before the first
+             position: bindViews() makes it VISIBLE and parks it off-screen immediately, and it
+             stays visible from then on. Hiding the pointer is a park, never a GONE; see
+             CURSOR_PARKED_PX in VMNativeDisplayActivity for why the Surface must not die. -->
         <SurfaceView
             android:id="@+id/cursor_view"
             android:layout_width="64px"

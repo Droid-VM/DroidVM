@@ -189,6 +189,21 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private static final int MIN_AREA_DP = 96;
     /** Screen-space breathing room kept around the guest cursor when the view follows it. */
     private static final float CURSOR_FOLLOW_MARGIN_PX = 96f;
+    /**
+     * Where the cursor overlay goes while the guest's pointer is hidden.
+     *
+     * NOT setVisibility(GONE). A SurfaceView's Surface follows its visibility, so GONE destroys it
+     * and the app hands crosvm a removeSurface(cursor). The guest hides and re-shows the pointer
+     * all the time -- KDE drops to a software cursor whenever the hardware plane cannot keep up
+     * with a fast move, then hands the plane straight back -- and the image comes back in ONE
+     * UPDATE_CURSOR, which writes the position down the pipe and flushes the pixels in the same
+     * breath. Re-creating a Surface takes a frame plus a binder round trip, so those pixels land
+     * in the backend's sink buffer and are dropped; every later MOVE_CURSOR carries a position and
+     * no image, leaving the pointer blank until the guest happens to change its shape. Parking the
+     * view keeps the Surface alive, so the flush has somewhere to land. Far enough off-screen to
+     * be outside any panel, small enough to stay well clear of float/int overflow in the layer.
+     */
+    private static final float CURSOR_PARKED_PX = -10000f;
 
     // Maps the unified gestures onto the crosvm --input evdev channels via InputForwarder.
     private final PointerGestureTranslator.Listener gestureListener =
@@ -375,6 +390,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         tvConnectingMessage = findViewById(R.id.tv_connecting_message);
         displayContainer = findViewById(R.id.display_container);
         cursorView = findViewById(R.id.cursor_view);
+        // Visible from the start, parked off-screen: the Surface exists before the guest's first
+        // UPDATE_CURSOR, which is the only message that carries pointer pixels. Laid out GONE, the
+        // first pointer image was flushed into a Surface that did not exist yet and the pointer
+        // stayed blank until the next shape change -- the same hole the hide path used to open.
+        cursorView.setVisibility(VISIBLE);
+        parkCursorOverlay();
         surfaceView = findViewById(R.id.surface_view);
         keyboardInput = findViewById(R.id.keyboard_input);
         fabMenu = findViewById(R.id.fab_menu);
@@ -560,9 +581,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (gx == -1 && gy == -1) {   // u32::MAX arrives as -1 in Java's signed int
             lastCursorX = -1;
             lastCursorY = -1;
-            if (cursorView != null) {
-                cursorView.setVisibility(GONE);
-            }
+            parkCursorOverlay();
             return;
         }
         lastCursorX = gx;
@@ -571,6 +590,17 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null) {
             viewport.panToShowContentPoint(gx, gy, CURSOR_FOLLOW_MARGIN_PX);
         }
+    }
+
+    /**
+     * Take the pointer off screen without letting go of its Surface. See {@link #CURSOR_PARKED_PX}.
+     */
+    private void parkCursorOverlay() {
+        if (cursorView == null) {
+            return;
+        }
+        cursorView.setTranslationX(CURSOR_PARKED_PX);
+        cursorView.setTranslationY(CURSOR_PARKED_PX);
     }
 
     /**
