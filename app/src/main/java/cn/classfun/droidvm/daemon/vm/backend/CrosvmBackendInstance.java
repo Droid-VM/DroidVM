@@ -52,6 +52,7 @@ import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
+import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
@@ -340,15 +341,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // for the same reason. The editor hides the field in those modes; a config from
                 // the daemon API, or one saved before switching mode, still arrives with a size
                 // in it, so it is zeroed here rather than trusted.
-                var pvm = optEnum(item, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-                boolean hostVisibleRam = pvm == ProtectedVM.PROTECTED_NORMAL
-                    || pvm == ProtectedVM.PSEUDO_UNPROTECTED;
+                // GuestPoolSizing holds that rule, shared with the huge-page preflight so the
+                // reserve is budgeted for exactly what is passed here.
+                long guestPool = GuestPoolSizing.bootGuestPoolMb(item);
                 // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
                     boolean udmabuf = item.optBoolean("gpu_udmabuf", true);
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
-                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
                         var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
                         if (udmabuf)
@@ -368,7 +368,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // host-allocating path this host no longer implements.
                 if (drm2kgslGpu) {
                     long drmHostPool = item.optLong("gpu_drm2kgsl_pool_mb", 0);
-                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
                         preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
@@ -389,7 +388,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // runtime SHARE, which SoC-resets the fragile sm8650 (8gen3) RM.
                 if (venusGpu) {
                     long venusHostPool = item.optLong("gpu_venus_pool_mb", 256);
-                    long guestPool = hostVisibleRam ? 0 : item.optLong("gpu_guest_pool_mb", 0);
                     var preAlloc = new StringBuilder();
                     if (venusHostPool > 0)
                         preAlloc.append(fmt("venus-host-mb=%d", venusHostPool));
