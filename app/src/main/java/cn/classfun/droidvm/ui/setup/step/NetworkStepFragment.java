@@ -27,6 +27,7 @@ import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
+import cn.classfun.droidvm.ui.network.NetworkActions;
 import cn.classfun.droidvm.ui.network.NetworkPresets;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
@@ -159,6 +160,10 @@ public final class NetworkStepFragment extends BaseStepFragment {
         }
         store().add(config);
         store().save(activity);
+        // Normally the daemon is not up yet and reads this out of networks.json when it starts;
+        // when it is already running, it has to be told, or it cannot resolve the network for
+        // the first VM that uses it.
+        NetworkActions.syncToDaemon(config);
         created = true;
         Toast.makeText(activity,
             getString(R.string.setup_network_created, config.getName()),

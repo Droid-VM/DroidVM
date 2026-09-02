@@ -79,6 +79,38 @@ public final class NetworkActions {
             .invoke();
     }
 
+    /**
+     * Makes the daemon's picture of a network match the store's: it creates the network there
+     * when the daemon does not know it yet, and modifies it when it does. Registering is not
+     * starting -- the instance lands STOPPED either way.
+     *
+     * <p>Every network the app writes to networks.json has to go through here, because the
+     * daemon only re-reads that file when it starts. A network it has never been told about is
+     * one it cannot resolve: a VM whose NIC names it refuses to start ("Network ... not found"),
+     * and an export of that VM silently packs no network at all.
+     *
+     * <p>Best effort and silent: a daemon that is not running yet will read the network out of
+     * networks.json when it starts, which is the case the setup wizard is normally in.
+     */
+    public static void syncToDaemon(@NonNull NetworkConfig config) {
+        var conn = DaemonConnection.getInstance();
+        DaemonConnection.OnUnsuccessful f = r ->
+            Log.w(TAG, fmt("Daemon refused the network sync: %s", r.optString("message", "")));
+        DaemonConnection.OnError err = e -> Log.w(TAG, "Daemon network sync failed", e);
+        conn.buildRequest("network_exists")
+            .put("network_id", config.getId())
+            .onResponse(resp -> conn
+                .buildRequest(resp.optBoolean("exists", false)
+                    ? "network_modify" : "network_create")
+                .put("config", config)
+                .onUnsuccessful(f)
+                .onError(err)
+                .invoke())
+            .onUnsuccessful(f)
+            .onError(err)
+            .invoke();
+    }
+
     public static void deleteNetwork(
         @NonNull Context context,
         @NonNull Handler mainHandler,

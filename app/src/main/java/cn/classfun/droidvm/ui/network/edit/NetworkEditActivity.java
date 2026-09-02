@@ -49,6 +49,7 @@ import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.ui.network.NetworkActions;
 import cn.classfun.droidvm.ui.network.NetworkPresets;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
@@ -499,34 +500,12 @@ public final class NetworkEditActivity extends AppCompatActivity {
             store.add(config);
         }
         store.save(this);
-        syncToDaemon(config);
+        NetworkActions.syncToDaemon(config);
         Toast.makeText(this,
             editMode ? getString(R.string.network_edit_saved, name) :
                 getString(R.string.network_create_success, name),
             LENGTH_SHORT).show();
         finish();
-    }
-
-    /** Push the modified config to the daemon if it already knows the network. */
-    private void syncToDaemon(@NonNull NetworkConfig config) {
-        var conn = DaemonConnection.getInstance();
-        conn.buildRequest("network_exists")
-            .put("network_id", config.getId())
-            .onResponse(resp -> {
-                if (!resp.optBoolean("exists", false)) return;
-                conn.buildRequest("network_modify")
-                    .put("config", config)
-                    .onUnsuccessful(r -> {
-                    })
-                    .onError(e -> {
-                    })
-                    .invoke();
-            })
-            .onUnsuccessful(r -> {
-            })
-            .onError(e -> {
-            })
-            .invoke();
     }
 
     /**

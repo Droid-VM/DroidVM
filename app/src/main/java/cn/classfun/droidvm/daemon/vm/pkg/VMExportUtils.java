@@ -211,7 +211,13 @@ public final class VMExportUtils {
             var ref = exported.optString("pkg_network_ref", "");
             if (netId.isEmpty() || ref.isEmpty() || !seen.add(netId)) continue;
             var net = store.findById(netId);
-            if (net == null) continue;
+            if (net == null) {
+                // The app registers every network it writes, so this means the registration was
+                // refused or never reached us. Say so: the package comes out with a NIC that
+                // references a network it does not carry, and nothing else would report it.
+                Log.w(TAG, fmt("Network %s is unknown here; leaving it out of the package", netId));
+                continue;
+            }
             try {
                 var cfg = new NetworkConfig(net.toJson());
                 scrubUnique(cfg.item);
