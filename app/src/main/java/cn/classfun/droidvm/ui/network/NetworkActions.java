@@ -163,7 +163,10 @@ public final class NetworkActions {
     ) {
         try {
             JsonUtils.forEachArray(resp, "data", (JSONObject vm) -> {
-                if (vm.optString("state", "stopped").equals("stopped")) return;
+                // vm_list reports the enum name ("STOPPED"); vm_status lower-cases it. Compare
+                // either way -- a case-sensitive match here read every stopped VM as running and
+                // so refused to delete any network a VM had ever been attached to.
+                if (vm.optString("state", "stopped").equalsIgnoreCase("stopped")) return;
                 var vmId = vm.optString("id", "");
                 var vmCfg = vmStore.findById(vmId);
                 if (vmCfg == null) return;
