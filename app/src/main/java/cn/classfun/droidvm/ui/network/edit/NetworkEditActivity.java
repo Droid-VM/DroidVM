@@ -43,6 +43,7 @@ import cn.classfun.droidvm.daemon.network.backend.UplinkResolver;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
+import cn.classfun.droidvm.lib.store.network.NetworkConflicts;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
@@ -345,8 +346,8 @@ public final class NetworkEditActivity extends AppCompatActivity {
         var used4 = new ArrayList<IPv4Network>();
         var used6 = new ArrayList<IPv6Network>();
         storeAllBinders();
-        NetworkPresets.collectNetworks(vlans, used4, used6);
-        NetworkPresets.collectStoreNetworks(store, editNetworkId, used4, used6);
+        NetworkConflicts.collectSubnets(vlans, used4, used6);
+        NetworkPresets.collectStoreNetworks(store, editNetworkId, bridgeType, used4, used6);
         return NetworkPresets.pickFreeCidrPair(used4, used6);
     }
 
@@ -487,9 +488,9 @@ public final class NetworkEditActivity extends AppCompatActivity {
             Toast.makeText(this, e.getMessage(), LENGTH_LONG).show();
             return;
         }
-        var overlap = checkOverlaps(config);
-        if (overlap != null) {
-            Toast.makeText(this, overlap, LENGTH_LONG).show();
+        var conflict = checkConflicts(config);
+        if (conflict != null) {
+            Toast.makeText(this, conflict, LENGTH_LONG).show();
             return;
         }
         if (editMode) {
@@ -528,64 +529,28 @@ public final class NetworkEditActivity extends AppCompatActivity {
             .invoke();
     }
 
+    /**
+     * The reason this config cannot be saved alongside the others, or null when it can. Only
+     * networks of the same kind are consulted -- see {@link NetworkConflicts} for why a Linux
+     * bridge and a gVisor network are free to hold the same prefix.
+     */
     @Nullable
-    private String checkOverlaps(@NonNull NetworkConfig config) {
-        var myV4 = new ArrayList<IPv4Network>();
-        var myV6 = new ArrayList<IPv6Network>();
-        for (var vlan : config.getVlans()) {
-            var net4 = vlan.getIpv4Network();
-            if (net4 != null) myV4.add(net4);
-            for (var cidr : vlan.getIpv4Secondary()) {
-                try {
-                    myV4.add(IPv4Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-            var net6 = vlan.getIpv6Network();
-            if (net6 != null) myV6.add(net6);
-            for (var cidr : vlan.getIpv6Secondary()) {
-                try {
-                    myV6.add(IPv6Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
+    private String checkConflicts(@NonNull NetworkConfig config) {
+        var self = NetworkConflicts.findSelfOverlap(config);
+        if (self != null)
+            return getString(R.string.network_edit_error_self_overlap, self[0], self[1]);
+        var conflict = NetworkConflicts.find(config, store, editNetworkId);
+        if (conflict == null) return null;
+        switch (conflict.kind) {
+            case IPV4:
+                return getString(R.string.network_edit_error_ipv4_overlap,
+                    conflict.mine, conflict.otherName(), conflict.theirs);
+            case IPV6:
+                return getString(R.string.network_edit_error_ipv6_overlap,
+                    conflict.mine, conflict.otherName(), conflict.theirs);
+            default:
+                return getString(R.string.network_edit_error_uplink_taken,
+                    conflict.mine, conflict.otherName());
         }
-        // overlaps within this network
-        for (int i = 0; i < myV4.size(); i++)
-            for (int j = i + 1; j < myV4.size(); j++)
-                if (myV4.get(i).overlaps(myV4.get(j)))
-                    return getString(R.string.network_edit_error_self_overlap,
-                        myV4.get(i).toString(), myV4.get(j).toString());
-        for (int i = 0; i < myV6.size(); i++)
-            for (int j = i + 1; j < myV6.size(); j++)
-                if (myV6.get(i).overlaps(myV6.get(j)))
-                    return getString(R.string.network_edit_error_self_overlap,
-                        myV6.get(i).toString(), myV6.get(j).toString());
-        // overlaps against other networks
-        var result = new String[1];
-        store.forEach((id, other) -> {
-            if (result[0] != null || id.equals(editNetworkId)) return;
-            for (var vlan : other.getVlans()) {
-                var otherNet = vlan.getIpv4Network();
-                if (otherNet != null) {
-                    for (var mine : myV4) {
-                        if (!mine.overlaps(otherNet)) continue;
-                        result[0] = getString(R.string.network_edit_error_ipv4_overlap,
-                            mine.toString(), other.getName(), otherNet);
-                        return;
-                    }
-                }
-                var otherNet6 = vlan.getIpv6Network();
-                if (otherNet6 != null) {
-                    for (var mine : myV6) {
-                        if (!mine.overlaps(otherNet6)) continue;
-                        result[0] = getString(R.string.network_edit_error_ipv6_overlap,
-                            mine.toString(), other.getName(), otherNet6);
-                        return;
-                    }
-                }
-            }
-        });
-        return result[0];
     }
 }

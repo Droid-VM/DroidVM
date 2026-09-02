@@ -21,6 +21,13 @@ import cn.classfun.droidvm.lib.utils.NetUtils;
  * with a human-readable message on the first violation found.
  */
 public final class NetworkConfigValidator {
+    /**
+     * Cap on a bridge interface name. 12, so the longest derived name still fits IFNAMSIZ (15
+     * usable): a per-VLAN bridge / trunk leg appends "v" or "." plus a 2-char VLAN code (bridge
+     * + 3). See LinuxNetwork.vlanCode / perVlanBridge.
+     */
+    public static final int MAX_BRIDGE_NAME_LEN = 12;
+
     private NetworkConfigValidator() {
     }
 
@@ -31,11 +38,9 @@ public final class NetworkConfigValidator {
         var bridgeName = config.getBridgeName();
         if (bridgeName == null || !bridgeName.matches("[a-zA-Z][a-zA-Z0-9_-]*"))
             throw new IllegalArgumentException(fmt("Invalid bridge name: %s", bridgeName));
-        // Cap at 12 so the longest derived name still fits IFNAMSIZ (15 usable):
-        // a per-VLAN bridge / trunk leg appends "v" or "." plus a 2-char VLAN
-        // code (bridge + 3). See LinuxNetwork.vlanCode / perVlanBridge.
-        if (bridgeName.length() > 12)
-            throw new IllegalArgumentException("Bridge name longer than 12 characters");
+        if (bridgeName.length() > MAX_BRIDGE_NAME_LEN)
+            throw new IllegalArgumentException(fmt(
+                "Bridge name longer than %d characters", MAX_BRIDGE_NAME_LEN));
 
         var type = config.getBridgeType();
         var mode = config.getUplinkMode();

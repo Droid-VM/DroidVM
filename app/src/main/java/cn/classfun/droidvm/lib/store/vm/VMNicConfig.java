@@ -120,6 +120,19 @@ public final class VMNicConfig {
         lease("dhcp4_lease").set("offset", offset);
     }
 
+    public void setDhcp6Offset(long offset) {
+        lease("dhcp6_lease").set("offset", offset);
+    }
+
+    /**
+     * Turns a static lease off, leaving the offset and the forwards it carried in place. Off
+     * means the guest takes a dynamic address from the VLAN's pool instead; the settings stay
+     * stored so putting it back on restores what it was.
+     */
+    public void setDhcpLeaseEnabled(boolean ipv6, boolean enabled) {
+        lease(ipv6 ? "dhcp6_lease" : "dhcp4_lease").set("enabled", enabled);
+    }
+
     @NonNull
     public List<PortForward> getDhcp4Forwards() {
         return forwards("dhcp4_lease");
