@@ -596,6 +596,12 @@
     <string name="disk_chain_import_confirm">Register all</string>
     <string name="disk_merge">Merge into base</string>
     <string name="disk_flatten">Flatten to standalone</string>
+    <string name="disk_reset">Reset overlay</string>
+    <string name="disk_reset_confirm">Every change written to %1$s since it was created is discarded: it becomes a fresh, empty overlay of %2$s again. The file keeps its path and size. This cannot be undone.</string>
+    <string name="disk_reset_has_children">%1$s has overlays of its own; merge, flatten or delete them first.</string>
+    <string name="disk_reset_encrypted">%1$s is encrypted; it can\'t be recreated without its key.</string>
+    <string name="disk_reset_done">Overlay reset: %1$s</string>
+    <string name="disk_reset_failed">Failed to reset the overlay; the original file was kept.</string>
     <string name="disk_merge_not_overlay">This disk has no registered base image.</string>
     <string name="disk_merge_siblings">%1$s has other overlays; merging would corrupt them. Merge or flatten the siblings first.</string>
     <string name="disk_family_vm_running">VMs in this disk\'s tree are running; shut them down first:%1$s</string>

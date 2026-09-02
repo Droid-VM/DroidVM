@@ -65,6 +65,13 @@ public final class MainDiskFragment extends MainListFragment<DiskConfig, DiskSto
     }
 
     @Override
+    protected void onPrepareItemMenu(@NonNull DiskConfig config, @NonNull MaterialMenu menu) {
+        // Reset is for writable leaf overlays only; a base with overlays never shows it.
+        menu.setItemVisible(R.id.menu_disk_reset,
+            config.getParentId() != null && !adapter.items.hasChildren(config.getId()));
+    }
+
+    @Override
     protected boolean onMenuClicked(@NonNull DiskConfig config, @NonNull MenuItem item) {
         return dialog.diskMenuOnClick(config, item.getItemId());
     }

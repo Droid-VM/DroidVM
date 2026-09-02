@@ -559,6 +559,12 @@
     <string name="disk_chain_import_confirm">全部登记</string>
     <string name="disk_merge">合并回基底</string>
     <string name="disk_flatten">展平为独立磁盘</string>
+    <string name="disk_reset">清空增量</string>
+    <string name="disk_reset_confirm">“%1$s”自创建以来写入的所有更改都会被丢弃，它会重新变成“%2$s”的全新空增量。文件路径与大小不变，无法恢复。</string>
+    <string name="disk_reset_has_children">“%1$s”下面还有增量，请先合并、摊平或删除它们。</string>
+    <string name="disk_reset_encrypted">“%1$s”是加密磁盘，没有密钥无法重建。</string>
+    <string name="disk_reset_done">已清空增量：%1$s</string>
+    <string name="disk_reset_failed">清空增量失败，原文件已保留。</string>
     <string name="disk_merge_not_overlay">此磁盘没有已登记的基底镜像。</string>
     <string name="disk_merge_siblings">「%1$s」还有其他增量，合并会损坏它们。请先处理其他增量。</string>
     <string name="disk_family_vm_running">此磁盘树上有虚拟机正在运行，请先关机：%1$s</string>

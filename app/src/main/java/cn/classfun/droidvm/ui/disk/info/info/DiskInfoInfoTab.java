@@ -180,7 +180,8 @@ public final class DiskInfoInfoTab extends DiskInfoBaseTab {
     private static boolean isBranchAction(int id) {
         return id == R.id.menu_disk_create_increment
             || id == R.id.menu_disk_merge
-            || id == R.id.menu_disk_flatten;
+            || id == R.id.menu_disk_flatten
+            || id == R.id.menu_disk_reset;
     }
 
     private void onDiskUpdated() {

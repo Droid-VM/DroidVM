@@ -559,6 +559,12 @@
     <string name="disk_chain_import_confirm">全部登記</string>
     <string name="disk_merge">合併回基底</string>
     <string name="disk_flatten">攤平為獨立磁碟</string>
+    <string name="disk_reset">清空增量</string>
+    <string name="disk_reset_confirm">「%1$s」自建立以來寫入的所有變更都會被丟棄，它會重新變成「%2$s」的全新空增量。檔案路徑與大小不變，無法復原。</string>
+    <string name="disk_reset_has_children">「%1$s」下面還有增量，請先合併、攤平或刪除它們。</string>
+    <string name="disk_reset_encrypted">「%1$s」是加密磁碟，沒有金鑰無法重建。</string>
+    <string name="disk_reset_done">已清空增量：%1$s</string>
+    <string name="disk_reset_failed">清空增量失敗，原檔案已保留。</string>
     <string name="disk_merge_not_overlay">此磁碟沒有已登記的基底映像。</string>
     <string name="disk_merge_siblings">「%1$s」還有其他增量，合併會毀損它們。請先處理其他增量。</string>
     <string name="disk_family_vm_running">此磁碟樹上有虛擬機器正在執行，請先關機：%1$s</string>

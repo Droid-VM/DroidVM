@@ -68,9 +68,14 @@ public abstract class MainListFragment<
     private boolean onItemLongClick(@NonNull View v, @NonNull D config) {
         var pop = new MaterialMenu(requireContext(), v);
         pop.inflate(getItemMenuResId(config));
+        onPrepareItemMenu(config, pop);
         pop.setOnMenuItemClickListener(item -> onMenuClicked(config, item));
         pop.showAtTouch(lastTouchX, 0);
         return true;
+    }
+
+    /** Hook to hide or tweak items of the long-press menu for this particular {@code config}. */
+    protected void onPrepareItemMenu(@NonNull D config, @NonNull MaterialMenu menu) {
     }
 
     @NonNull

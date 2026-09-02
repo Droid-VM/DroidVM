@@ -325,6 +325,10 @@ public final class DiskBranchPanel {
     private void showNodeMenu(@NonNull View anchor, @NonNull DiskTree.Node node) {
         var popup = new MaterialMenu(context, anchor);
         popup.inflate(R.menu.menu_disk_tree_node);
+        // Reset only makes sense for a writable leaf overlay: a base's content belongs to its
+        // overlays, and a root has nothing to reset to. Hide it rather than refuse it.
+        popup.setItemVisible(R.id.menu_disk_reset,
+            node.config.getParentId() != null && !node.hasChildren());
         popup.setOnMenuItemClickListener(item -> {
             var actions = new DiskActionDialog(context, null, null);
             int id = item.getItemId();
@@ -338,6 +342,9 @@ public final class DiskBranchPanel {
                 return true;
             } else if (id == R.id.menu_disk_flatten) {
                 actions.tryFlatten(node.config, () -> refreshOnFocus = true);
+                return true;
+            } else if (id == R.id.menu_disk_reset) {
+                actions.tryReset(node.config, live, this::refresh);
                 return true;
             } else if (id == R.id.menu_disk_delete) {
                 actions.confirmDelete(node.config, live, this::refresh);

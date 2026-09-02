@@ -40,6 +40,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONObject;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -129,6 +130,7 @@ public final class DiskActionDialog {
             || id == R.id.menu_disk_create_increment
             || id == R.id.menu_disk_merge
             || id == R.id.menu_disk_flatten
+            || id == R.id.menu_disk_reset
             || id == R.id.menu_disk_show_info
             || id == R.id.menu_disk_clone;
     }
@@ -154,6 +156,8 @@ public final class DiskActionDialog {
             tryMerge(config, null, null);
         } else if (id == R.id.menu_disk_flatten) {
             tryFlatten(config, null);
+        } else if (id == R.id.menu_disk_reset) {
+            tryReset(config, null, null);
         } else if (id == R.id.menu_disk_show_info) {
             showMoreInfo(config);
         } else if (id == R.id.menu_disk_clone) {
@@ -319,6 +323,136 @@ public final class DiskActionDialog {
                 fail(String.valueOf(e.getMessage()));
             }
         });
+    }
+
+    /**
+     * Throw away everything written into a leaf overlay and start it over as a fresh, empty
+     * overlay of the same base ("roll back to the snapshot"). qemu-img has no command for that,
+     * so the overlay is recreated: a new header-only image is written beside it, carrying the
+     * same backing link, virtual size, cluster size and compression type, and then renamed over
+     * the original - an atomic swap, so a failure leaves the old file untouched. The path never
+     * changes, so no VM slot moves and nothing is announced beyond "its content resets".
+     *
+     * <p>Only for a writable leaf: an overlay with overlays of its own is their base, and an
+     * encrypted one cannot be recreated without its key. The VMs attaching it must be off.
+     *
+     * @param onConfirmed runs (main thread) after the swap succeeded, never on cancel or failure
+     */
+    public void tryReset(
+        @NonNull DiskConfig config, @Nullable LiveRows live, @Nullable Runnable onConfirmed) {
+        runOnPool(() -> {
+            try {
+                var fam = new Family(config, live);
+                var self = fam.self;
+                var parentId = fam.shape.parentOf(self.getId());
+                var parent = parentId == null ? null : fam.disks.findById(parentId);
+                if (parent == null) {
+                    fail(context.getString(R.string.disk_merge_not_overlay));
+                    return;
+                }
+                if (fam.shape.hasChildren(self.getId())) {
+                    fail(context.getString(R.string.disk_reset_has_children, self.getName()));
+                    return;
+                }
+                var pinned = new ArrayList<AttachmentCursor>();
+                var rewritten = new ArrayList<String>();
+                for (var c : fam.cursors) {
+                    if (!self.getId().equals(c.nodeId)) continue;
+                    if (c.pinned) pinned.add(c);
+                    if (c.isAnnounced())
+                        rewritten.add(CursorPlanText.rewrittenLine(context, c, parent.getName()));
+                }
+                if (!pinned.isEmpty()) {
+                    fail(CursorPlanText.pinnedMessage(context, pinned));
+                    return;
+                }
+                var info = ImageUtils.getImageInfo(self.getFullPath());
+                if (info.optBoolean("encrypted", false)) {
+                    fail(context.getString(R.string.disk_reset_encrypted, self.getName()));
+                    return;
+                }
+                var message = context.getString(
+                    R.string.disk_reset_confirm, self.getName(), parent.getName())
+                    + CursorPlanText.describe(context, List.of(), rewritten);
+                mainLooper.post(() -> new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.disk_reset)
+                    .setMessage(message)
+                    .setPositiveButton(android.R.string.ok, (d, w) ->
+                        runOnPool(() -> resetOverlay(self, parent, info, onConfirmed)))
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show());
+            } catch (Exception e) {
+                Log.w(TAG, "reset pre-checks failed", e);
+                fail(String.valueOf(e.getMessage()));
+            }
+        });
+    }
+
+    /** Recreate {@code self} empty on {@code parent} beside itself, then swap it into place. */
+    private void resetOverlay(
+        @NonNull DiskConfig self,
+        @NonNull DiskConfig parent,
+        @NonNull JSONObject info,
+        @Nullable Runnable onConfirmed
+    ) {
+        var path = self.getFullPath();
+        var tmp = path + ".reset.tmp";
+        try {
+            var parentPath = parent.getFullPath();
+            String backingFormat;
+            try {
+                backingFormat = ImageUtils.getImageInfo(parentPath).optString("format", "qcow2");
+            } catch (Exception e) {
+                backingFormat = "qcow2";
+            }
+            var args = new ArrayList<String>(List.of(
+                getPrebuiltBinaryPath("qemu-img"), "create",
+                "--format", "qcow2",
+                "--backing", parentPath,
+                "--backing-format", backingFormat));
+            // Keep the image's own layout choices so the reset overlay behaves like the old one.
+            var opts = new ArrayList<String>();
+            long cluster = info.optLong("cluster-size", 0);
+            if (cluster > 0) opts.add("cluster_size=" + cluster);
+            var specific = info.optJSONObject("format-specific");
+            var data = specific == null ? null : specific.optJSONObject("data");
+            var compression = data == null ? "" : data.optString("compression-type", "");
+            if (!compression.isEmpty()) opts.add("compression_type=" + compression);
+            if (!opts.isEmpty()) {
+                args.add("-o");
+                args.add(String.join(",", opts));
+            }
+            args.add(tmp);
+            long size = info.optLong("virtual-size", 0);
+            if (size > 0) args.add(String.valueOf(size));
+            var result = runList(args.toArray(new String[0]));
+            if (!result.isSuccess()) {
+                result.printLog(TAG);
+                runList("rm", "-f", tmp);
+                fail(context.getString(R.string.disk_reset_failed));
+                return;
+            }
+            if (!new File(tmp).renameTo(new File(path))) {
+                var moved = runList("mv", "-f", tmp, path);
+                if (!moved.isSuccess()) {
+                    moved.printLog(TAG);
+                    runList("rm", "-f", tmp);
+                    fail(context.getString(R.string.disk_reset_failed));
+                    return;
+                }
+            }
+            mainLooper.post(() -> {
+                Toast.makeText(context,
+                    context.getString(R.string.disk_reset_done, self.getName()),
+                    LENGTH_SHORT).show();
+                if (onUpdate != null) onUpdate.run();
+                if (onConfirmed != null) onConfirmed.run();
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "overlay reset failed", e);
+            runList("rm", "-f", tmp);
+            fail(context.getString(R.string.disk_reset_failed));
+        }
     }
 
     private void fail(@Nullable String message) {
