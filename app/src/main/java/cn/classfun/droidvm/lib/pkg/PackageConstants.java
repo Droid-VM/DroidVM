@@ -11,7 +11,13 @@ public final class PackageConstants {
     public static final String MAGIC = "VMPKG";
     public static final int HEADER_SIZE = 24;
     public static final int BUFFER = 64 * 1024;
-    public static final int MANIFEST_VERSION = 1;
+    // BASE is the manifest of a package that uses none of the ManifestFeatures - the original
+    // one-file-per-disk layout. Every later addition is a ManifestFeature carrying the version
+    // that introduced it; a package is stamped with the highest one it uses, and what this
+    // build can read follows from the list rather than from a constant kept in step by hand.
+    // Readers accept anything up to MANIFEST_VERSION and refuse what is newer.
+    public static final int MANIFEST_VERSION_BASE = 1;
+    public static final int MANIFEST_VERSION = ManifestFeature.latest();
     public static final String MANIFEST_NAME = "manifest.json";
     public static final Compression DEFAULT_COMPRESSION = Compression.ZSTD;
 

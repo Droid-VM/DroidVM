@@ -5,8 +5,6 @@ package cn.classfun.droidvm.ui.disk.action;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
-import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
-import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.dirname;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
@@ -240,11 +238,7 @@ public final class BackingChainLinker {
     /** Header-only rewrite to an absolute backing path; content-identical, so -u is correct. */
     private static void rebaseAbsolute(@NonNull String overlay, @NonNull String absBacking) {
         try {
-            var format = ImageUtils.getImageInfo(absBacking).optString("format", "qcow2");
-            var result = runListQuiet(
-                getPrebuiltBinaryPath("qemu-img"), "rebase",
-                "-u", "-b", absBacking, "-F", format, overlay);
-            if (!result.isSuccess()) result.printLog(TAG);
+            ImageUtils.rebaseBacking(overlay, absBacking);
         } catch (Exception e) {
             Log.w(TAG, fmt("rebase -u failed for %s", overlay), e);
         }

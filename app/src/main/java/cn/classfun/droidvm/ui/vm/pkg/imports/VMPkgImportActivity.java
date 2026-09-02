@@ -48,6 +48,7 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.text.DateFormat;
 import java.util.Date;
+import java.util.HashMap;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
@@ -252,9 +253,13 @@ public final class VMPkgImportActivity extends AppCompatActivity
         );
         tvPackageMeta.setText(meta.trim());
         long totalSize = 0;
+        int diskCount = 0;
         diskAdapter.disks.clear();
         for (var d : preview.disks) {
             totalSize += d.size;
+            // Backing images take up room like anything else, but they are not disks the VM
+            // gets: counting them as disks would say this package holds more than it does.
+            if (d.attached) diskCount++;
             diskAdapter.disks.add(d);
         }
         diskAdapter.notifyDataSetChanged();
@@ -268,7 +273,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
             inputTarget.setText(defaultPath);
         tvDiskSummary.setText(getString(
             R.string.vmpkg_import_disk_summary,
-            preview.disks.size(),
+            diskCount,
             formatSize(totalSize)
         ));
         tvStatus.setText("");
@@ -417,24 +422,28 @@ public final class VMPkgImportActivity extends AppCompatActivity
             else vmStore.update(vm);
             var diskStore = new DiskStore();
             diskStore.load(this);
+            var pathByArchive = new HashMap<String, String>();
             for (int i = 0; i < disks.length(); i++) {
                 var diskJson = disks.optJSONObject(i);
                 if (diskJson == null) continue;
                 var path = diskJson.optString("path");
                 var file = new File(path);
-                var parent = file.getParent();
+                var folder = file.getParent();
                 var name = file.getName();
                 if (path.isEmpty()) {
                     name = diskJson.optString("name", "");
-                    parent = diskJson.optString("folder", "");
-                    path = pathJoin(parent, name);
+                    folder = diskJson.optString("folder", "");
+                    path = pathJoin(folder, name);
                 }
+                var archive = diskJson.optString("archive_path", "");
+                if (!archive.isEmpty() && !path.isEmpty()) pathByArchive.put(archive, path);
                 if (!path.isEmpty() && diskStore.findByPath(path) != null) continue;
                 var disk = new DiskConfig();
                 disk.setName(name);
-                disk.item.set("folder", parent == null ? "" : parent);
+                disk.item.set("folder", folder == null ? "" : folder);
                 diskStore.add(disk);
             }
+            linkImportedChains(diskStore, disks, pathByArchive);
             var networkStore = new NetworkStore();
             networkStore.load(this);
             for (int i = 0; i < networks.length(); i++) {
@@ -459,6 +468,31 @@ public final class VMPkgImportActivity extends AppCompatActivity
             });
         } catch (Exception e) {
             onImportFailure(e.getMessage());
+        }
+    }
+
+    /**
+     * Record the overlay-to-base links the package described, so imported disks show as one
+     * tree in branch management right away rather than waiting for the header walk to
+     * rediscover them the next time something opens them.
+     */
+    private void linkImportedChains(
+        @NonNull DiskStore store,
+        @NonNull JSONArray disks,
+        @NonNull HashMap<String, String> pathByArchive
+    ) {
+        for (int i = 0; i < disks.length(); i++) {
+            var diskJson = disks.optJSONObject(i);
+            if (diskJson == null) continue;
+            var backing = diskJson.optString("backing_archive", "");
+            if (backing.isEmpty()) continue;
+            var childPath = diskJson.optString("path", "");
+            var parentPath = pathByArchive.get(backing);
+            if (childPath.isEmpty() || parentPath == null) continue;
+            var child = store.findByPath(childPath);
+            var parent = store.findByPath(parentPath);
+            if (child == null || parent == null) continue;
+            child.setParentId(parent.getId());
         }
     }
 

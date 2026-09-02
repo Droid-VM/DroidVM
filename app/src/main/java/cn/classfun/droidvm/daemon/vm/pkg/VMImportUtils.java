@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 
 import cn.classfun.droidvm.lib.pkg.BootFile;
@@ -22,13 +23,26 @@ public final class VMImportUtils {
     private VMImportUtils() {
     }
 
+    /**
+     * Rebuild the VM's disk list from the files the import placed. Only entries that fill a disk
+     * slot go in: a backing image is on disk for the overlay above it to read, not for the guest
+     * to see. Slot order comes from the manifest rather than from the order the tar happened to
+     * store the files in, which no longer matches once a chain is interleaved with its disks.
+     */
     public static void remapDiskPaths(
         @NonNull VMConfig vm,
         @NonNull ArrayList<DiskEntry> placed
     ) {
-        var disks = DataItem.newArray();
+        var attached = new ArrayList<DiskEntry>();
         for (var disk : placed) {
-            if (disk.target == null || disk.ref == null) continue;
+            if (disk.target == null || disk.ref == null || !disk.attached) continue;
+            attached.add(disk);
+        }
+        // Stable: packages written before the slot index existed carry 0 for every entry, and
+        // keep the order they were packed in.
+        attached.sort(Comparator.comparingInt((DiskEntry disk) -> disk.ref.index));
+        var disks = DataItem.newArray();
+        for (var disk : attached) {
             var item = DataItem.newObject();
             item.set("path", disk.target.getPath());
             item.set("readonly", disk.ref.readonly);

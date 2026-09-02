@@ -13,6 +13,7 @@ import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_INITRD_DEBUG;
 import static cn.classfun.droidvm.lib.Constants.PATH_MICRODROID_KERNEL;
 import static cn.classfun.droidvm.lib.utils.BinaryUtils.putInt64LE;
 import static cn.classfun.droidvm.lib.utils.BinaryUtils.putUInt16LE;
+import static cn.classfun.droidvm.lib.utils.FileUtils.canonicalPath;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.util.Log;
@@ -20,6 +21,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -28,12 +30,16 @@ import java.util.Set;
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.lib.pkg.BootFile;
+import cn.classfun.droidvm.lib.pkg.DiskChainPlan;
+import cn.classfun.droidvm.lib.pkg.DiskEntry;
+import cn.classfun.droidvm.lib.pkg.DiskRef;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.utils.ImageUtils;
 
 public final class VMExportUtils {
     private static final String TAG = "VMExportUtils";
@@ -75,7 +81,7 @@ public final class VMExportUtils {
         var hdr = new byte[PackageConstants.HEADER_SIZE];
         var magic = PackageConstants.MAGIC.getBytes(UTF_8);
         System.arraycopy(magic, 0, hdr, 0, magic.length);
-        putUInt16LE(hdr, 6, PackageConstants.MANIFEST_VERSION);
+        putUInt16LE(hdr, 6, manifest.manifestVersion);
         putUInt16LE(hdr, 8, BuildConfig.VERSION_CODE);
         putUInt16LE(hdr, 10, manifestSize);
         putUInt16LE(hdr, 12, manifest.compression.type);
@@ -100,6 +106,39 @@ public final class VMExportUtils {
         file.build();
         if (!seen.add(file.archivePath)) return;
         manifest.boots.add(file);
+    }
+
+    /**
+     * The files the package must carry for the chosen disks: each selected VM disk plus, when it
+     * is a qcow2 overlay, every backing image under it. Packing the overlay alone was the whole
+     * bug - the guest reads the base too, and the copied header points at a path that only ever
+     * existed on the exporting phone.
+     *
+     * <p>Reads the source images (headers only) and never writes to them; the exporting phone's
+     * disks and their registered parent links come out of an export exactly as they went in.
+     *
+     * @param wanted VM disk indices to include; empty means every disk.
+     */
+    public static void collectDisks(
+        @NonNull PackageManifest manifest,
+        @NonNull VMConfig vm,
+        @NonNull Set<Integer> wanted
+    ) throws Exception {
+        var tops = new ArrayList<DiskRef>();
+        var disks = vm.item.opt("disks", DataItem.newArray());
+        for (int i = 0; i < disks.size(); i++) {
+            var item = disks.get(i);
+            if (!item.is(DataItem.Type.OBJECT)) continue;
+            if (!wanted.isEmpty() && !wanted.contains(i)) continue;
+            var ref = new DiskRef(i, item);
+            if (ref.path.isEmpty()) continue;
+            // Canonical so that a base image reached both as a disk and as another disk's
+            // parent is recognised as the same file and packed once.
+            ref.path = canonicalPath(ref.path);
+            tops.add(ref);
+        }
+        for (var member : DiskChainPlan.build(tops, ImageUtils::backingOf))
+            manifest.disks.add(DiskEntry.of(member));
     }
 
     public static void collectBootFiles(@NonNull PackageManifest manifest) {

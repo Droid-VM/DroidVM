@@ -29,6 +29,14 @@ public final class DiskRef implements JSONSerialize {
         this.bus = optEnum(jo, "bus", DiskBus.VIRTIO);
     }
 
+    /** A file with no VM disk slot of its own - a backing image the package carries. */
+    public DiskRef(int index, @NonNull String path) {
+        this.index = index;
+        this.path = path;
+        this.readonly = true;
+        this.bus = DiskBus.VIRTIO;
+    }
+
     public DiskRef(int index, @NonNull DataItem o) {
         this.index = index;
         this.path = o.optString("path", "");
@@ -49,6 +57,7 @@ public final class DiskRef implements JSONSerialize {
     @Override
     public JSONObject toJson() throws JSONException {
         var d = new JSONObject();
+        d.put("index", index);
         d.put("readonly", readonly);
         d.put("bus", bus);
         d.put("path", path);

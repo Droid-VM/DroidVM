@@ -4,13 +4,23 @@
 package cn.classfun.droidvm.lib.utils;
 
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
+import static cn.classfun.droidvm.lib.utils.FileUtils.canonicalPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runListQuiet;
+import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
+import static cn.classfun.droidvm.lib.utils.StringUtils.dirname;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.io.File;
+import java.io.IOException;
+
+import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 
 public final class ImageUtils {
     private ImageUtils() {
@@ -72,6 +82,65 @@ public final class ImageUtils {
         } catch (Exception e) {
             return false;
         }
+    }
+
+    /**
+     * The absolute, canonical path of {@code path}'s backing image, or null when it has none.
+     * Relative headers are resolved against the overlay's own directory, the way qemu does it.
+     *
+     * <p>Unlike {@link #hasBackingFile}, this refuses to guess: a caller that has to reproduce
+     * the whole chain (packaging, above all) cannot treat "cannot tell" as "no parent", because
+     * the file it would then leave behind is the one the guest needs. So an unreadable qcow2
+     * throws - qemu-img failing on one usually means its backing file is already gone - and so
+     * does a header naming a file that is not there. Any other format has no chain to lose:
+     * qemu-img not reading it says nothing, and refusing it would break exports that work.
+     */
+    @Nullable
+    public static String backingOf(@NonNull String path) throws IOException {
+        JSONObject info;
+        try {
+            info = getImageInfo(path);
+        } catch (Exception e) {
+            if (DiskFormat.fromFilename(path) != DiskFormat.QCOW2) return null;
+            throw new IOException(fmt(
+                "cannot read %s - its backing image may be missing", path
+            ), e);
+        }
+        var backing = info.optString("full-backing-filename",
+            info.optString("backing-filename", ""));
+        if (backing.isEmpty()) return null;
+        if (!backing.startsWith("/")) backing = pathJoin(dirname(path), backing);
+        backing = canonicalPath(backing);
+        if (!new File(backing).isFile())
+            throw new IOException(fmt("missing backing image: %s", backing));
+        return backing;
+    }
+
+    /**
+     * Point {@code overlay}'s header at {@code backing} without touching a cluster
+     * ({@code qemu-img rebase -u}). Correct only when the two images already describe the same
+     * data and just the path changed - a copy of a whole chain landing in a new folder, which
+     * is what importing a package is.
+     */
+    public static void rebaseBacking(
+        @NonNull String overlay,
+        @NonNull String backing
+    ) throws IOException {
+        String format;
+        try {
+            format = getImageInfo(backing).optString("format", "qcow2");
+        } catch (Exception e) {
+            format = "qcow2";
+        }
+        var result = runListQuiet(
+            getPrebuiltBinaryPath("qemu-img"), "rebase",
+            "-u", "-b", backing, "-F", format, overlay
+        );
+        if (result.isSuccess()) return;
+        result.printLog("qemu-img");
+        throw new IOException(fmt(
+            "qemu-img rebase failed for %s: %d", basename(overlay), result.getCode()
+        ));
     }
 
     /**

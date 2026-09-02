@@ -19,7 +19,9 @@ import org.json.JSONObject;
 
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.lib.archive.Compression;
@@ -28,7 +30,7 @@ import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 
 public final class PackageManifest implements JSONSerialize {
-    public int manifestVersion = PackageConstants.MANIFEST_VERSION;
+    public int manifestVersion = PackageConstants.MANIFEST_VERSION_BASE;
     public String format = PackageConstants.EXTENSION;
     public long createdAt = System.currentTimeMillis();
     public String appVersion = BuildConfig.VERSION_NAME;
@@ -56,6 +58,23 @@ public final class PackageManifest implements JSONSerialize {
         o.put("boots", listToJSONArray(boots));
         o.put("networks", listToJSONArray(networks));
         return o;
+    }
+
+    /** The {@link ManifestFeature}s this package's contents actually use. */
+    @NonNull
+    public Set<ManifestFeature> features() {
+        var used = EnumSet.noneOf(ManifestFeature.class);
+        for (var disk : disks) disk.collectFeatures(used);
+        return used;
+    }
+
+    /**
+     * The oldest manifest version that can describe this package - the highest any feature in
+     * it needs - so a plain one-disk export stays importable by builds that predate the rest.
+     * Ask only once everything is collected: the answer is a function of all of it.
+     */
+    public int resolveVersion() {
+        return ManifestFeature.versionFor(features());
     }
 
     @Nullable
