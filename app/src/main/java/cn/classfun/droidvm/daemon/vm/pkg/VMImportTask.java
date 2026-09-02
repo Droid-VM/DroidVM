@@ -8,6 +8,7 @@ import static cn.classfun.droidvm.daemon.vm.pkg.VMImportUtils.remapDiskPaths;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMImportUtils.uniqueFile;
 import static cn.classfun.droidvm.lib.pkg.PackageConstants.BUFFER;
 import static cn.classfun.droidvm.lib.utils.BinaryUtils.readFully;
+import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomMac;
 import static cn.classfun.droidvm.lib.utils.JsonUtils.listToJSONArray;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -28,14 +29,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.archive.TarReader;
 import cn.classfun.droidvm.lib.pkg.BootFile;
 import cn.classfun.droidvm.lib.pkg.DiskEntry;
+import cn.classfun.droidvm.lib.pkg.NetworkImportPlan;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageHeader;
 import cn.classfun.droidvm.lib.pkg.PackageInput;
@@ -44,7 +46,9 @@ import cn.classfun.droidvm.lib.pkg.Phase;
 import cn.classfun.droidvm.lib.pkg.VolumeSet;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
+import cn.classfun.droidvm.lib.store.vm.NicLeaseOffsets;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 
 public final class VMImportTask {
@@ -54,7 +58,9 @@ public final class VMImportTask {
     private final Server server;
     private final String srcPath;
     private final File targetDir;
-    private final String networkMode;
+    /** What to do with a packaged network the plan says nothing about. */
+    private final NetworkImportPlan.Action networkFallback;
+    private final List<NetworkImportPlan.Entry> networkPlan;
     /** This package's own folder under {@link #targetDir}; created before the first file lands. */
     private File vmDir = null;
     private String vmName = "";
@@ -75,7 +81,11 @@ public final class VMImportTask {
         if (!targetPath.startsWith("/"))
             throw new IllegalArgumentException("missing target_dir");
         targetDir = new File(targetPath);
-        networkMode = request.optString("network_mode", "auto");
+        networkPlan = NetworkImportPlan.parse(request.optJSONArray("network_plan"));
+        // A caller with no plan gets the old whole-package behaviour: "skip" attaches nothing,
+        // anything else recreates every network the package carries.
+        networkFallback = request.optString("network_mode", "auto").equals("skip")
+            ? NetworkImportPlan.Action.SKIP : NetworkImportPlan.Action.CREATE;
     }
 
     public void startAsync() {
@@ -87,6 +97,7 @@ public final class VMImportTask {
         try {
             unpack();
             var networks = importNetworks(importedVM, importedManifest.networks);
+            resolveLeases(importedVM);
             var vmId = server.getContext().getVMs().createVM(importedVM);
             if (vmId == null || vmId.isEmpty()) throw new IOException("failed to register VM");
             registered = true;
@@ -253,6 +264,14 @@ public final class VMImportTask {
         pkg.validateDataConsumed();
     }
 
+    /**
+     * Applies the import plan: each network the package carries is joined to one this phone
+     * already has, created here, or left behind, and every NIC that referenced it is re-pointed
+     * at what it ended up on. A NIC whose network was skipped -- or whose join target has since
+     * been deleted -- comes out unattached rather than pointing at nothing.
+     *
+     * @return the networks this import created, for the caller to persist
+     */
     @NonNull
     private JSONArray importNetworks(
         @NonNull VMConfig vm,
@@ -260,24 +279,28 @@ public final class VMImportTask {
     ) throws Exception {
         var refs = new HashMap<String, String>();
         var created = new JSONArray();
-        if (networkMode.equals("skip")) {
-            remapNetworks(vm, refs);
-            return created;
-        }
         var store = server.getContext().getNetworks();
+        var plan = new NetworkImportPlan(store);
         for (var source : configs) {
-            var ref = source.item.optString("pkg_network_ref", "");
+            var ref = source.item.optString(NetworkImportPlan.REF_KEY, "");
             if (ref.isEmpty()) continue;
-            if (networkMode.equals("existing")) {
-                var existing = store.findByName(source.getName());
-                if (existing != null) refs.put(ref, existing.getId().toString());
+            var entry = NetworkImportPlan.findRef(networkPlan, ref);
+            var action = entry == null ? networkFallback : entry.action;
+            if (action == NetworkImportPlan.Action.SKIP) continue;
+            if (action == NetworkImportPlan.Action.JOIN) {
+                var target = entry == null || entry.networkId == null
+                    ? null : store.findById(entry.networkId);
+                if (target == null) {
+                    Log.w(TAG, fmt("Import %s: no network to join for %s", taskId, ref));
+                    continue;
+                }
+                refs.put(ref, target.getId().toString());
                 continue;
             }
-            var cfg = new NetworkConfig(source.toJson());
-            cfg.item.remove("pkg_network_ref");
-            cfg.setId(UUID.randomUUID());
-            cfg.setName(uniqueNetworkName(cfg.getName()));
-            makeBridgeNameUnique(cfg);
+            // The screen prepared the config so the user could see what it would be; take it,
+            // but let the plan settle the names again against the store as it is right now.
+            var cfg = entry != null && entry.config != null
+                ? plan.adopt(entry.config) : plan.prepareCreate(source);
             var id = store.createNetwork(cfg);
             if (id == null || id.isEmpty()) continue;
             refs.put(ref, id);
@@ -295,38 +318,65 @@ public final class VMImportTask {
         if (nets == null || !nets.is(DataItem.Type.ARRAY)) return;
         for (var nic : nets.asArray()) {
             if (!nic.is(DataItem.Type.OBJECT)) continue;
-            var ref = nic.optString("pkg_network_ref", "");
-            nic.remove("pkg_network_ref");
+            var ref = nic.optString(NetworkImportPlan.REF_KEY, "");
+            nic.remove(NetworkImportPlan.REF_KEY);
             var id = refs.get(ref);
             if (id == null || id.isEmpty()) nic.remove("network_id");
             else nic.set("network_id", id);
         }
     }
 
-    @NonNull
-    private String uniqueNetworkName(@NonNull String name) {
-        var store = server.getContext().getNetworks();
-        if (store.findByName(name) == null) return name;
-        int i = 1;
-        while (store.findByName(fmt("%s_%d", name, i)) != null) i++;
-        return fmt("%s_%d", name, i);
-    }
-
-    private void makeBridgeNameUnique(@NonNull NetworkConfig cfg) {
-        var bridge = cfg.getBridgeName();
-        if (bridge == null || bridge.isEmpty()) return;
-        if (isBridgeNameUnique(bridge)) return;
-        int i = 1;
-        while (!isBridgeNameUnique(fmt("%s%d", bridge, i))) i++;
-        cfg.setBridgeName(fmt("%s%d", bridge, i));
-    }
-
-    private boolean isBridgeNameUnique(@NonNull String bridgeName) {
-        var unique = new AtomicBoolean(true);
-        server.getContext().getNetworks().forEach((id, net) -> {
-            if (bridgeName.equals(net.getBridgeName())) unique.set(false);
+    /**
+     * Makes every static DHCP lease the package brought fit the network its NIC actually landed
+     * on. An offset that came from the other phone is kept where it can be: it is what the guest
+     * has been answering on. Where it cannot -- another VM here already holds it, it falls inside
+     * this VLAN's dynamic pool, or the VLAN is smaller than it was over there -- the next free
+     * offset is taken instead, and only when the VLAN has nothing free at all (or does not serve
+     * that family, or the NIC ended up on no network) does the lease go back to a dynamic
+     * address. Refusing the import over an address a VM can perfectly well be given by DHCP
+     * would help nobody.
+     */
+    private void resolveLeases(@NonNull VMConfig vm) {
+        vm.forEachNic(nic -> {
+            resolveLease(vm, nic, NicLeaseOffsets.Family.IPV4);
+            resolveLease(vm, nic, NicLeaseOffsets.Family.IPV6);
         });
-        return unique.get();
+    }
+
+    private void resolveLease(
+        @NonNull VMConfig vm,
+        @NonNull VMNicConfig nic,
+        @NonNull NicLeaseOffsets.Family family
+    ) {
+        boolean ipv6 = family == NicLeaseOffsets.Family.IPV6;
+        if (!(ipv6 ? nic.isDhcp6LeaseEnabled() : nic.isDhcp4LeaseEnabled())) return;
+        var netId = nic.getNetworkId();
+        var network = netId == null ? null : server.getContext().getNetworks().findById(netId);
+        var vlan = network == null ? null : nic.resolveDhcpVlan(network);
+        if (vlan == null || !(ipv6 ? vlan.isDhcp6Enabled() : vlan.isDhcp4Enabled())) {
+            nic.setDhcpLeaseEnabled(ipv6, false);
+            return;
+        }
+        var used = new HashSet<Long>();
+        server.getContext().getVMs().forEach((id, other) ->
+            NicLeaseOffsets.addOffsets(used, other, network, vlan, family));
+        // this VM is not registered yet, so its own other NICs are only in the config in hand
+        NicLeaseOffsets.addOffsets(used, vm, network, vlan, family, nic);
+        boolean has = ipv6 ? nic.hasDhcp6Offset() : nic.hasDhcp4Offset();
+        long wanted = !has ? NicLeaseOffsets.FIRST
+            : (ipv6 ? nic.getDhcp6Offset() : nic.getDhcp4Offset());
+        long offset = NicLeaseOffsets.resolve(wanted, used, vlan, family);
+        if (offset < 0) {
+            Log.w(TAG, fmt("Import %s: no free lease offset on network %s", taskId, netId));
+            nic.setDhcpLeaseEnabled(ipv6, false);
+            return;
+        }
+        if (ipv6) nic.setDhcp6Offset(offset);
+        else nic.setDhcp4Offset(offset);
+        // Exporting strips NIC MAC addresses -- two phones must not hand out the same one -- but
+        // a static lease is keyed by MAC, so a kept lease needs one now rather than whenever the
+        // user next opens the NIC editor.
+        if (nic.getMacAddress() == null) nic.item.set("mac_address", generateRandomMac());
     }
 
     private void copyEntry(

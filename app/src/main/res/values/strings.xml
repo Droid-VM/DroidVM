@@ -1001,6 +1001,7 @@
     <string name="network_edit_error_bridge_duplicate">A network with this bridge name already exists</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
+    <string name="network_edit_error_uplink_taken">Uplink %1$s is already bridged by network \"%2$s\"</string>
     <string name="network_edit_save">Save network</string>
     <string name="network_edit_running_banner">This network is running. Stop it before editing.</string>
     <string name="network_edit_bridge_type">Bridge type</string>
@@ -1416,10 +1417,15 @@
     <string name="vmpkg_import_disk_summary">%1$d disks, %2$s</string>
     <string name="vmpkg_import_network_line">Network: %1$s</string>
     <string name="vmpkg_import_no_networks">No bound networks in this package.</string>
-    <string name="vmpkg_import_network_mode">Network import</string>
-    <string name="vmpkg_import_network_skip">Skip networks</string>
-    <string name="vmpkg_import_network_existing">Use existing networks by name</string>
-    <string name="vmpkg_import_network_auto">Create networks automatically</string>
+    <string name="vmpkg_import_network_mode">Import as</string>
+    <string name="vmpkg_import_network_skip">Skip</string>
+    <string name="vmpkg_import_network_join">Join an existing network</string>
+    <string name="vmpkg_import_network_create">Create a new network</string>
+    <string name="vmpkg_import_network_target">Target network</string>
+    <string name="vmpkg_import_network_nothing_to_join">nothing of this kind here</string>
+    <string name="vmpkg_import_network_conflicts">conflicts</string>
+    <string name="vmpkg_import_network_will_create">Will create \"%1$s\" on bridge %2$s</string>
+    <string name="vmpkg_import_network_skipped">Adapters on this network stay unattached.</string>
     <string name="vmpkg_import_no_space">Not enough target space. Required %1$s, available %2$s.</string>
     <string name="vmpkg_import_target_folder">Import folder</string>
     <string name="vmpkg_import_target_folder_desc">Each import gets its own subfolder here, named after the VM.</string>

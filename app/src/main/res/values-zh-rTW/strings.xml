@@ -963,6 +963,7 @@
     <string name="network_edit_error_bridge_duplicate">已存在使用此網橋名稱的網路</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 子網 %1$s 與網路"%2$s"（%3$s）重疊</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 子網 %1$s 與網路"%2$s"（%3$s）重疊</string>
+    <string name="network_edit_error_uplink_taken">上行介面 %1$s 已被網路「%2$s」橋接</string>
     <string name="network_edit_save">儲存網路</string>
     <string name="network_edit_running_banner">網路正在執行，請先停止後再編輯。</string>
     <string name="network_edit_bridge_type">網橋型別</string>
@@ -1378,10 +1379,15 @@
     <string name="vmpkg_import_disk_summary">%1$d 個磁碟，%2$s</string>
     <string name="vmpkg_import_network_line">網路：%1$s</string>
     <string name="vmpkg_import_no_networks">此包中沒有綁定網路。</string>
-    <string name="vmpkg_import_network_mode">網路匯入</string>
-    <string name="vmpkg_import_network_skip">跳過網路</string>
-    <string name="vmpkg_import_network_existing">按名稱使用現有網路</string>
-    <string name="vmpkg_import_network_auto">自動建立網路</string>
+    <string name="vmpkg_import_network_mode">匯入方式</string>
+    <string name="vmpkg_import_network_skip">跳過</string>
+    <string name="vmpkg_import_network_join">加入現有網路</string>
+    <string name="vmpkg_import_network_create">建立新網路</string>
+    <string name="vmpkg_import_network_target">目標網路</string>
+    <string name="vmpkg_import_network_nothing_to_join">沒有同類型的網路</string>
+    <string name="vmpkg_import_network_conflicts">衝突</string>
+    <string name="vmpkg_import_network_will_create">將建立「%1$s」，網橋 %2$s</string>
+    <string name="vmpkg_import_network_skipped">這個網路上的網路卡將不連接任何網路。</string>
     <string name="vmpkg_import_no_space">目標空間不足。需要 %1$s，可用 %2$s。</string>
     <string name="vmpkg_import_target_folder">匯入目錄</string>
     <string name="vmpkg_import_target_folder_desc">每次匯入都會在這裡建立以 VM 命名的子資料夾。</string>

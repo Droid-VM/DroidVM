@@ -20,6 +20,8 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
 import cn.classfun.droidvm.lib.store.network.Ipv6Source;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
+import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
+import cn.classfun.droidvm.lib.store.network.NetworkConflicts;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
@@ -33,7 +35,7 @@ import cn.classfun.droidvm.lib.store.network.VlanConfig;
  */
 public final class NetworkPresets {
     /** bridge + "v"/"." + 2-char VLAN code must fit IFNAMSIZ (15 usable). */
-    public static final int MAX_BRIDGE_NAME_LEN = 12;
+    public static final int MAX_BRIDGE_NAME_LEN = NetworkConfigValidator.MAX_BRIDGE_NAME_LEN;
     private static final Random RANDOM = new Random();
 
     private NetworkPresets() {
@@ -159,39 +161,30 @@ public final class NetworkPresets {
         return null;
     }
 
-    /** Appends every subnet these VLANs hold, primary and secondary, to the given lists. */
-    public static void collectNetworks(
-        @NonNull Iterable<VlanConfig> vlans,
-        @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
-    ) {
-        for (var vlan : vlans) {
-            var net4 = vlan.getIpv4Network();
-            if (net4 != null) out4.add(net4);
-            for (var cidr : vlan.getIpv4Secondary()) {
-                try {
-                    out4.add(IPv4Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-            var net6 = vlan.getIpv6Network();
-            if (net6 != null) out6.add(net6);
-            for (var cidr : vlan.getIpv6Secondary()) {
-                try {
-                    out6.add(IPv6Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-        }
-    }
-
-    /** The same, over every network in the store bar {@code exclude}. */
+    /** Every subnet in the store bar {@code exclude}, so a suggestion can avoid them all. */
     public static void collectStoreNetworks(
         @NonNull NetworkStore store, @Nullable UUID exclude,
         @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
     ) {
+        collectStoreNetworks(store, exclude, null, out4, out6);
+    }
+
+    /**
+     * The same, narrowed to one bridge type. Only networks of the same type can actually collide
+     * (see {@link NetworkConflicts}), so a suggestion for a gVisor network has no reason to walk
+     * around what the Linux bridges hold -- and every such detour costs it a subnet from a pool
+     * of 201.
+     *
+     * @param type the type being addressed, or null to avoid every network whatever its type
+     */
+    public static void collectStoreNetworks(
+        @NonNull NetworkStore store, @Nullable UUID exclude, @Nullable BridgeType type,
+        @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
+    ) {
         store.forEach((id, cfg) -> {
             if (exclude != null && exclude.equals(id)) return;
-            collectNetworks(cfg.getVlans(), out4, out6);
+            if (type != null && cfg.getBridgeType() != type) return;
+            NetworkConflicts.collectSubnets(cfg.getVlans(), out4, out6);
         });
     }
 

@@ -164,21 +164,13 @@
                     android:title="@string/vmpkg_import_networks"
                     app:cc_collapsible="false">
 
-                    <androidx.recyclerview.widget.RecyclerView
+                    <LinearLayout
                         android:id="@+id/container_networks"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:nestedScrollingEnabled="false"
-                        android:overScrollMode="never" />
-
-                    <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-                        android:id="@+id/choose_network_mode"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginTop="4dp"
                         android:layout_marginBottom="8dp"
-                        android:icon="@drawable/ic_nav_network"
-                        android:text="@string/vmpkg_import_network_mode" />
+                        android:orientation="vertical" />
 
                 </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
