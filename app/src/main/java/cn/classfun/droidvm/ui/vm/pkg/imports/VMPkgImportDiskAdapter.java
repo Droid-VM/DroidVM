@@ -36,7 +36,11 @@ public final class VMPkgImportDiskAdapter extends RecyclerView.Adapter<BaseViewH
         var disk = disks.get(position);
         var ctx = h.itemView.getContext();
         h.itemName.setText(disk.name);
-        h.itemInfo.setText(formatSize(disk.size));
+        // A backing image is in the package for the overlay above it, not as a disk of its own;
+        // say so, or its presence in this list looks like the VM grew a disk in transit.
+        h.itemInfo.setText(disk.attached
+            ? formatSize(disk.size)
+            : ctx.getString(R.string.vmpkg_import_disk_backing, formatSize(disk.size)));
         h.itemInfo.setVisibility(VISIBLE);
         h.itemState.setVisibility(GONE);
         h.itemAction.setVisibility(GONE);

@@ -11,6 +11,7 @@ import static cn.classfun.droidvm.lib.utils.BinaryUtils.readFully;
 import static cn.classfun.droidvm.lib.utils.JsonUtils.listToJSONArray;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.safeFileName;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.util.Log;
@@ -44,6 +45,7 @@ import cn.classfun.droidvm.lib.pkg.VolumeSet;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.utils.ImageUtils;
 
 public final class VMImportTask {
     private static final String TAG = "VMImportTask";
@@ -53,6 +55,10 @@ public final class VMImportTask {
     private final String srcPath;
     private final File targetDir;
     private final String networkMode;
+    /** This package's own folder under {@link #targetDir}; created before the first file lands. */
+    private File vmDir = null;
+    private String vmName = "";
+    private boolean registered = false;
     private int totalItems;
     private int volumeTotal = 0;
     public VMConfig importedVM = null;
@@ -80,10 +86,10 @@ public final class VMImportTask {
         var data = DataItem.newObject();
         try {
             unpack();
-            importedVM.setName(uniqueVMName(importedVM.getName()));
             var networks = importNetworks(importedVM, importedManifest.networks);
             var vmId = server.getContext().getVMs().createVM(importedVM);
             if (vmId == null || vmId.isEmpty()) throw new IOException("failed to register VM");
+            registered = true;
             data.set("done", totalItems);
             data.set("total", totalItems);
             data.set("vm_id", vmId);
@@ -94,6 +100,7 @@ public final class VMImportTask {
             emit(data, Phase.DONE);
         } catch (Exception e) {
             Log.w(TAG, fmt("Import task %s failed", taskId), e);
+            discardPlacedFiles();
             data.set("done", 0);
             data.set("total", totalItems);
             data.set("message", e.getMessage());
@@ -111,7 +118,7 @@ public final class VMImportTask {
     ) throws Exception{
         var disk = importedManifest.findDisk(name);
         if (disk != null) {
-            var target = uniqueFile(targetDir, disk.name);
+            var target = uniqueFile(vmDir, disk.name);
             copyEntry(content, target, size, placedDisks.size(), totalItems);
             disk.target = target;
             placedDisks.add(disk);
@@ -119,7 +126,7 @@ public final class VMImportTask {
         }
         var boot = importedManifest.findBoot(name);
         if (boot != null) {
-            var dir = new File(targetDir, "boot");
+            var dir = new File(vmDir, "boot");
             if (!dir.exists() && !dir.mkdirs())
                 throw new IOException(fmt("Cannot create %s", dir));
             var target = uniqueFile(dir, boot.name);
@@ -154,9 +161,69 @@ public final class VMImportTask {
         }
         var vm = new VMConfig(importedManifest.vm.toJson());
         vm.setId(UUID.randomUUID());
+        vm.setName(vmName);
+        relinkBackingChains();
         remapDiskPaths(vm, placedDisks);
         remapBootPaths(vm, placedBoots);
         importedVM = vm;
+    }
+
+    /**
+     * Re-point each imported overlay at the copy of its backing image that travelled with it.
+     * The packed header still names the exporting phone's path - exporting reads the source
+     * images and never rewrites them - so this is where a chain becomes usable again. Header
+     * only: the data is already there, the files just live somewhere else now.
+     */
+    private void relinkBackingChains() throws IOException {
+        var byArchive = new HashMap<String, DiskEntry>();
+        for (var disk : placedDisks) byArchive.put(disk.archivePath, disk);
+        for (var disk : placedDisks) {
+            if (disk.backingArchive.isEmpty() || disk.target == null) continue;
+            var parent = byArchive.get(disk.backingArchive);
+            if (parent == null || parent.target == null) throw new IOException(fmt(
+                "package is missing the backing image %s needed by %s",
+                disk.backingArchive, disk.archivePath
+            ));
+            ImageUtils.rebaseBacking(disk.target.getPath(), parent.target.getPath());
+        }
+    }
+
+    /**
+     * Drop what a failed import wrote. Safe to do bluntly because everything it wrote is inside
+     * one folder this import created for itself; nothing else has ever been in there.
+     */
+    private void discardPlacedFiles() {
+        var dir = vmDir;
+        if (dir == null || registered) return;
+        vmDir = null;
+        try {
+            deleteTree(dir);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to clean up %s", dir), e);
+        }
+    }
+
+    private static void deleteTree(@NonNull File file) {
+        var children = file.listFiles();
+        if (children != null) for (var child : children) deleteTree(child);
+        //noinspection ResultOfMethodCallIgnored
+        file.delete();
+    }
+
+    /**
+     * The folder this package's files go in: named after the VM, unique within the chosen
+     * import folder. One package's disks - a backing chain can be several - stay together
+     * instead of piling into a folder shared with every other VM's images.
+     */
+    @NonNull
+    private File createVMDir(@NonNull String name) throws IOException {
+        var base = safeFileName(name, "vm");
+        var dir = new File(targetDir, base);
+        for (int i = 1; dir.exists(); i++)
+            dir = new File(targetDir, fmt("%s_%d", base, i));
+        if (!dir.mkdirs())
+            throw new IOException(fmt("Cannot create %s", dir));
+        return dir;
     }
 
     private int readVolumeCount(@NonNull String masterPath) throws Exception {
@@ -169,6 +236,10 @@ public final class VMImportTask {
 
     private void extract(@NonNull PackageInput pkg) throws Exception {
         importedManifest = pkg.manifest;
+        // Settle the name and make the folder before any byte lands in it, so the files are
+        // together from the start and a failure has exactly one thing to clean up.
+        vmName = uniqueVMName(importedManifest.vm.getName());
+        vmDir = createVMDir(vmName);
         totalItems = importedManifest.disks.size() + importedManifest.boots.size();
         var data = DataItem.newObject();
         data.set("done", 0);

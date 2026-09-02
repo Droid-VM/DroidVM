@@ -191,6 +191,17 @@
                     android:icon="@drawable/ic_folder"
                     android:inputType="text" />
 
+                <TextView
+                    android:id="@+id/tv_target_desc"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="12dp"
+                    android:text="@string/vmpkg_import_target_folder_desc"
+                    android:textAppearance="?attr/textAppearanceBodySmall"
+                    android:textColor="?android:attr/textColorSecondary" />
+
             </LinearLayout>
 
             <com.google.android.material.progressindicator.LinearProgressIndicator

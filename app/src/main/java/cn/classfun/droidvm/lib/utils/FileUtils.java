@@ -330,6 +330,20 @@ public final class FileUtils {
         return Environment.getExternalStorageDirectory().getPath();
     }
 
+    /**
+     * {@code path} with {@code //}, {@code ..} and symlinks resolved, so two spellings of the
+     * same file compare equal; the original string when the filesystem will not say (an
+     * unreadable parent directory, say), which is no worse than not having asked.
+     */
+    @NonNull
+    public static String canonicalPath(@NonNull String path) {
+        try {
+            return new File(path).getCanonicalPath();
+        } catch (Exception e) {
+            return path;
+        }
+    }
+
     public static boolean deleteFile(@NonNull String path) {
         try {
             return new File(path).delete();

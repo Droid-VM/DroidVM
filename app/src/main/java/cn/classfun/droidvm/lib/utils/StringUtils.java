@@ -170,6 +170,26 @@ public final class StringUtils {
         return extension(path).toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * {@code name} reduced to one path component that is safe to create on disk and to name an
+     * entry inside a package: path separators, control characters and the punctuation Windows
+     * reserves all become {@code _}. Falls back to {@code fallback} when nothing usable is left
+     * (an empty name, or one that would name a directory rather than a file in it), so callers
+     * never have to handle the degenerate case themselves.
+     */
+    @NonNull
+    public static String safeFileName(@NonNull String name, @NonNull String fallback) {
+        var sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c < 0x20 || c == 0x7f || "\\/:*?\"<>|".indexOf(c) >= 0) c = '_';
+            sb.append(c);
+        }
+        var out = sb.toString().trim();
+        if (out.isEmpty() || out.equals(".") || out.equals("..")) return fallback;
+        return out;
+    }
+
     @NonNull
     public static String pathJoin(@NonNull String base, @NonNull String child) {
         if (base.endsWith("/")) base = base.substring(0, base.length() - 1);

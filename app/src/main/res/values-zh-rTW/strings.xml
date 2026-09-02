@@ -1360,6 +1360,9 @@
     <string name="vmpkg_package_version">包版本</string>
     <string name="vmpkg_package_comment">註釋</string>
     <string name="vmpkg_export_vm_must_stop">匯出前必須先停止虛擬機器</string>
+    <string name="vmpkg_export_disk_backing_count">+%1$d 基底</string>
+    <string name="vmpkg_export_disk_chain_broken">父節點缺失</string>
+    <string name="vmpkg_export_disk_chain_missing">讀不到這顆磁碟的父節點：%1$s</string>
     <string name="vmpkg_export_disk_missing">選中的磁碟不存在：%1$s</string>
     <string name="vmpkg_import_title">匯入虛擬機器包</string>
     <string name="vmpkg_import_pick">選擇 .vmpkg 檔案</string>
@@ -1371,6 +1374,7 @@
     <string name="vmpkg_import_no_disks">此包中沒有磁碟。</string>
     <string name="vmpkg_import_meta">%1$s | %2$s | manifest v%3$d</string>
     <string name="vmpkg_import_disk_line">%1$s（%2$s）</string>
+    <string name="vmpkg_import_disk_backing">父節點映像 \u00b7 %1$s</string>
     <string name="vmpkg_import_disk_summary">%1$d 個磁碟，%2$s</string>
     <string name="vmpkg_import_network_line">網路：%1$s</string>
     <string name="vmpkg_import_no_networks">此包中沒有綁定網路。</string>
@@ -1380,6 +1384,7 @@
     <string name="vmpkg_import_network_auto">自動建立網路</string>
     <string name="vmpkg_import_no_space">目標空間不足。需要 %1$s，可用 %2$s。</string>
     <string name="vmpkg_import_target_folder">匯入目錄</string>
+    <string name="vmpkg_import_target_folder_desc">每次匯入都會在這裡建立以 VM 命名的子資料夾。</string>
     <string name="vmpkg_import_target">磁碟將匯入到：\n%1$s</string>
     <string name="vmpkg_import_success">已匯入虛擬機器：%1$s</string>
     <string name="vmpkg_import_done">匯入完成</string>

@@ -7,6 +7,8 @@ import androidx.annotation.NonNull;
 
 import com.google.auto.service.AutoService;
 
+import java.io.IOException;
+
 import cn.classfun.droidvm.daemon.server.ClientRequest;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.RequestHandler;
@@ -37,7 +39,15 @@ public final class ExportHandler extends RequestHandler {
             ));
         var store = request.getContext().getExportTaskStore();
         var server = request.getClient().getServer();
-        var task = new VMExportTask(server, params);
+        VMExportTask task;
+        try {
+            task = new VMExportTask(server, params);
+        } catch (IOException e) {
+            // Building the task walks the disks' backing chains, and the reason one cannot be
+            // walked (which image, which missing base) is the whole answer for the caller -
+            // a plain exception here would reach it as "internal error".
+            throw new RequestException(e.getMessage());
+        }
         store.put(task.taskId, task);
         task.startAsync();
         request.res().put("task_id", task.taskId.toString());
