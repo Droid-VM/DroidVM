@@ -1365,6 +1365,15 @@
     <string name="vmpkg_export_disk_chain_broken">父節點缺失</string>
     <string name="vmpkg_export_disk_chain_missing">讀不到這顆磁碟的父節點：%1$s</string>
     <string name="vmpkg_export_disk_missing">選中的磁碟不存在：%1$s</string>
+    <string name="vm_notes_title">備註</string>
+    <string name="vm_notes_edit">編輯</string>
+    <string name="vm_notes_empty">尚未填寫</string>
+    <string name="vm_notes_hint">Markdown\u2026</string>
+    <string name="vm_notes_save">儲存備註</string>
+    <string name="vm_notes_preview_empty">還沒有可預覽的內容。</string>
+    <string name="vm_notes_mode_code">原始碼</string>
+    <string name="vm_notes_mode_preview">預覽</string>
+    <string name="vm_notes_mode_split">並排</string>
     <string name="vmpkg_import_title">匯入虛擬機器包</string>
     <string name="vmpkg_import_pick">選擇 .vmpkg 檔案</string>
     <string name="vmpkg_import_do">匯入</string>

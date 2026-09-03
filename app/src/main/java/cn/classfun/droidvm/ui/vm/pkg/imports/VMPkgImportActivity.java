@@ -34,6 +34,7 @@ import androidx.activity.result.contract.ActivityResultContracts.OpenDocument;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -70,6 +71,7 @@ import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.ui.markdown.MarkdownRender;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -91,6 +93,8 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private TextView tvDiskSummary;
     private TextInputRowWidget inputTarget;
     private CollapsibleContainer ccNetworks;
+    private CollapsibleContainer ccNotes;
+    private ComposeView notesPreview;
     private RecyclerView containerDisks;
     private LinearLayout containerNetworks;
     private TextView tvStatus;
@@ -128,6 +132,8 @@ public final class VMPkgImportActivity extends AppCompatActivity
         tvDiskSummary = findViewById(R.id.tv_disk_summary);
         inputTarget = findViewById(R.id.input_target);
         ccNetworks = findViewById(R.id.cc_networks);
+        ccNotes = findViewById(R.id.cc_notes);
+        notesPreview = findViewById(R.id.notes_preview);
         containerDisks = findViewById(R.id.container_disks);
         containerNetworks = findViewById(R.id.container_networks);
         tvStatus = findViewById(R.id.tv_status);
@@ -263,6 +269,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
             diskAdapter.disks.add(d);
         }
         diskAdapter.notifyDataSetChanged();
+        showNotes();
         buildNetworkCards();
         ccNetworks.setVisibility(networkBinders.isEmpty() ? GONE : VISIBLE);
         if (inputTarget.getText().trim().isEmpty())
@@ -277,6 +284,21 @@ public final class VMPkgImportActivity extends AppCompatActivity
         groupSummary.setVisibility(VISIBLE);
         btnImport.setVisibility(VISIBLE);
         btnImport.setEnabled(true);
+    }
+
+    /**
+     * The notes the packaged VM carries, rendered before anything is imported: they are where an
+     * author says what the VM is and what to do with it, which is exactly what someone looking at
+     * a package they were handed wants to read first.
+     */
+    private void showNotes() {
+        var notes = preview == null ? "" : preview.vm.getNotes();
+        if (notes.trim().isEmpty()) {
+            ccNotes.setVisibility(GONE);
+            return;
+        }
+        ccNotes.setVisibility(VISIBLE);
+        MarkdownRender.bind(notesPreview, notes);
     }
 
     /**

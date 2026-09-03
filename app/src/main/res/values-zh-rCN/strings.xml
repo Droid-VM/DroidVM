@@ -1365,6 +1365,15 @@
     <string name="vmpkg_export_disk_chain_broken">父节点缺失</string>
     <string name="vmpkg_export_disk_chain_missing">读不到这颗磁盘的父节点：%1$s</string>
     <string name="vmpkg_export_disk_missing">选中的磁盘不存在：%1$s</string>
+    <string name="vm_notes_title">备注</string>
+    <string name="vm_notes_edit">编辑</string>
+    <string name="vm_notes_empty">尚未填写</string>
+    <string name="vm_notes_hint">Markdown\u2026</string>
+    <string name="vm_notes_save">保存备注</string>
+    <string name="vm_notes_preview_empty">还没有可预览的内容。</string>
+    <string name="vm_notes_mode_code">源码</string>
+    <string name="vm_notes_mode_preview">预览</string>
+    <string name="vm_notes_mode_split">并排</string>
     <string name="vmpkg_import_title">导入虚拟机包</string>
     <string name="vmpkg_import_pick">选择 .vmpkg 文件</string>
     <string name="vmpkg_import_do">导入</string>

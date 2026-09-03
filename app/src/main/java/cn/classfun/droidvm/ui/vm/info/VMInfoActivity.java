@@ -28,6 +28,7 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -60,6 +61,7 @@ import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.vm.VMActions;
 import cn.classfun.droidvm.ui.vm.VMDeletion;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
+import cn.classfun.droidvm.ui.markdown.MarkdownRender;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
@@ -103,6 +105,8 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     private TextRowWidget rowDisks;
     private TextRowWidget rowOptions;
     private TextRowWidget rowCreated;
+    private CollapsibleContainer ccNotes;
+    private ComposeView notesPreview;
     private CollapsibleContainer ccPortForwards;
     private LinearLayout containerPortForwards;
     private TextView tvPfEmpty;
@@ -133,6 +137,8 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         rowDisks = findViewById(R.id.row_disks);
         rowOptions = findViewById(R.id.row_options);
         rowCreated = findViewById(R.id.row_created);
+        ccNotes = findViewById(R.id.cc_notes);
+        notesPreview = findViewById(R.id.notes_preview);
         ccPortForwards = findViewById(R.id.cc_port_forwards);
         containerPortForwards = findViewById(R.id.container_port_forwards);
         tvPfEmpty = findViewById(R.id.tv_pf_empty);
@@ -240,9 +246,21 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
         return basename(boot.getKernel());
     }
 
+    /** The VM's own Markdown, rendered, or nothing at all when it has none. */
+    private void showNotes() {
+        var notes = config.getNotes();
+        if (notes.trim().isEmpty()) {
+            ccNotes.setVisibility(View.GONE);
+            return;
+        }
+        ccNotes.setVisibility(View.VISIBLE);
+        MarkdownRender.bind(notesPreview, notes);
+    }
+
     private void populateInfo() {
         var item = config.item;
         collapsingToolbar.setTitle(config.getName());
+        showNotes();
         rowCpu.setValue(getString(R.string.vm_info_cpu_value, item.optLong("cpu_count", 0)));
         rowMemory.setValue(getString(R.string.vm_info_memory_value, item.optLong("memory_mb", 0)));
         rowKernel.setValue(bootSummary());

@@ -198,6 +198,13 @@
             android:windowSoftInputMode="adjustNothing" />
 
         <activity
+            android:name=".ui.vm.notes.VMNotesActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".ui.network.edit.NetworkEditActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"

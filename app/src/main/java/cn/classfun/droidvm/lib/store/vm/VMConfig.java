@@ -245,6 +245,23 @@ public class VMConfig extends DataConfig {
         item.remove("port_forwards");
     }
 
+    /**
+     * Free-form Markdown the user keeps with this VM -- what it is for, how to log in, what not
+     * to touch. Empty when unset, never null, so every reader can ask {@code isEmpty()}. It rides
+     * along in a package like any other field, which is the point: the notes are about the VM,
+     * not about the phone it happens to be on.
+     */
+    @NonNull
+    public final String getNotes() {
+        var notes = item.optString("notes", "");
+        return notes == null ? "" : notes;
+    }
+
+    public final void setNotes(@NonNull String notes) {
+        if (notes.isEmpty()) item.remove("notes");
+        else item.set("notes", notes);
+    }
+
     /** Iterates this VM's NIC entries (the "networks" array). */
     public final void forEachNic(@NonNull Consumer<VMNicConfig> consumer) {
         var nets = item.opt("networks", null);
