@@ -20,6 +20,7 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 /**
  * Is the huge-page reserve able to back this VM <em>right now</em>?
@@ -147,13 +148,14 @@ public final class PoolPreflight {
     /**
      * The 2 MB pages this VM's <em>boot-time</em> regions will take out of the reserve.
      *
-     * <p>The memory size plus the guest pool, and nothing else. Everything else the backend passes
-     * is already inside {@code --mem}: crosvm carves the swiotlb and the framebuffer out of it, and
-     * as of the per-pool {@code consume_system_mem} tag so are the three renderer host pools --
-     * whichever of them a route uses, the VM still costs what its memory field says. Only the guest
-     * pool is added on top, because it is video memory the user asked for beside the RAM rather
-     * than out of it - and only when the backend will actually pass one, which
-     * {@link GuestPoolSizing} decides for both sides.
+     * <p>The memory size plus the guest-owned pools, and nothing else. Everything else the backend
+     * passes is already inside {@code --mem}: crosvm carves the swiotlb and the framebuffer out of
+     * it, and as of the per-pool {@code consume_system_mem} tag so are the three renderer host
+     * pools and the virtio-media host pool -- whichever of them a route uses, the VM still costs
+     * what its memory field says. Only the guest pools are added on top, because they are memory
+     * the user asked for beside the RAM rather than out of it - and only when the backend will
+     * actually pass one, which {@link GuestPoolSizing} and {@link VpuConfig} decide for both
+     * sides.
      *
      * <p>Growth grants (the runtime SHARE path) are deliberately not counted -- they happen later,
      * one blob at a time, and a VM that cannot grow still boots. That is also why the guest pool
@@ -164,6 +166,10 @@ public final class PoolPreflight {
         // Exactly what the backend will pre-allocate: nothing for a host-visible-RAM VM, and
         // for gfxstream only with udmabuf. One rule, shared with the command builder.
         mb += GuestPoolSizing.bootGuestPreallocMb(item);
+        // media_guest, the pool the guest's virtio-media driver allocates from. Its host
+        // counterpart (media_host) is not added: it is consume_system_mem on the crosvm side, so
+        // it is already inside --mem. plans/VPU_DESIGN.md section 2.2.
+        mb += VpuConfig.bootMediaGuestMb(item);
         return (mb + PAGE_MB - 1) / PAGE_MB;
     }
 
