@@ -194,6 +194,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             var builder = new NativeProcess.Builder(args.toArray(new String[0]));
             prepareProcess(builder);
             applyGfxstreamEnv(builder);
+            applyUdmabufLimit();
             applyDisplayBlitEnv(builder);
             applyGpuRtPrioEnv(builder);
             for (var rs : resolvedSerials) {
@@ -1182,8 +1183,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
 
     /**
      * The host-Vulkan renderers (gfxstream, and venus on virglrenderer) need their host ICD
-     * selected, gfxstream its host-visible folio/blob env, and both a raised udmabuf import cap.
-     * No-op for OpenGL, Native and 2D.
+     * selected and gfxstream its host-visible folio/blob env. No-op for OpenGL, Native and 2D.
+     * The udmabuf import cap they also need is raised by {@link #applyUdmabufLimit()}, which a
+     * VM with no renderer can want too.
      */
     private void applyGfxstreamEnv(@NonNull NativeProcess.Builder builder) {
         var item = config.item;
@@ -1214,10 +1216,28 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 builder.environment("ANDROID_EMU_VK_LOADER_PATH", turnip);
             }
         }
-        // udmabuf's default 64MB/handle cap chokes large blob imports; raise it so a
-        // whole host-visible allocation can be wrapped as one dma-buf. The glob covers
-        // both the in-tree driver (/sys/module/udmabuf) and the app-shipped fallback
-        // module for kernels without CONFIG_UDMABUF (/sys/module/udmabuf_gki_6.1 etc.).
+    }
+
+    /**
+     * Raises udmabuf's per-handle size cap for every path that wraps a whole allocation as one
+     * dma-buf.
+     *
+     * <p>The default is 64 MB a handle, which is smaller than a single host-visible blob and
+     * smaller than a media pool. Three consumers need it lifted and they are not the same VMs:
+     * gfxstream and venus import their guest-alloc blobs through it, and virtio-media imports
+     * guest-owned buffers out of the media_guest pool the same way -- on a VM that may have no
+     * GPU at all, which is why this is no longer inside the renderer env block. The glob covers
+     * both the in-tree driver (/sys/module/udmabuf) and the app-shipped fallback module for
+     * kernels without CONFIG_UDMABUF (/sys/module/udmabuf_gki_6.1 etc.). See
+     * {@code plans/VPU_DESIGN.md} section 3.4.</p>
+     */
+    private void applyUdmabufLimit() {
+        var item = config.item;
+        var backend = optEnum(item, "gpu_backend", GpuBackend.NONE);
+        boolean renderer = VMScreenConfig.hasGpuDevice(item)
+            && (backend == GpuBackend.GPU_GFXSTREAM
+            || (backend == GpuBackend.GPU_VIRGLRENDERER && effectiveGpuMode(item) == GpuMode.VULKAN));
+        if (!renderer && !VpuConfig.isEnabled(item)) return;
         RunUtils.run("for p in /sys/module/udmabuf*/parameters/size_limit_mb; do " +
                 "echo %d > \"$p\"; done 2>/dev/null || true",
             item.optLong("gpu_udmabuf_limit_mb", 4096));
