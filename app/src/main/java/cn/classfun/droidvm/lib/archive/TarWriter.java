@@ -114,7 +114,19 @@ public final class TarWriter implements AutoCloseable {
         field(hdr, 100, 8, padOctal(metadata.mode, 7));
         field(hdr, 108, 8, padOctal(metadata.uid, 7));
         field(hdr, 116, 8, padOctal(metadata.gid, 7));
-        field(hdr, 124, 12, padOctal(size, 11));
+        if (size > 0777777777777L) {
+            // 12 octal digits top out just under 64 GiB; past that GNU base-256 (bit 7 flag, then
+            // big-endian), which TarReader, GNU tar, bsdtar and Python all read. Before this the
+            // 13-digit string was silently cut to 12 and the entry came out with a wrong size.
+            hdr[124] = (byte) 0x80;
+            long v = size;
+            for (int i = 135; i >= 125; i--) {
+                hdr[i] = (byte) (v & 0xff);
+                v >>= 8;
+            }
+        } else {
+            field(hdr, 124, 12, padOctal(size, 11));
+        }
         field(hdr, 136, 12, padOctal(metadata.mtime, 11));
         for (int i = 148; i < 156; i++) hdr[i] = ' ';
         hdr[156] = (byte) type;
