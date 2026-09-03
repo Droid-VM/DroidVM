@@ -73,6 +73,7 @@ std::unique_ptr<CommandRegistry> create_command_registry() {
     command_register_ping(*r);
     command_register_list(*r);
     command_register_start(*r);
+    command_register_up(*r);
     command_register_stop(*r);
     command_register_stop_all(*r);
     command_register_status(*r);

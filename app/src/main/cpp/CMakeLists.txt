@@ -18,6 +18,7 @@ set(CONSOLE_SOURCES
     console/commands/ping.cpp
     console/commands/list.cpp
     console/commands/start.cpp
+    console/commands/up.cpp
     console/commands/stop.cpp
     console/commands/stop_all.cpp
     console/commands/status.cpp
