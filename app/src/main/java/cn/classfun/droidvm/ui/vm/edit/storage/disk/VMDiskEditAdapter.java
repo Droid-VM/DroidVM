@@ -33,7 +33,6 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.enums.Enums;
-import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors;
@@ -44,9 +43,15 @@ import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 /**
  * The VM's disk rows. A row's read-only switch has two layers: what the user chose, and what
  * the disk's situation forces - a base that has overlays must not be written, and neither may a
- * disk another VM (or another row here) also attaches. Forced state is derived on every bind
- * from the registry and the other VMs' slots; it only ever adds read-only, and the user's own
- * choice comes back once the force is gone (overlays deleted, other attachment removed).
+ * disk two rows here both attach. Forced state is derived on every bind from the registry and
+ * the rows themselves; it only ever adds read-only, and the user's own choice comes back once
+ * the force is gone (overlays deleted, the duplicate row re-pointed).
+ *
+ * <p>A disk ANOTHER VM attaches is deliberately not forced here (see
+ * {@link cn.classfun.droidvm.ui.vm.VmDiskSharing}): sharing only corrupts anything while both
+ * VMs hold the file, which is a question about run state at start time, not about how the
+ * config was saved. {@code VMActions}' pre-start guard asks it then, and flips only that
+ * start's attachments.
  */
 public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolder> {
     @FunctionalInterface
@@ -65,10 +70,8 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     private UefiVarsEnabledProvider uefiVarsEnabledProvider = () -> true;
     private boolean readonlyChanged = false;
     private boolean updatingViews = false;
-    // Full paths of registered disks that have overlays, and of disks any OTHER VM attaches.
-    // Loaded async; rows re-check on bind.
+    // Full paths of registered disks that have overlays. Loaded async; rows re-check on bind.
     private final Set<String> baseOfOverlays = new HashSet<>();
-    private final Set<String> attachedByOtherVms = new HashSet<>();
     // The user's own read-only choice per row, kept apart from the forced value written into
     // the item. Identity-keyed: the row DataItems are stable objects for the adapter's life.
     private final Map<DataItem, Boolean> userReadonly = new IdentityHashMap<>();
@@ -82,10 +85,7 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         reloadLocks(null);
     }
 
-    /**
-     * Which VM this editor belongs to (null id for one never saved). Its own saved slots are
-     * not "another VM's" attachments - the rows here stand in for them.
-     */
+    /** Which VM this editor belongs to (null id for one never saved), for the branch panel. */
     public void setEditingVm(@Nullable UUID id, @Nullable String name) {
         editingVmId = id;
         editingVmName = name == null ? "" : name;
@@ -96,13 +96,11 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
         reloadLocks(null);
     }
 
-    /** @param onDone runs on the main thread once the caches reflect the current stores. */
+    /** @param onDone runs on the main thread once the cache reflects the disk registry. */
     @SuppressLint("NotifyDataSetChanged")
     public void reloadLocks(@Nullable Runnable onDone) {
-        var editing = editingVmId;
         runOnPool(() -> {
             var bases = new HashSet<String>();
-            var others = new HashSet<String>();
             try {
                 var store = new DiskStore();
                 store.load(context);
@@ -111,24 +109,11 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
                     if (store.hasChildren(cfg.getId()))
                         bases.add(cfg.getFullPath());
                 }
-                var vms = new VMStore();
-                if (vms.load(vms, context)) {
-                    for (int i = 0; i < vms.size(); i++) {
-                        var vm = vms.get(i);
-                        if (editing != null && editing.equals(vm.getId())) continue;
-                        for (var slot : AttachmentCursors.diskSlots(vm)) {
-                            var path = slot.optString("path", "");
-                            if (!path.isEmpty()) others.add(path);
-                        }
-                    }
-                }
             } catch (Exception ignored) {
             }
             mainHandler.post(() -> {
                 baseOfOverlays.clear();
                 baseOfOverlays.addAll(bases);
-                attachedByOtherVms.clear();
-                attachedByOtherVms.addAll(others);
                 try {
                     notifyDataSetChanged();
                 } catch (Exception ignored) {
@@ -143,7 +128,6 @@ public final class VMDiskEditAdapter extends CardItemAdapter<VMDiskEditViewHolde
     private int forcedReason(@NonNull String path, int position) {
         if (path.isEmpty()) return 0;
         if (baseOfOverlays.contains(path)) return R.string.edit_vm_disk_locked_readonly;
-        if (attachedByOtherVms.contains(path)) return R.string.edit_vm_disk_shared_readonly;
         for (int i = 0; i < items.size(); i++) {
             if (i == position) continue;
             var d = items.get(i);

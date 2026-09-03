@@ -626,9 +626,11 @@
     <string name="disk_tree_change_readonly">VM %1$s, disk #%2$d: %3$s becomes read-only</string>
     <string name="disk_tree_change_rewritten">VM %1$s, disk #%2$d: %3$s\'s content is replaced by %4$s\'s state</string>
     <string name="disk_tree_pinned">VMs that are not stopped hold disks this would change; shut them down first:%1$s</string>
-    <string name="edit_vm_disk_shared_readonly">This disk is attached by another VM too; attached read-only</string>
-    <string name="vm_shared_disk_title">Disk shared with another VM</string>
-    <string name="vm_shared_disk_message">These disks are attached by other VMs as well; two writers would corrupt them. Attach them read-only and start?\n%1$s</string>
+    <string name="edit_vm_disk_shared_readonly">Another slot of this VM attaches this disk too; attached read-only</string>
+    <string name="vm_shared_disk_title">Disk held by a running VM</string>
+    <string name="vm_shared_disk_message">These disks are attached by VMs that are not stopped; writing to them now would corrupt the images. This start can attach them read-only - for this boot only, leaving the saved configuration writable.\n%1$s</string>
+    <string name="vm_shared_disk_readonly_start">Start read-only</string>
+    <string name="vm_shared_disk_readonly_countdown">Start read-only (%1$d)</string>
     <string name="disk_tree_not_registered">This disk isn\'t registered; branches unavailable</string>
     <string name="vm_compressed_disk_start_anyway">Start anyway</string>
     <string name="vm_compressed_disk_start_countdown">Start anyway (%1$d)</string>

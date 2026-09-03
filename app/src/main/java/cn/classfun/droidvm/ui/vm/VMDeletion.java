@@ -20,15 +20,13 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -41,18 +39,36 @@ public final class VMDeletion {
     private VMDeletion() {
     }
 
-    /** Shows the same delete options from both the VM list and VM details page. */
+    /**
+     * Shows the same delete options from both the VM list and VM details page. The disk option
+     * counts what deleting this VM would leave dangling - its writable attachments that no other
+     * VM references - so a disk the cleanup would keep is never offered in the first place;
+     * counted off the main thread because it reads the VM store. {@link #cleanupDisks} checks
+     * that again against the saved store, and keeps a base other overlays still build on.
+     */
     public static void confirm(
         @NonNull Context context,
         @NonNull VMConfig config,
         @NonNull Consumer<Boolean> onConfirmed
     ) {
-        var paths = writableDiskPaths(config);
+        var appContext = context.getApplicationContext();
+        runOnPool(() -> {
+            int count = danglingWritablePaths(appContext, config).size();
+            new Handler(Looper.getMainLooper()).post(
+                () -> show(context, config, count, onConfirmed));
+        });
+    }
+
+    private static void show(
+        @NonNull Context context,
+        @NonNull VMConfig config,
+        int diskCount,
+        @NonNull Consumer<Boolean> onConfirmed
+    ) {
         var layout = new LinearLayout(context);
         var deleteDisks = new CheckBox(context);
-        deleteDisks.setText(context.getString(
-            R.string.vm_delete_writable_disks, paths.size()));
-        deleteDisks.setEnabled(!paths.isEmpty());
+        deleteDisks.setText(context.getString(R.string.vm_delete_writable_disks, diskCount));
+        deleteDisks.setEnabled(diskCount > 0);
         int pad = (int) (16 * context.getResources().getDisplayMetrics().density);
         layout.setPadding(pad, 0, pad, 0);
         layout.addView(deleteDisks);
@@ -83,8 +99,9 @@ public final class VMDeletion {
         boolean vmStoreSaved
     ) {
         var appContext = context.getApplicationContext();
-        var paths = writableDiskPaths(config);
-        Runnable cleanup = () -> runOnPool(() -> cleanupDisks(appContext, paths));
+        var paths = VmDiskSharing.attachedPaths(config, true);
+        var vmId = config.getId();
+        Runnable cleanup = () -> runOnPool(() -> cleanupDisks(appContext, vmId, paths));
         Runnable skipped = () -> showResult(appContext, new Outcome(0, 0, 0, paths.size()));
 
         var request = DaemonConnection.getInstance().buildRequest("vm_delete")
@@ -110,14 +127,24 @@ public final class VMDeletion {
         request.invoke();
     }
 
+    /**
+     * The writable attachments nothing else would reference once this VM is gone. A store that
+     * will not load answers with the unfiltered set: {@link #cleanupDisks} re-checks against the
+     * saved store before anything is removed, so the only cost is an offer that turns out to
+     * keep a file.
+     */
     @NonNull
-    private static LinkedHashSet<String> writableDiskPaths(@NonNull VMConfig config) {
-        var paths = new LinkedHashSet<String>();
-        var disks = config.item.opt("disks", null);
-        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return paths;
-        for (var disk : disks.asArray()) {
-            var path = disk.optString("path", "");
-            if (!path.isEmpty() && !disk.optBoolean("readonly", false)) paths.add(path);
+    private static LinkedHashSet<String> danglingWritablePaths(
+        @NonNull Context context,
+        @NonNull VMConfig config
+    ) {
+        var paths = VmDiskSharing.attachedPaths(config, true);
+        try {
+            var vmStore = new VMStore();
+            if (vmStore.load(context))
+                paths.removeAll(VmDiskSharing.pathsAttachedByOthers(vmStore, config.getId()));
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to check disks against the other VMs", e);
         }
         return paths;
     }
@@ -139,6 +166,7 @@ public final class VMDeletion {
 
     private static void cleanupDisks(
         @NonNull Context context,
+        @NonNull UUID vmId,
         @NonNull LinkedHashSet<String> requestedPaths
     ) {
         if (requestedPaths.isEmpty()) return;
@@ -150,9 +178,9 @@ public final class VMDeletion {
             }
 
             // A writable disk must still be retained when any remaining VM references it,
-            // including through a read-only attachment.
-            var referencedPaths = new HashSet<String>();
-            vmStore.forEach((id, vm) -> collectAllDiskPaths(vm, referencedPaths));
+            // including through a read-only attachment. The deleted VM is out of the saved store
+            // by now; excluding its id as well keeps this right if that save ever races.
+            var referencedPaths = VmDiskSharing.pathsAttachedByOthers(vmStore, vmId);
             var candidates = new LinkedHashSet<String>();
             int attachedByOthers = 0;
             for (var path : requestedPaths) {
@@ -219,18 +247,6 @@ public final class VMDeletion {
         } catch (Exception e) {
             Log.w(TAG, "Failed to clean up disks after VM deletion", e);
             showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
-        }
-    }
-
-    private static void collectAllDiskPaths(
-        @NonNull VMConfig config,
-        @NonNull Set<String> paths
-    ) {
-        var disks = config.item.opt("disks", null);
-        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return;
-        for (var disk : disks.asArray()) {
-            var path = disk.optString("path", "");
-            if (!path.isEmpty()) paths.add(path);
         }
     }
 
