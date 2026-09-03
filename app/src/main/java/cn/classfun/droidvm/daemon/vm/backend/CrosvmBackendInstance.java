@@ -1396,6 +1396,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * once, and every part of doing so -- `su`, a rendezvous socket to wait for, a pid to kill on
      * teardown -- was a way to get it wrong.</p>
      *
+     * <p>A VIRTIO_CAMERA peripheral is `--virtio-media kind=camera` with a `uid` for the same
+     * reason: the host half is Camera2, which attributes the capture -- and the privacy
+     * indicator -- to the uid that opened it, and refuses a root one outright.</p>
+     *
      * <p>INTEL_HDA is accepted by the model and skipped here: crosvm emulates no HDA controller,
      * and starting a VM that claims hardware nothing can serve is worse than starting without
      * it. The UI says the same thing on the row.</p>
@@ -1412,41 +1416,106 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         int xhciSeen = 0;
         for (var peripheral : peripherals) {
             var type = peripheral.getType();
-            if (type == PeripheralType.XHCI_USB) {
-                // Nothing to emit: the controller is on unless --no-usb went out above. What the
-                // entry says beyond "exists" is out of reach of this VMM, so say what was dropped
-                // rather than start a VM that quietly differs from its config.
-                if (++xhciSeen > 1) {
-                    Log.w(TAG, fmt("xHCI %s skipped: crosvm emulates one USB controller",
-                        peripheral.getControllerId()));
+            switch (type) {
+                case XHCI_USB: {
+                    // Nothing to emit: the controller is on unless --no-usb went out above. What
+                    // the entry says beyond "exists" is out of reach of this VMM, so say what was
+                    // dropped rather than start a VM that quietly differs from its config.
+                    if (++xhciSeen > 1) {
+                        Log.w(TAG, fmt("xHCI %s skipped: crosvm emulates one USB controller",
+                            peripheral.getControllerId()));
+                        continue;
+                    }
+                    if (peripheral.getUsb2Ports() != VMXhciConfig.DEFAULT_PORTS
+                        || peripheral.getUsb3Ports() != VMXhciConfig.DEFAULT_PORTS)
+                        Log.w(TAG, fmt(
+                            "xHCI %s port counts %d/%d ignored: crosvm's xHCI is fixed at %d/%d",
+                            peripheral.getControllerId(), peripheral.getUsb2Ports(),
+                            peripheral.getUsb3Ports(), VMXhciConfig.DEFAULT_PORTS,
+                            VMXhciConfig.DEFAULT_PORTS));
                     continue;
                 }
-                if (peripheral.getUsb2Ports() != VMXhciConfig.DEFAULT_PORTS
-                    || peripheral.getUsb3Ports() != VMXhciConfig.DEFAULT_PORTS)
-                    Log.w(TAG, fmt(
-                        "xHCI %s port counts %d/%d ignored: crosvm's xHCI is fixed at %d/%d",
-                        peripheral.getControllerId(), peripheral.getUsb2Ports(),
-                        peripheral.getUsb3Ports(), VMXhciConfig.DEFAULT_PORTS,
-                        VMXhciConfig.DEFAULT_PORTS));
-                continue;
+                case VIRTIO_SOUND: {
+                    if (appUid <= 0) {
+                        Log.e(TAG, "cannot resolve app uid; sound device skipped");
+                        continue;
+                    }
+                    if (peripheral.getEndpoints().isEmpty()) {
+                        // A card with no endpoints is a device the guest would enumerate and find
+                        // nothing behind, which is worse than not offering it.
+                        Log.w(TAG, "virtio-snd card has no endpoints; skipped");
+                        continue;
+                    }
+                    args.add("--virtio-snd");
+                    args.add(buildSoundConfig(peripheral, appUid));
+                    break;
+                }
+                case VIRTIO_CAMERA: {
+                    // The type is still marked unavailable, because the crosvm this app ships
+                    // has no --virtio-media option: emitting one would not be a flag it ignores
+                    // but a command line it refuses, so the VM would stop starting the moment
+                    // someone added a camera row. WP A4 flips PeripheralType.VIRTIO_CAMERA to
+                    // available once the device is in the binary, and this arm starts firing
+                    // with no further change here. VPU_DESIGN.md 3.5, 8.
+                    if (!PeripheralType.VIRTIO_CAMERA.isAvailable()) {
+                        Log.w(TAG, "peripheral virtio_camera skipped: this crosvm has no "
+                            + "virtio-media camera device");
+                        continue;
+                    }
+                    if (appUid <= 0) {
+                        Log.e(TAG, "cannot resolve app uid; camera device skipped");
+                        continue;
+                    }
+                    args.add("--virtio-media");
+                    args.add(buildCameraConfig(peripheral, appUid));
+                    break;
+                }
+                default:
+                    Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
+                    continue;
             }
-            if (type != PeripheralType.VIRTIO_SOUND) {
-                Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
-                continue;
-            }
-            if (appUid <= 0) {
-                Log.e(TAG, "cannot resolve app uid; sound device skipped");
-                continue;
-            }
-            if (peripheral.getEndpoints().isEmpty()) {
-                // A card with no endpoints is a device the guest would enumerate and find
-                // nothing behind, which is worse than not offering it.
-                Log.w(TAG, "virtio-snd card has no endpoints; skipped");
-                continue;
-            }
-            args.add("--virtio-snd");
-            args.add(buildSoundConfig(peripheral, appUid));
         }
+    }
+
+    /**
+     * The `--virtio-media` configuration for one camera peripheral.
+     *
+     * <p>One entry is one camera is one /dev/videoN in the guest, because a virtio-media device
+     * registers exactly one V4L2 node; a VM that wants front and back carries two rows and gets
+     * two of these.</p>
+     *
+     * <p>An empty `camera_id` is what the picker stores for "let the host pick"
+     * ({@link cn.classfun.droidvm.lib.data.HostCameraDevices#DEFAULT_KEY}), and the host resolves
+     * it to its own default at open time rather than the daemon pinning today's first camera into
+     * the config. Both string values are quoted the way the audio path quotes its host_device:
+     * the value sits inside a comma-separated option list, and neither a platform camera id nor
+     * a human label promises to avoid a comma -- the label routinely has spaces. The `uid` is the
+     * app's own, so Android attributes the camera to DroidVM and shows the indicator for it.</p>
+     */
+    @NonNull
+    private String buildCameraConfig(@NonNull VMPeripheralConfig peripheral, int appUid) {
+        var cfg = new StringBuilder("kind=camera");
+        cfg.append(fmt(",camera_id=\"%s\"", quotable(peripheral.getHostDevice())));
+        // What the guest reads back as the V4L2 card name. The stored label is the host's own
+        // name for the camera ("Back camera (0)"); a row saved before the picker ran has none,
+        // and a card must still have a name.
+        var label = peripheral.getHostLabel();
+        if (label.isEmpty()) label = "DroidVM camera";
+        cfg.append(fmt(",card=\"%s\"", quotable(label)));
+        cfg.append(fmt(",uid=%d", appUid));
+        Log.i(TAG, fmt("camera device: %s", cfg));
+        return cfg.toString();
+    }
+
+    /**
+     * Makes a value safe to sit inside a double-quoted crosvm option. A quote or a backslash in
+     * one would end the value early and turn the rest of the line into keys crosvm does not know,
+     * which its deny_unknown_fields parsers refuse -- so a name that contains one loses the
+     * character rather than the VM losing its start.
+     */
+    @NonNull
+    private static String quotable(@NonNull String value) {
+        return value.replace("\\", " ").replace("\"", "'");
     }
 
     /**
