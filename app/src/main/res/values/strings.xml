@@ -282,7 +282,6 @@
     <string name="create_vm_display_blit_provider">GPU-blit provider</string>
     <string name="create_vm_display_blit_off">Off (CPU copy)</string>
     <string name="display_blit_system_missing_ext">The system Vulkan driver lacks extensions the GPU blit needs:\n  %1$s\nThe native display will fall back to a CPU copy.</string>
-    <string name="create_vm_gpu_api_not_implemented">This GPU driver is not implemented yet</string>
     <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
     <string name="create_vm_gpu_rt_prio">Real-time scheduling</string>
     <string name="create_vm_gpu_host_pool_mb">Command buffer pool size (MB)</string>
@@ -326,6 +325,7 @@
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy (hardware encode)</string>
     <string name="create_vm_option_not_implemented">not implemented</string>
+    <string name="create_vm_option_unavailable_reset">A stored option is not available in this build; that row was reset to its default.</string>
     <string name="create_vm_screen_width_cpu_fallback">Transport pipeline will use CPU Copy at this width</string>
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy imports the framebuffer as a linear dma-buf, and the driver takes one only when its row pitch is 64-byte aligned. SimpleFB\'s pitch is exactly width x 4 with nothing padding it, so GPU Copy needs a width that is a multiple of 16 -- 1408 rather than 1400. This width is fine; its frames just take the CPU copy.</string>
     <string name="create_vm_screen_input_enabled">Input devices</string>

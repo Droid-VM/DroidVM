@@ -12,7 +12,6 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -164,7 +163,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         screenGpu0.init(this::updateDisplayVisibility);
         screenFb.init(this::updateDisplayVisibility);
         loadHostAddresses();
-        // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
         // Acceleration decides which host drivers make sense and which memory knobs exist,
         // so it drives both of the rows under it.
         chooseGpuMode.setOnValueChangedListener((o, n) -> {
@@ -173,15 +171,6 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // change like NATIVE/OPENGL.
             updateGpuProviderOptions();
             updateVramAllocVisibility();
-        });
-        // PanVK (Mali) is listed but not wired yet: toast + revert to the previous choice.
-        chooseGpuProvider.setOnValueChangedListener((o, n) -> {
-            if (n == GpuProvider.VK_PANVK) {
-                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
-                    Toast.LENGTH_SHORT).show();
-                chooseGpuProvider.setSelectedItem(
-                    o instanceof GpuProvider ? (GpuProvider) o : GpuProvider.VK_TURNIP);
-            }
         });
         // The GPU API set depends on the backend: gfxstream picks a host Vulkan driver,
         // virgl/2d picks a guest GL/Vulkan translation API or the drm2kgsl native context.
@@ -194,21 +183,18 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // GPU-blit provider for the native display's scanout composite -- a peer set of Vulkan
         // drivers plus an Off (CPU copy) escape. TURNIP/SYSTEM/OFF are wired (SYSTEM points the
         // bridge at the SoC's vendor Vulkan and degrades to the CPU copy if it lacks the extensions);
-        // only PANVK is not built yet, so it toasts + reverts like the render provider's PanVK.
+        // only PANVK is not built yet, so it is listed and refused -- same as the render provider's
+        // PanVK and virglrenderer's GL mode. configure() lands on turnip, which is where a config
+        // that still names PanVK ends up too.
         chooseDisplayBlitProvider.configure(GpuBlitProvider.class, GpuBlitProvider.TURNIP);
+        chooseDisplayBlitProvider.setDisabledItems(
+            parent.getString(R.string.create_vm_option_not_implemented), GpuBlitProvider.PANVK);
         chooseDisplayBlitProvider.setOnValueChangedListener((o, n) -> {
-            if (n == GpuBlitProvider.PANVK) {
-                Toast.makeText(parent, R.string.create_vm_gpu_api_not_implemented,
-                    Toast.LENGTH_SHORT).show();
-                chooseDisplayBlitProvider.setSelectedItem(
-                    o instanceof GpuBlitProvider ? (GpuBlitProvider) o : GpuBlitProvider.TURNIP);
-            } else if (n == GpuBlitProvider.SYSTEM) {
-                // The system driver is a peer, gated by the same rule as the others: it is usable
-                // only if it exposes the blit's extensions. Probe the real driver and, if it is
-                // short, say which -- the choice is still allowed (crosvm then degrades to a CPU
-                // copy), the user just gets told instead of quietly getting the fallback.
-                warnIfSystemBlitIncapable();
-            }
+            // The system driver is a peer, gated by the same rule as the others: it is usable
+            // only if it exposes the blit's extensions. Probe the real driver and, if it is
+            // short, say which -- the choice is still allowed (crosvm then degrades to a CPU
+            // copy), the user just gets told instead of quietly getting the fallback.
+            if (n == GpuBlitProvider.SYSTEM) warnIfSystemBlitIncapable();
         });
         swGpuUdmabuf.setOnCheckedChangeListener(this::updateVramAllocVisibility);
         swGpuDynamicVram.setOnCheckedChangeListener(this::updateVramAllocVisibility);
@@ -425,27 +411,29 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // Backend first: its listener rebuilds the option sets below it (and their defaults).
         if (gpuBackend != GpuBackend.NONE)
             chooseGpuBackend.setSelectedItem(gpuBackend);
-        // Restore each saved choice only if the backend still offers it; otherwise keep the
-        // default updateGpuModeOptions()/updateGpuProviderOptions() just picked.
-        boolean gfx = chooseGpuBackend.getSelectedItem() == GPU_GFXSTREAM;
-        // gfxstream only offers VULKAN; virglrenderer offers OPENGL/NATIVE/VULKAN(venus). Restore
-        // any mode the current backend actually lists, or the picker keeps the default and a saved
-        // venus VM silently reloads as something else.
-        boolean modeOk = gfx ? (gpuMode == GpuMode.VULKAN)
-            : (gpuMode == GpuMode.OPENGL || gpuMode == GpuMode.NATIVE || gpuMode == GpuMode.VULKAN);
-        if (gpuMode != GpuMode.NONE && modeOk)
-            chooseGpuMode.setSelectedItem(gpuMode);
+        // Then the two rows under it, each restored by handing the picker the stored value and
+        // letting it answer. Which values belong to this backend, and which of those this build
+        // can honour, is what the item sets updateGpuModeOptions()/updateGpuProviderOptions() just
+        // installed already say; a value outside them lands on the row's default instead. Deriving
+        // it a second time here is what broke -- the copy of the rule at this call site did not
+        // cover a provider from a set no longer installed, and an old VM's GL provider under a
+        // backend that now lists only drm2kgsl took the editor down as it opened.
+        boolean reset = false;
+        // Only while the row is showing. 2D has neither of them, and the items left over from the
+        // last backend are not what a stored value should be measured against.
+        if (gpuMode != GpuMode.NONE && chooseGpuMode.getVisibility() == VISIBLE)
+            reset |= !chooseGpuMode.setSelectedItem(gpuMode);
         updateGpuProviderOptions();
-        // The VK_* providers belong to VULKAN mode on either renderer (gfxstream, or venus on
-        // virglrenderer); everything else is virglrenderer-only. Restore only what the row lists.
-        // (Read the mode picker only under virglrenderer: 2D leaves it unset.)
-        boolean vkMode = gfx
-            || (chooseGpuBackend.getSelectedItem() == GpuBackend.GPU_VIRGLRENDERER
-                && chooseGpuMode.getSelectedItem() == GpuMode.VULKAN);
-        if (gpuProvider != GpuProvider.NONE && vkMode == isVulkanProvider(gpuProvider))
-            chooseGpuProvider.setSelectedItem(gpuProvider);
-        chooseDisplayBlitProvider.setSelectedItem(
+        if (gpuProvider != GpuProvider.NONE && chooseGpuProvider.getVisibility() == VISIBLE)
+            reset |= !chooseGpuProvider.setSelectedItem(gpuProvider);
+        reset |= !chooseDisplayBlitProvider.setSelectedItem(
             optEnum(item, "display_blit_provider", GpuBlitProvider.TURNIP));
+        // Once, however many rows moved: this VM was stored asking for something the build no
+        // longer offers, and what is on screen is not what was saved. Saying nothing would leave
+        // the user to notice on their own that their renderer had changed under them -- and only
+        // if they happened to look at that row.
+        if (reset)
+            showHint(parent.getString(R.string.create_vm_option_unavailable_reset));
         updateDisplayVisibility();
         updateVramAllocVisibility();
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
@@ -732,17 +720,15 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // virglrenderer has all three capsets: OPENGL (virgl2), NATIVE (drm2kgsl), VULKAN
             // (venus). Only two of them are wired here -- the GL path is listed and refused rather
             // than hidden, so the menu says what virglrenderer is for and where this build stands
-            // in it, and a VM stored with OPENGL still shows what it is set to.
+            // in it. A VM stored with OPENGL loads as Native Context: the picker will not sit on a
+            // value it refuses, which is also what stops such a VM from being saved back out
+            // pointed at a renderer nothing here can run.
             chooseGpuMode.setVisibility(VISIBLE);
+            // First of the set, Native Context, is both what a new VM comes up with and where a
+            // stored mode this build will not take ends up; load() restores over it.
             chooseGpuMode.setItems(GpuMode.NATIVE, GpuMode.OPENGL, GpuMode.VULKAN);
             chooseGpuMode.setDisabledItems(
                 parent.getString(R.string.create_vm_option_not_implemented), GpuMode.OPENGL);
-            // setItems already lands on the first of them (Native Context), which is what a new
-            // VM comes up with; a stored mode is restored by load() afterwards. This only catches
-            // a selection left over from a set that no longer applies.
-            Object cur = chooseGpuMode.getSelectedItem();
-            if (cur != GpuMode.OPENGL && cur != GpuMode.NATIVE && cur != GpuMode.VULKAN)
-                chooseGpuMode.setSelectedItem(GpuMode.NATIVE);
         } else {
             // 2D has no acceleration to choose. setItems() rejects an empty list, so hide the row
             // rather than clearing it; its stale items are never read for 2D (the reads below are
@@ -769,10 +755,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             // Host Vulkan ICD. gfxstream is always in this mode; on virglrenderer it is venus.
             // Both dlopen whatever ANDROID_EMU_VK_LOADER_PATH names (or the system loader when it
             // is unset), so the choice is identical: bundled turnip, PanVK, or the SoC's stock HAL.
+            // PanVK is the one named but not built, so it is listed and refused; setItems lands on
+            // turnip, and a stored PanVK falls back to it rather than being restored unusable.
             chooseGpuProvider.setItems(
                 GpuProvider.VK_TURNIP, GpuProvider.VK_PANVK, GpuProvider.VK_SYSTEM);
-            if (!isVulkanProvider(chooseGpuProvider.getSelectedItem()))
-                chooseGpuProvider.setSelectedItem(GpuProvider.VK_TURNIP);
+            chooseGpuProvider.setDisabledItems(
+                parent.getString(R.string.create_vm_option_not_implemented),
+                GpuProvider.VK_PANVK);
         } else if (mode == GpuMode.OPENGL) {
             chooseGpuProvider.setItems(GpuProvider.EGL, GpuProvider.GLES);
             if (isVulkanProvider(chooseGpuProvider.getSelectedItem())

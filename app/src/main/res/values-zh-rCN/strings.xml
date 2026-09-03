@@ -278,7 +278,6 @@
     <string name="create_vm_display_blit_provider">GPU 合成驱动</string>
     <string name="create_vm_display_blit_off">关闭（CPU 拷贝）</string>
     <string name="display_blit_system_missing_ext">系统 Vulkan 驱动缺少 GPU 合成所需的扩展：\n  %1$s\n原生显示将回退到 CPU 拷贝。</string>
-    <string name="create_vm_gpu_api_not_implemented">此 GPU 驱动尚未实现</string>
     <string name="create_vm_gpu_udmabuf">udmabuf(guest-alloc)</string>
     <string name="create_vm_gpu_rt_prio">实时调度</string>
     <string name="create_vm_gpu_host_pool_mb">命令缓冲池大小 (MB)</string>
@@ -322,6 +321,7 @@
     <string name="create_vm_screen_transport_zero">Zero Copy</string>
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy（硬件编码）</string>
     <string name="create_vm_option_not_implemented">未实现</string>
+    <string name="create_vm_option_unavailable_reset">保存的选项在这个版本无法使用，该项目已改回默认值。</string>
     <string name="create_vm_screen_width_cpu_fallback">此宽度下传输管线将使用 CPU Copy</string>
     <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy 会把帧缓冲当成 linear dma-buf 导入，而驱动只收 row pitch 对齐 64 bytes 的缓冲。SimpleFB 的 pitch 就是宽度 x 4、没有任何补齐，所以 GPU Copy 需要 16 像素倍数的宽度 —— 例如 1408 而不是 1400。这个宽度本身没有问题，只是它的帧会走 CPU 复制。</string>
     <string name="create_vm_screen_input_enabled">输入设备</string>
