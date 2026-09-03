@@ -595,6 +595,15 @@
     <string name="vm_shared_disk_readonly_start">以只读模式开机</string>
     <string name="vm_shared_disk_readonly_countdown">以只读模式开机 (%1$d)</string>
     <string name="disk_tree_not_registered">此磁盘未登记，无法使用分支功能</string>
+    <string name="vm_kernel_module_title">内核模块未加载</string>
+    <string name="vm_kernel_module_message">这台虚拟机的设置需要下列内核模块，但目前没有加载。仍要开机的话，需要它们的功能就不会生效：\n%1$s</string>
+    <string name="vm_kernel_module_reason_pseudo_unprotected">伪非保护模式靠它把内存交给运行中的虚拟机</string>
+    <string name="vm_kernel_module_reason_gpu">GPU 加速需要</string>
+    <string name="vm_kernel_module_reason_memory">内存超过 2 GB 的虚拟机需要</string>
+    <string name="vm_kernel_module_start_anyway">仍要开机</string>
+    <string name="vm_kernel_module_start_countdown">仍要开机 (%1$d)</string>
+    <string name="vm_kernel_module_manage">管理模块</string>
+    <string name="vm_kernel_module_manage_unavailable">请到“设置 \u2192 内核模块”加载</string>
     <string name="vm_compressed_disk_start_anyway">仍要启动</string>
     <string name="vm_compressed_disk_start_countdown">仍要启动 (%1$d)</string>
     <string name="field_copy">复制</string>

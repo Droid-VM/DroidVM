@@ -595,6 +595,15 @@
     <string name="vm_shared_disk_readonly_start">以唯讀模式開機</string>
     <string name="vm_shared_disk_readonly_countdown">以唯讀模式開機 (%1$d)</string>
     <string name="disk_tree_not_registered">此磁碟未登記，無法使用分支功能</string>
+    <string name="vm_kernel_module_title">內核模組未載入</string>
+    <string name="vm_kernel_module_message">這台虛擬機器的設定需要下列內核模組，但目前沒有載入。仍要開機的話，需要它們的功能就不會生效：\n%1$s</string>
+    <string name="vm_kernel_module_reason_pseudo_unprotected">偽非保護模式靠它把記憶體交給執行中的虛擬機器</string>
+    <string name="vm_kernel_module_reason_gpu">GPU 加速需要</string>
+    <string name="vm_kernel_module_reason_memory">記憶體超過 2 GB 的虛擬機器需要</string>
+    <string name="vm_kernel_module_start_anyway">仍要開機</string>
+    <string name="vm_kernel_module_start_countdown">仍要開機 (%1$d)</string>
+    <string name="vm_kernel_module_manage">管理模組</string>
+    <string name="vm_kernel_module_manage_unavailable">請到「設定 \u2192 內核模組」載入</string>
     <string name="vm_compressed_disk_start_anyway">仍要啟動</string>
     <string name="vm_compressed_disk_start_countdown">仍要啟動 (%1$d)</string>
     <string name="field_copy">複製</string>
