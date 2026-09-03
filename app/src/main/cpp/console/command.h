@@ -47,6 +47,8 @@ extern void command_register_list(CommandRegistry &registry);
 
 extern void command_register_start(CommandRegistry &registry);
 
+extern void command_register_up(CommandRegistry &registry);
+
 extern void command_register_stop(CommandRegistry &registry);
 
 extern void command_register_stop_all(CommandRegistry &registry);
