@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.store.vm;
 
+import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -16,9 +18,11 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  * piece of hardware to whoever ticks the box, and there is no host on which one would work and the
  * other would not.</p>
  *
- * <p>Stored but not yet acted on: crosvm carries no virtio-media codec device, so the backends
- * read this and attach nothing. It lives here rather than in the tab so that the day the device
- * lands, the config it needs is already in every VM that asked for it.</p>
+ * <p>What the switch buys today is the memory: with it on, the crosvm command line carries the
+ * two virtio-media pools ({@code media-host-mb} / {@code media-guest-mb}) and the huge-page
+ * preflight budgets for the guest one. The media devices themselves land later, and until they
+ * do a pool is reserved memory nothing maps -- which is why this is a switch and not a default.
+ * See {@code plans/VPU_DESIGN.md} sections 2.2 and 8.</p>
  */
 public final class VpuConfig {
     public static final String KEY_ENABLED = "vpu_enabled";
@@ -83,6 +87,30 @@ public final class VpuConfig {
      * from system RAM.</p>
      */
     public static int guestPoolMbFor(@NonNull DataItem config, @Nullable ProtectedVM pvm) {
+        // A VM with the switch off gets neither pool. The sizes stay in the config so that
+        // turning it back on restores what was set, but a stored size is not a request: without
+        // this a VM that never asked for video acceleration would still pay 128 MB of the
+        // huge-page reserve for a node its guest has no driver to look for.
+        if (!isEnabled(config)) return 0;
         return guestPoolApplies(pvm) ? getGuestPoolMb(config) : 0;
+    }
+
+    /**
+     * The {@code media-guest-mb} a VM will be passed at boot, for the huge-page preflight.
+     *
+     * <p>Only the guest pool is counted. The host pool is tagged {@code consume_system_mem} on
+     * the crosvm side like the renderer host pools are, so it comes out of {@code --mem} and is
+     * already inside what the preflight budgets; the guest pool is memory taken beside the RAM
+     * rather than out of it. Same rule as {@link GuestPoolSizing#bootGuestPreallocMb}, and the
+     * same reason it lives next to the getter rather than being read inline at the call site.
+     * See {@code plans/VPU_DESIGN.md} section 2.2.</p>
+     *
+     * <p>The protection mode defaults the way {@link GuestPoolSizing#hostVisibleRam} defaults it:
+     * a config with no {@code protected_vm} key is a Gunyah VM, which is the only hypervisor the
+     * pools exist on.</p>
+     */
+    public static long bootMediaGuestMb(@NonNull DataItem config) {
+        var pvm = optEnum(config, "protected_vm", ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
+        return guestPoolMbFor(config, pvm);
     }
 }

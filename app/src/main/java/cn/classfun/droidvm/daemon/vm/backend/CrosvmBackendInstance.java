@@ -71,6 +71,7 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -278,6 +279,54 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     /**
+     * Adds one {@code key=value} to the VM's single {@code --pre-alloc} argument.
+     *
+     * <p>There is one such argument for the whole VM whatever it asks for: crosvm declares
+     * {@code --pre-alloc} as a single value rather than a repeatable one, so a second one would
+     * replace the first instead of adding to it, and every pool a route did not build would
+     * silently vanish. Hence the leading-comma discipline here rather than at each call site.</p>
+     */
+    static void appendPreAllocKey(@NonNull StringBuilder preAlloc, @NonNull String kv) {
+        if (preAlloc.length() > 0) preAlloc.append(',');
+        preAlloc.append(kv);
+    }
+
+    /**
+     * Appends the virtio-media pools, when this VM asked for video acceleration.
+     *
+     * <p>Two pools, and the direction of the data decides which one a buffer comes from. What the
+     * host produces -- camera frames, decoded frames -- is allocated by the host out of
+     * {@code media_host} and mapped by the guest at the pool's base. What the guest produces --
+     * the bitstream to decode, the frames to encode -- is allocated by the guest driver out of
+     * {@code media_guest}, and exists only where the host cannot otherwise read guest memory;
+     * everywhere else the driver's ordinary allocation is already reachable and a pool would
+     * replace a working path with a bounded one. {@link VpuConfig#guestPoolMbFor} holds that
+     * rule, shared with the huge-page preflight so the reserve is budgeted for exactly what is
+     * passed here.</p>
+     *
+     * <p>Unlike the three renderer pools this one does not need a GPU device: a VM whose only
+     * accelerator is the video unit is a real configuration and has to get its pools. Only called
+     * under Gunyah -- the pools are a Gunyah memory-lending construct, and on KVM the device
+     * falls back to its own memfds behind a PCI shm BAR. See {@code plans/VPU_DESIGN.md}
+     * sections 2.2, 2.3 and 8.</p>
+     */
+    // Package-private, not private, so CrosvmMediaPoolTest can assert the exact fragment this
+    // produces per protection mode without standing up a VM.
+    static void appendMediaPoolOptions(
+        @NonNull StringBuilder preAlloc,
+        @NonNull DataItem item,
+        @Nullable ProtectedVM pvm
+    ) {
+        if (!VpuConfig.isEnabled(item)) return;
+        long mediaHost = VpuConfig.getHostPoolMb(item);
+        if (mediaHost > 0)
+            appendPreAllocKey(preAlloc, fmt("media-host-mb=%d", mediaHost));
+        long mediaGuest = VpuConfig.guestPoolMbFor(item, pvm);
+        if (mediaGuest > 0)
+            appendPreAllocKey(preAlloc, fmt("media-guest-mb=%d", mediaGuest));
+    }
+
+    /**
      * Appends the guest-owned VRAM pool settings. Older configs only have the total pool size;
      * their defaults keep the whole pool preallocated and leave dynamic grants disabled. The
      * editor writes exactly those values (prealloc = pool, step 0, no grants) whenever its
@@ -291,8 +340,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     ) {
         if (guestPool <= 0) return;
         long step = item.optLong("gpu_guest_step_mb", 0);
-        if (preAlloc.length() > 0) preAlloc.append(',');
-        preAlloc.append(fmt("gpu-guest-mb=%d", guestPool));
+        appendPreAllocKey(preAlloc, fmt("gpu-guest-mb=%d", guestPool));
         preAlloc.append(fmt(",gpu-guest-prealloc-mb=%d",
             item.optLong("gpu_guest_prealloc_mb", guestPool)));
         preAlloc.append(fmt(",gpu-guest-step-mb=%d", step));
@@ -321,8 +369,16 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
         hypervisor = VMHypervisor.resolveConfigured(VMBackend.CROSVM, hypervisor);
         if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for CROSVM backend");
+        // Resolved before the pool block, not after it: whether a media_guest pool is built at
+        // all is a question about the protection mode (VPU_DESIGN.md 2.3), and the block that
+        // decides it runs inside the switch below. The stored value wins either way; only its
+        // default follows the hypervisor, because Gunyah is the one that protects a VM by
+        // default and the others have no such mode to fall into.
+        var defProtectedMode = hypervisor == VMHypervisor.GUNYAH
+            ? ProtectedVM.PROTECTED_WITHOUT_FIRMWARE
+            : ProtectedVM.PROTECTED_NORMAL;
+        var protectedVm = optEnum(item, "protected_vm", defProtectedMode);
         args.add("--hypervisor");
-        var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
         switch (hypervisor) {
             case KVM:
                 args.add("kvm");
@@ -352,17 +408,20 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // GuestPoolSizing holds that rule, shared with the huge-page preflight so the
                 // reserve is budgeted for exactly what is passed here.
                 long guestPool = GuestPoolSizing.bootGuestPoolMb(item);
+                // One --pre-alloc for the whole VM. It is a single-valued option on the crosvm
+                // side, so every contributor -- whichever renderer route this VM takes, plus the
+                // video pools, which belong to no route and can be the only thing here -- appends
+                // to the same string and it is passed once at the end. See appendPreAllocKey.
+                var preAlloc = new StringBuilder();
                 // Pre-allocate the gfxstream host-visible pools (host arena + optional guest-alloc
                 // pool). Only meaningful for gfxstream on Gunyah.
                 if (gfxstreamGpu) {
                     boolean udmabuf = item.optBoolean("gpu_udmabuf", true);
                     long hostPool = item.optLong("gpu_host_pool_mb", 0);
                     if (hostPool > 0 || udmabuf) {
-                        var preAlloc = new StringBuilder(fmt("gfx-host-mb=%d", hostPool));
+                        appendPreAllocKey(preAlloc, fmt("gfx-host-mb=%d", hostPool));
                         if (udmabuf)
                             appendGuestPoolOptions(preAlloc, item, guestPool);
-                        args.add("--pre-alloc");
-                        args.add(preAlloc.toString());
                     }
                 }
                 // DRM native context. Two pools, and they hold different things:
@@ -376,14 +435,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // host-allocating path this host no longer implements.
                 if (drm2kgslGpu) {
                     long drmHostPool = item.optLong("gpu_drm2kgsl_pool_mb", 0);
-                    var preAlloc = new StringBuilder();
                     if (drmHostPool > 0)
-                        preAlloc.append(fmt("drm-host-mb=%d", drmHostPool));
+                        appendPreAllocKey(preAlloc, fmt("drm-host-mb=%d", drmHostPool));
                     appendGuestPoolOptions(preAlloc, item, guestPool);
-                    if (preAlloc.length() > 0) {
-                        args.add("--pre-alloc");
-                        args.add(preAlloc.toString());
-                    }
                 }
                 // Venus host pool: the venus command-stream transport shmems (per-instance ring +
                 // CS/reply chunks) live here (venus-host-mb -> VenusPool). vkr sub-allocates every
@@ -396,16 +450,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 // runtime SHARE, which SoC-resets the fragile sm8650 (8gen3) RM.
                 if (venusGpu) {
                     long venusHostPool = item.optLong("gpu_venus_pool_mb", 256);
-                    var preAlloc = new StringBuilder();
                     if (venusHostPool > 0)
-                        preAlloc.append(fmt("venus-host-mb=%d", venusHostPool));
+                        appendPreAllocKey(preAlloc, fmt("venus-host-mb=%d", venusHostPool));
                     appendGuestPoolOptions(preAlloc, item, guestPool);
-                    if (preAlloc.length() > 0) {
-                        args.add("--pre-alloc");
-                        args.add(preAlloc.toString());
-                    }
                 }
-                defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+                // Not gated on a GPU: a VM whose only accelerator is the video unit gets its
+                // pools and nothing else.
+                appendMediaPoolOptions(preAlloc, item, protectedVm);
+                if (preAlloc.length() > 0) {
+                    args.add("--pre-alloc");
+                    args.add(preAlloc.toString());
+                }
                 break;
             }
             case GENIEZONE:
@@ -413,7 +468,6 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 break;
             default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
         }
-        var protectedVm = optEnum(item, "protected_vm", defProtectedMode);
         switch (protectedVm) {
             case PROTECTED_PROTECTED:
                 args.add("--protected-vm");
