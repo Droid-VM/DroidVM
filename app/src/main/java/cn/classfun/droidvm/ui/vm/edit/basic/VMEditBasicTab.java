@@ -11,12 +11,17 @@ import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
+import android.content.Intent;
 import android.text.TextUtils;
 import android.view.View;
+import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
 import java.util.Collection;
@@ -37,6 +42,7 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
+import cn.classfun.droidvm.ui.vm.notes.VMNotesActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
@@ -62,6 +68,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
     private ChooseRowWidget chooseHypervisor;
+    private TextView tvNotesSummary;
+    private MaterialButton btnEditNotes;
+    private ActivityResultLauncher<Intent> notesLauncher;
+    /** The Markdown the editor screen last left; the tab only carries it to saveConfig. */
+    private String notes = "";
     private TextInputEditText etExtraOptions;
     private TextInputEditText etEnvironmentVariables;
 
@@ -86,6 +97,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     @Override
     public void initView() {
         inputName = view.findViewById(R.id.input_name);
+        tvNotesSummary = view.findViewById(R.id.tv_notes_summary);
+        btnEditNotes = view.findViewById(R.id.btn_edit_notes);
         inputMemory = view.findViewById(R.id.input_memory);
         inputCpu = view.findViewById(R.id.input_cpu);
         inputSwiotlb = view.findViewById(R.id.input_swiotlb);
@@ -107,6 +120,16 @@ public final class VMEditBasicTab extends VMEditBaseTab {
 
     @Override
     public void initValue() {
+        var act = new ActivityResultContracts.StartActivityForResult();
+        notesLauncher = parent.registerForActivityResult(act, result -> {
+            var edited = VMNotesActivity.resultOf(result.getResultCode(), result.getData());
+            if (edited == null) return;
+            notes = edited;
+            showNotesSummary();
+        });
+        btnEditNotes.setOnClickListener(v -> notesLauncher.launch(
+            VMNotesActivity.createIntent(parent, notes, inputName.getText())));
+        showNotesSummary();
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         inputSwiotlb.setValue(64, SizeUnit.MB);
@@ -134,10 +157,29 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         initCpuTopology();
     }
 
+    /**
+     * The row under the Notes label: the first line that says something, so the row shows what is
+     * in there without pretending to be the editor.
+     */
+    private void showNotesSummary() {
+        String summary = null;
+        for (var line : notes.split("\n")) {
+            var trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                summary = trimmed;
+                break;
+            }
+        }
+        tvNotesSummary.setText(summary == null
+            ? parent.getString(R.string.vm_notes_empty) : summary);
+    }
+
     @Override
     public void loadConfig(@NonNull VMConfig config) {
         var item = config.item;
         inputName.setText(config.getName());
+        notes = config.getNotes();
+        showNotesSummary();
         inputMemory.setValue(item.optLong("memory_mb", 512), SizeUnit.MB);
         inputCpu.setValue(item.optLong("cpu_count", 1));
         inputSwiotlb.setValue(item.optLong("swiotlb_mb", 256), SizeUnit.MB);
@@ -423,6 +465,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     public void saveConfig(@NonNull VMConfig config) {
         var item = config.item;
         config.setName(inputName.getText());
+        config.setNotes(notes);
         item.set("memory_mb", inputMemory.getValue(SizeUnit.MB));
         item.set("cpu_count", inputCpu.getValue());
         item.set("swiotlb_mb", inputSwiotlb.getValue(SizeUnit.MB));

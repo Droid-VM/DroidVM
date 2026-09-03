@@ -73,6 +73,21 @@
         <item name="backgroundTint">@null</item>
     </style>
 
+    <!-- Icon-only segmented button sized to sit inside a toolbar: the stock outlined button is
+         48dp plus 6dp insets, which an actionBarSize row cannot hold. -->
+    <style name="Widget.DroidVM.Button.ModeToggle" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:minWidth">44dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
+    </style>
+
     <style name="ShapeAppearanceOverlay.Fab.Circle" parent="">
         <item name="cornerFamily">rounded</item>
         <item name="cornerSize">50%</item>
