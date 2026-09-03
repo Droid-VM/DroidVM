@@ -494,14 +494,20 @@ final class ScreenBindingRow {
             chooseTransport.getContext().getString(
                 R.string.create_vm_option_not_implemented),
             DisplayTransportCap.unimplementedFor(screenId, exporter));
-        // want != null is a load: restore the stored ceiling if this edge still offers it. want ==
-        // null is a fresh row or an exporter switch, and then the ceiling is re-evaluated to the
-        // new edge's default rather than carried over -- the fastest rung differs per exporter
-        // (GPU_HW on VNC, plain GPU on native), so carrying the old pick left a screen switched to
-        // VNC sitting at plain GPU copy when the hardware-encode rung is what it should default to.
-        var pick = want != null && DisplayTransportCap.isOfferedFor(screenId, exporter, want)
-            ? want : DisplayTransportCap.defaultFor(screenId, exporter);
-        chooseTransport.setSelectedItem(pick);
+        // Where a refused pick lands: this edge's default, not the bottom of its ladder. The
+        // picker falls back to the head of the list on its own, and the head here is the CPU copy
+        // -- answering "that rung is not built yet" with the slowest thing this build can do
+        // rather than the fastest one it can.
+        var fallback = DisplayTransportCap.defaultFor(screenId, exporter);
+        chooseTransport.setDefaultItem(fallback);
+        // want != null is a load: restore the stored ceiling. want == null is a fresh row or an
+        // exporter switch, and then the ceiling is re-evaluated to the new edge's default rather
+        // than carried over -- the fastest rung differs per exporter (GPU_HW on VNC, plain GPU on
+        // native), so carrying the old pick left a screen switched to VNC sitting at plain GPU
+        // copy when the hardware-encode rung is what it should default to. A stored ceiling this
+        // edge does not offer, or offers and refuses, lands on that same default: the item set
+        // above already says which rungs those are, so nothing re-asks it here.
+        chooseTransport.setSelectedItem(want == null ? fallback : want);
     }
 
     /** Set by the first applyTransportOptions; the picker cannot be read before it. */

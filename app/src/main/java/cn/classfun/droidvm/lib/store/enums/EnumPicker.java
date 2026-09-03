@@ -30,6 +30,8 @@ public final class EnumPicker<E extends Enum<E>> {
     private CharSequence disabledNote = null;
     private EnumPickerChanged<E> onValueChanged = null;
     private int selectedIndex = -1;
+    /** Where a refused selection lands; see {@link #setDefaultItem}. */
+    private int defaultIndex = 0;
 
     public interface EnumPickerChanged<E> {
         @SuppressWarnings("unused")
@@ -96,8 +98,13 @@ public final class EnumPicker<E extends Enum<E>> {
      * rungs are designed but not built, say. Hiding them makes the remaining values look like the
      * entire vocabulary and makes each one that lands later look like a feature out of nowhere;
      * listing them greyed, with {@code note} saying why, says what the set is and where this build
-     * stands in it. A disabled item can still be the current value: that is how a choice stored
-     * before its rung was refused survives being looked at.</p>
+     * stands in it.</p>
+     *
+     * <p>Refused means refused from every direction, a stored config included: a value the picker
+     * will not let the user pick is not one it will sit on and hand back to save(). A selection
+     * this call refuses moves to {@link #setDefaultItem the default}, the same way
+     * {@link #setSelectedItem} answers one. The item stays listed, so the set still reads whole --
+     * what it no longer does is leave a VM quietly pointed down a path this build cannot take.</p>
      *
      * <p>Cleared by {@link #setItems} and {@link #autoItems}, since a new item set has its own
      * answer -- the same constant can be reachable under one and not under another.</p>
@@ -106,6 +113,9 @@ public final class EnumPicker<E extends Enum<E>> {
         disabled.clear();
         disabled.addAll(refused);
         disabledNote = note;
+        if (selectedIndex >= 0 && selectedIndex < items.size()
+            && disabled.contains(items.get(selectedIndex)))
+            setSelectedIndex(fallbackIndex());
     }
 
     public void autoItems() {
@@ -120,6 +130,7 @@ public final class EnumPicker<E extends Enum<E>> {
         }
         if (items.isEmpty())
             throw new IllegalStateException("No displayable constants found");
+        defaultIndex = 0;
         selectedIndex = -1;
         setSelectedIndex(0);
     }
@@ -138,6 +149,7 @@ public final class EnumPicker<E extends Enum<E>> {
         items.clear();
         items.addAll(constants);
         disabled.clear();
+        defaultIndex = 0;
         selectedIndex = -1;
         setSelectedIndex(0);
     }
@@ -163,6 +175,7 @@ public final class EnumPicker<E extends Enum<E>> {
         setOnValueChangedListener(listener == null ? null : (o, n) -> listener.run());
     }
 
+    @SuppressWarnings("unused")
     public int getSelectedIndex() {
         return selectedIndex;
     }
@@ -185,11 +198,78 @@ public final class EnumPicker<E extends Enum<E>> {
         return items.get(selectedIndex);
     }
 
-    public void setSelectedItem(@NonNull E item) {
+    /**
+     * Selects {@code item}, or the default when this picker will not take it.
+     *
+     * <p>Stored values outlive the sets that produced them. An option gets retired between
+     * releases; several rows build their item set out of another row's value, so a config written
+     * under one combination is routinely read back under another. Answering that with an exception
+     * made every restore path a crash waiting for the first user whose VM predates the current
+     * build -- which is what it was: an old VM naming a GL provider, under a backend whose set no
+     * longer lists one, took the editor down as it opened.</p>
+     *
+     * <p>So an item this picker does not list, or lists only to refuse (see
+     * {@link #setDisabledItems}), lands on {@link #setDefaultItem the default} and the call says
+     * so. A caller restoring a config does not have to work out which values belong to the set it
+     * just installed -- the set already knows, and that is the one copy of the rule.</p>
+     *
+     * @return whether {@code item} itself was selected
+     */
+    public boolean setSelectedItem(@NonNull E item) {
+        int index = items.indexOf(item);
+        if (index < 0 || disabled.contains(item)) {
+            setSelectedIndex(fallbackIndex());
+            return false;
+        }
+        setSelectedIndex(index);
+        return true;
+    }
+
+    /**
+     * The item a refused selection falls back to. Defaults to the first one, which is also what a
+     * freshly installed set selects.
+     *
+     * <p>Worth naming wherever the head of the list is not the sensible answer -- a ladder whose
+     * bottom rung is the safe one but whose default is the highest rung this build reaches, say.
+     * Falling back to the head there would answer a value the build cannot honour with the slowest
+     * thing it can do, a downgrade the user never asked for and would have no way to notice.</p>
+     *
+     * <p>Set it after the {@link #setItems} that installs the set: a new set resets this along
+     * with everything else that was true of the old one.</p>
+     */
+    public void setDefaultItem(@NonNull E item) {
         int index = items.indexOf(item);
         if (index < 0)
-            throw new IllegalArgumentException("Item not found in items");
-        setSelectedIndex(index);
+            throw new IllegalArgumentException("Default item not found in items");
+        defaultIndex = index;
+    }
+
+    /** The default's index, or the first selectable item when the default is itself refused. */
+    private int fallbackIndex() {
+        if (defaultIndex >= 0 && defaultIndex < items.size()
+            && !disabled.contains(items.get(defaultIndex)))
+            return defaultIndex;
+        for (int i = 0; i < items.size(); i++)
+            if (!disabled.contains(items.get(i))) return i;
+        // Every item refused. Nothing here is selectable, so the head is as good an answer as any
+        // -- and better than leaving the picker with no selection for getSelectedItem() to fail on.
+        return 0;
+    }
+
+    /**
+     * Steps to the next item, refused ones skipped: the rotate-mode button's whole gesture.
+     *
+     * <p>Rotation is the one way in that has no menu to grey a row out in, so the skip has to
+     * happen here. Without it the gesture walks onto values the dialog and the popup both refuse,
+     * which is the same picker answering the same question two ways.</p>
+     */
+    public void selectNext() {
+        for (int step = 1; step <= items.size(); step++) {
+            var index = (selectedIndex + step) % items.size();
+            if (disabled.contains(items.get(index))) continue;
+            setSelectedIndex(index);
+            return;
+        }
     }
 
     @NonNull
@@ -202,6 +282,7 @@ public final class EnumPicker<E extends Enum<E>> {
         return item.name();
     }
 
+    @SuppressWarnings("unused")
     public int getItemCount() {
         return items.size();
     }

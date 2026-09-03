@@ -79,9 +79,7 @@ public final class PickerButtonWidget extends RelativeLayout {
                     picker.showDialog(title);
                     break;
                 case ROTATE:
-                    var idx = picker.getSelectedIndex();
-                    idx = (idx + 1) % picker.getItemCount();
-                    picker.setSelectedIndex(idx);
+                    picker.selectNext();
                     break;
                 case POPUP:
                     picker.showPopup(buttonView);
@@ -172,18 +170,44 @@ public final class PickerButtonWidget extends RelativeLayout {
         return (E) picker.getSelectedItem();
     }
 
-    public void setSelectedItem(Enum<?> val) {
+    /**
+     * Selects {@code val}, or this row's default when the picker will not take it; see
+     * {@link EnumPicker#setSelectedItem}. A wrong enum type is still a throw -- that is a
+     * miswiring, not a value that arrived from a config.
+     *
+     * @return whether {@code val} itself was selected
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public boolean setSelectedItem(Enum<?> val) {
         if (picker == null)
             throw new IllegalStateException("Items not set");
         if (val.getDeclaringClass() != picker.getEnumClass())
             throw new IllegalArgumentException("Invalid item type");
-        setPickerSelectedItem(picker, val);
+        return setPickerSelectedItem(picker, val);
     }
 
-    private static <E extends Enum<E>> void setPickerSelectedItem(
+    private static <E extends Enum<E>> boolean setPickerSelectedItem(
         @NonNull EnumPicker<E> picker, Enum<?> val
     ) {
-        picker.setSelectedItem(picker.getEnumClass().cast(val));
+        return picker.setSelectedItem(picker.getEnumClass().cast(val));
+    }
+
+    /**
+     * The value a refused selection falls back to; see {@link EnumPicker#setDefaultItem}. Call
+     * after the {@code setItems} that installs the set, like {@link #setDisabledItems}.
+     */
+    public void setDefaultItem(Enum<?> val) {
+        if (picker == null)
+            throw new IllegalStateException("Items not set");
+        if (val.getDeclaringClass() != picker.getEnumClass())
+            throw new IllegalArgumentException("Invalid item type");
+        setPickerDefaultItem(picker, val);
+    }
+
+    private static <E extends Enum<E>> void setPickerDefaultItem(
+        @NonNull EnumPicker<E> picker, Enum<?> val
+    ) {
+        picker.setDefaultItem(picker.getEnumClass().cast(val));
     }
 
     @SuppressWarnings("unchecked")

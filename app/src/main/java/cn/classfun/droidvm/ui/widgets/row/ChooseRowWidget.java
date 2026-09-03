@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.enums.EnumPicker;
 import cn.classfun.droidvm.lib.store.enums.EnumPicker.EnumPickerChanged;
 import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
 
@@ -118,8 +119,23 @@ public final class ChooseRowWidget extends FrameLayout {
         return (E) buttonView.getPicker().getSelectedItem();
     }
 
-    public void setSelectedItem(Enum<?> val) {
-        buttonView.setSelectedItem(val);
+    /**
+     * Selects {@code val}, or this row's default when the picker will not take it -- an item the
+     * row does not list, or lists only to refuse; see {@link EnumPicker#setSelectedItem}.
+     *
+     * @return whether {@code val} itself was selected
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public boolean setSelectedItem(Enum<?> val) {
+        return buttonView.setSelectedItem(val);
+    }
+
+    /**
+     * The value a refused selection falls back to; see {@link EnumPicker#setDefaultItem}. Call
+     * after the {@code setItems} that installs the set, like {@link #setDisabledItems}.
+     */
+    public void setDefaultItem(Enum<?> val) {
+        buttonView.setDefaultItem(val);
     }
 
     @Override
