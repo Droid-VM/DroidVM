@@ -32,9 +32,14 @@ import org.json.JSONArray;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
@@ -79,15 +84,18 @@ public final class VMActions {
         @Nullable ConvertLauncher convertLauncher
     ) {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
-        // image attached writable (writing would corrupt its overlays - any backend),
-        // compressed clusters (crosvm boots to I/O errors), and a huge-page reserve too small
-        // to back this VM. Each prompts with its fix and chains to the next; everything else
-        // starts normally.
+        // image attached writable (writing would corrupt its overlays - any backend), a disk a
+        // running VM already holds, compressed clusters (crosvm boots to I/O errors), and a
+        // huge-page reserve too small to back this VM. Each prompts with its fix and chains to
+        // the next; everything else starts normally. The shared-disk guard may hand the rest of
+        // the chain a session copy of the config, so everything downstream uses what it passes
+        // on rather than `config`.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
             () -> guardLockedParents(config, mainHandler, ui,
-                () -> guardCompressedDisks(config, mainHandler, ui, convertLauncher,
-                    () -> guardHugePagePool(config, mainHandler, ui,
-                        () -> startAfterGuard(config, mainHandler, ui, wantOpenConsole)))));
+                () -> guardSharedRunning(config, mainHandler, ui,
+                    started -> guardCompressedDisks(started, mainHandler, ui, convertLauncher,
+                        () -> guardHugePagePool(started, mainHandler, ui,
+                            () -> startAfterGuard(started, mainHandler, ui, wantOpenConsole))))));
     }
 
     /**
@@ -168,11 +176,10 @@ public final class VMActions {
 
     /**
      * Pre-start check: a disk attached writable while registered overlays build on it must not
-     * be written - the overlays' copy-on-write base would shift under them - and neither may a
-     * disk another VM also attaches; so offer to flip those attachments to read-only (persisted)
-     * and start. Backend-independent, unlike the crosvm-specific guards. Registry state and other
-     * VMs' configs can change after this VM was configured, which is why the disk editor's
-     * forced-readonly alone isn't enough.
+     * be written - the overlays' copy-on-write base would shift under them - so offer to flip
+     * those attachments to read-only (persisted) and start. Backend-independent, unlike the
+     * crosvm-specific guards. The registry changes after this VM was configured (an overlay
+     * created elsewhere), which is why the disk editor's forced-readonly alone isn't enough.
      */
     private static void guardLockedParents(
         @NonNull VMConfig config,
@@ -192,75 +199,167 @@ public final class VMActions {
             // exactly the case where linking is right, and a broken one can't boot anyway.
             BackingChainLinker.repairAllBlocking(appContext, qcow2DiskPaths(config));
             var lockedPaths = new ArrayList<String>();
-            var sharedPaths = new ArrayList<String>();
             try {
                 var diskStore = new DiskStore();
                 diskStore.load(appContext);
-                // Disks any OTHER VM attaches, in any mode: two writers corrupt a disk, and a
-                // reader under a writer sees it change - so a shared disk is read-only for all.
-                var others = new HashSet<String>();
-                var vmStore = new VMStore();
-                if (vmStore.load(vmStore, appContext)) {
-                    for (int i = 0; i < vmStore.size(); i++) {
-                        var other = vmStore.get(i);
-                        if (other.getId().equals(config.getId())) continue;
-                        var otherDisks = other.item.opt("disks", null);
-                        if (otherDisks == null || !otherDisks.is(DataItem.Type.ARRAY)) continue;
-                        for (var disk : otherDisks.asArray()) {
-                            var path = disk.optString("path", "");
-                            if (!path.isEmpty()) others.add(path);
-                        }
-                    }
-                }
-                var disks = config.item.opt("disks", null);
-                if (disks != null && disks.is(DataItem.Type.ARRAY)) {
-                    for (var disk : disks.asArray()) {
-                        var path = disk.optString("path", "");
-                        if (path.isEmpty() || disk.optBoolean("readonly", false)) continue;
-                        var registered = diskStore.findByPath(path);
-                        if (registered != null && diskStore.hasChildren(registered.getId()))
-                            lockedPaths.add(path);
-                        else if (others.contains(path))
-                            sharedPaths.add(path);
-                    }
+                for (var path : VmDiskSharing.attachedPaths(config, true)) {
+                    var registered = diskStore.findByPath(path);
+                    if (registered != null && diskStore.hasChildren(registered.getId()))
+                        lockedPaths.add(path);
                 }
             } catch (Exception e) {
                 Log.w(TAG, "locked-parent check failed", e);
             }
-            if (lockedPaths.isEmpty() && sharedPaths.isEmpty()) {
+            if (lockedPaths.isEmpty()) {
                 mainHandler.post(proceed);
                 return;
             }
             mainHandler.post(() -> {
                 if (!ui.isAlive()) return;
                 var ctx = ui.getContext();
-                var message = new StringBuilder();
-                if (!lockedPaths.isEmpty()) {
-                    var files = new StringBuilder();
-                    for (var p : lockedPaths) files.append("\n- ").append(basename(p));
-                    message.append(ctx.getString(R.string.vm_locked_disk_message, files));
-                }
-                if (!sharedPaths.isEmpty()) {
-                    if (message.length() > 0) message.append("\n\n");
-                    var files = new StringBuilder();
-                    for (var p : sharedPaths) files.append("\n- ").append(basename(p));
-                    message.append(ctx.getString(R.string.vm_shared_disk_message, files));
-                }
-                var all = new ArrayList<>(lockedPaths);
-                all.addAll(sharedPaths);
+                var files = new StringBuilder();
+                for (var p : lockedPaths) files.append("\n- ").append(basename(p));
                 new MaterialAlertDialogBuilder(ctx)
-                    .setTitle(lockedPaths.isEmpty()
-                        ? R.string.vm_shared_disk_title : R.string.vm_locked_disk_title)
-                    .setMessage(message)
+                    .setTitle(R.string.vm_locked_disk_title)
+                    .setMessage(ctx.getString(R.string.vm_locked_disk_message, files))
                     .setPositiveButton(R.string.vm_locked_disk_readonly_start, (d, w) ->
                         runOnPool(() -> {
-                            applyReadonly(appContext, config, all);
+                            applyReadonly(appContext, config, lockedPaths);
                             mainHandler.post(proceed);
                         }))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             });
         });
+    }
+
+    /**
+     * Pre-start check: another VM may attach the same disk file, and while that VM is running
+     * both would have it open - two writers corrupt the image, and a reader under a writer sees
+     * it change underneath. Sharing on its own is fine, so this asks the daemon instead: with
+     * every other VM on the disk stopped, the start proceeds writable and untouched; with any of
+     * them anything else (starting, running, suspended, stopping, rebooting) the start is
+     * offered read-only for those disks.
+     *
+     * <p>That flip lasts one boot: the copy handed to {@code proceed} is what the daemon is
+     * given, and the stored config keeps its writable slots, so the next start decides again
+     * from what the user saved.
+     */
+    private static void guardSharedRunning(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Consumer<VMConfig> proceed
+    ) {
+        var appContext = ui.getContext().getApplicationContext();
+        runOnPool(() -> {
+            var held = new LinkedHashMap<String, List<String>>();
+            try {
+                var vmStore = new VMStore();
+                if (vmStore.load(appContext)) {
+                    var sharers = VmDiskSharing.sharersOf(vmStore, config.getId(),
+                        VmDiskSharing.attachedPaths(config, true));
+                    if (!sharers.isEmpty()) {
+                        var names = new LinkedHashSet<String>();
+                        for (var vms : sharers.values()) names.addAll(vms);
+                        // Blocking daemon query; a daemon that cannot be reached has no VM
+                        // running either, so it reads as "nobody holds these".
+                        var running = new HashSet<>(VmRunningQuery.inUseAmong(names));
+                        for (var entry : sharers.entrySet()) {
+                            var holders = new ArrayList<String>();
+                            for (var name : entry.getValue())
+                                if (running.contains(name)) holders.add(name);
+                            if (!holders.isEmpty()) held.put(entry.getKey(), holders);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "shared-disk check failed", e);
+            }
+            if (held.isEmpty()) {
+                mainHandler.post(() -> proceed.accept(config));
+                return;
+            }
+            mainHandler.post(() -> promptSharedRunning(config, ui, held, proceed));
+        });
+    }
+
+    private static void promptSharedRunning(
+        @NonNull VMConfig config,
+        @NonNull UIContext ui,
+        @NonNull Map<String, List<String>> held,
+        @NonNull Consumer<VMConfig> proceed
+    ) {
+        Runnable start = () -> proceed.accept(readonlyForSession(config, held.keySet()));
+        // Nobody to ask: the start was requested and read-only is the answer that cannot corrupt
+        // anything, which is the same one the countdown below settles on.
+        if (!ui.isAlive()) {
+            start.run();
+            return;
+        }
+        var ctx = ui.getContext();
+        var files = new StringBuilder();
+        for (var entry : held.entrySet())
+            files.append("\n- ").append(basename(entry.getKey()))
+                .append(" (").append(String.join(", ", entry.getValue())).append(")");
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.vm_shared_disk_title)
+            .setMessage(ctx.getString(R.string.vm_shared_disk_message, files.toString()))
+            .setPositiveButton(R.string.vm_shared_disk_readonly_start, (d, w) -> start.run())
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.show();
+        // No response in 5s = the read-only start (the only safe answer while the other VM
+        // holds the file), so an unattended start isn't blocked; the countdown shows on it.
+        var readonlyStart = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (readonlyStart != null)
+            readonlyStart.setText(ctx.getString(R.string.vm_shared_disk_readonly_countdown, 5));
+        var timer = new CountDownTimer(5000, 1000) {
+            @Override
+            public void onTick(long ms) {
+                if (readonlyStart != null)
+                    readonlyStart.setText(ctx.getString(
+                        R.string.vm_shared_disk_readonly_countdown,
+                        (int) Math.ceil(ms / 1000.0)));
+            }
+
+            @Override
+            public void onFinish() {
+                dialog.dismiss();
+                start.run();
+            }
+        };
+        // Any interaction (a button tap dismisses the dialog) stops the countdown.
+        dialog.setOnDismissListener(d -> timer.cancel());
+        timer.start();
+    }
+
+    /**
+     * A copy of {@code config} with {@code paths} attached read-only, for this start only. The
+     * daemon is handed the copy (vm_create/vm_modify take whatever config the chain carries), so
+     * neither the VM store nor the config the UI holds records the flip.
+     */
+    @NonNull
+    private static VMConfig readonlyForSession(
+        @NonNull VMConfig config,
+        @NonNull Set<String> paths
+    ) {
+        var pathList = new ArrayList<>(paths);
+        try {
+            var session = new VMConfig();
+            // Through JSON: DataItem's copy constructor shares the nested items, and setting
+            // read-only on those would write straight back into the caller's config.
+            session.item.set(config.toJson());
+            setReadonlyOnDisks(session, pathList);
+            return session;
+        } catch (Exception e) {
+            // Starting writable is what this guard exists to prevent, so flip the live config
+            // instead and accept that the editor shows read-only until it reloads; nothing is
+            // saved either way.
+            Log.w(TAG, "session config copy failed; flipping the live config instead", e);
+            setReadonlyOnDisks(config, pathList);
+            return config;
+        }
     }
 
     /** Flip the given attachments to read-only on the live config and the persisted VM store. */
