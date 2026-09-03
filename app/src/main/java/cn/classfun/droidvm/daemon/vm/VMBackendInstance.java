@@ -15,6 +15,7 @@ import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.io.File;
 import java.util.LinkedHashMap;
@@ -46,6 +47,15 @@ public abstract class VMBackendInstance {
     public abstract int runControlCommand(@NonNull String command);
 
     public abstract boolean hasControlSocket();
+
+    /**
+     * Path of the backend's own control socket, for host-side tools that have to speak to the
+     * VMM directly (the crosvm usb CLI). Null when the backend has none or is not running.
+     */
+    @Nullable
+    public String getControlSocketPath() {
+        return null;
+    }
 
     public abstract void cleanup();
 

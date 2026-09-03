@@ -189,6 +189,9 @@ public final class Daemon {
         Log.i(TAG, "Stopping all VMs and networks...");
         var ctx = server.getContext();
         ctx.getVMs().stopAll();
+        // After the VMs, not before: stopping them only queues the USB releases, and the
+        // interfaces are handed back to the host from that queue.
+        ctx.getUsb().shutdown();
         ctx.getNetworks().stopAll();
         ctx.getNetworks().firewall.shutdown();
         ctx.getRouterWatcher().stop();

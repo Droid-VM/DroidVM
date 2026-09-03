@@ -1629,6 +1629,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         return controlSocketPath != null;
     }
 
+    @Nullable
+    @Override
+    public String getControlSocketPath() {
+        return controlSocketPath;
+    }
+
     @Override
     public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         return inputBridge.writeNativeInput(screenId, channel, data);

@@ -108,6 +108,16 @@ public final class VMInstance extends VMConfig {
     }
 
     /**
+     * Control socket of the running backend, or null when there is none. Reads the field rather
+     * than {@link #getBackendInstance()} on purpose: asking for the path must never be what
+     * creates a backend for a VM that is not running.
+     */
+    @Nullable
+    public synchronized String getControlSocketPath() {
+        return backendInstance == null ? null : backendInstance.getControlSocketPath();
+    }
+
+    /**
      * Forwards UI-sent evdev bytes to the running backend's native-display input channel for
      * [screenId] -- the screen the console that sent them is showing, which is what picks between
      * two screens' absolute devices.
@@ -136,6 +146,13 @@ public final class VMInstance extends VMConfig {
         // The one place every transition passes through, so the foreground service a peripheral
         // may need is raised and dropped from the same edge the guest device appears on.
         PeripheralForegroundControl.refresh(store);
+        // Same edge for the host USB devices this VM borrowed. Fully guarded: a state change is
+        // never allowed to fail because of what the manager did with them.
+        try {
+            store.context.getUsb().onVmState(this, newState);
+        } catch (Exception e) {
+            Log.w(TAG, "usb: state hook failed", e);
+        }
     }
 
     private void fireEvent(@NonNull String event, @Nullable JSONObject extra) {
