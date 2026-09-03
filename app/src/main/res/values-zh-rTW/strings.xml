@@ -1493,7 +1493,7 @@
     <string name="create_vm_vpu_enabled">掛載硬體視訊編碼器與解碼器</string>
     <string name="create_vm_vpu_host_pool_mb">主機緩衝池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客戶機緩衝池大小 (MB)</string>
-    <string name="create_vm_vpu_note">功能待實現：這些設定會隨 VM 一起儲存，但在功能完成前不會掛載任何視訊裝置。</string>
+    <string name="create_vm_vpu_note">開啟後會為 VM 保留這些緩衝池；相機與編解碼裝置會在後續版本掛載。</string>
     <string name="edit_vm_peripheral_camera_missing">這台手機沒有這個相機，該裝置不會啟動。</string>
     <string name="edit_vm_peripheral_host_camera">主機相機</string>
     <string name="peripheral_fgs_title">外設使用中</string>

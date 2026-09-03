@@ -1493,7 +1493,7 @@
     <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
-    <string name="create_vm_vpu_note">功能待实现：这些设置会随 VM 一起保存，但在功能完成前不会挂载任何视频设备。</string>
+    <string name="create_vm_vpu_note">开启后会为 VM 保留这些缓冲池；摄像头与编解码设备会在后续版本挂载。</string>
     <string name="edit_vm_peripheral_camera_missing">这台手机没有这个摄像头，该设备不会启动。</string>
     <string name="edit_vm_peripheral_host_camera">主机摄像头</string>
     <string name="peripheral_fgs_title">外设使用中</string>
