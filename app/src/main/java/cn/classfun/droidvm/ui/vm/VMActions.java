@@ -25,6 +25,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.fragment.app.FragmentActivity;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
@@ -52,6 +53,7 @@ import cn.classfun.droidvm.ui.disk.tree.DiskTree;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
+import cn.classfun.droidvm.ui.main.settings.KernelModuleDialog;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
@@ -85,17 +87,118 @@ public final class VMActions {
     ) {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
         // image attached writable (writing would corrupt its overlays - any backend), a disk a
-        // running VM already holds, compressed clusters (crosvm boots to I/O errors), and a
-        // huge-page reserve too small to back this VM. Each prompts with its fix and chains to
-        // the next; everything else starts normally. The shared-disk guard may hand the rest of
-        // the chain a session copy of the config, so everything downstream uses what it passes
-        // on rather than `config`.
+        // running VM already holds, compressed clusters (crosvm boots to I/O errors), a host
+        // kernel module this configuration needs but nobody loaded, and a huge-page reserve too
+        // small to back this VM. Each prompts with its fix and chains to the next; everything
+        // else starts normally. The shared-disk guard may hand the rest of the chain a session
+        // copy of the config, so everything downstream uses what it passes on rather than
+        // `config`.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
             () -> guardLockedParents(config, mainHandler, ui,
                 () -> guardSharedRunning(config, mainHandler, ui,
                     started -> guardCompressedDisks(started, mainHandler, ui, convertLauncher,
-                        () -> guardHugePagePool(started, mainHandler, ui,
-                            () -> startAfterGuard(started, mainHandler, ui, wantOpenConsole))))));
+                        () -> guardKernelModules(started, mainHandler, ui,
+                            () -> guardHugePagePool(started, mainHandler, ui,
+                                () -> startAfterGuard(started, mainHandler, ui,
+                                    wantOpenConsole)))))));
+    }
+
+    /**
+     * Pre-start check: does this VM's configuration reach for a host kernel module nobody has
+     * loaded? {@link KernelModulePreflight} answers that from the config itself (pseudo-
+     * unprotected RAM, GPU acceleration, a VM too big for the 6.1 Gunyah driver's page list),
+     * counting only the modules the Kernel Module page would actually offer on this phone - a
+     * module built for another kernel or another SoC is not something to warn about.
+     *
+     * <p>Unlike the disk guards there is nothing here to repair on the user's behalf: loading a
+     * module is a decision of its own, made in the Kernel Module page, which is why the offer is
+     * to go there rather than to fix it from this dialog. Starting anyway is a real answer too -
+     * a missing module costs the feature that wanted it, and does not corrupt anything - so it
+     * is what the countdown settles on for a start nobody is watching.
+     */
+    private static void guardKernelModules(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Runnable proceed
+    ) {
+        var appContext = ui.getContext().getApplicationContext();
+        runOnPool(() -> {
+            List<KernelModulePreflight.Missing> missing;
+            try {
+                missing = KernelModulePreflight.check(appContext, config.item);
+            } catch (Exception e) {
+                Log.w(TAG, "kernel-module preflight failed", e);
+                missing = List.of();
+            }
+            if (missing.isEmpty()) {
+                mainHandler.post(proceed);
+                return;
+            }
+            var found = missing;
+            mainHandler.post(() -> promptKernelModules(ui, found, proceed));
+        });
+    }
+
+    private static void promptKernelModules(
+        @NonNull UIContext ui,
+        @NonNull List<KernelModulePreflight.Missing> missing,
+        @NonNull Runnable proceed
+    ) {
+        if (!ui.isAlive()) {
+            // Nobody to ask: the start was requested, so honour it.
+            proceed.run();
+            return;
+        }
+        var ctx = ui.getContext();
+        var lines = new StringBuilder();
+        for (var m : missing)
+            lines.append("\n- ").append(m.display).append(": ").append(ctx.getString(m.reason));
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.vm_kernel_module_title)
+            .setMessage(ctx.getString(R.string.vm_kernel_module_message, lines.toString()))
+            .setPositiveButton(R.string.vm_kernel_module_start_anyway, (d, w) -> proceed.run())
+            .setNeutralButton(R.string.vm_kernel_module_manage, (d, w) -> showKernelModules(ctx))
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.show();
+        // No response in 5s = "start anyway" (the chosen default), so an
+        // unattended start isn't blocked; the countdown shows on that button.
+        var startAnyway = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (startAnyway != null)
+            startAnyway.setText(ctx.getString(R.string.vm_kernel_module_start_countdown, 5));
+        var timer = new CountDownTimer(5000, 1000) {
+            @Override
+            public void onTick(long ms) {
+                if (startAnyway != null)
+                    startAnyway.setText(ctx.getString(
+                        R.string.vm_kernel_module_start_countdown,
+                        (int) Math.ceil(ms / 1000.0)));
+            }
+
+            @Override
+            public void onFinish() {
+                dialog.dismiss();
+                proceed.run();
+            }
+        };
+        // Any interaction (a button tap dismisses the dialog) stops the countdown.
+        dialog.setOnDismissListener(d -> timer.cancel());
+        timer.start();
+    }
+
+    /**
+     * Opens the Kernel Module list (the same one Settings shows). This ends the start: loading a
+     * module is not instant, and re-deciding from a page the user is still working in would be
+     * guesswork - they start the VM again when they are done.
+     */
+    private static void showKernelModules(@NonNull Context ctx) {
+        if (ctx instanceof FragmentActivity) {
+            KernelModuleDialog.show(((FragmentActivity) ctx).getSupportFragmentManager());
+            return;
+        }
+        Log.w(TAG, "no fragment host for the kernel module list");
+        Toast.makeText(ctx, R.string.vm_kernel_module_manage_unavailable, LENGTH_LONG).show();
     }
 
     /**
