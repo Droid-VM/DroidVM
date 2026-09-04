@@ -161,9 +161,20 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         showHint(parent.getString(R.string.edit_vm_peripheral_camera_enabled_vpu));
     }
 
-    /** Whether the unsaved peripheral rows carry a device that only exists with the VPU on. */
+    /**
+     * Whether the unsaved peripheral rows carry a device that only exists with the VPU on.
+     *
+     * <p>Asked by the graphics tab, which is loaded first, so the list may not have rows yet:
+     * that is "no", not an error. {@link #wrap} is for the paths that run after a load and
+     * insists on a list; here the absence of one is a real answer.</p>
+     */
     public boolean hasVpuPeripheral() {
-        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+        if (listPeripherals == null) return false;
+        var items = listPeripherals.getItems();
+        if (items == null) return false;
+        var wrapper = DataItem.newObject();
+        wrapper.set("peripherals", items);
+        for (var peripheral : VMPeripheralConfig.listOf(wrapper))
             if (peripheral.getType().needsVpu()) return true;
         return false;
     }
