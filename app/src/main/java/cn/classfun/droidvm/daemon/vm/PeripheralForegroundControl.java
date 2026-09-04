@@ -22,10 +22,16 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * The daemon is the only party that knows when a VM actually starts -- a VM can be started over
  * IPC with no UI open at all -- and it is the only one allowed to raise the service at that
  * moment: an app calling {@code startForegroundService} from the background is refused, while
- * {@code ActiveServices} exempts a root caller by app id, and the background-start check seeds
- * itself from that same verdict. The service still runs in the app process under the app's uid,
+ * {@code ActiveServices} exempts a root caller by app id ({@code ROOT_UID} yields
+ * {@code REASON_SYSTEM_UID}). The service still runs in the app process under the app's uid,
  * which is the uid whose capability the guest needs, so who asked for it does not change what it
  * grants.</p>
+ *
+ * <p>What that exemption does <em>not</em> buy is the ordinary {@code Context} call: the daemon's
+ * Context names the package {@code android} and its ActivityThread has no process record, so
+ * {@code startServiceLocked} throws before any of the uid-0 exemptions are reached (defect D11).
+ * {@link PeripheralForegroundService#apply} is where that is dealt with; this class only decides
+ * the mask.</p>
  *
  * <p>Nothing here names a kind of peripheral: the mask comes from
  * {@code PeripheralType.getForegroundServiceType}, and whether a row is a device this VM
