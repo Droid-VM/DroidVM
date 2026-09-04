@@ -52,21 +52,31 @@ public final class PeripheralForegroundService extends Service {
      * app id, and the background-start check seeds itself from that same verdict, so this works
      * with no app process in the foreground and no UI open. An app-process caller would be
      * refused in exactly that case, which is why the decision does not live there.</p>
+     *
+     * <p>Returns whether the request was accepted, which is only as much as the caller can know
+     * here: {@code startForegroundService} is asynchronous, so true means the platform took the
+     * start, not that {@code startForeground} has run. False is a refusal that has already
+     * happened, and the caller has to remember that it did -- otherwise it believes the mask is
+     * up and never asks again. Whether the service then fails to carry its type is reported by
+     * {@link #onStartCommand} stopping itself, which the caller finds out about the next time it
+     * asks for a different mask.</p>
      */
-    public static void apply(@NonNull Context context, int typeMask) {
+    public static boolean apply(@NonNull Context context, int typeMask) {
         var intent = new Intent(context, PeripheralForegroundService.class);
         if (typeMask == 0) {
             context.stopService(intent);
-            return;
+            return true;
         }
         intent.putExtra(EXTRA_TYPES, typeMask);
         try {
             context.startForegroundService(intent);
+            return true;
         } catch (Exception e) {
             // Background-start restrictions, or a missing FOREGROUND_SERVICE_* permission. The VM
             // still runs; only the peripheral that wanted this is affected, and it will report its
             // own failure to open.
             Log.w(TAG, "could not raise the peripheral foreground service", e);
+            return false;
         }
     }
 

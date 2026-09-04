@@ -32,6 +32,10 @@ import cn.classfun.droidvm.lib.store.vm.VpuConfig;
  * {@code PeripheralType.getForegroundServiceType}, and whether a row is a device this VM
  * actually attaches comes from {@code PeripheralType.needsVpu} against the VM's own switch.</p>
  *
+ * <p>An apply that is refused is not remembered ({@link #appliedAfter}): the mask is the
+ * short-circuit for "nothing changed", so recording a refusal as done would turn one transient
+ * failure at STARTING into a VM that runs its whole life without the capability.</p>
+ *
  * <p>Ordering, which is the part that has to be right: {@code VMInstance.start} calls
  * {@code setState(STARTING)} on the caller's thread and only then creates the worker thread that
  * resolves the boot plan and spawns crosvm, so the request to raise the service is issued before
@@ -102,7 +106,24 @@ final class PeripheralForegroundControl {
         }
         Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s",
             Integer.toHexString(applied), Integer.toHexString(wanted)));
-        PeripheralForegroundService.apply(context, wanted);
-        applied = wanted;
+        boolean ok = PeripheralForegroundService.apply(context, wanted);
+        if (!ok)
+            Log.w(TAG, fmt("peripheral foreground service types 0x%s refused; will retry on the "
+                + "next change", Integer.toHexString(wanted)));
+        applied = appliedAfter(wanted, ok);
+    }
+
+    /**
+     * What {@code applied} becomes after handing {@code wanted} to the service.
+     *
+     * <p>The whole point of the field is the short-circuit above: an unchanged mask is not
+     * re-applied on every state change. So a refused request must not be recorded as done, or a
+     * VM whose STARTING transition was refused keeps the same mask through RUNNING and never
+     * asks again -- its camera has no capability for the life of the VM, from one transient
+     * refusal. Forgetting it (0) is both the truth, since nothing was raised, and what makes the
+     * next transition ask again, even when the mask it wants is the same one.</p>
+     */
+    static int appliedAfter(int wanted, boolean ok) {
+        return ok ? wanted : 0;
     }
 }

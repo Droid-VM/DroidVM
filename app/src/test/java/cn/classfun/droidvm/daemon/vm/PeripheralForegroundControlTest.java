@@ -6,6 +6,7 @@ package cn.classfun.droidvm.daemon.vm;
 import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
 import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotEquals;
 
 import org.junit.Test;
 
@@ -65,6 +66,26 @@ public final class PeripheralForegroundControlTest {
             assertEquals(state.name(), want,
                 PeripheralForegroundControl.typesFor(state, item));
         }
+    }
+
+    /**
+     * A refused raise is not remembered as done. {@code applied} is {@code refresh}'s "nothing
+     * changed" short-circuit, so recording a failure as success would leave the next transition
+     * -- STARTING to RUNNING, wanting the same mask -- with nothing to do, and the VM without
+     * the capability for the rest of its life over one transient refusal.
+     */
+    @Test
+    public void aRefusedRaiseIsForgottenSoTheNextTransitionRetries() {
+        assertEquals(FOREGROUND_SERVICE_TYPE_CAMERA,
+            PeripheralForegroundControl.appliedAfter(FOREGROUND_SERVICE_TYPE_CAMERA, true));
+        assertEquals(FOREGROUND_SERVICE_TYPE_NONE,
+            PeripheralForegroundControl.appliedAfter(FOREGROUND_SERVICE_TYPE_CAMERA, false));
+        // Which is the comparison refresh actually makes, with the same mask still wanted.
+        assertNotEquals(FOREGROUND_SERVICE_TYPE_CAMERA,
+            PeripheralForegroundControl.appliedAfter(FOREGROUND_SERVICE_TYPE_CAMERA, false));
+        // A stop that was accepted is remembered, so it is not re-issued on every event.
+        assertEquals(FOREGROUND_SERVICE_TYPE_NONE,
+            PeripheralForegroundControl.appliedAfter(FOREGROUND_SERVICE_TYPE_NONE, true));
     }
 
     /** A VM with no camera never raises one, whatever it is doing. */
