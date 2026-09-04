@@ -310,6 +310,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * under Gunyah -- the pools are a Gunyah memory-lending construct, and on KVM the device
      * falls back to its own memfds behind a PCI shm BAR. See {@code plans/VPU_DESIGN.md}
      * sections 2.2, 2.3 and 8.</p>
+     *
+     * <p>The host pool has a second reason to exist: a media device. The camera row does not ask
+     * the VPU switch for permission -- the switch buys pools, not devices -- but on Gunyah crosvm
+     * refuses to start a VM carrying a virtio-media device with no {@code media_host} pool
+     * (VPU_DESIGN.md 3.3), so the pool follows the device. {@link VpuConfig#effectiveHostPoolMb}
+     * holds that rule.</p>
      */
     // Package-private, not private, so CrosvmMediaPoolTest can assert the exact fragment this
     // produces per protection mode without standing up a VM.
@@ -318,10 +324,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         @NonNull DataItem item,
         @Nullable ProtectedVM pvm
     ) {
-        if (!VpuConfig.isEnabled(item)) return;
-        long mediaHost = VpuConfig.getHostPoolMb(item);
-        if (mediaHost > 0)
+        long mediaHost = VpuConfig.effectiveHostPoolMb(item);
+        if (mediaHost > 0) {
+            if (VpuConfig.hostPoolIsForcedByDevice(item))
+                Log.w(TAG, fmt("video acceleration is off, but this VM has a virtio-media "
+                    + "device: adding media-host-mb=%d, which crosvm requires to create one on "
+                    + "gunyah", mediaHost));
             appendPreAllocKey(preAlloc, fmt("media-host-mb=%d", mediaHost));
+        }
+        // Not forced by a device: the guest pool is the opposite direction of data (what the
+        // guest produces for the host to read) and crosvm asks for none of it. It stays the
+        // switch's, so a camera-only VM pays for one pool rather than two.
         long mediaGuest = VpuConfig.guestPoolMbFor(item, pvm);
         if (mediaGuest > 0)
             appendPreAllocKey(preAlloc, fmt("media-guest-mb=%d", mediaGuest));
@@ -1451,12 +1464,18 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     break;
                 }
                 case VIRTIO_CAMERA: {
-                    // The type is still marked unavailable, because the crosvm this app ships
-                    // has no --virtio-media option: emitting one would not be a flag it ignores
-                    // but a command line it refuses, so the VM would stop starting the moment
-                    // someone added a camera row. WP A4 flips PeripheralType.VIRTIO_CAMERA to
-                    // available once the device is in the binary, and this arm starts firing
-                    // with no further change here. VPU_DESIGN.md 3.5, 8.
+                    // A camera row is a device, and a device does not ask the VPU switch for
+                    // permission: the switch decides whether this VM gets the virtio-media
+                    // memory pools, not whether it has any media hardware. So this fires with
+                    // vpu_enabled false exactly as with it on. What the switch being off does
+                    // change is that appendMediaPoolOptions has to add media-host-mb anyway --
+                    // crosvm refuses a virtio-media device with no media_host pool on gunyah
+                    // (VPU_DESIGN.md 3.3), and VpuConfig.effectiveHostPoolMb is where that is
+                    // decided, off this same peripheral list.
+                    //
+                    // The availability flag is still read rather than assumed: it is the one
+                    // switch that says "the host cannot serve this", and a crosvm without the
+                    // device refuses the whole command line rather than ignoring the flag.
                     if (!PeripheralType.VIRTIO_CAMERA.isAvailable()) {
                         Log.w(TAG, "peripheral virtio_camera skipped: this crosvm has no "
                             + "virtio-media camera device");
@@ -1484,18 +1503,27 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * registers exactly one V4L2 node; a VM that wants front and back carries two rows and gets
      * two of these.</p>
      *
-     * <p>An empty `camera_id` is what the picker stores for "let the host pick"
-     * ({@link cn.classfun.droidvm.lib.data.HostCameraDevices#DEFAULT_KEY}), and the host resolves
-     * it to its own default at open time rather than the daemon pinning today's first camera into
-     * the config. Both string values are quoted the way the audio path quotes its host_device:
-     * the value sits inside a comma-separated option list, and neither a platform camera id nor
-     * a human label promises to avoid a comma -- the label routinely has spaces. The `uid` is the
-     * app's own, so Android attributes the camera to DroidVM and shows the indicator for it.</p>
+     * <p>"Let the host pick" ({@link cn.classfun.droidvm.lib.data.HostCameraDevices#DEFAULT_KEY},
+     * the empty string) is spelt by leaving `camera_id` out, not by passing an empty one. The
+     * field is an `Option<String>` on the crosvm side and `camera_id=""` parses -- as
+     * `Some("")`, a camera whose id is the empty string, which is a value the host would then
+     * have to know to treat as "unset". `None` already means that. Verified against crosvm's own
+     * parser; see logs/vpu_wp/A2.md.</p>
+     *
+     * <p>Both string values are quoted the way the audio path quotes its host_device: the value
+     * sits inside a comma-separated option list, and neither a platform camera id nor a human
+     * label promises to avoid a comma -- the label routinely has spaces, and a quoted comma
+     * round-trips through the parser. The `uid` is the app's own, so Android attributes the
+     * camera to DroidVM and shows the indicator for it.</p>
      */
+    // Package-private and static, not private, so CameraDeviceConfigTest can assert the exact
+    // string this produces -- and hand it to crosvm's parser -- without standing up a VM.
     @NonNull
-    private String buildCameraConfig(@NonNull VMPeripheralConfig peripheral, int appUid) {
+    static String buildCameraConfig(@NonNull VMPeripheralConfig peripheral, int appUid) {
         var cfg = new StringBuilder("kind=camera");
-        cfg.append(fmt(",camera_id=\"%s\"", quotable(peripheral.getHostDevice())));
+        var hostDevice = peripheral.getHostDevice();
+        if (!hostDevice.isEmpty())
+            cfg.append(fmt(",camera_id=\"%s\"", quotable(hostDevice)));
         // What the guest reads back as the V4L2 card name. The stored label is the host's own
         // name for the camera ("Back camera (0)"); a row saved before the picker ran has none,
         // and a card must still have a name.

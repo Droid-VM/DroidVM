@@ -39,10 +39,16 @@ public enum PeripheralType implements StringEnum {
      * capabilities come from a single config word, so a second camera is a second device. A VM
      * that wants front and back carries two of these.</p>
      *
-     * <p>Unavailable until crosvm carries the device; the host half (Camera2 NDK through
-     * {@code android_camera}) exists, the virtio-media capture device on top of it does not.</p>
+     * <p>Available: the app side is complete -- the row builds a
+     * {@code --virtio-media kind=camera} device with the app's uid on it, and a VM carrying one
+     * raises the camera foreground service for as long as it is not stopped. What is still
+     * missing is host-side: this crosvm parses {@code kind=camera} and then refuses to create it
+     * ("not implemented yet"), because the vhost-user camera backend on top of
+     * {@code android_camera} lands in M3/M4. So a VM with a camera row starts on a crosvm that
+     * has the device and fails to start on one that does not, which is the same deploy rule the
+     * media pools already carry. See {@code plans/VPU_DESIGN.md} sections 3.5 and 7.</p>
      */
-    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
+    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
     /**
      * xHCI USB controller: the root the guest's USB devices hang off.
      *
