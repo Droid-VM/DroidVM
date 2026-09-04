@@ -110,11 +110,18 @@ public final class VpuConfig {
      * nothing media-related whatever its peripheral list says.</p>
      *
      * <p>The size is the configured one, falling back to {@link #DEFAULT_HOST_POOL_MB} when the
-     * switch is on and the config says zero. That fallback is not cosmetic: on Gunyah crosvm
-     * refuses to create a virtio-media device with no {@code media_host} pool and fails the
-     * whole VM, so {@code media-host-mb=0} with the switch on would be a VM that stops booting
-     * the moment its camera row becomes a device. {@link #hostPoolIsDefaulted} says when it
-     * happened, so the daemon can log it.</p>
+     * switch is on and the config says zero or less. That fallback is not cosmetic: on Gunyah
+     * crosvm refuses to create a virtio-media device with no {@code media_host} pool and fails
+     * the whole VM, so {@code media-host-mb=0} with the switch on would be a VM that stops
+     * booting the moment its camera row becomes a device. {@link #hostPoolIsDefaulted} says when
+     * it happened, so the daemon can log it.</p>
+     *
+     * <p>It is a fallback for old and hand-written configs only: the editor refuses to save a
+     * host pool below 1 MB with the switch on, so nothing the UI produces reaches it. Passing
+     * the pool whenever the switch is on -- even with no media row in the list -- is the
+     * decision and not an oversight: the switch is what says devices are coming, and a pool that
+     * appeared and disappeared with the peripheral list would be the invisible second switch
+     * this design removed.</p>
      */
     public static long hostPoolMbFor(@NonNull DataItem config) {
         if (!isEnabled(config)) return 0;
@@ -124,7 +131,7 @@ public final class VpuConfig {
 
     /**
      * True when {@link #hostPoolMbFor} had to substitute the default because the VM asked for
-     * video acceleration and stored a zero-sized host pool. The daemon says so in the log: the
+     * video acceleration and stored a host pool size of zero or less. The daemon says so in the log: the
      * VM is being passed a pool of a size nobody chose.
      */
     public static boolean hostPoolIsDefaulted(@NonNull DataItem config) {
