@@ -521,6 +521,21 @@
 
         </LinearLayout>
 
+        <!-- Outside the block above on purpose: this note is about a camera row that will not
+             be attached, which is only true while the switch is off, and that is exactly when
+             vpu_options is GONE. A note inside the hidden block is a note nobody can read. -->
+        <TextView
+            android:id="@+id/tv_vpu_camera_off_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:text="@string/create_vm_vpu_note_camera_off"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
 
