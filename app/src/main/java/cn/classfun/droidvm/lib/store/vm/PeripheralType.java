@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.enums.StringEnum;
 
 /**
@@ -114,6 +115,23 @@ public enum PeripheralType implements StringEnum {
      */
     public boolean needsVpu() {
         return needsVpu;
+    }
+
+    /**
+     * Whether a row of this type on {@code config} is a device the VM really gets.
+     *
+     * <p>"Effective peripheral", in one place because three readers need the same answer and had
+     * been inlining it: the crosvm backend, which builds the argument, and the daemon's
+     * foreground-service mask, which must not raise a camera service for a row the backend is
+     * about to skip. Two conditions in this order -- can anything on the host serve this type at
+     * all ({@link #isAvailable}), and if it rides the virtio-media transport
+     * ({@link #needsVpu}), does this VM have it ({@link VpuConfig#mediaDevicesAttached}).</p>
+     *
+     * <p>It takes the VM's config rather than a boolean so the rule stays here: a reader asks
+     * about a type and a VM, and does not get to decide what "attached" means.</p>
+     */
+    public boolean isAttachedTo(@NonNull DataItem config) {
+        return isAvailable() && (!needsVpu() || VpuConfig.mediaDevicesAttached(config));
     }
 
     /**
