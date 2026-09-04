@@ -1494,7 +1494,9 @@
     <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
-    <string name="create_vm_vpu_note">开启后会为 VM 保留这些缓冲池。摄像头不归这个开关管：在“外设”页加的摄像头一律会挂上，并自行保留它需要的 host 池。</string>
+    <string name="create_vm_vpu_note">开启后会为 VM 保留这些缓冲池。在“外设”页加的摄像头用的是同一套硬件：只有开启时才会挂上，摄像头交出的缓冲区也是靠这个开关付的账。</string>
+    <string name="create_vm_vpu_note_camera_off">这台 VM 在“外设”页有摄像头。视频加速关闭时不会挂上：摄像头是 virtio-media 设备，需要这个开关保留的缓冲池。</string>
+    <string name="edit_vm_peripheral_camera_enabled_vpu">已开启视频加速：摄像头需要它</string>
     <string name="edit_vm_peripheral_camera_missing">这台手机没有这个摄像头，该设备不会启动。</string>
     <string name="edit_vm_peripheral_host_camera">主机摄像头</string>
     <string name="peripheral_fgs_title">外设使用中</string>

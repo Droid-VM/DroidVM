@@ -12,6 +12,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -39,6 +40,7 @@ import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
 import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
@@ -87,6 +89,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
     private View vpuOptions;
+    private TextView tvVpuNote;
     private View mediaGuestPoolOptions;
     private TextInputEditText etMediaHostPoolMb;
     private TextInputEditText etMediaGuestPoolMb;
@@ -150,6 +153,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
+        tvVpuNote = view.findViewById(R.id.tv_vpu_note);
         mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
         etMediaHostPoolMb = view.findViewById(R.id.et_media_host_pool_mb);
         etMediaGuestPoolMb = view.findViewById(R.id.et_media_guest_pool_mb);
@@ -577,7 +581,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // pool is offered at all. Nothing tells this tab when that changes, so ask on the way in.
         updateVramAllocVisibility();
         // Same reason: the media guest pool is only offered to a VM whose memory the host cannot
-        // read, which is also decided over there.
+        // read, which is also decided over there -- and the note under the block depends on the
+        // peripheral tab's rows, which loadConfig() cannot see (this tab is loaded before that
+        // one) and which the user may have changed since.
         updateVpuVisibility();
     }
 
@@ -628,6 +634,44 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         vpuOptions.setVisibility(enabled ? VISIBLE : GONE);
         mediaGuestPoolOptions.setVisibility(
             enabled && VpuConfig.guestPoolApplies(currentProtectedVm()) ? VISIBLE : GONE);
+        // The note under the block is where the cross-tab consequence is said. Turning the
+        // switch off is not blocked -- someone may be freeing the memory and know exactly what
+        // it costs them -- but a camera row that will not be attached is not something to find
+        // out from a log line after the VM boots without it.
+        tvVpuNote.setText(!enabled && hasMediaPeripheral()
+            ? R.string.create_vm_vpu_note_camera_off : R.string.create_vm_vpu_note);
+    }
+
+    /**
+     * Whether the peripheral tab's unsaved rows carry a device that only exists with the VPU on.
+     *
+     * <p>Live from that tab for the same reason the protection mode is read live from the basic
+     * one: a row added a moment ago has not been saved anywhere yet, and the note has to be
+     * about the VM the user is building rather than the one on disk.</p>
+     */
+    private boolean hasMediaPeripheral() {
+        try {
+            var peripheral = (VMEditPeripheralTab) parent.getTab(VMEditTab.TAB_PERIPHERAL);
+            return peripheral.hasVpuPeripheral();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Turns video acceleration on for a media peripheral that was just added on another tab.
+     *
+     * <p>Returns true when this actually changed something, so the caller only tells the user
+     * about a switch it moved. The change is made on the widget rather than on a config object:
+     * the tabs do not share a live config, and this widget is where the pending value lives
+     * until {@link #saveConfig} writes it -- which also means the switch is already showing the
+     * new state the next time this tab is displayed, with no reload needed.</p>
+     */
+    public boolean enableVpuForMediaDevice() {
+        if (swVpuEnabled.isChecked()) return false;
+        // Fires the checked-change listener, which is what refreshes the pool fields and note.
+        swVpuEnabled.setChecked(true);
+        return true;
     }
 
     @Override
