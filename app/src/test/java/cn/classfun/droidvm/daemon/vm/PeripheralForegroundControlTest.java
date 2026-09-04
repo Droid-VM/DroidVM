@@ -14,6 +14,7 @@ import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 /**
  * The foreground-service rule: any VM that is not STOPPED and carries a device needing a service
@@ -22,9 +23,18 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * <p>{@code refresh} itself walks a {@code VMInstanceStore} and talks to the platform, so what is
  * tested is the rule it folds -- {@code typesFor(state, item)}, which is where every decision
  * actually is. The store walk around it is a fold of exactly this over every instance.</p>
+ *
+ * <p>"Carries a device" means the device the backend will really attach, not the row: a camera on
+ * a VM whose VPU switch is off is skipped at boot, so it must not raise a camera service and put
+ * a privacy indicator on screen for a camera nothing will open.</p>
  */
 public final class PeripheralForegroundControlTest {
+    /** A VM with these peripherals and video acceleration on, so its media rows are attached. */
     private static DataItem vm(PeripheralType... types) {
+        return vm(true, types);
+    }
+
+    private static DataItem vm(boolean vpu, PeripheralType... types) {
         var item = VMConfig.createWithCustomizeDefaults(null).item;
         var peripherals = DataItem.newArray();
         for (var type : types) {
@@ -33,6 +43,7 @@ public final class PeripheralForegroundControlTest {
             peripherals.append(peripheral.item);
         }
         item.set("peripherals", peripherals);
+        VpuConfig.setEnabled(item, vpu);
         return item;
     }
 
@@ -66,6 +77,34 @@ public final class PeripheralForegroundControlTest {
             PeripheralForegroundControl.typesFor(VMState.STARTING, vm()));
     }
 
+    /**
+     * A camera on a VM with the VPU switch off is a row the backend skips, so the mask stays 0.
+     * The service is about devices that exist, and this one will not.
+     */
+    @Test
+    public void aCameraOnAVmWithTheVpuOffAsksForNothing() {
+        var item = vm(false, PeripheralType.VIRTIO_CAMERA);
+        for (var state : VMState.values())
+            assertEquals(state.name(), FOREGROUND_SERVICE_TYPE_NONE,
+                PeripheralForegroundControl.typesFor(state, item));
+        // ... and turning the switch on, which is what the editor does when the row is added,
+        // is the whole difference.
+        VpuConfig.setEnabled(item, true);
+        assertEquals(FOREGROUND_SERVICE_TYPE_CAMERA,
+            PeripheralForegroundControl.typesFor(VMState.RUNNING, item));
+    }
+
+    /** A sound card is not a media device: it is unaffected by the VPU switch either way. */
+    @Test
+    public void theVpuSwitchDoesNotReachANonMediaPeripheral() {
+        assertEquals(FOREGROUND_SERVICE_TYPE_NONE,
+            PeripheralForegroundControl.typesFor(VMState.RUNNING,
+                vm(false, PeripheralType.VIRTIO_SOUND)));
+        assertEquals(FOREGROUND_SERVICE_TYPE_NONE,
+            PeripheralForegroundControl.typesFor(VMState.RUNNING,
+                vm(true, PeripheralType.VIRTIO_SOUND)));
+    }
+
     /** A type the host cannot serve is not attached, so it asks for nothing. */
     @Test
     public void anUnavailableTypeAsksForNothing() {
@@ -97,5 +136,10 @@ public final class PeripheralForegroundControlTest {
         int soundLeft = PeripheralForegroundControl.typesFor(VMState.STOPPED, withCamera)
             | PeripheralForegroundControl.typesFor(VMState.RUNNING, withSound);
         assertEquals(FOREGROUND_SERVICE_TYPE_NONE, soundLeft);
+        // A second camera VM with the switch off does not hold the service up on its own.
+        int vpuOffOnly = PeripheralForegroundControl.typesFor(VMState.STOPPED, withCamera)
+            | PeripheralForegroundControl.typesFor(VMState.RUNNING,
+                vm(false, PeripheralType.VIRTIO_CAMERA));
+        assertEquals(FOREGROUND_SERVICE_TYPE_NONE, vpuOffOnly);
     }
 }
