@@ -1534,7 +1534,7 @@
     <string name="create_vm_vpu_enabled">Attach a hardware video encoder and decoder</string>
     <string name="create_vm_vpu_host_pool_mb">Host pool size (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">Guest pool size (MB)</string>
-    <string name="create_vm_vpu_note">The pools are reserved for the VM when this is on. A camera added on the Peripherals tab rides the same hardware: it is attached only while this is on, and turning it on here is what pays for the buffers the camera hands over.</string>
+    <string name="create_vm_vpu_note">Turning this on reserves the pool sizes shown above and attaches the VM\'s video devices. A camera added on the Peripherals tab rides the same virtio-media hardware, so it is attached only while this is on.</string>
     <string name="create_vm_vpu_note_camera_off">This VM has a camera on the Peripherals tab. It will not be attached while video acceleration is off: the camera is a virtio-media device and needs the pools this switch reserves.</string>
     <string name="edit_vm_peripheral_camera_enabled_vpu">Video acceleration turned on: the camera needs it</string>
     <string name="edit_vm_peripheral_camera_missing">This phone has no such camera; the device will not start.</string>
