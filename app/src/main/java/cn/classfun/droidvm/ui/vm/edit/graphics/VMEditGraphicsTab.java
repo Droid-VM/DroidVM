@@ -89,7 +89,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
     private View vpuOptions;
-    private TextView tvVpuNote;
+    private TextView tvVpuCameraOffNote;
     private View mediaGuestPoolOptions;
     private TextInputEditText etMediaHostPoolMb;
     private TextInputEditText etMediaGuestPoolMb;
@@ -153,7 +153,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
-        tvVpuNote = view.findViewById(R.id.tv_vpu_note);
+        tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
         mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
         etMediaHostPoolMb = view.findViewById(R.id.et_media_host_pool_mb);
         etMediaGuestPoolMb = view.findViewById(R.id.et_media_guest_pool_mb);
@@ -634,12 +634,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         vpuOptions.setVisibility(enabled ? VISIBLE : GONE);
         mediaGuestPoolOptions.setVisibility(
             enabled && VpuConfig.guestPoolApplies(currentProtectedVm()) ? VISIBLE : GONE);
-        // The note under the block is where the cross-tab consequence is said. Turning the
-        // switch off is not blocked -- someone may be freeing the memory and know exactly what
-        // it costs them -- but a camera row that will not be attached is not something to find
-        // out from a log line after the VM boots without it.
-        tvVpuNote.setText(!enabled && hasMediaPeripheral()
-            ? R.string.create_vm_vpu_note_camera_off : R.string.create_vm_vpu_note);
+        // The cross-tab consequence, on its own view outside the block: it is the switch being
+        // *off* that makes it true, and the block is hidden in exactly that case, so a note
+        // living inside it could never be read. Turning the switch off is not blocked --
+        // someone may be freeing the memory and know exactly what it costs them -- but a camera
+        // row that will not be attached is not something to find out from a log line after the
+        // VM boots without it.
+        tvVpuCameraOffNote.setVisibility(
+            !enabled && hasMediaPeripheral() ? VISIBLE : GONE);
     }
 
     /**
@@ -648,6 +650,11 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      * <p>Live from that tab for the same reason the protection mode is read live from the basic
      * one: a row added a moment ago has not been saved anywhere yet, and the note has to be
      * about the VM the user is building rather than the one on disk.</p>
+     *
+     * <p>The catch is for the tab lookup alone -- "no rows yet" is an answer
+     * {@link VMEditPeripheralTab#hasVpuPeripheral} gives rather than throws, which is what the
+     * first {@code loadConfig} pass gets, since this tab is loaded before that one. {@code
+     * onTabShown} asks again on the way in, before the block can be looked at.</p>
      */
     private boolean hasMediaPeripheral() {
         try {
