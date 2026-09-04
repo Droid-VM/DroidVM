@@ -105,8 +105,15 @@ public enum PeripheralType implements StringEnum {
      * <p>A camera is not a device beside the VPU, it is a device <em>of</em> it: the same
      * {@code --virtio-media} transport, out of the same {@code media_host} pool, which crosvm
      * only creates when the pool is there ({@code virtio-media on gunyah needs --pre-alloc
-     * media-host-mb}, VPU_DESIGN.md 3.3). One switch decides both, so there is no configuration
-     * in which a row is attached and the memory it needs is not.</p>
+     * media-host-mb}, VPU_DESIGN.md 3.3). One switch decides both, so on Gunyah there is no
+     * configuration in which a row is attached and the memory it needs is not.</p>
+     *
+     * <p>The same rule on every hypervisor, and that is a choice rather than an oversight. Only
+     * Gunyah refuses the device without the pool; on KVM and GenieZone no pools are passed at
+     * all and crosvm falls back to a PCI shm BAR, so the switch is not technically required
+     * there. It still decides, because one rule someone can hold in their head is worth more
+     * than a per-hypervisor one whose edges are invisible from the editor -- and refusing is the
+     * safe direction, since the BAR fallback is the path nothing has run yet.</p>
      *
      * <p>Three readers, one rule: the crosvm backend skips such a row on a VM with the switch
      * off, the daemon's foreground-service mask does not count it, and the editor turns the
