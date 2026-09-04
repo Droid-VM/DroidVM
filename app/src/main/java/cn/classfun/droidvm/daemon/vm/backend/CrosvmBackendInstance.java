@@ -311,11 +311,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * falls back to its own memfds behind a PCI shm BAR. See {@code plans/VPU_DESIGN.md}
      * sections 2.2, 2.3 and 8.</p>
      *
-     * <p>The host pool has a second reason to exist: a media device. The camera row does not ask
-     * the VPU switch for permission -- the switch buys pools, not devices -- but on Gunyah crosvm
-     * refuses to start a VM carrying a virtio-media device with no {@code media_host} pool
-     * (VPU_DESIGN.md 3.3), so the pool follows the device. {@link VpuConfig#effectiveHostPoolMb}
-     * holds that rule.</p>
+     * <p>Both pools come from the switch and from nothing else. A media device does not buy one
+     * for itself: on Gunyah crosvm refuses to create a virtio-media device with no
+     * {@code media_host} pool (VPU_DESIGN.md 3.3), so rather than let a peripheral row conjure
+     * memory the user never asked for, the device depends on the switch instead -- a camera row
+     * on a VM with video acceleration off is skipped, and this VM is passed nothing media-related
+     * at all. {@link VpuConfig#hostPoolMbFor} holds the size rule, including the one case where
+     * a stored zero cannot be honoured.</p>
      */
     // Package-private, not private, so CrosvmMediaPoolTest can assert the exact fragment this
     // produces per protection mode without standing up a VM.
@@ -324,17 +326,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         @NonNull DataItem item,
         @Nullable ProtectedVM pvm
     ) {
-        long mediaHost = VpuConfig.effectiveHostPoolMb(item);
+        long mediaHost = VpuConfig.hostPoolMbFor(item);
         if (mediaHost > 0) {
-            if (VpuConfig.hostPoolIsForcedByDevice(item))
-                Log.w(TAG, fmt("video acceleration is off, but this VM has a virtio-media "
-                    + "device: adding media-host-mb=%d, which crosvm requires to create one on "
-                    + "gunyah", mediaHost));
+            if (VpuConfig.hostPoolIsDefaulted(item))
+                Log.w(TAG, fmt("video acceleration is on with no host pool size stored: adding "
+                    + "media-host-mb=%d, which crosvm requires before it will create a "
+                    + "virtio-media device on gunyah", mediaHost));
             appendPreAllocKey(preAlloc, fmt("media-host-mb=%d", mediaHost));
         }
-        // Not forced by a device: the guest pool is the opposite direction of data (what the
-        // guest produces for the host to read) and crosvm asks for none of it. It stays the
-        // switch's, so a camera-only VM pays for one pool rather than two.
+        // The guest pool is the opposite direction of data (what the guest produces for the host
+        // to read), so it exists only where the host cannot otherwise reach guest memory --
+        // hence the protection mode in the rule and not just the switch.
         long mediaGuest = VpuConfig.guestPoolMbFor(item, pvm);
         if (mediaGuest > 0)
             appendPreAllocKey(preAlloc, fmt("media-guest-mb=%d", mediaGuest));
@@ -1411,7 +1413,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      *
      * <p>A VIRTIO_CAMERA peripheral is `--virtio-media kind=camera` with a `uid` for the same
      * reason: the host half is Camera2, which attributes the capture -- and the privacy
-     * indicator -- to the uid that opened it, and refuses a root one outright.</p>
+     * indicator -- to the uid that opened it, and refuses a root one outright. It is also the
+     * one peripheral gated on something outside its own row: it rides the VM's virtio-media
+     * transport, so it is attached only while that VM's VPU switch is on
+     * ({@link VpuConfig#mediaDevicesAttached}).</p>
      *
      * <p>INTEL_HDA is accepted by the model and skipped here: crosvm emulates no HDA controller,
      * and starting a VM that claims hardware nothing can serve is worse than starting without
@@ -1464,21 +1469,24 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     break;
                 }
                 case VIRTIO_CAMERA: {
-                    // A camera row is a device, and a device does not ask the VPU switch for
-                    // permission: the switch decides whether this VM gets the virtio-media
-                    // memory pools, not whether it has any media hardware. So this fires with
-                    // vpu_enabled false exactly as with it on. What the switch being off does
-                    // change is that appendMediaPoolOptions has to add media-host-mb anyway --
-                    // crosvm refuses a virtio-media device with no media_host pool on gunyah
-                    // (VPU_DESIGN.md 3.3), and VpuConfig.effectiveHostPoolMb is where that is
-                    // decided, off this same peripheral list.
-                    //
-                    // The availability flag is still read rather than assumed: it is the one
-                    // switch that says "the host cannot serve this", and a crosvm without the
-                    // device refuses the whole command line rather than ignoring the flag.
+                    // The availability flag first: it is the one switch that says "this build
+                    // cannot serve this device at all", and a crosvm without the device refuses
+                    // the whole command line rather than ignoring the flag.
                     if (!PeripheralType.VIRTIO_CAMERA.isAvailable()) {
                         Log.w(TAG, "peripheral virtio_camera skipped: this crosvm has no "
                             + "virtio-media camera device");
+                        continue;
+                    }
+                    // Then this VM's VPU switch. A camera is a virtio-media device served out of
+                    // the media_host pool, and on gunyah crosvm will not create one without that
+                    // pool (VPU_DESIGN.md 3.3) -- so rather than have a peripheral row silently
+                    // reserve memory for itself, the device depends on the switch that buys the
+                    // pool. The editor turns the switch on when a camera is added, so reaching
+                    // this line means a hand-edited vms.json or a switch turned off afterwards;
+                    // either way the VM starts, without the camera, and says why.
+                    if (!VpuConfig.mediaDevicesAttached(config.item)) {
+                        Log.w(TAG, "peripheral virtio_camera skipped: the camera needs this VM's "
+                            + "video acceleration (VPU) switch, and it is off");
                         continue;
                     }
                     if (appUid <= 0) {
