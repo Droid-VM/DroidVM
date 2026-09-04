@@ -14,7 +14,6 @@ import cn.classfun.droidvm.lib.peripheral.PeripheralForegroundService;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
-import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 /**
  * Keeps {@link PeripheralForegroundService} in step with what this daemon is running.
@@ -30,7 +29,8 @@ import cn.classfun.droidvm.lib.store.vm.VpuConfig;
  *
  * <p>Nothing here names a kind of peripheral: the mask comes from
  * {@code PeripheralType.getForegroundServiceType}, and whether a row is a device this VM
- * actually attaches comes from {@code PeripheralType.needsVpu} against the VM's own switch.</p>
+ * actually attaches comes from {@code PeripheralType.isAttachedTo}, the predicate the crosvm
+ * backend branches on.</p>
  *
  * <p>An apply that is refused is not remembered ({@link #appliedAfter}): the mask is the
  * short-circuit for "nothing changed", so recording a refusal as done would turn one transient
@@ -65,20 +65,20 @@ final class PeripheralForegroundControl {
      * process is spawned, and the capability has to already be there when it does; so does
      * STOPPING and REBOOTING, because the device is not gone until the process is.</p>
      *
-     * <p>Only <em>effective</em> peripherals count -- the rows the backend will really attach,
-     * which is the same question {@code buildPeripheralCommand} asks. A device the host cannot
-     * serve is not attached, and neither is a virtio-media one on a VM whose VPU switch is off:
-     * a camera listed on such a VM never opens, so raising a camera foreground service for it
-     * would put a privacy indicator on the user's screen for a camera nothing is using.</p>
+     * <p>Only <em>effective</em> peripherals count -- the rows the backend will really attach.
+     * That is not a similar question to the one {@code buildPeripheralCommand} asks, it is the
+     * same one, so it is asked through the same predicate ({@code PeripheralType.isAttachedTo}):
+     * a device the host cannot serve is not attached, and neither is a virtio-media one on a VM
+     * whose VPU switch is off. A camera listed on such a VM never opens, so raising a camera
+     * foreground service for it would put a privacy indicator on the user's screen for a camera
+     * nothing is using.</p>
      */
     static int typesFor(@NonNull VMState state, @NonNull DataItem item) {
         if (state == VMState.STOPPED) return 0;
-        boolean media = VpuConfig.mediaDevicesAttached(item);
         int mask = 0;
         for (var peripheral : VMPeripheralConfig.listOf(item)) {
             var type = peripheral.getType();
-            if (!type.isAvailable()) continue;
-            if (type.needsVpu() && !media) continue;
+            if (!type.isAttachedTo(item)) continue;
             mask |= type.getForegroundServiceType();
         }
         return mask;
