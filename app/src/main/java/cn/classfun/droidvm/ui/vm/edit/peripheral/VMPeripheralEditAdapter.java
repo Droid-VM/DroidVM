@@ -97,6 +97,8 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     private Consumer<Runnable> micPermissionGate;
     /** Asks for CAMERA before a camera device is added, and drops the add if refused. */
     private Consumer<Runnable> cameraPermissionGate;
+    /** Told after a row that only works with the VPU on is added; set by the tab. */
+    private Runnable onVpuPeripheralAdded;
     // What the phone reported last time we looked, so binding a row is not a binder call each
     // time it scrolls past. Dropped by refreshHostDevices().
     private List<HostAudioDevices.Entry> outputCache;
@@ -122,6 +124,16 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     void setXhciHost(@Nullable XhciHost host) {
         this.xhciHost = host;
+    }
+
+    /**
+     * Called once a {@link PeripheralType#needsVpu()} row has been added, so the tab can make
+     * sure the VM it is being added to actually attaches it -- the graphics tab's VPU switch.
+     * The adapter owns rows, not the rest of the config, so it says what happened rather than
+     * reaching across.
+     */
+    public void setOnVpuPeripheralAdded(@Nullable Runnable listener) {
+        this.onVpuPeripheralAdded = listener;
     }
 
     @NonNull
@@ -175,6 +187,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             var config = new VMPeripheralConfig(DataItem.newObject());
             config.setType(type);
             appendItem(config.item);
+            // A camera is a virtio-media device: it is attached only while the VM's VPU switch
+            // is on, and adding one while it is off would write a row that is silently skipped
+            // at boot. The tab turns the switch on and says so.
+            if (type.needsVpu() && onVpuPeripheralAdded != null) onVpuPeripheralAdded.run();
         };
         // A camera is gated on consent rather than merely asking for it: without the grant the
         // device could be listed but never opened, so adding one anyway would write a config that
