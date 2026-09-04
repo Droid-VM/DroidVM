@@ -1416,8 +1416,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * reason: the host half is Camera2, which attributes the capture -- and the privacy
      * indicator -- to the uid that opened it, and refuses a root one outright. It is also the
      * one peripheral gated on something outside its own row: it rides the VM's virtio-media
-     * transport, so it is attached only while that VM's VPU switch is on
-     * ({@link VpuConfig#mediaDevicesAttached}).</p>
+     * transport, so it is attached only while that VM's VPU switch is on. Both halves of "will
+     * this row really be attached" are {@link PeripheralType#isAttachedTo}, which the daemon's
+     * foreground-service mask reads too, so the two cannot come to different answers.</p>
      *
      * <p>INTEL_HDA is accepted by the model and skipped here: crosvm emulates no HDA controller,
      * and starting a VM that claims hardware nothing can serve is worse than starting without
@@ -1470,24 +1471,23 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     break;
                 }
                 case VIRTIO_CAMERA: {
-                    // The availability flag first: it is the one switch that says "this build
-                    // cannot serve this device at all", and a crosvm without the device refuses
-                    // the whole command line rather than ignoring the flag.
-                    if (!PeripheralType.VIRTIO_CAMERA.isAvailable()) {
-                        Log.w(TAG, "peripheral virtio_camera skipped: this crosvm has no "
-                            + "virtio-media camera device");
-                        continue;
-                    }
-                    // Then this VM's VPU switch. A camera is a virtio-media device served out of
-                    // the media_host pool, and on gunyah crosvm will not create one without that
-                    // pool (VPU_DESIGN.md 3.3) -- so rather than have a peripheral row silently
-                    // reserve memory for itself, the device depends on the switch that buys the
-                    // pool. The editor turns the switch on when a camera is added, so reaching
-                    // this line means a hand-edited vms.json or a switch turned off afterwards;
+                    // Whether this VM attaches the row at all: availability first -- the one
+                    // switch that says "this build cannot serve this device", and a crosvm
+                    // without the device refuses the whole command line rather than ignoring the
+                    // flag -- and then this VM's VPU switch, because a camera is a virtio-media
+                    // device served out of the media_host pool and on gunyah crosvm will not
+                    // create one without that pool (VPU_DESIGN.md 3.3). One predicate for both,
+                    // shared with the foreground-service mask so the two cannot disagree about
+                    // which rows are real; the log line says which half of it said no. The
+                    // editor turns the switch on when a camera is added, so reaching the second
+                    // reason means a hand-edited vms.json or a switch turned off afterwards;
                     // either way the VM starts, without the camera, and says why.
-                    if (!VpuConfig.mediaDevicesAttached(config.item)) {
-                        Log.w(TAG, "peripheral virtio_camera skipped: the camera needs this VM's "
-                            + "video acceleration (VPU) switch, and it is off");
+                    if (!type.isAttachedTo(config.item)) {
+                        Log.w(TAG, type.isAvailable()
+                            ? "peripheral virtio_camera skipped: the camera needs this VM's "
+                                + "video acceleration (VPU) switch, and it is off"
+                            : "peripheral virtio_camera skipped: this crosvm has no "
+                                + "virtio-media camera device");
                         continue;
                     }
                     if (appUid <= 0) {

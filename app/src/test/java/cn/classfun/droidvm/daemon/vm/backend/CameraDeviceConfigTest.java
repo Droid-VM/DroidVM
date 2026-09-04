@@ -120,9 +120,19 @@ public final class CameraDeviceConfigTest {
         var peripherals = DataItem.newArray();
         peripherals.append(camera("0", "Back camera (0)").item);
         item.set("peripherals", peripherals);
+        // The predicate itself, both halves and in the order the arm reads them.
         assertFalse(VpuConfig.mediaDevicesAttached(item));
+        assertFalse(PeripheralType.VIRTIO_CAMERA.isAttachedTo(item));
         VpuConfig.setEnabled(item, true);
         assertTrue(VpuConfig.mediaDevicesAttached(item));
+        assertTrue(PeripheralType.VIRTIO_CAMERA.isAttachedTo(item));
+        // A row this build cannot serve is not attached whatever the switch says, and a row that
+        // does not ride the transport is not touched by it in either direction.
+        assertFalse(PeripheralType.INTEL_HDA.isAttachedTo(item));
+        assertTrue(PeripheralType.VIRTIO_SOUND.isAttachedTo(item));
+        VpuConfig.setEnabled(item, false);
+        assertFalse(PeripheralType.INTEL_HDA.isAttachedTo(item));
+        assertTrue(PeripheralType.VIRTIO_SOUND.isAttachedTo(item));
     }
 
     /** Appends this test's strings to the file the Rust harness parses, one per line. */
