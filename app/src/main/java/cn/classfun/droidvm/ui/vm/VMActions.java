@@ -59,6 +59,7 @@ import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.settings.KernelModuleDialog;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 import cn.classfun.droidvm.lib.ui.DialogTouch;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
@@ -444,11 +445,12 @@ public final class VMActions {
                 mainHandler.post(proceed);
                 return;
             }
-            mainHandler.post(() -> promptHugePageShort(ui, status, proceed));
+            mainHandler.post(() -> promptHugePageShort(config, ui, status, proceed));
         });
     }
 
     private static void promptHugePageShort(
+        @NonNull VMConfig config,
         @NonNull UIContext ui,
         @NonNull PoolPreflight.Status status,
         @NonNull Runnable proceed
@@ -459,10 +461,22 @@ public final class VMActions {
             return;
         }
         var ctx = ui.getContext();
+        var message = new StringBuilder(ctx.getString(R.string.vm_hugepage_short_message,
+            status.availMb(), status.neededMb(), status.shortMb()));
+        // Name the media guest pool when it is part of what is being asked for. Everything else
+        // in the figure is the VM's memory and its renderer pool, which the user set on purpose
+        // and can see; the video pool is a side effect of a switch on another tab, and without
+        // this line the only way to find out that 128 MB of the shortfall came from it is to
+        // read the source. The host pool is deliberately not named: it is consume_system_mem and
+        // is already inside the memory size, so it is not part of this number
+        // (plans/VPU_DESIGN.md 2.2).
+        long mediaGuestMb = VpuConfig.bootMediaGuestMb(config.item);
+        if (mediaGuestMb > 0)
+            message.append("\n\n").append(
+                ctx.getString(R.string.vm_hugepage_short_media_guest, mediaGuestMb));
         new MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.vm_hugepage_short_title)
-            .setMessage(ctx.getString(R.string.vm_hugepage_short_message,
-                status.availMb(), status.neededMb(), status.shortMb()))
+            .setMessage(message.toString())
             .setPositiveButton(R.string.vm_hugepage_short_settings, (d, w) ->
                 ctx.startActivity(new Intent(ctx, HugePageActivity.class)))
             .setNeutralButton(R.string.vm_hugepage_short_start_anyway, (d, w) -> proceed.run())
