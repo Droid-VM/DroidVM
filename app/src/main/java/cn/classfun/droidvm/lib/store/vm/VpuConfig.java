@@ -18,11 +18,14 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  * piece of hardware to whoever ticks the box, and there is no host on which one would work and the
  * other would not.</p>
  *
- * <p>What the switch buys today is the memory: with it on, the crosvm command line carries the
- * two virtio-media pools ({@code media-host-mb} / {@code media-guest-mb}) and the huge-page
- * preflight budgets for the guest one. The media devices themselves land later, and until they
- * do a pool is reserved memory nothing maps -- which is why this is a switch and not a default.
- * See {@code plans/VPU_DESIGN.md} sections 2.2 and 8.</p>
+ * <p>What the switch buys is the whole virtio-media transport: with it on, the crosvm command
+ * line carries the two pools ({@code media-host-mb} / {@code media-guest-mb}), the huge-page
+ * preflight budgets for the guest one, and every media device the VM's peripheral list asks for
+ * -- a camera row today, a decoder and an encoder when they land. With it off none of that is
+ * passed, because none of it works on its own: crosvm will not create a virtio-media device on
+ * Gunyah without the host pool, so a device without the switch is a VM that does not start. One
+ * switch, one answer; see {@link #mediaDevicesAttached} and {@code plans/VPU_DESIGN.md}
+ * sections 2.2, 3.3 and 8.</p>
  */
 public final class VpuConfig {
     public static final String KEY_ENABLED = "vpu_enabled";
@@ -80,54 +83,52 @@ public final class VpuConfig {
     }
 
     /**
-     * Does this VM carry a device the host serves out of the {@code media_host} pool?
+     * Whether this VM attaches the media devices its peripheral list asks for.
      *
-     * <p>Today that is a camera row and nothing else; a decoder or an encoder will answer the
-     * same way when they arrive. A row whose type the host cannot serve is not attached at all
-     * (the backend skips it), so it does not ask for a pool either -- which is why this asks
-     * {@link PeripheralType#isAvailable} rather than naming the constant twice.</p>
+     * <p>The switch is the whole answer, and that is the design: a virtio-media device and the
+     * pools it is served out of are one thing, not two. Turning video acceleration on gives the
+     * VM the {@code media_host} pool crosvm needs before it will create any virtio-media device
+     * at all on Gunyah ({@code virtio-media on gunyah needs --pre-alloc media-host-mb},
+     * VPU_DESIGN.md 3.3); with it off there is no pool, so there is nothing to attach a camera
+     * to. A row that asks for one on a VM with the switch off is skipped with a log line rather
+     * than quietly buying it a pool nobody ticked a box for -- and the editor turns the switch
+     * on for the user at the moment they add such a row, so the skip is what a hand-edited
+     * {@code vms.json} gets, not what the UI produces.</p>
+     *
+     * <p>Which rows this covers is {@link PeripheralType#needsVpu()}, not a constant named
+     * here.</p>
      */
-    public static boolean hasMediaDevice(@NonNull DataItem config) {
-        for (var peripheral : VMPeripheralConfig.listOf(config)) {
-            var type = peripheral.getType();
-            if (type == PeripheralType.VIRTIO_CAMERA && type.isAvailable()) return true;
-        }
-        return false;
+    public static boolean mediaDevicesAttached(@NonNull DataItem config) {
+        return isEnabled(config);
     }
 
     /**
      * The {@code media-host-mb} this VM must be passed, or 0 for "no host pool".
      *
-     * <p>Two ways to earn one, and they are separate questions. The VPU switch is about the
-     * <em>pools</em>: with it on the VM gets the memory whether or not it has any media device
-     * yet. A camera row is about a <em>device</em>, and on Gunyah a virtio-media device with no
-     * {@code media_host} pool is not a device that degrades -- crosvm refuses to start the VM at
-     * all ({@code virtio-media on gunyah needs --pre-alloc media-host-mb}, VPU_DESIGN.md 3.3).
-     * So a camera forces the host pool even with the switch off; it does not force the guest one,
-     * which is a different pool for the opposite direction of data and is not what crosvm is
-     * asking for. The camera does not depend on the switch in any other way: the device is
-     * emitted for a VM with {@code vpu_enabled=false} exactly as it is with it on.</p>
+     * <p>The switch alone: with it off there is no host pool, no guest pool and no media device
+     * ({@link #mediaDevicesAttached}), so a VM that never asked for video acceleration is passed
+     * nothing media-related whatever its peripheral list says.</p>
      *
-     * <p>The size is the configured one, falling back to {@link #DEFAULT_HOST_POOL_MB} when a
-     * device needs a pool and the config says zero: with the switch off nobody chose that zero
-     * for the camera's sake, and passing {@code media-host-mb=0} would be the refusal above with
-     * extra steps.</p>
+     * <p>The size is the configured one, falling back to {@link #DEFAULT_HOST_POOL_MB} when the
+     * switch is on and the config says zero. That fallback is not cosmetic: on Gunyah crosvm
+     * refuses to create a virtio-media device with no {@code media_host} pool and fails the
+     * whole VM, so {@code media-host-mb=0} with the switch on would be a VM that stops booting
+     * the moment its camera row becomes a device. {@link #hostPoolIsDefaulted} says when it
+     * happened, so the daemon can log it.</p>
      */
-    public static long effectiveHostPoolMb(@NonNull DataItem config) {
-        boolean device = hasMediaDevice(config);
-        if (!isEnabled(config) && !device) return 0;
+    public static long hostPoolMbFor(@NonNull DataItem config) {
+        if (!isEnabled(config)) return 0;
         long mb = getHostPoolMb(config);
-        if (device && mb <= 0) return DEFAULT_HOST_POOL_MB;
-        return mb;
+        return mb > 0 ? mb : DEFAULT_HOST_POOL_MB;
     }
 
     /**
-     * True when the host pool is only there because a device demands it, not because the user
-     * asked for video acceleration. The daemon says so in the log: the VM is about to be passed
-     * memory nobody ticked a box for.
+     * True when {@link #hostPoolMbFor} had to substitute the default because the VM asked for
+     * video acceleration and stored a zero-sized host pool. The daemon says so in the log: the
+     * VM is being passed a pool of a size nobody chose.
      */
-    public static boolean hostPoolIsForcedByDevice(@NonNull DataItem config) {
-        return !isEnabled(config) && hasMediaDevice(config);
+    public static boolean hostPoolIsDefaulted(@NonNull DataItem config) {
+        return isEnabled(config) && getHostPoolMb(config) <= 0;
     }
 
     /**
@@ -152,10 +153,11 @@ public final class VpuConfig {
      * <p>Only the guest pool is counted. The host pool is tagged {@code consume_system_mem} on
      * the crosvm side like the renderer host pools are, so it comes out of {@code --mem} and is
      * already inside what the preflight budgets; the guest pool is memory taken beside the RAM
-     * rather than out of it. That holds for the host pool a camera forces on
-     * ({@link #effectiveHostPoolMb}) too -- it is the same pool with the same tag, so a VM that
-     * gains one by adding a camera does not gain any huge-page reserve to find. Same rule as {@link GuestPoolSizing#bootGuestPreallocMb}, and the
-     * same reason it lives next to the getter rather than being read inline at the call site.
+     * rather than out of it. So a VM that gains a camera gains no huge-page reserve to find --
+     * it gains no pool at all unless the switch is already on, and the pool the switch buys is
+     * the same one whether or not anything is plugged into it. Same rule as
+     * {@link GuestPoolSizing#bootGuestPreallocMb}, and the same reason it lives next to the
+     * getter rather than being read inline at the call site.
      * See {@code plans/VPU_DESIGN.md} section 2.2.</p>
      *
      * <p>The protection mode defaults the way {@link GuestPoolSizing#hostVisibleRam} defaults it:

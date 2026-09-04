@@ -24,13 +24,13 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  */
 public enum PeripheralType implements StringEnum {
     /** virtio-snd, one PCM direction per device. Served by an unprivileged vhost-user helper. */
-    VIRTIO_SOUND(R.string.edit_vm_peripheral_type_virtio_sound, R.drawable.ic_speaker, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    VIRTIO_SOUND(R.string.edit_vm_peripheral_type_virtio_sound, R.drawable.ic_speaker, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * Intel HD Audio codec: one card, playback and capture together. Present so the model is
      * honest about what a guest could have -- Windows has an in-box driver for it, which
      * virtio-snd does not -- but crosvm emulates no HDA controller, so nothing can serve it yet.
      */
-    INTEL_HDA(R.string.edit_vm_peripheral_type_intel_hda, R.drawable.ic_microphone, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    INTEL_HDA(R.string.edit_vm_peripheral_type_intel_hda, R.drawable.ic_microphone, false, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * virtio-media capture device: one host camera, seen by the guest as one {@code /dev/videoX}.
      *
@@ -47,8 +47,11 @@ public enum PeripheralType implements StringEnum {
      * {@code android_camera} lands in M3/M4. So a VM with a camera row starts on a crosvm that
      * has the device and fails to start on one that does not, which is the same deploy rule the
      * media pools already carry. See {@code plans/VPU_DESIGN.md} sections 3.5 and 7.</p>
+     *
+     * <p>Needs the VPU: it is a virtio-media device, so it exists only on a VM whose video
+     * acceleration switch is on. See {@link #needsVpu()}.</p>
      */
-    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
+    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, true, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
     /**
      * xHCI USB controller: the root the guest's USB devices hang off.
      *
@@ -61,18 +64,20 @@ public enum PeripheralType implements StringEnum {
      * peripheral is added, and storage is by {@code name()}, so appending is the only position
      * that leaves every stored config reading as what it says.</p>
      */
-    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;
     private final boolean available;
+    private final boolean needsVpu;
     private final int foregroundServiceType;
 
     PeripheralType(@StringRes int titleId, @DrawableRes int iconId, boolean available,
-                   int foregroundServiceType) {
+                   boolean needsVpu, int foregroundServiceType) {
         this.titleId = titleId;
         this.iconId = iconId;
         this.available = available;
+        this.needsVpu = needsVpu;
         this.foregroundServiceType = foregroundServiceType;
     }
 
@@ -90,6 +95,25 @@ public enum PeripheralType implements StringEnum {
      *  backends skip it rather than starting a VM that lies about its hardware. */
     public boolean isAvailable() {
         return available;
+    }
+
+    /**
+     * Whether this device is carried by the VM's virtio-media transport, and so exists only
+     * while that VM's video-acceleration switch is on.
+     *
+     * <p>A camera is not a device beside the VPU, it is a device <em>of</em> it: the same
+     * {@code --virtio-media} transport, out of the same {@code media_host} pool, which crosvm
+     * only creates when the pool is there ({@code virtio-media on gunyah needs --pre-alloc
+     * media-host-mb}, VPU_DESIGN.md 3.3). One switch decides both, so there is no configuration
+     * in which a row is attached and the memory it needs is not.</p>
+     *
+     * <p>Three readers, one rule: the crosvm backend skips such a row on a VM with the switch
+     * off, the daemon's foreground-service mask does not count it, and the editor turns the
+     * switch on when one is added. Named on the type rather than tested for by constant, so a
+     * decoder or an encoder row inherits the rule by declaring it.</p>
+     */
+    public boolean needsVpu() {
+        return needsVpu;
     }
 
     /**

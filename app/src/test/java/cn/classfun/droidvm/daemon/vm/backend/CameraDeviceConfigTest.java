@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.daemon.vm.backend;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -18,7 +19,9 @@ import java.util.List;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
+import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 /**
  * The exact {@code --virtio-media} argument a camera row produces.
@@ -29,6 +32,11 @@ import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
  * matters is whether the other side accepts it. {@code MediaDeviceConfig} is
  * {@code deny_unknown_fields}, so a key crosvm does not know is a VM that will not start rather
  * than a flag it ignores. See {@code logs/vpu_wp/A2.md} for the parse results.</p>
+ *
+ * <p>Whether the argument is emitted at all is a separate question with a separate answer: the
+ * row is a virtio-media device, so the backend only builds one for a VM whose VPU switch is on
+ * ({@code aCameraIsOnlyADeviceWhileTheVpuSwitchIsOn} below). The string itself does not change
+ * either way.</p>
  */
 public final class CameraDeviceConfigTest {
     private static final int APP_UID = 10123;
@@ -91,6 +99,30 @@ public final class CameraDeviceConfigTest {
         assertTrue(arg.indexOf('"') >= 0);
         assertEquals("kind=camera,camera_id=\"0\",card=\"a b\",uid=10123", build("0", "a\\b"));
         save();
+    }
+
+    /**
+     * The gate the camera arm of {@code buildPeripheralCommand} reads before it emits any of the
+     * strings above: {@link PeripheralType#needsVpu()} against the VM's own switch. A camera row
+     * on a VM with video acceleration off is skipped with a log line -- crosvm will not create a
+     * virtio-media device without the media_host pool the switch buys, so attaching one anyway
+     * would be a VM that refuses to start.
+     *
+     * <p>{@code buildPeripheralCommand} itself needs a {@code ServerContext}, which loads
+     * on-device state in its constructor, so what is asserted is the predicate it branches on --
+     * the same call, off the same config. See {@code logs/vpu_wp/A2.md} section 4.</p>
+     */
+    @Test
+    public void aCameraIsOnlyADeviceWhileTheVpuSwitchIsOn() {
+        assertTrue(PeripheralType.VIRTIO_CAMERA.needsVpu());
+        assertFalse(PeripheralType.VIRTIO_SOUND.needsVpu());
+        var item = VMConfig.createWithCustomizeDefaults(null).item;
+        var peripherals = DataItem.newArray();
+        peripherals.append(camera("0", "Back camera (0)").item);
+        item.set("peripherals", peripherals);
+        assertFalse(VpuConfig.mediaDevicesAttached(item));
+        VpuConfig.setEnabled(item, true);
+        assertTrue(VpuConfig.mediaDevicesAttached(item));
     }
 
     /** Appends this test's strings to the file the Rust harness parses, one per line. */

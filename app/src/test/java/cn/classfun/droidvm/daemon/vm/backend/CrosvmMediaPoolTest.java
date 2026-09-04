@@ -32,6 +32,11 @@ import cn.classfun.droidvm.lib.store.vm.VpuConfig;
  * {@code consume_system_mem} and comes out of {@code --mem}, media_guest is taken beside it. The
  * two facts that have to stay together are the argument the daemon passes and the reserve the
  * preflight asks for, which is why both are asserted here off the same config.</p>
+ *
+ * <p>Both pools come from the VPU switch and from nothing else. A camera row does not buy itself
+ * one -- it is the other way round: a camera is a virtio-media device and is only attached when
+ * the switch that pays for the transport is on, which is
+ * {@link VpuConfig#mediaDevicesAttached}.</p>
  */
 public final class CrosvmMediaPoolTest {
     private static DataItem vm(String protectedVm, boolean vpu) {
@@ -109,14 +114,14 @@ public final class CrosvmMediaPoolTest {
         assertEquals(0, VpuConfig.bootMediaGuestMb(vm("protected_without_firmware", false)));
     }
 
+    /** 0 is not a smaller guest pool, it is no media_guest node at all. */
     @Test
-    public void aZeroedPoolIsNoNodeRatherThanAnEmptyOne() {
+    public void aZeroedGuestPoolIsNoNodeRatherThanAnEmptyOne() {
         var item = vm("protected_without_firmware", true);
         VpuConfig.setGuestPoolMb(item, 0);
         assertEquals("media-host-mb=256",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
-        VpuConfig.setHostPoolMb(item, 0);
-        assertEquals("", mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
+        assertEquals(4096, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
     }
 
     @Test
@@ -144,47 +149,67 @@ public final class CrosvmMediaPoolTest {
     }
 
     /**
-     * A camera is a device, and on Gunyah crosvm refuses a virtio-media device with no
-     * media_host pool -- so the pool follows the device even with the VPU switch off. The guest
-     * pool does not: it is the other direction of data and nothing asks for it.
+     * The rule this whole file exists for: a camera row on a VM with the switch off gets
+     * nothing. No {@code --virtio-media} device (the backend skips the row --
+     * {@code mediaDevicesAttached} is the gate {@code buildPeripheralCommand} reads), and no
+     * media pools, so the VM's {@code --pre-alloc} has no media half at all and the huge-page
+     * reserve is exactly the RAM.
      */
     @Test
-    public void aCameraForcesTheHostPoolWithTheSwitchOff() {
+    public void aCameraWithTheSwitchOffGetsNoDeviceAndNoPools() {
         var item = withCamera(vm("protected_without_firmware", false), "0", "Back camera (0)");
-        assertEquals("media-host-mb=256",
-            mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
-        assertEquals(256, VpuConfig.effectiveHostPoolMb(item));
-        assertTrue(VpuConfig.hostPoolIsForcedByDevice(item));
-        // ... and it stays out of the huge-page reserve: media_host is consume_system_mem.
+        assertFalse(VpuConfig.mediaDevicesAttached(item));
+        assertEquals("", mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
+        assertEquals(0, VpuConfig.hostPoolMbFor(item));
         assertEquals(0, VpuConfig.bootMediaGuestMb(item));
         assertEquals(4096, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
+        // Nor does it join a renderer's pre-alloc: the media half is simply absent.
+        var preAlloc = new StringBuilder();
+        CrosvmBackendInstance.appendPreAllocKey(preAlloc, "venus-host-mb=256");
+        CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
+            ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
+        assertEquals("venus-host-mb=256", preAlloc.toString());
     }
 
-    /** A stored zero is not a choice made for the camera; a device with no pool cannot start. */
+    /**
+     * A stored zero cannot be honoured with the switch on: crosvm refuses to create a
+     * virtio-media device without a media_host pool on gunyah, so media-host-mb=0 would be a VM
+     * that stops booting the moment its camera row becomes a device.
+     */
     @Test
-    public void aForcedHostPoolFallsBackToTheDefaultSize() {
-        var item = withCamera(vm("protected_without_firmware", false), "", "");
+    public void aZeroHostPoolWithTheSwitchOnFallsBackToTheDefaultSize() {
+        var item = withCamera(vm("protected_without_firmware", true), "", "");
         VpuConfig.setHostPoolMb(item, 0);
-        assertEquals("media-host-mb=256",
+        assertTrue(VpuConfig.hostPoolIsDefaulted(item));
+        assertEquals(256, VpuConfig.hostPoolMbFor(item));
+        assertEquals("media-host-mb=256,media-guest-mb=128",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
+        // With the switch off the same stored zero is just one more thing that is not passed.
+        VpuConfig.setEnabled(item, false);
+        assertFalse(VpuConfig.hostPoolIsDefaulted(item));
+        assertEquals("", mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
     }
 
-    /** Switch on and a camera present: the switch's own two pools, once each. */
+    /**
+     * Switch on and a camera present: the switch's own two pools, once each. A device does not
+     * add a pool, and it is attached because the switch is on.
+     */
     @Test
     public void theSwitchOnWithACameraIsStillOneOfEachPool() {
         var item = withCamera(vm("protected_without_firmware", true), "1", "Front camera (1)");
+        assertTrue(VpuConfig.mediaDevicesAttached(item));
         assertEquals("media-host-mb=256,media-guest-mb=128",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
-        assertFalse(VpuConfig.hostPoolIsForcedByDevice(item));
+        assertFalse(VpuConfig.hostPoolIsDefaulted(item));
         assertEquals(4096 + 128, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
     }
 
-    /** A VM with no media device and the switch off asks for nothing, camera row or not. */
+    /** A VM with the switch off asks for nothing, camera row or not. */
     @Test
     public void aSoundOnlyVmIsUntouched() {
         var item = vm("protected_without_firmware", false);
-        assertFalse(VpuConfig.hasMediaDevice(item));
-        assertEquals(0, VpuConfig.effectiveHostPoolMb(item));
+        assertFalse(VpuConfig.mediaDevicesAttached(item));
+        assertEquals(0, VpuConfig.hostPoolMbFor(item));
         assertEquals("", mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
     }
 
@@ -193,14 +218,27 @@ public final class CrosvmMediaPoolTest {
      * buildCommand appends it: the renderer route first, the media pools last, one --pre-alloc.
      */
     @Test
-    public void aCameraJoinsTheRendererPreAllocRatherThanMakingASecondOne() {
-        var item = withCamera(vm("protected_without_firmware", false), "0", "Back camera (0)");
+    public void theMediaPoolsJoinTheRendererPreAllocRatherThanMakingASecondOne() {
+        var item = withCamera(vm("protected_normal", true), "0", "Back camera (0)");
+        var preAlloc = new StringBuilder();
+        CrosvmBackendInstance.appendPreAllocKey(preAlloc, "venus-host-mb=256");
+        CrosvmBackendInstance.appendPreAllocKey(preAlloc, "gpu-guest-mb=1024");
+        CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
+            ProtectedVM.PROTECTED_NORMAL);
+        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=256",
+            record(preAlloc.toString()));
+    }
+
+    /** The same VM in a protected mode, where the guest pool applies as well. */
+    @Test
+    public void bothPoolsJoinTheRendererPreAlloc() {
+        var item = withCamera(vm("protected_without_firmware", true), "0", "Back camera (0)");
         var preAlloc = new StringBuilder();
         CrosvmBackendInstance.appendPreAllocKey(preAlloc, "venus-host-mb=256");
         CrosvmBackendInstance.appendPreAllocKey(preAlloc, "gpu-guest-mb=1024");
         CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
             ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=256",
+        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=256,media-guest-mb=128",
             record(preAlloc.toString()));
     }
 }
