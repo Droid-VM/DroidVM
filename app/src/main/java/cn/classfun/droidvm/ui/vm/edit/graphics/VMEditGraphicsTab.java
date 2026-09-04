@@ -479,7 +479,13 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         if (!checkInputField(etGpuGuestPoolMb, false, 0, 65536)) return false;
         if (!checkInputField(etGpuPoolBlobMaxKb, false, 0, 1048576)) return false;
         if (swVpuEnabled.isChecked()) {
-            if (!checkInputField(etMediaHostPoolMb, false, 0, 65536)) return false;
+            // Minimum 1, not 0: with the switch on the host pool is always passed, and a stored
+            // zero is the one size the daemon cannot honour -- on Gunyah crosvm refuses to
+            // create a virtio-media device without a media_host pool, so it substitutes the
+            // default and the VM runs with a size nobody typed. Saying no here is the honest
+            // version of that; VpuConfig.hostPoolMbFor keeps the substitution for configs
+            // written before this check existed.
+            if (!checkInputField(etMediaHostPoolMb, false, 1, 65536)) return false;
             // Checked only when it is offered: a hidden field holds whatever the config carried
             // over from another protection mode, and rejecting a value nobody can see or edit
             // would make the VM unsaveable for a reason the screen does not show.
