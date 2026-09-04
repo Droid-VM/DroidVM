@@ -329,9 +329,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         long mediaHost = VpuConfig.hostPoolMbFor(item);
         if (mediaHost > 0) {
             if (VpuConfig.hostPoolIsDefaulted(item))
-                Log.w(TAG, fmt("video acceleration is on with no host pool size stored: adding "
-                    + "media-host-mb=%d, which crosvm requires before it will create a "
-                    + "virtio-media device on gunyah", mediaHost));
+                Log.w(TAG, fmt("video acceleration is on with a stored host pool size of %d: "
+                    + "using media-host-mb=%d instead, which crosvm requires before it will "
+                    + "create a virtio-media device on gunyah",
+                    VpuConfig.getHostPoolMb(item), mediaHost));
             appendPreAllocKey(preAlloc, fmt("media-host-mb=%d", mediaHost));
         }
         // The guest pool is the opposite direction of data (what the guest produces for the host
