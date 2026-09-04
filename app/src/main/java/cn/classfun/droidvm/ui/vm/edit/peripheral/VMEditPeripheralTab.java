@@ -43,6 +43,7 @@ import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
 import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
+import cn.classfun.droidvm.ui.vm.edit.graphics.VMEditGraphicsTab;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
 
@@ -100,6 +101,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         adapter.setXhciHost(this);
+        adapter.setOnVpuPeripheralAdded(this::enableVpuForNewPeripheral);
         listSerialPorts.setAdapter(VMSerialEditAdapter.class);
         if (!parent.editMode) {
             var seed = DataItem.newObject();
@@ -130,6 +132,40 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         // row, and reading it back cannot lose an edit -- so the warning it drives is refreshed
         // rather than left at what it said when the editor opened.
         refreshUsbEnabled();
+    }
+
+    /**
+     * Turns the VM's video acceleration on, because the row just added needs it.
+     *
+     * <p>A camera is a virtio-media device: crosvm will not create one without the
+     * {@code media_host} pool the VPU switch buys, so a camera on a VM with the switch off is a
+     * row the daemon skips at boot. Rather than let someone configure that and find out from a
+     * log line, adding the row turns the switch on -- and says so, because it is a setting on
+     * another tab that the user did not touch, and it costs memory.</p>
+     *
+     * <p>The switch is the graphics tab's own view rather than a config object: the tabs do not
+     * share a live {@link VMConfig} (each one reads a config in {@code loadConfig} and writes one
+     * back in {@code saveConfig}), so the only place the pending value lives before a save is
+     * that widget. Setting it there is what makes the graphics tab show it when it is next
+     * displayed, and what makes {@code saveConfig} write {@code vpu_enabled=true}.</p>
+     */
+    private void enableVpuForNewPeripheral() {
+        try {
+            var graphics = (VMEditGraphicsTab) parent.getTab(VMEditTab.TAB_GRAPHICS);
+            if (!graphics.enableVpuForMediaDevice()) return;
+        } catch (Exception e) {
+            // Nothing to enable is not a reason to lose the peripheral that was just added.
+            Log.w(TAG, "could not turn the VPU switch on for a media peripheral", e);
+            return;
+        }
+        showHint(parent.getString(R.string.edit_vm_peripheral_camera_enabled_vpu));
+    }
+
+    /** Whether the unsaved peripheral rows carry a device that only exists with the VPU on. */
+    public boolean hasVpuPeripheral() {
+        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+            if (peripheral.getType().needsVpu()) return true;
+        return false;
     }
 
     /** Whether the unsaved peripheral rows give the guest a host microphone. */
