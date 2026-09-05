@@ -24,7 +24,8 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  * line carries the two pools ({@code media-host-mb} / {@code media-guest-mb}), the huge-page
  * preflight budgets for the guest one, every media device the VM's peripheral list asks for -- a
  * camera row -- and the codec devices, which are in no list because they are not something a user
- * adds: a hardware decoder is what having a VPU means ({@link #CODEC_KINDS}). With it off none of
+ * adds: a hardware decoder and a hardware encoder are what having a VPU means
+ * ({@link #CODEC_KINDS}). With it off none of
  * that is passed, because none of it works on its own: crosvm will not create a virtio-media
  * device on Gunyah without the host pool, so a device without the switch is a VM that does not
  * start. One switch, one answer; see {@link #mediaDevicesAttached} and
@@ -45,17 +46,23 @@ public final class VpuConfig {
      *
      * <p>One table, because three things read the same list: the loop in the crosvm backend that
      * emits a {@code --virtio-media} line per entry, {@link #codecCard} which names each one for
-     * the guest, and the tests. {@code "encoder"} joins it the moment crosvm's
-     * {@code MediaDeviceKind::support()} stops answering {@code Unimplemented} for it -- WP M7 --
-     * and that is then the whole app-side change, one token in this list. Until then it must stay
-     * out: the VMM refuses {@code kind=encoder} by name before it forks a helper, and a refused
-     * device is a VM that does not start rather than a VM missing an encoder
-     * ({@code plans/VPU_DESIGN.md} sections 7.3 and 7.4, {@code logs/vpu_wp/F4-host.md}).</p>
+     * the guest, and the tests. {@code "encoder"} has joined it, which was the condition this
+     * comment used to state: crosvm's {@code MediaDeviceKind::support()} answers
+     * {@code HelperOnly} for {@code Encoder} as well as {@code Decoder}
+     * ({@code devices/src/virtio/media.rs}), so the VMM no longer refuses the kind by name before
+     * it forks a helper, and WP M7's encoder was accepted end to end on the device -- H.264 and
+     * HEVC, PSNR 46 dB against a software decode ({@code logs/vpu_wp/B7-codec.md} sections 2 and
+     * 3). Adding the token here was the whole app-side change that was left
+     * ({@code logs/vpu_wp/B-final.md} section 9 item 1): without it the switch bought a hardware
+     * decoder and no hardware encoder, and {@code ffmpeg -c:v h264_v4l2m2m} in the guest answered
+     * {@code Could not find a valid device}.</p>
      *
      * <p>Order is the order the devices appear on the command line, and so the order the guest
-     * numbers their {@code /dev/videoN} nodes among themselves. Append rather than insert.</p>
+     * numbers their {@code /dev/videoN} nodes among themselves. Append rather than insert: the
+     * decoder stays first so a guest that already names the decoder's node keeps it when the
+     * encoder arrives ({@code plans/VPU_DESIGN.md} sections 7.3 and 7.4).</p>
      */
-    public static final List<String> CODEC_KINDS = List.of("decoder");
+    public static final List<String> CODEC_KINDS = List.of("decoder", "encoder");
 
     private VpuConfig() {
     }
