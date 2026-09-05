@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntSupplier;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
@@ -573,6 +574,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             buildInputDevicesCommand(args);
         }
         buildPeripheralCommand(args);
+        // After the peripheral rows, not before: those rows are the user's own list and the guest
+        // numbers /dev/videoN in the order the devices appear here, so putting the codecs last
+        // means a VM that gains a decoder on this build keeps the camera node numbers a guest
+        // configuration may already name. The codecs move instead, and nothing had them yet.
+        buildCodecCommand(args, hypervisor);
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
@@ -1542,6 +1548,113 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         cfg.append(fmt(",uid=%d", appUid));
         Log.i(TAG, fmt("camera device: %s", cfg));
         return cfg.toString();
+    }
+
+    /**
+     * Attaches this VM's codec devices -- what the video-acceleration switch itself buys, as
+     * opposed to what the peripheral list asks for.
+     *
+     * <p>A decoder is not a row anyone adds: turning the switch on is what "this VM has a
+     * hardware video unit" means, so the devices come from {@link VpuConfig#CODEC_KINDS} rather
+     * than from {@code peripherals}, one {@code --virtio-media} line each, and the encoder joins
+     * them by being added to that list once crosvm implements it (VPU_DESIGN.md 7.3, 7.4).</p>
+     *
+     * <p>Every codec device runs in a helper process under the app's uid, like the camera and for
+     * a related reason: MediaCodec resolves the caller from the real uid and the codec services
+     * will not serve uid 0, and design 7.4 keeps every codec device on the one process model
+     * whether or not it strictly has to be. Unlike the camera it needs no foreground service --
+     * decoding is not a foreground-only permission -- so the daemon's service mask is untouched
+     * by this and stays a question about peripheral rows.</p>
+     */
+    private void buildCodecCommand(@NonNull List<String> args, @Nullable VMHypervisor hypervisor) {
+        appendCodecDevices(args, config.item, hypervisor, this::getAppUid);
+    }
+
+    /**
+     * Whether this VM's command line really carries the {@code media_host} pool.
+     *
+     * <p>The pools are a Gunyah memory-lending construct and {@link #buildCommand} only builds a
+     * {@code --pre-alloc} inside its Gunyah arm, so on any other hypervisor the answer is no
+     * however the VM is configured. That matters here and not for the pool block itself, because
+     * a helper is pool-mode only: the vhost-user frontend forwards a shared-memory BAR to the GPU
+     * alone, so a {@code uid=} device on a VM with no pool is refused by crosvm at device
+     * creation and the VM does not start (design 6.2; the refusal text is in
+     * {@code device_helpers.rs}, {@code create_unprivileged_virtio_media_device}).</p>
+     *
+     * <p>So the codec devices ask this and a camera row does not, which is a difference in what
+     * the two are rather than two rules about one thing. A camera is something the user added by
+     * name, and the design's answer for a device that cannot be served is to refuse loudly rather
+     * than to drop it quietly. A codec device is something the switch grants implicitly, and
+     * nothing implicit should be the reason a VM stops booting -- least of all a VM that boots on
+     * this build today. (A camera row on a poolless VM is refused by crosvm the same way; that is
+     * the pre-existing question {@link PeripheralType#needsVpu()} records, not one this adds.)</p>
+     */
+    static boolean mediaHostPoolPassed(@NonNull DataItem item, @Nullable VMHypervisor hypervisor) {
+        return hypervisor == VMHypervisor.GUNYAH && VpuConfig.hostPoolMbFor(item) > 0;
+    }
+
+    /**
+     * Appends one {@code --virtio-media} device per {@link VpuConfig#CODEC_KINDS} entry, or
+     * nothing, saying in the log which gate said no.
+     *
+     * <p>{@code appUid} is a supplier rather than an {@code int} so that the package-manager
+     * lookup does not happen for a VM that is not getting any of these devices, and so that a
+     * test can name a uid without a daemon Context.</p>
+     */
+    // Package-private and static, not private, so CodecDeviceConfigTest can assert the exact
+    // lines this appends -- and how many -- without standing up a VM.
+    static void appendCodecDevices(
+        @NonNull List<String> args,
+        @NonNull DataItem item,
+        @Nullable VMHypervisor hypervisor,
+        @NonNull IntSupplier appUid
+    ) {
+        if (!VpuConfig.isEnabled(item)) return;
+        if (!VpuConfig.codecDevicesAttached(item)) {
+            // Said out loud because the VM still has its pools and possibly a camera: from the
+            // outside it is a VPU VM, and the one thing missing is the thing this key removed.
+            Log.i(TAG, fmt("video acceleration is on and %s is off: this VM gets the media pools "
+                + "but no hardware codec device", VpuConfig.KEY_CODEC_ENABLED));
+            return;
+        }
+        if (!mediaHostPoolPassed(item, hypervisor)) {
+            Log.w(TAG, fmt("codec devices skipped: they run in a helper process, which serves "
+                + "buffers from the media_host pool only, and a %s VM is passed no pools",
+                hypervisor == null ? "?" : hypervisor.name().toLowerCase()));
+            return;
+        }
+        int uid = appUid.getAsInt();
+        if (uid <= 0) {
+            Log.e(TAG, "cannot resolve app uid; codec devices skipped");
+            return;
+        }
+        for (var kind : VpuConfig.CODEC_KINDS) {
+            args.add("--virtio-media");
+            args.add(buildCodecConfig(kind, uid));
+        }
+    }
+
+    /**
+     * The {@code --virtio-media} configuration for one codec device.
+     *
+     * <p>Three things and no more: the kind, the card name the guest reads
+     * ({@link VpuConfig#codecCard}), and the uid the helper runs as. {@code allow_sw} is
+     * deliberately absent -- a guest that asks for a hardware decoder should get a hardware one,
+     * and crosvm's default is off, so passing {@code allow_sw=false} would only be a key that
+     * could later disagree with the host's own default. Software codecs would be a separate
+     * decision with its own key, and nobody has asked for one.</p>
+     *
+     * <p>The card is quoted like the camera's, for the same reason and with the same round trip
+     * through crosvm's parser behind it: the value sits in a comma-separated list and a quoted
+     * value is what survives a space in it.</p>
+     */
+    // Package-private and static for CodecDeviceConfigTest, as buildCameraConfig is.
+    @NonNull
+    static String buildCodecConfig(@NonNull String kind, int appUid) {
+        var cfg = fmt("kind=%s,card=\"%s\",uid=%d",
+            kind, quotable(VpuConfig.codecCard(kind)), appUid);
+        Log.i(TAG, fmt("codec device: %s", cfg));
+        return cfg;
     }
 
     /**

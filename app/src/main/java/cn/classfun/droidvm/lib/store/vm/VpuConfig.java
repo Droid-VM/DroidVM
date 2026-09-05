@@ -8,6 +8,8 @@ import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import java.util.List;
+
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
 /**
@@ -20,20 +22,40 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  *
  * <p>What the switch buys is the whole virtio-media transport: with it on, the crosvm command
  * line carries the two pools ({@code media-host-mb} / {@code media-guest-mb}), the huge-page
- * preflight budgets for the guest one, and every media device the VM's peripheral list asks for
- * -- a camera row today, a decoder and an encoder when they land. With it off none of that is
- * passed, because none of it works on its own: crosvm will not create a virtio-media device on
- * Gunyah without the host pool, so a device without the switch is a VM that does not start. One
- * switch, one answer; see {@link #mediaDevicesAttached} and {@code plans/VPU_DESIGN.md}
- * sections 2.2, 3.3 and 8.</p>
+ * preflight budgets for the guest one, every media device the VM's peripheral list asks for -- a
+ * camera row -- and the codec devices, which are in no list because they are not something a user
+ * adds: a hardware decoder is what having a VPU means ({@link #CODEC_KINDS}). With it off none of
+ * that is passed, because none of it works on its own: crosvm will not create a virtio-media
+ * device on Gunyah without the host pool, so a device without the switch is a VM that does not
+ * start. One switch, one answer; see {@link #mediaDevicesAttached} and
+ * {@code plans/VPU_DESIGN.md} sections 2.2, 3.3, 7.4 and 8.</p>
  */
 public final class VpuConfig {
     public static final String KEY_ENABLED = "vpu_enabled";
     public static final String KEY_HOST_POOL_MB = "vpu_host_pool_mb";
     public static final String KEY_GUEST_POOL_MB = "vpu_guest_pool_mb";
+    public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
 
     public static final int DEFAULT_HOST_POOL_MB = 256;
     public static final int DEFAULT_GUEST_POOL_MB = 128;
+
+    /**
+     * The codec devices the video-acceleration switch attaches, spelt as the {@code kind=} value
+     * crosvm's {@code --virtio-media} parses.
+     *
+     * <p>One table, because three things read the same list: the loop in the crosvm backend that
+     * emits a {@code --virtio-media} line per entry, {@link #codecCard} which names each one for
+     * the guest, and the tests. {@code "encoder"} joins it the moment crosvm's
+     * {@code MediaDeviceKind::support()} stops answering {@code Unimplemented} for it -- WP M7 --
+     * and that is then the whole app-side change, one token in this list. Until then it must stay
+     * out: the VMM refuses {@code kind=encoder} by name before it forks a helper, and a refused
+     * device is a VM that does not start rather than a VM missing an encoder
+     * ({@code plans/VPU_DESIGN.md} sections 7.3 and 7.4, {@code logs/vpu_wp/F4-host.md}).</p>
+     *
+     * <p>Order is the order the devices appear on the command line, and so the order the guest
+     * numbers their {@code /dev/videoN} nodes among themselves. Append rather than insert.</p>
+     */
+    public static final List<String> CODEC_KINDS = List.of("decoder");
 
     private VpuConfig() {
     }
@@ -80,6 +102,61 @@ public final class VpuConfig {
     public static boolean guestPoolApplies(@Nullable ProtectedVM pvm) {
         return pvm == ProtectedVM.PROTECTED_PROTECTED
             || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+    }
+
+    /**
+     * Whether this VM attaches the codec devices, given that video acceleration is on at all.
+     *
+     * <p>Default on: the switch's own text promises a hardware encoder and decoder, so a VM that
+     * has it gets them without a second box to find. The key exists for the case where the
+     * devices are the problem rather than the point -- a host whose codec store has no usable
+     * hardware decoder ends the helper by name, and the VMM reports a helper that exits as a
+     * device crash, so on such a phone every VM with video acceleration on would stop booting
+     * (logs/vpu_wp/M6-backend.md section 6). Turning this off leaves the VM its pools and its
+     * camera and takes only the codec nodes away, which is also what lets an acceptance run boot
+     * a VPU VM with no decoder helper in it to compare against.</p>
+     *
+     * <p>It is deliberately not a second "video acceleration" switch: with video acceleration off
+     * this answers nothing at all ({@link #codecDevicesAttached}), so there is no combination in
+     * which it is the reason a VM has no VPU.</p>
+     */
+    public static boolean isCodecEnabled(@NonNull DataItem config) {
+        return config.optBoolean(KEY_CODEC_ENABLED, true);
+    }
+
+    public static void setCodecEnabled(@NonNull DataItem config, boolean enabled) {
+        config.set(KEY_CODEC_ENABLED, enabled);
+    }
+
+    /**
+     * Whether this VM is given the {@link #CODEC_KINDS} devices.
+     *
+     * <p>The switch first, then the override -- and in that order, because the override is only
+     * a subtraction. The codec devices are not rows in the peripheral list: nobody adds a decoder,
+     * it is what turning video acceleration on <em>is</em>, so the rule that decides them is here
+     * beside the pools they are served from rather than on {@link PeripheralType}.</p>
+     */
+    public static boolean codecDevicesAttached(@NonNull DataItem config) {
+        return mediaDevicesAttached(config) && isCodecEnabled(config);
+    }
+
+    /**
+     * The V4L2 card name the guest reads for the codec device of {@code kind}.
+     *
+     * <p>The same string crosvm's helper falls back to when no {@code card=} is passed
+     * ({@code devices/src/virtio/vhost/user/device/media/sys/linux.rs}: {@code "droidvm decoder"}),
+     * so the name a guest sees does not depend on whether the app built the command line or
+     * somebody ran the helper by hand from the dev rig. It is passed explicitly all the same:
+     * what the guest calls its devices should be decided where the command line is written, not
+     * inherited from whichever crosvm happens to be installed.</p>
+     *
+     * <p>Not the VM's name. The card name is read inside the guest, where which VM this is was
+     * never in question, and naming it after the VM would rename a guest device -- something a
+     * guest script may well match on -- because somebody renamed the VM in the editor.</p>
+     */
+    @NonNull
+    public static String codecCard(@NonNull String kind) {
+        return "droidvm " + kind;
     }
 
     /**

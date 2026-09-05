@@ -214,6 +214,24 @@ public final class CrosvmMediaPoolTest {
     }
 
     /**
+     * The codec override subtracts devices and nothing else. {@code vpu_codec_enabled=false} is
+     * how an acceptance run boots a VPU VM with no decoder helper in it -- and how a phone whose
+     * codec store offers no usable hardware decoder boots one at all -- so the pools it is
+     * compared against have to be the same ones. Which devices it does take away is
+     * {@link CodecDeviceConfigTest}.
+     */
+    @Test
+    public void theCodecOverrideDoesNotChangeThePools() {
+        var item = withCamera(vm("protected_without_firmware", true), "0", "Back camera (0)");
+        VpuConfig.setCodecEnabled(item, false);
+        assertFalse(VpuConfig.codecDevicesAttached(item));
+        assertTrue(VpuConfig.mediaDevicesAttached(item));
+        assertEquals("media-host-mb=256,media-guest-mb=128",
+            mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
+        assertEquals(4096 + 128, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
+    }
+
+    /**
      * The whole media contribution to a Gunyah VM that also has a renderer, in the order
      * buildCommand appends it: the renderer route first, the media pools last, one --pre-alloc.
      */

@@ -169,6 +169,9 @@ public final class PoolPreflight {
         // media_guest, the pool the guest's virtio-media driver allocates from. Its host
         // counterpart (media_host) is not added: it is consume_system_mem on the crosvm side, so
         // it is already inside --mem. plans/VPU_DESIGN.md section 2.2.
+        // Nor does the number of media devices enter into it. A VM with a camera and a codec
+        // device runs two helper processes, but they are served out of the one media_host pool
+        // the switch bought -- a device is a share of a pool, never a pool of its own.
         mb += VpuConfig.bootMediaGuestMb(item);
         return (mb + PAGE_MB - 1) / PAGE_MB;
     }
