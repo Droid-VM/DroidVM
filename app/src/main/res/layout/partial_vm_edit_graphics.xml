@@ -460,6 +460,18 @@
             android:visibility="gone"
             tools:visibility="visible">
 
+            <!-- The codec V4L2 nodes, on by default: a hardware decoder is what the switch
+                 above promises. It can be taken away on its own because the codec helper reads
+                 the host's codec store when it starts and ends the VM if the phone has no usable
+                 hardware decoder, which would otherwise leave a VM with a camera unable to boot
+                 at all. Inside the block, so it is only offered on a VM that has a VPU. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_vpu_codec_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_video"
+                android:text="@string/create_vm_vpu_codec_enabled" />
+
             <!-- Where the host puts the buffers it allocates. The guest maps them at
                  pool base + the offset the host returns, which is what virtio-media's mmap
                  command already does, so this is the whole of the protected-VM story for
