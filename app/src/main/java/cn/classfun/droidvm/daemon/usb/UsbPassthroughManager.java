@@ -24,8 +24,11 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -36,6 +39,7 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.VMInstance;
@@ -51,14 +55,21 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * itself once the claim is released, and crosvm does not notice an unplug until the next
  * transfer.</p>
  *
- * <p>Devices also get lent out without being asked for: the rules (§2.4 of the plan) are run over
- * everything plugged in and unclaimed whenever a device appears, a VM reaches RUNNING, or the
- * rules change -- and never when a VM goes down, so a stop releases devices but takes nothing.
+ * <p>Devices also get lent out without being asked for: the rules (section 2.4 of the plan) are
+ * run over everything plugged in and unclaimed whenever a device appears, a VM reaches RUNNING,
+ * or the rules change -- and never when a VM goes down, so a stop releases devices but takes
+ * nothing.
  * The deciding is the {@link UsbRuleEngine}'s and happens under the same lock as the manual
  * bookkeeping; the attaching goes through the same path as a manual attach, so both kinds share
  * one record and one set of conflicts. When a pass runs is {@link UsbRulePassTiming}'s: a VM
  * is RUNNING before its control socket listens, so the pass for that edge waits for the socket,
  * and a pass that could not reach the VMM comes back rather than blame the device.</p>
+ *
+ * <p>Giving a device back is not always possible at the moment it is asked for: the VMM's usbfs
+ * claim on an interface can outlive the wait -- on device, a VMM whose xHCI had died kept its
+ * claims until the process exited -- and such an interface is left unbound. It is not left for
+ * good: the {@link UsbLeftovers} record keeps it against its VM, and it is tried again when that
+ * VM's process is gone, and whenever a scan shows the claim gone.</p>
  */
 public final class UsbPassthroughManager {
     private static final String TAG = "UsbPassthroughManager";
@@ -74,6 +85,13 @@ public final class UsbPassthroughManager {
     /** How long a released interface may still show that claim before the host is offered it. */
     private static final long USBFS_RELEASE_TIMEOUT_MS = 10_000;
     private static final long USBFS_POLL_MS = 200;
+    /** The VMM's own stderr, as VMInstance names it: where crosvm says why an attach failed. */
+    private static final String STREAM_STDERR = "stderr";
+    /**
+     * How long a refused attach waits for that reason to land in the stream when it is not there
+     * yet: the VMM logs it before it answers, but its reader thread still has to be scheduled.
+     */
+    private static final long VMM_LOG_GRACE_MS = 100;
     /**
      * A composite device's nodes show up one at a time and the inventory reports each batch; the
      * rules run once the batches have stopped, so a device is offered whole.
@@ -120,6 +138,8 @@ public final class UsbPassthroughManager {
      * to file. Guarded by [lock], like {@link #attachments}.
      */
     private final Map<String, Integer> stopEpochs = new HashMap<>();
+    /** Interfaces a restore pass could not give back yet. Guarded by [lock]. */
+    private final UsbLeftovers leftovers = new UsbLeftovers();
     private final Object lock = new Object();
     private final UsbHostInventory inventory = new UsbHostInventory(SYSFS_ROOT, DEV_ROOT);
     /** The rules and the per-device flags; every call into it is made under [lock]. */
@@ -204,7 +224,7 @@ public final class UsbPassthroughManager {
         // device node, so the inotify watch never sees it and the snapshot's driver fields go
         // stale the moment a device is claimed or given back. The list is read on demand and a
         // scan is four directories, so it is cheaper to read sysfs than to be wrong.
-        for (var device : inventory.scan()) {
+        for (var device : scanHost()) {
             Attachment attachment;
             boolean held;
             synchronized (lock) {
@@ -262,7 +282,7 @@ public final class UsbPassthroughManager {
     public JSONArray testRules() throws JSONException {
         var array = new JSONArray();
         // A fresh scan, for the same reason hostList takes one.
-        var devices = inventory.scan();
+        var devices = scanHost();
         synchronized (lock) {
             for (var device : devices) {
                 var attachment = attachments.get(device.sysfs);
@@ -354,6 +374,10 @@ public final class UsbPassthroughManager {
             epoch = stopEpoch(vmId);
         }
         var control = new CrosvmUsbControl(getPrebuiltBinaryPath("crosvm"), socket);
+        // Where the VMM says why it refused, if it does: a point taken now, so that a refusal
+        // can read what it logged from here on. Taking it is a counter read and costs nothing.
+        var vmmLog = vm.getStream(STREAM_STDERR);
+        var vmmMark = vmmLog == null ? 0 : vmmLog.mark();
         int port;
         // Outside the lock: the CLI opens the node and claims every interface, which takes as
         // long as the slowest host driver needs to let go.
@@ -367,10 +391,11 @@ public final class UsbPassthroughManager {
             // A refusal can come after the VMM has already claimed part of the device, and it
             // never hands those interfaces back on its own. No record exists to release them
             // later either, so this is the only chance to give them to the host.
-            restoreHostDrivers(sysfs);
-            throw new RequestException(fmt("crosvm usb attach failed: %s", e.token));
+            restoreHostDrivers(sysfs, vmId);
+            throw new RequestException(CrosvmUsbControl.attachFailureMessage(
+                e.token, e.stderr, vmmLogSince(vmmLog, vmmMark)));
         } catch (IOException e) {
-            restoreHostDrivers(sysfs);
+            restoreHostDrivers(sysfs, vmId);
             throw new RequestException(fmt("crosvm usb attach failed: %s", e.getMessage()));
         }
         String lostTo = null;
@@ -379,14 +404,19 @@ public final class UsbPassthroughManager {
             var existing = attachments.get(sysfs);
             if (existing != null) lostTo = existing.vmName;
             else if (stopEpoch(vmId) != epoch) stopped = true;
-            else attachments.put(sysfs, new Attachment(
-                vmId, vmName, port, sysfs, device.vid, device.pid, device.node, rule));
+            else {
+                attachments.put(sysfs, new Attachment(
+                    vmId, vmName, port, sysfs, device.vid, device.pid, device.node, rule));
+                // The VMM holds the whole device now, and this record's release will give the
+                // whole device back; whatever an earlier restore could not is not owed twice.
+                leftovers.forgetDevice(sysfs);
+            }
         }
         if (stopped) {
             // The VM went down while we were in the CLI and its release pass has already run.
             // Filing the record now would strand the device on a dead VM forever, and there is
             // nobody left to send a detach to, so just hand it straight back to the host.
-            restoreHostDrivers(sysfs);
+            restoreHostDrivers(sysfs, vmId);
             throw new RequestException("VM is not running");
         }
         if (lostTo != null) {
@@ -460,7 +490,7 @@ public final class UsbPassthroughManager {
                 engine.hold(attachment.sysfs);
             }
             Log.i(TAG, fmt("Dropped USB %s: VM %s is gone", attachment.sysfs, vm.getName()));
-            restoreHostDrivers(attachment.sysfs);
+            restoreHostDrivers(attachment.sysfs, vmId);
             broadcastVm(vmId, vm.getName());
             broadcastHost();
             return;
@@ -482,7 +512,7 @@ public final class UsbPassthroughManager {
         }
         Log.i(TAG, fmt("Detached USB %s from VM %s; held until unplugged",
             attachment.sysfs, vm.getName()));
-        restoreHostDrivers(attachment.sysfs);
+        restoreHostDrivers(attachment.sysfs, vmId);
         broadcastVm(vmId, vm.getName());
         broadcastHost();
     }
@@ -518,6 +548,8 @@ public final class UsbPassthroughManager {
      * RUNNING is the other edge the rules care about: the VM can take devices from then on, and
      * a reboot is a REBOOTING release followed by this, which is how its devices find their way
      * back. No release runs the rules -- a stop is never the reason a device changes hands.
+     * The release pass of those two edges is also when the interfaces an earlier restore had to
+     * leave claimed get their try: the process that held them is gone by then.
      */
     public void onVmState(@NonNull VMInstance vm, @NonNull VMState state) {
         if (state == VMState.RUNNING) {
@@ -547,9 +579,16 @@ public final class UsbPassthroughManager {
         }
     }
 
+    /**
+     * The VM's process is gone: its devices are released, and then whatever an earlier restore
+     * could not give back because this VMM would not let go is tried again -- the claim went
+     * with the process. Runs on the worker. The leftovers are read before the releases and
+     * tried after them, so that what this pass itself gives up on is not waited for twice.
+     */
     private void releaseAll(@NonNull String vmId, @NonNull String vmName) {
         try {
             var released = new ArrayList<Attachment>();
+            List<String> left;
             synchronized (lock) {
                 var it = attachments.values().iterator();
                 while (it.hasNext()) {
@@ -558,15 +597,18 @@ public final class UsbPassthroughManager {
                     released.add(attachment);
                     it.remove();
                 }
+                left = leftovers.leftBy(vmId);
             }
-            // Most state changes concern a VM that never held a device; say nothing about those.
-            if (released.isEmpty()) return;
             for (var attachment : released) {
                 Log.i(TAG, fmt("Released USB %s (%s:%s, %s) from VM %s",
                     attachment.sysfs, attachment.vid, attachment.pid, attachment.source(),
                     vmName));
-                restoreHostDrivers(attachment.sysfs);
+                restoreHostDrivers(attachment.sysfs, vmId);
             }
+            var recovered = left.isEmpty() ? 0
+                : recoverLeftovers(left, fmt("VM %s stopped", vmName));
+            // Most state changes concern a VM that never held a device; say nothing about those.
+            if (released.isEmpty() && recovered == 0) return;
             broadcastVm(vmId, vmName);
             broadcastHost();
         } catch (Exception e) {
@@ -579,17 +621,85 @@ public final class UsbPassthroughManager {
                                     @NonNull List<UsbHostDevice> removed) {
         for (var device : removed) {
             Attachment attachment;
+            List<String> dropped;
             synchronized (lock) {
                 attachment = attachments.get(device.sysfs);
                 // The node is gone, and with it the instance a hold or a failure was about;
                 // whatever is plugged in there next is a new device the rules may take.
                 engine.forget(device.sysfs);
+                // And with it the interfaces still owed to the host: there is no host driver
+                // to bind to a device that is not there.
+                dropped = leftovers.forgetDevice(device.sysfs);
             }
+            if (!dropped.isEmpty())
+                Log.i(TAG, fmt("USB %s was unplugged with %d interface(s) still owed to the host",
+                    device.sysfs, dropped.size()));
             if (attachment == null) continue;
             worker.execute(() -> releaseUnplugged(attachment));
         }
         if (!added.isEmpty()) scheduleAutoAttach();
+        // The broadcast lists the host afresh, and that scan is read for leftovers on the way.
         broadcastHost();
+    }
+
+    /** A fresh scan of the host, read for leftovers on the way: every on-demand list takes one. */
+    @NonNull
+    private List<UsbHostDevice> scanHost() {
+        var devices = inventory.scan();
+        noticeLeftovers(devices);
+        return devices;
+    }
+
+    /**
+     * Reads a scan against the leftovers. A recorded interface the scan shows free -- no driver
+     * at all, so the claim that kept it is gone -- gets its try on the worker, whatever its VM
+     * is doing; one a host driver holds again was given back some other way and is forgotten.
+     * Nothing to do is the common case and costs one lock and a lookup.
+     */
+    private void noticeLeftovers(@NonNull List<UsbHostDevice> devices) {
+        UsbLeftovers.Scan scan;
+        synchronized (lock) {
+            if (leftovers.isEmpty()) return;
+            var drivers = new HashMap<String, String>();
+            for (var device : devices)
+                for (var iface : device.interfaces) drivers.put(iface.name, iface.driver);
+            scan = leftovers.scan(drivers);
+        }
+        for (var entry : scan.reclaimed.entrySet())
+            Log.i(TAG, fmt("USB %s is back with %s; nothing left to restore",
+                entry.getKey(), entry.getValue()));
+        if (scan.free.isEmpty()) return;
+        schedule(() -> {
+            if (recoverLeftovers(scan.free, "claim gone") > 0) broadcastHost();
+        }, 0);
+    }
+
+    /**
+     * A later try at interfaces a restore pass had to leave unbound; [reason] says what
+     * prompted it. Runs on the worker, with the same wait for the claim as the first try. The
+     * interfaces are taken off the record first -- a try that finds one still claimed puts it
+     * back -- and any whose device has meanwhile been attached again is passed over, since
+     * that attachment's own release will hand the whole device back. Returns how many were
+     * offered to the host.
+     */
+    private int recoverLeftovers(@NonNull Collection<String> ifaces, @NonNull String reason) {
+        Map<String, String> taken;
+        synchronized (lock) {
+            taken = leftovers.take(ifaces);
+            taken.keySet().removeIf(iface -> attachments.containsKey(UsbLeftovers.deviceOf(iface)));
+        }
+        if (taken.isEmpty()) return 0;
+        var probed = restoreInterfaces(taken, true);
+        if (!probed.isEmpty())
+            Log.i(TAG, fmt("Recovered %d USB interface(s) left unbound earlier (%s): %s",
+                probed.size(), reason, String.join(", ", probed)));
+        return probed.size();
+    }
+
+    /** Whether [vmId]'s process is gone: the VM is stopped, between reboots, or no more. */
+    private boolean vmGone(@NonNull String vmId) {
+        var state = stateOf(vmId);
+        return state == null || state == VMState.STOPPED || state == VMState.REBOOTING;
     }
 
     /** Arms (or re-arms) the rule pass a plug owes, so a burst of nodes becomes one pass. */
@@ -812,54 +922,132 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * Offers every unbound interface of [sysfs] back to the host. The kernel does not rebind a
-     * driver once the VMM's claim is released, so nothing happens until something writes to
-     * drivers_probe. Best effort: an interface no driver wants stays unbound, which is fine.
+     * Offers every unbound interface of [sysfs] back to the host, [vmId] being the VM whose VMM
+     * held it. The kernel does not rebind a driver once the VMM's claim is released, so nothing
+     * happens until something writes to drivers_probe. Best effort: an interface no driver wants
+     * stays unbound, which is fine; one the VMM will not let go of is recorded for later.
      */
-    void restoreHostDrivers(@NonNull String sysfs) {
+    void restoreHostDrivers(@NonNull String sysfs, @NonNull String vmId) {
         try {
-            var entries = new File(SYSFS_ROOT).listFiles();
-            if (entries == null) return;
-            var prefix = fmt("%s:", sysfs);
-            for (var entry : entries) {
-                var name = entry.getName();
-                if (!name.startsWith(prefix)) continue;
-                if (!awaitReleased(entry)) continue;
-                var result = run("echo %s > /sys/bus/usb/drivers_probe", name);
-                Log.i(TAG, fmt("drivers_probe %s: code=%d %s",
-                    name, result.getCode(), result.getErrString()));
-            }
+            var ifaceToVm = new LinkedHashMap<String, String>();
+            for (var name : interfacesOf(sysfs)) ifaceToVm.put(name, vmId);
+            restoreInterfaces(ifaceToVm, false);
         } catch (Exception e) {
             Log.w(TAG, fmt("Failed to hand the interfaces of %s back to the host", sysfs), e);
         }
     }
 
     /**
-     * Whether the host may be offered [ifaceDir]. A driver that is not usbfs already holds it, so
+     * Offers each of [ifaceToVm]'s interfaces back to the host once the VMM's claim on it is
+     * gone, the value being the VM that held it. One the wait gives up on is left unbound and
+     * recorded against that VM for a later try -- and when that VM's process is already gone,
+     * the try is queued at once, because the exit that would have queued it has passed. A
+     * [recovery] is such a later try: it records what it still cannot do but queues nothing, so
+     * an interface nothing ever lets go of cannot keep the worker waiting on it for good.
+     * Returns the interfaces that were offered.
+     */
+    @NonNull
+    private List<String> restoreInterfaces(@NonNull Map<String, String> ifaceToVm,
+                                           boolean recovery) {
+        var probed = new ArrayList<String>();
+        var again = new ArrayList<String>();
+        for (var entry : ifaceToVm.entrySet()) {
+            var name = entry.getKey();
+            var dir = new File(SYSFS_ROOT, name);
+            // Unplugged meanwhile: nothing to bind, and nothing to remember.
+            if (!dir.isDirectory()) continue;
+            var claim = awaitReleased(dir);
+            if (claim == Claim.HOST) continue;
+            if (claim == Claim.NONE) {
+                var result = run("echo %s > /sys/bus/usb/drivers_probe", name);
+                Log.i(TAG, fmt("drivers_probe %s: code=%d %s",
+                    name, result.getCode(), result.getErrString()));
+                probed.add(name);
+                continue;
+            }
+            var vmId = entry.getValue();
+            synchronized (lock) {
+                leftovers.leave(name, vmId);
+            }
+            if (!recovery && vmGone(vmId)) again.add(name);
+        }
+        if (!again.isEmpty())
+            schedule(() -> {
+                if (recoverLeftovers(again, "VM already gone") > 0) broadcastHost();
+            }, 0);
+        return probed;
+    }
+
+    /** The interfaces of [sysfs] as sysfs lists them now, sorted; none once the device is gone. */
+    @NonNull
+    private static List<String> interfacesOf(@NonNull String sysfs) {
+        var names = new ArrayList<String>();
+        var entries = new File(SYSFS_ROOT).listFiles();
+        if (entries == null) return names;
+        var prefix = fmt("%s:", sysfs);
+        for (var entry : entries)
+            if (entry.getName().startsWith(prefix)) names.add(entry.getName());
+        Collections.sort(names);
+        return names;
+    }
+
+    /** What the wait for an interface found holding it. */
+    private enum Claim {
+        /** Nothing: it may be offered to the host. */
+        NONE,
+        /** A host driver: there is nothing to give back. */
+        HOST,
+        /** The VMM, still, when the wait ran out. */
+        VMM,
+    }
+
+    /**
+     * Waits for the host to be allowed [ifaceDir]. A driver that is not usbfs already holds it, so
      * there is nothing to give back. A usbfs link is the VMM's own claim, which outlives the
      * moment the device stopped being the VM's by however long the process needs to drop its fd,
      * so it is waited out rather than read as an owner -- probing through it does nothing and the
      * interface would stay unbound for good. Blocking is why this runs on the worker (or on an
      * IPC thread that has already sent the detach).
      */
-    private boolean awaitReleased(@NonNull File ifaceDir) {
+    @NonNull
+    private Claim awaitReleased(@NonNull File ifaceDir) {
         var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(USBFS_RELEASE_TIMEOUT_MS);
         while (true) {
             var driver = readDriver(ifaceDir);
-            if (driver.isEmpty()) return true;
-            if (!DRIVER_USBFS.equals(driver)) return false;
+            if (driver.isEmpty()) return Claim.NONE;
+            if (!DRIVER_USBFS.equals(driver)) return Claim.HOST;
             if (System.nanoTime() - deadline >= 0) {
-                Log.w(TAG, fmt("%s is still claimed through usbfs after %d ms; leaving it unbound",
-                    ifaceDir.getName(), USBFS_RELEASE_TIMEOUT_MS));
-                return false;
+                Log.w(TAG, fmt("%s is still claimed through usbfs after %d ms; leaving it unbound "
+                    + "until the claim is gone", ifaceDir.getName(), USBFS_RELEASE_TIMEOUT_MS));
+                return Claim.VMM;
             }
             try {
                 Thread.sleep(USBFS_POLL_MS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                return false;
+                return Claim.VMM;
             }
         }
+    }
+
+    /**
+     * What the VMM wrote to [log] since [mark], for a refusal to be explained by. Read after
+     * the restore, which is when the message is composed; when no ERROR is there yet, one short
+     * grace and one more read, because the VMM logs its reason before it answers the CLI and
+     * the daemon's reader of that stream may simply not have run yet. Never on the success path.
+     */
+    @NonNull
+    private static String vmmLogSince(@Nullable ConsoleStream log, long mark) {
+        if (log == null) return "";
+        var text = log.since(mark);
+        if (CrosvmUsbControl.firstErrorLine(text) != null) return text;
+        try {
+            Thread.sleep(VMM_LOG_GRACE_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return text;
+        }
+        return log.since(mark);
     }
 
     /** Basename of the interface's {@code driver} symlink, {@code ""} when nothing holds it. */

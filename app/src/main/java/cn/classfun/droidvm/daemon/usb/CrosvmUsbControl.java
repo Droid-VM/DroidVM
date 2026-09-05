@@ -12,12 +12,14 @@ import android.os.Build;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 
@@ -36,6 +38,12 @@ public final class CrosvmUsbControl {
     private static final long TIMEOUT_KILL_SECONDS = 2;
     /** What vm_control prints when the CLI cannot reach the control socket at all. */
     private static final String CONNECT_FAILED = "failed to connect to socket";
+    /**
+     * One line of crosvm's log: {@code [<time> ERROR <target>] <message>}. The time is what the
+     * VMM's logger adds; a build without it prints {@code [ERROR <target>]}, so it is optional.
+     */
+    private static final Pattern ERROR_LINE =
+        Pattern.compile("^\\[(?:\\S+\\s+)?ERROR\\s+([^\\]\\s]*)\\]\\s*(.*)$");
 
     /** One line of {@code crosvm usb list}. */
     public static final class Entry {
@@ -176,6 +184,40 @@ public final class CrosvmUsbControl {
         thread.setDaemon(true);
         thread.start();
         return thread;
+    }
+
+    /**
+     * The message of the first ERROR line crosvm logged in [text], or null when there is none.
+     * A USB one wins over an earlier unrelated one -- the GPU logs errors of its own, and it is
+     * the attach that is being explained -- but any ERROR beats the bare token.
+     */
+    @Nullable
+    static String firstErrorLine(@NonNull String text) {
+        String any = null;
+        for (var raw : text.split("\n")) {
+            var m = ERROR_LINE.matcher(raw.trim());
+            if (!m.matches()) continue;
+            var message = m.group(2).trim();
+            if (message.isEmpty()) continue;
+            if (m.group(1).contains("usb")) return message;
+            if (any == null) any = message;
+        }
+        return any;
+    }
+
+    /**
+     * What an attach refusal is reported as. The token alone names the symptom -- on device,
+     * {@code no_available_port} for a hub whose event ring had died -- and hides the cause, which
+     * crosvm logged as an ERROR while handling the command: on the CLI's own stderr, or on the
+     * VMM's, which is [vmmLog], what it wrote since the command went out. The first such line
+     * is the cause, and goes in after the token.
+     */
+    @NonNull
+    static String attachFailureMessage(@NonNull String token, @NonNull String cliStderr,
+                                       @NonNull String vmmLog) {
+        var cause = firstErrorLine(cliStderr + "\n" + vmmLog);
+        if (cause == null) return fmt("crosvm usb attach failed: %s", token);
+        return fmt("crosvm usb attach failed: %s (%s)", token, cause);
     }
 
     static int parseAttach(@NonNull String stdout) throws UsbControlException {
