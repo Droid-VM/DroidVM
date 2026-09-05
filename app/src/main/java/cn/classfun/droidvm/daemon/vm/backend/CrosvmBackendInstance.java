@@ -576,8 +576,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildPeripheralCommand(args);
         // After the peripheral rows, not before: those rows are the user's own list and the guest
         // numbers /dev/videoN in the order the devices appear here, so putting the codecs last
-        // means a VM that gains a decoder on this build keeps the camera node numbers a guest
-        // configuration may already name. The codecs move instead, and nothing had them yet.
+        // means a VM that gains a codec device on this build keeps the camera node numbers a guest
+        // configuration may already name. The codecs move instead, and they are appended to
+        // VpuConfig.CODEC_KINDS in turn so each one that arrives leaves the earlier ones put.
         buildCodecCommand(args, hypervisor);
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
@@ -1554,10 +1555,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * Attaches this VM's codec devices -- what the video-acceleration switch itself buys, as
      * opposed to what the peripheral list asks for.
      *
-     * <p>A decoder is not a row anyone adds: turning the switch on is what "this VM has a
-     * hardware video unit" means, so the devices come from {@link VpuConfig#CODEC_KINDS} rather
-     * than from {@code peripherals}, one {@code --virtio-media} line each, and the encoder joins
-     * them by being added to that list once crosvm implements it (VPU_DESIGN.md 7.3, 7.4).</p>
+     * <p>A decoder is not a row anyone adds, and neither is an encoder: turning the switch on is
+     * what "this VM has a hardware video unit" means, so the devices come from
+     * {@link VpuConfig#CODEC_KINDS} rather than from {@code peripherals}, one
+     * {@code --virtio-media} line each -- today a decoder and an encoder, in that order
+     * (VPU_DESIGN.md 7.3, 7.4).</p>
      *
      * <p>Every codec device runs in a helper process under the app's uid, like the camera and for
      * a related reason: MediaCodec resolves the caller from the real uid and the codec services

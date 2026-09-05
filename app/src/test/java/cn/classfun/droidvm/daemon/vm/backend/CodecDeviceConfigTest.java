@@ -79,24 +79,33 @@ public final class CodecDeviceConfigTest {
     }
 
     /**
-     * One decoder, named, under the app's uid. The card is the same string crosvm's helper falls
-     * back to on its own, so the guest reads one name whichever side wrote it.
+     * A decoder and an encoder, named, under the app's uid, in that order. The cards are the same
+     * strings crosvm's helper falls back to on its own, so the guest reads one name whichever
+     * side wrote it.
+     *
+     * <p>Written out as two whole lines rather than derived from the table, so that the bytes a
+     * VM is started with are pinned here even if the table or {@link VpuConfig#codecCard} is
+     * edited: the encoder line is the one {@code logs/vpu_wp/B7-codec.md} booted by hand through
+     * {@code extra_options} before the app emitted it.</p>
      */
     @Test
-    public void theSwitchOnGivesTheVmOneDecoderUnderTheAppUid() {
-        assertEquals(List.of("--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123"),
+    public void theSwitchOnGivesTheVmADecoderAndAnEncoderUnderTheAppUid() {
+        assertEquals(List.of(
+                "--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123",
+                "--virtio-media", "kind=encoder,card=\"droidvm encoder\",uid=10123"),
             emit(vpuVm()));
     }
 
     /**
      * The emission is a loop over {@link VpuConfig#CODEC_KINDS}, so the table is what says how
-     * many lines there are -- adding the encoder to it is the whole app-side change (WP M7).
-     * Today it holds the decoder alone, and deliberately not the encoder: crosvm refuses
-     * {@code kind=encoder} by name before it forks a helper, so a VM emitting one would not boot
-     * (logs/vpu_wp/F4-host.md, {@code MediaDeviceKind::support}).
+     * many lines there are and in which order -- adding the encoder to it was the whole app-side
+     * change WP M7 left behind ({@code logs/vpu_wp/B-final.md} section 9 item 1). The order is
+     * asserted, not just the membership: the guest numbers its {@code /dev/videoN} nodes in the
+     * order the devices appear on the command line, so a VM that already names the decoder's
+     * node must keep it.
      */
     @Test
-    public void everyKindInTheTableIsEmittedExactlyOnce() {
+    public void everyKindInTheTableIsEmittedExactlyOnceInOrder() {
         var args = emit(vpuVm());
         assertEquals(2 * VpuConfig.CODEC_KINDS.size(), args.size());
         var kinds = new ArrayList<String>();
@@ -108,11 +117,16 @@ public final class CodecDeviceConfigTest {
             assertTrue(cfg, cfg.contains(",card=\""));
         }
         assertEquals(VpuConfig.CODEC_KINDS, kinds);
-        assertEquals(List.of("decoder"), VpuConfig.CODEC_KINDS);
-        assertFalse(VpuConfig.CODEC_KINDS.contains("encoder"));
+        assertEquals(List.of("decoder", "encoder"), VpuConfig.CODEC_KINDS);
+        // Decoder first: the encoder was appended, so nothing that had a decoder node moved.
+        assertEquals(0, VpuConfig.CODEC_KINDS.indexOf("decoder"));
+        assertEquals(1, VpuConfig.CODEC_KINDS.indexOf("encoder"));
     }
 
-    /** Video acceleration off is no pools, no camera and no codec device either. */
+    /**
+     * Video acceleration off is no pools, no camera and no codec device either -- neither the
+     * decoder nor the encoder, which is the whole list.
+     */
     @Test
     public void theSwitchOffGivesNoCodecDevice() {
         var item = vpuVm();
@@ -129,6 +143,8 @@ public final class CodecDeviceConfigTest {
     @Test
     public void theCodecOverrideTakesTheDevicesAndNothingElse() {
         var item = withCamera(vpuVm(), "0", "Back camera (0)");
+        // Both codec lines, and only they, are what the key takes: two before, none after.
+        assertEquals(2 * VpuConfig.CODEC_KINDS.size(), emit(item).size());
         VpuConfig.setCodecEnabled(item, false);
         assertEquals(List.of(), emit(item));
         // Everything else the switch buys is untouched.
@@ -209,11 +225,15 @@ public final class CodecDeviceConfigTest {
             assertEquals(stored, reloaded.optBoolean(VpuConfig.KEY_CODEC_ENABLED, !stored));
             assertEquals(stored, VpuConfig.isCodecEnabled(reloaded));
             assertEquals(stored, VpuConfig.codecDevicesAttached(reloaded));
-            assertEquals(stored ? 2 : 0, emit(reloaded).size());
+            assertEquals(stored ? 2 * VpuConfig.CODEC_KINDS.size() : 0, emit(reloaded).size());
         }
     }
 
-    /** The card name is derived from the kind, so the encoder gets one by joining the table. */
+    /**
+     * The card name is derived from the kind, so the encoder got one by joining the table -- and
+     * the names it produces are the ones crosvm's own helper falls back to, so a guest reads the
+     * same card whether the app wrote the line or somebody ran the helper from the dev rig.
+     */
     @Test
     public void everyKindHasACardNameWithoutBeingGivenOne() {
         assertEquals("droidvm decoder", VpuConfig.codecCard("decoder"));
