@@ -1492,6 +1492,7 @@
     <string name="host_camera_none">此主机没有摄像头</string>
     <string name="create_vm_category_vpu">视频加速 (VPU)</string>
     <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
+    <string name="create_vm_vpu_codec_enabled">挂载编解码装置</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_note">开启后会按上面的大小保留缓冲池，并挂上这台 VM 的视频设备。在“外设”页加的摄像头用的是同一套 virtio-media 硬件，只有开启时才会挂上。</string>
