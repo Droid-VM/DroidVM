@@ -88,6 +88,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private ScreenBindingRow screenFb;
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
+    private SwitchRowWidget swVpuCodecEnabled;
     private View vpuOptions;
     private TextView tvVpuCameraOffNote;
     private View mediaGuestPoolOptions;
@@ -152,6 +153,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             true, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
+        swVpuCodecEnabled = view.findViewById(R.id.sw_vpu_codec_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
         tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
         mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
@@ -442,6 +444,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateVramAllocVisibility();
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
         swVpuEnabled.setChecked(VpuConfig.isEnabled(item));
+        swVpuCodecEnabled.setChecked(VpuConfig.isCodecEnabled(item));
         etMediaHostPoolMb.setText(String.valueOf(VpuConfig.getHostPoolMb(item)));
         etMediaGuestPoolMb.setText(String.valueOf(VpuConfig.getGuestPoolMb(item)));
         updateVpuVisibility();
@@ -751,6 +754,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         item.set("display_blit_provider", chooseDisplayBlitProvider.getSelectedItem());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP, swGpuCgroup.isChecked());
         VpuConfig.setEnabled(item, swVpuEnabled.isChecked());
+        // Stored whatever the switch above says, like the pool sizes: it is a subtraction from
+        // video acceleration and means nothing without it, so keeping it lets turning video
+        // acceleration off and on again give back the VM that was there before.
+        VpuConfig.setCodecEnabled(item, swVpuCodecEnabled.isChecked());
         VpuConfig.setHostPoolMb(item, parseInt(getEditText(etMediaHostPoolMb)));
         // Stored even while hidden, so flipping the protection mode back does not lose it. What
         // decides whether a media_guest pool is created is VpuConfig.guestPoolMbFor, not whether
