@@ -71,6 +71,7 @@ import cn.classfun.droidvm.ui.setup.step.PrivacyStepFragment;
 import cn.classfun.droidvm.ui.update.UpdateDialog;
 import cn.classfun.droidvm.ui.update.UpdateInfo;
 import cn.classfun.droidvm.ui.update.VersionCheck;
+import cn.classfun.droidvm.ui.usb.UsbRulesActivity;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
@@ -101,6 +102,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
     private TextRowWidget itemUsbAcmPorts;
+    private TextRowWidget itemUsbPassthrough;
     private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
@@ -160,6 +162,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
         itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
+        itemUsbPassthrough = view.findViewById(R.id.item_usb_passthrough);
         itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
@@ -199,6 +202,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
         bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
         refreshUsbAcmPortsSummary();
+        bindOnClick(itemUsbPassthrough, this::showUsbPassthrough);
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
@@ -521,6 +525,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showHugePageReserve() {
         startActivity(new Intent(requireContext(), HugePageActivity.class));
+    }
+
+    private void showUsbPassthrough() {
+        startActivity(new Intent(requireContext(), UsbRulesActivity.class));
     }
 
     private void showKernelModules() {

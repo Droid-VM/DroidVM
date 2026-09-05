@@ -1612,4 +1612,61 @@
     <string name="settings_usb_acm_disabled">Disabled</string>
     <string name="edit_vm_serial_usb_disabled_hint">USB serial (ACM) is disabled; enable it in settings or this VM will not boot.</string>
     <string name="edit_vm_serial_full">All ports of this hardware are already added.</string>
+    <string name="settings_usb_passthrough_title">USB passthrough</string>
+    <string name="settings_usb_passthrough_summary">Which VM a plugged-in USB device goes to automatically</string>
+    <string name="usb_rules_title">USB auto-attach rules</string>
+    <string name="usb_rules_intro">When a device is plugged in, a VM starts running or the rules are saved, the layers below are tried top to bottom and, within a layer, in list order; the first match wins. Only a running VM can take a device. Devices already attached to a VM are left alone.</string>
+    <string name="usb_rules_unsaved">Unsaved changes</string>
+    <string name="usb_rules_layer_exact">1. Exact (device + port)</string>
+    <string name="usb_rules_layer_port">2. Port</string>
+    <string name="usb_rules_layer_device">3. Device</string>
+    <string name="usb_rules_layer_any">4. Any device</string>
+    <string name="usb_rules_empty_exact">No exact rules</string>
+    <string name="usb_rules_empty_port">No port rules</string>
+    <string name="usb_rules_empty_device">No device rules</string>
+    <string name="usb_rules_empty_any">No catch-all rules</string>
+    <string name="usb_rules_add">Add rule</string>
+    <string name="usb_rules_keep_host">Keep on host</string>
+    <string name="usb_rules_target_vm">Attach to %1$s</string>
+    <string name="usb_rules_unknown_vm">Unknown VM (%1$s)</string>
+    <string name="usb_rules_unknown_device">Unknown device %1$s</string>
+    <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_desc_exact">%1$s at port %2$s</string>
+    <string name="usb_rules_port_label">Port %1$s</string>
+    <string name="usb_rules_port_current">Now there: %1$s</string>
+    <string name="usb_rules_port_empty">Nothing plugged in there right now</string>
+    <string name="usb_rules_move_up">Move up</string>
+    <string name="usb_rules_move_down">Move down</string>
+    <string name="usb_rules_delete">Delete rule</string>
+    <string name="usb_rules_save">Save and apply</string>
+    <string name="usb_rules_saved">Applied to %1$d device(s)</string>
+    <string name="usb_rules_save_failed_title">Rules not saved</string>
+    <string name="usb_rules_request_failed">The daemon refused the request</string>
+    <string name="usb_rules_daemon_unavailable">The daemon is not connected</string>
+    <string name="usb_rules_preview">Preview what would be assigned now</string>
+    <string name="usb_rules_preview_note">Dry run over the saved rules: nothing is attached.</string>
+    <string name="usb_rules_preview_empty">No USB devices are plugged in.</string>
+    <string name="usb_rules_state_attached">Attached to %1$s</string>
+    <string name="usb_rules_state_held">Held on host (detached by hand; skipped until unplugged)</string>
+    <string name="usb_rules_state_host">On host</string>
+    <string name="usb_rules_result_none">No rule matches</string>
+    <string name="usb_rules_result_vm">Layer %1$d, rule %2$d: attach to %3$s</string>
+    <string name="usb_rules_result_host">Layer %1$d, rule %2$d: keep on host</string>
+    <string name="usb_rules_pick_device">Device</string>
+    <string name="usb_rules_pick_port">Port</string>
+    <string name="usb_rules_pick_target">Attach to</string>
+    <string name="usb_rules_pick_hint_exact">Pick one of the devices plugged in right now. The rule matches that device on that port only.</string>
+    <string name="usb_rules_pick_hint_port">Pick a port something is plugged into right now. The rule matches whatever is plugged in there.</string>
+    <string name="usb_rules_pick_hint_device">Pick one of the devices plugged in right now. The rule matches it on any port.</string>
+    <string name="usb_rules_pick_hint_any">Every device no earlier rule claimed goes to the first VM in this list that is running.</string>
+    <string name="usb_rules_pick_no_devices">No USB devices are plugged in right now.</string>
+    <string name="usb_rules_pick_no_vms">There are no VMs to attach to.</string>
+    <string name="usb_rules_pick_device_exact_fmt" translatable="false">%1$s (%2$s, port %3$s)</string>
+    <string name="usb_rules_pick_device_port_fmt">Port %1$s: %2$s</string>
+    <string name="usb_rules_pick_device_device_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_vm_label_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_discard_title">Discard changes?</string>
+    <string name="usb_rules_discard_message">The rules have not been saved. Leave without applying them?</string>
+    <string name="usb_rules_event_attached">%1$s was attached to %2$s automatically</string>
+    <string name="usb_rules_event_failed">Could not attach %1$s to %2$s: %3$s</string>
 </resources>

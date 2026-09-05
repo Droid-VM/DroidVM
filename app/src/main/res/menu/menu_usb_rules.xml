@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <item
+        android:id="@+id/menu_preview"
+        android:icon="@drawable/ic_eye"
+        android:title="@string/usb_rules_preview"
+        app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/menu_save"
+        android:icon="@drawable/ic_check"
+        android:title="@string/usb_rules_save"
+        app:showAsAction="always" />
+
+</menu>
