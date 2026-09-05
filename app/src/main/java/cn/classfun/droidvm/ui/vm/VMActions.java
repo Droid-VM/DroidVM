@@ -50,6 +50,7 @@ import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.tree.DiskTree;
+import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
@@ -88,19 +89,111 @@ public final class VMActions {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
         // image attached writable (writing would corrupt its overlays - any backend), a disk a
         // running VM already holds, compressed clusters (crosvm boots to I/O errors), a host
-        // kernel module this configuration needs but nobody loaded, and a huge-page reserve too
-        // small to back this VM. Each prompts with its fix and chains to the next; everything
-        // else starts normally. The shared-disk guard may hand the rest of the chain a session
-        // copy of the config, so everything downstream uses what it passes on rather than
-        // `config`.
+        // kernel module this configuration needs but nobody loaded, a LEND mode this kernel's
+        // resource manager will not accept, and a huge-page reserve too small to back this VM.
+        // Each prompts with its fix and chains to the next; everything else starts normally. The
+        // shared-disk guard may hand the rest of the chain a session copy of the config, so
+        // everything downstream uses what it passes on rather than `config`.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
             () -> guardLockedParents(config, mainHandler, ui,
                 () -> guardSharedRunning(config, mainHandler, ui,
                     started -> guardCompressedDisks(started, mainHandler, ui, convertLauncher,
                         () -> guardKernelModules(started, mainHandler, ui,
-                            () -> guardHugePagePool(started, mainHandler, ui,
-                                () -> startAfterGuard(started, mainHandler, ui,
-                                    wantOpenConsole)))))));
+                            () -> guardLendMthp(started, mainHandler, ui,
+                                () -> guardHugePagePool(started, mainHandler, ui,
+                                    () -> startAfterGuard(started, mainHandler, ui,
+                                        wantOpenConsole))))))));
+    }
+
+    /**
+     * Pre-start check: will this kernel's Gunyah resource manager take the parcels this VM is
+     * configured to lend? {@link LendMthpPreflight} answers that from the config and the running
+     * kernel series; on 6.1 the 256 MB parcels of {@code chunked} are refused a few in, and the VM
+     * dies at GH_VM_START naming nothing that would lead anyone to the setting.
+     *
+     * <p>Unlike the module guard there is something to repair from the dialog, and repairing it is
+     * the point: the value is almost always inherited rather than chosen -- a VM package exported
+     * from a 6.6 phone carries the mode that phone needed -- so the offer is to correct it and
+     * keep the correction, in the store as well as in the config this start hands the daemon.</p>
+     *
+     * <p>Nobody to ask means the start proceeds untouched, as the other guards do. It will fail,
+     * the way it does today; silently rewriting a VM's memory configuration for an unattended
+     * start is a worse answer than the failure it would avoid.</p>
+     */
+    private static void guardLendMthp(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Runnable proceed
+    ) {
+        var appContext = ui.getContext().getApplicationContext();
+        runOnPool(() -> {
+            boolean refused;
+            try {
+                refused = LendMthpPreflight.check(config.item);
+            } catch (Exception e) {
+                Log.w(TAG, "LEND mode preflight failed", e);
+                refused = false;
+            }
+            if (!refused) {
+                mainHandler.post(proceed);
+                return;
+            }
+            mainHandler.post(() -> promptLendMthp(config, appContext, mainHandler, ui, proceed));
+        });
+    }
+
+    private static void promptLendMthp(
+        @NonNull VMConfig config,
+        @NonNull Context appContext,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Runnable proceed
+    ) {
+        if (!ui.isAlive()) {
+            proceed.run();
+            return;
+        }
+        var ctx = ui.getContext();
+        new MaterialAlertDialogBuilder(ctx)
+            .setTitle(R.string.vm_lend_mthp_refused_title)
+            .setMessage(R.string.vm_lend_mthp_refused_message)
+            .setPositiveButton(R.string.vm_lend_mthp_refused_fix, (d, w) ->
+                runOnPool(() -> {
+                    applySingleLendMthp(appContext, config);
+                    mainHandler.post(proceed);
+                }))
+            .setNeutralButton(R.string.vm_lend_mthp_refused_start_anyway, (d, w) -> proceed.run())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    /**
+     * Writes single-parcel LEND to this VM, in both places it has to land.
+     *
+     * <p>The config the chain carries is what the daemon is given by vm_modify, and the store is
+     * what the VM list reloads from -- the same pair, and the same reason, as
+     * {@link #rememberChoice}: a change made only in memory starts this VM correctly and is gone by
+     * the next one. Does file I/O; call it off the main thread.</p>
+     */
+    private static void applySingleLendMthp(
+        @NonNull Context context,
+        @NonNull VMConfig config
+    ) {
+        config.item.set(LendMthpMode.KEY, LendMthpMode.SINGLE);
+        try {
+            var store = new VMStore();
+            if (store.load(context)) {
+                var stored = store.findById(config.getId());
+                if (stored != null) {
+                    stored.item.set(LendMthpMode.KEY, LendMthpMode.SINGLE);
+                    store.save(context);
+                }
+            }
+        } catch (Exception e) {
+            // The start still gets the corrected config; only the remembering failed.
+            Log.w(TAG, "failed to persist the LEND mode correction", e);
+        }
     }
 
     /**

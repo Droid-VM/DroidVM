@@ -44,7 +44,14 @@ import cn.classfun.droidvm.lib.utils.JsonUtils;
 
 public final class VMInstance extends VMConfig {
     private static final String TAG = "VMInstance";
-    private VMState state = VMState.STOPPED;
+    /**
+     * Read from every thread that asks what this VM is doing -- IPC handlers, the auto-start
+     * sweep, stopAll, the worker itself -- and written by the worker and by start(). Volatile so
+     * that a reader outside {@link #startLock} sees the current answer rather than a cached one.
+     */
+    private volatile VMState state = VMState.STOPPED;
+    /** Serialises the run-up to STARTING against a second caller; see {@link #start}. */
+    private final Object startLock = new Object();
     private NativeProcess process;
     private boolean stoppedByUser = false;
     private int exitCode = -1;
@@ -171,29 +178,43 @@ public final class VMInstance extends VMConfig {
         bootEntryOverride = entryId;
     }
 
+    /**
+     * Takes this VM from STOPPED to STARTING and hands it to a worker thread.
+     *
+     * <p>Held under {@link #startLock} from the state test to the worker being handed the VM,
+     * because two callers reaching here at once is no longer hypothetical: the auto-start sweep
+     * runs behind the daemon's socket now, so a client's {@code vm_start} can arrive while the
+     * sweep is looking at the same VM. Unlocked, both read STOPPED, both pass the test, and the
+     * VM gets two worker threads and two crosvm processes against one set of taps and sockets.
+     * The test alone cannot be made atomic -- it is the whole run-up to {@code setState} that has
+     * to be, since that is what publishes the claim.</p>
+     */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean start() {
-        // REBOOTING is accepted too: the reboot relaunch calls start() from that
-        // transient state (process already gone) and goes straight to STARTING.
-        if (state != VMState.STOPPED && state != VMState.REBOOTING) {
-            Log.w(TAG, fmt("VM %s is not stopped (state=%s), cannot start", getId(), state.name()));
-            return false;
+        synchronized (startLock) {
+            // REBOOTING is accepted too: the reboot relaunch calls start() from that
+            // transient state (process already gone) and goes straight to STARTING.
+            if (state != VMState.STOPPED && state != VMState.REBOOTING) {
+                Log.w(TAG, fmt("VM %s is not stopped (state=%s), cannot start",
+                    getId(), state.name()));
+                return false;
+            }
+            joinThreads(1000);
+            if (!setupTaps()) return false;
+            resolveVncConfig();
+            stoppedByUser = false;
+            exitCode = -1;
+            setState(VMState.STARTING);
+            var vmIdStr = getId().toString();
+            workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
+            workerThread.setDaemon(true);
+            workerThread.start();
+            Log.i(TAG, fmt(
+                "Start requested for VM: %s [%s] via %s",
+                getName(), vmIdStr, getBackend().name()
+            ));
+            return true;
         }
-        joinThreads(1000);
-        if (!setupTaps()) return false;
-        resolveVncConfig();
-        stoppedByUser = false;
-        exitCode = -1;
-        setState(VMState.STARTING);
-        var vmIdStr = getId().toString();
-        workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
-        workerThread.setDaemon(true);
-        workerThread.start();
-        Log.i(TAG, fmt(
-            "Start requested for VM: %s [%s] via %s",
-            getName(), vmIdStr, getBackend().name()
-        ));
-        return true;
     }
 
     private void setupTap(int index, List<DataItem> createdNics, @NonNull DataItem netCfg, String vmId) throws Exception {

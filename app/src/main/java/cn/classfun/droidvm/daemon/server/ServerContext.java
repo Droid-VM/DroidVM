@@ -73,11 +73,10 @@ public final class ServerContext {
         } catch (Exception e) {
             Log.w(TAG, "Failed to auto up networks", e);
         }
-        try {
-            vms.autoUp();
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to auto up VMs", e);
-        }
+        // VMs are NOT started here. Their sweep waits on the huge-page reserve -- seconds a VM, and
+        // the pkill above is what makes the reserve short -- and everything the daemon is for comes
+        // after this constructor: the socket, the signal handlers, the VM event callback. It runs
+        // from Server.run() instead, behind all three. See VMInstanceStore.autoUpAsync.
         try {
             routerWatcher.start();
         } catch (Exception e) {

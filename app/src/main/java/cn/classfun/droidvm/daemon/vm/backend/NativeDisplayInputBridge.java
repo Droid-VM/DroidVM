@@ -12,6 +12,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.io.IOException;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -108,6 +109,12 @@ final class NativeDisplayInputBridge {
      * one failure here that is not survivable and not diagnosable after the fact: bind(2) truncates
      * silently, so the daemon would report a live listener on an inode crosvm was never told about.
      * The caller turns it into a refused start; see {@link NativeDisplay#requireBindablePath}.</p>
+     *
+     * <p>Whatever it bound before that throw is closed on the way out, because the set is not
+     * published until the loop finishes and {@link #release()} can only free what it can see. The
+     * screen that trips the length check is by definition not the first one, so there is always
+     * something bound behind it: listening fds, inodes under run/, and an accept thread each --
+     * parked in accept(2) forever, since only closing the fd it waits on ends one.</p>
      */
     boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
                            @NonNull List<String> nativeScreens) {
@@ -117,6 +124,29 @@ final class NativeDisplayInputBridge {
         }
         inputClosed = false;
         var built = new LinkedHashMap<String, Slot>();
+        boolean allListening;
+        try {
+            allListening = bindAll(vmId, touchScreens, nativeScreens, built);
+        } catch (RuntimeException e) {
+            closeSlots(built.values());
+            throw e;
+        }
+        // Published whole, so a write either finds the set this start built or finds nothing.
+        slots = built;
+        return allListening;
+    }
+
+    /**
+     * Binds every slot the config asks for into [built]. Returns false if any bind failed.
+     *
+     * <p>A bind that fails is left behind rather than unwinding the rest: the VM still starts, with
+     * that one device missing, which is the behaviour the caller's warning describes. A path the
+     * kernel cannot hold is the other kind of failure and throws out of here -- see
+     * {@link #startListening}, which is where what is already in [built] is disposed of.</p>
+     */
+    private boolean bindAll(@NonNull String vmId, @NonNull List<String> touchScreens,
+                            @NonNull List<String> nativeScreens,
+                            @NonNull Map<String, Slot> built) {
         boolean allListening = true;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
             for (var screenId : screensFor(ch, touchScreens, nativeScreens)) {
@@ -138,7 +168,6 @@ final class NativeDisplayInputBridge {
                 startInputAcceptThread(slot);
             }
         }
-        slots = built;
         return allListening;
     }
 
@@ -239,11 +268,25 @@ final class NativeDisplayInputBridge {
 
     /** Closes the input server fds we opened and unlinks the inodes we own. */
     void release() {
-        inputClosed = true; // stop accept loops; closing the server fd below unblocks nativeUnixAccept
         var live = slots;
         slots = null;
-        if (live == null) return;
-        for (var slot : live.values()) {
+        // Called unconditionally rather than under a null check, because latching inputClosed is
+        // half of what it does and a release with nothing published still has to do that half.
+        closeSlots(live == null ? List.of() : live.values());
+    }
+
+    /**
+     * Gives back everything [live] holds: the accepted peer, the listening fd, and the inode.
+     *
+     * <p>Latching {@code inputClosed} first is not tidiness but the order the accept loop needs.
+     * Closing a server fd is what unblocks the thread parked in accept(2) on it, and that thread
+     * then reads the flag to decide whether the failure means "we are shutting down" or "retry in
+     * 200 ms". Closing first would leave it retrying accept on a closed fd for the life of the
+     * daemon.</p>
+     */
+    private void closeSlots(@NonNull Collection<Slot> live) {
+        inputClosed = true;
+        for (var slot : live) {
             synchronized (slot.lock) {
                 if (slot.peer != null) {
                     slot.peer.close();

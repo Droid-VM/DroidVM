@@ -1437,6 +1437,10 @@
     <string name="vm_hugepage_short_message">大页保留区目前剩 %1$d MB，这台虚拟机大约需要 %2$d MB，差 %3$d MB。\n\n上一台虚拟机结束后，保留区通常两秒左右就会补回来。现在就开机的话，Hypervisor 只能改拿普通内存，而那必须先从 CMA 迁移出来；在内存吃紧的手机上，这一步曾造成整机停住数分钟、甚至直接重启。\n\n通常等一下再开就好了。</string>
     <string name="vm_hugepage_short_settings">前往大页设置</string>
     <string name="vm_hugepage_short_start_anyway">仍要启动</string>
+    <string name="vm_lend_mthp_refused_title">此内核无法以 256 MB 分块出借</string>
+    <string name="vm_lend_mthp_refused_message">此虚拟机以 256 MB 分块把客户机内存交给虚拟化层，而 6.1 内核的资源管理器会在每个分块到达时立即提交，不会按需分页。交出几个分块后资源耗尽，虚拟机停在 GH_VM_START，只报出 \"failed to initialize virtual machine\"\u2014\u2014一句指向不了任何地方的信息。\n\n单次预分配会把整段区域一次交出，这正是此内核需要的方式。虚拟机会带着另一种设置，通常是因为从 6.6 内核手机导出的软件包导入而来：那里的分块按需分页，256 MB 反而更合适。</string>
+    <string name="vm_lend_mthp_refused_fix">改为单次并保存</string>
+    <string name="vm_lend_mthp_refused_start_anyway">仍要启动</string>
 
     <string name="create_vm_category_peripheral">外设</string>
     <string name="edit_vm_peripheral_empty">没有外设</string>
