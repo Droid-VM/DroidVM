@@ -104,22 +104,6 @@ public final class H264ConsolePipeline {
         @Nullable
         volatile H264ConsoleDecoder decoder;
 
-        /**
-         * The Annex-B bytes of the most recent reset-flagged rect at this geometry -- SPS, PPS and
-         * an IDR concatenated -- or null before one has been seen.
-         *
-         * <p>This is the whole reason a black screen was possible. The server sends the parameter
-         * sets exactly once, on the reset-flagged rect that starts the stream, and never again on
-         * the bare IDRs that follow; a decoder attached even one frame later than that rect --
-         * which is the ordinary case on a cold open, because the TextureView's SurfaceTexture is
-         * created a frame after the view is made visible -- would never see an SPS and would buffer
-         * every later frame forever with nothing to decode them against. Held here so that a
-         * decoder standing up after the sync rect can still be handed it.</p>
-         *
-         * <p>Written and read only on the message-loop thread; see {@link #submitStreamRect}.</p>
-         */
-        @Nullable
-        byte[] syncFrame;
         /** Whether this generation's decoder has been fed yet. Message-loop thread only. */
         boolean decoderFed;
 
@@ -132,6 +116,17 @@ public final class H264ConsolePipeline {
     private final TextureView view;
     private final Handler main;
     private final Listener listener;
+    /**
+     * Where the rect a decoder can start on is kept.
+     *
+     * <p>Not owned here, and deliberately not: the sync frame has to outlive this object. The
+     * server sends the parameter sets exactly once per client, on the reset-flagged rect that
+     * starts its stream, and a pipeline is built and thrown away several times over the life of one
+     * connection -- the presentation console builds its first one only when a display has been
+     * chosen, and another every time that window is rebuilt. A cache scoped to the pipeline would
+     * be empty in exactly the case it exists for. See {@link H264SyncFrameCache}.</p>
+     */
+    private final H264SyncFrameCache syncFrames;
 
     /** Written on the main thread; read by the message loop to find out what it may feed. */
     @Nullable
@@ -152,10 +147,12 @@ public final class H264ConsolePipeline {
     private boolean stopping;
 
     public H264ConsolePipeline(@NonNull TextureView view, @NonNull Handler main,
-                               @NonNull Listener listener) {
+                               @NonNull Listener listener,
+                               @NonNull H264SyncFrameCache syncFrames) {
         this.view = view;
         this.main = main;
         this.listener = listener;
+        this.syncFrames = syncFrames;
     }
 
     public boolean isLive() {
@@ -202,7 +199,7 @@ public final class H264ConsolePipeline {
         // later. The reset flag is exactly what marks the rect that carries the parameter sets.
         // decoderFed is not disturbed: it is per-generation, and a mid-stream reset of a decoder
         // that has already been fed must go through the reset path in feed(), not the prime path.
-        if (rect.resetsDecoder()) gen.syncFrame = rect.annexB;
+        if (rect.resetsDecoder()) syncFrames.remember(width, height, rect.annexB);
         try {
             if (!gen.settled.await(CONFIGURE_WAIT_MS, TimeUnit.MILLISECONDS)) {
                 Log.w(TAG, "the main thread did not answer a new stream geometry in time");
@@ -215,7 +212,7 @@ public final class H264ConsolePipeline {
         var decoder = gen.decoder;
         // Null is the ordinary "there is no window for this picture" -- a backgrounded console, or
         // one whose presentation window has not been built yet. The frame is dropped rather than
-        // held, but the sync frame it may have carried is not: it is in gen.syncFrame, and the next
+        // held, but the sync frame it may have carried is not: the cache kept it, and the next
         // frame to reach a live decoder replays it first.
         if (decoder == null || generation != gen) return;
         try {
@@ -231,13 +228,17 @@ public final class H264ConsolePipeline {
      *
      * <p>The priming is what closes the black-screen hole. When a decoder is fed for the first
      * time it may be one that stood up after the sync rect went by -- so if this rect is not itself
-     * a sync (it does not reset), the cached {@link Generation#syncFrame} goes in ahead of it, and
+     * a sync (it does not reset), the cached sync frame for this geometry goes in ahead of it, and
      * the decoder gets its SPS/PPS before the delta that would otherwise mean nothing. A rect that
      * is a sync needs none of this: it carries its own parameter sets, and a decoder this fresh has
      * no prior context to reset.</p>
      *
-     * <p>All on the message-loop thread, so {@code decoderFed} and {@code syncFrame} need no
-     * guarding: the one thread that reads them is the one that writes them.</p>
+     * <p>The cache is read by geometry rather than per generation because the decoder standing up
+     * here may be the first one this connection ever had -- the sync rect can predate the pipeline
+     * itself, not merely this generation of it.</p>
+     *
+     * <p>All on the message-loop thread, so {@code decoderFed} and the cache need no guarding: the
+     * one thread that reads them is the one that writes them.</p>
      */
     private void feed(@NonNull Generation gen, @NonNull H264ConsoleDecoder decoder,
                       @NonNull H264RectProtocol.StreamRect rect) throws IOException {
@@ -247,7 +248,8 @@ public final class H264ConsolePipeline {
                 decoder.submit(rect.annexB);
                 return;
             }
-            if (gen.syncFrame != null) decoder.submit(gen.syncFrame);
+            var sync = syncFrames.forGeometry(gen.width, gen.height);
+            if (sync != null) decoder.submit(sync);
             decoder.submit(rect.annexB);
             return;
         }

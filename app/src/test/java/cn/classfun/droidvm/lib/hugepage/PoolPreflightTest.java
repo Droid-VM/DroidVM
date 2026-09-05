@@ -4,6 +4,8 @@
 package cn.classfun.droidvm.lib.hugepage;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -72,5 +74,46 @@ public final class PoolPreflightTest {
         item.set("gpu_guest_prealloc_mb", 512L);
         assertEquals(512, GuestPoolSizing.bootGuestPreallocMb(item));
         assertEquals(5632, neededMb(item));
+    }
+
+    /**
+     * The reserve is Gunyah's, and asking about it anywhere else is a delay with no failure behind
+     * it. Every case below names its hypervisor rather than leaving it to be resolved, because
+     * resolving one reads the device nodes and the answer would then be this build machine's.
+     */
+    private static DataItem on(String backend, String hypervisor) {
+        var item = vm("protected_without_firmware", "gpu_virglrenderer", "native", true);
+        item.set("backend", backend);
+        item.set("hypervisor", hypervisor);
+        return item;
+    }
+
+    @Test
+    public void aGunyahVmDrawsOnTheReserve() {
+        assertTrue(PoolPreflight.appliesTo(on("crosvm", "gunyah")));
+    }
+
+    @Test
+    public void theBackendIsNotWhatDecidesIt() {
+        // QEMU runs on Gunyah too, and its guest RAM is lent the same way.
+        assertTrue(PoolPreflight.appliesTo(on("qemu", "gunyah")));
+    }
+
+    @Test
+    public void everyOtherHypervisorIsNoneOfItsBusiness() {
+        // KVM and GenieZone hand no memory away, and a TCG guest is ordinary process memory. A
+        // prompt or a ten-second wait for a pool none of them touch is the bug this gate closes.
+        assertFalse(PoolPreflight.appliesTo(on("crosvm", "kvm")));
+        assertFalse(PoolPreflight.appliesTo(on("crosvm", "geniezone")));
+        assertFalse(PoolPreflight.appliesTo(on("qemu", "soft")));
+    }
+
+    @Test
+    public void aVmThatDoesNotApplyIsAlwaysEnough() {
+        // check() short-circuits before reading sysfs, so this holds on a phone whose reserve is
+        // loaded and empty as much as on a machine that has never heard of the module.
+        var status = PoolPreflight.check(on("qemu", "soft"));
+        assertFalse(status.applicable);
+        assertTrue(status.isEnough());
     }
 }

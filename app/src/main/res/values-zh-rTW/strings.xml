@@ -1437,6 +1437,10 @@
     <string name="vm_hugepage_short_message">大頁保留區目前剩 %1$d MB，這台虛擬機大約需要 %2$d MB，差 %3$d MB。\n\n上一台虛擬機結束後，保留區通常兩秒左右就會補回來。現在就開機的話，Hypervisor 只能改拿一般記憶體，而那必須先從 CMA 搬出來；在記憶體吃緊的手機上，這一步曾造成整台停住數分鐘、甚至直接重開機。\n\n通常等一下再開就好了。</string>
     <string name="vm_hugepage_short_settings">前往大頁設定</string>
     <string name="vm_hugepage_short_start_anyway">仍要啟動</string>
+    <string name="vm_lend_mthp_refused_title">此核心無法以 256 MB 分塊出借</string>
+    <string name="vm_lend_mthp_refused_message">此虛擬機以 256 MB 分塊把客體記憶體交給虛擬化層，而 6.1 核心的資源管理器會在每個分塊抵達時立即提交，不會按需分頁。交出幾個分塊後資源就用盡，虛擬機停在 GH_VM_START，只報出 \"failed to initialize virtual machine\"\u2014\u2014一句指不出任何方向的訊息。\n\n單次預先配置會把整段區域一次交出，這正是此核心要的方式。虛擬機會帶著另一種設定，通常是因為從 6.6 核心手機匯出的軟體包匯入而來：那裡的分塊按需分頁，256 MB 反而比較合適。</string>
+    <string name="vm_lend_mthp_refused_fix">改為單次並儲存</string>
+    <string name="vm_lend_mthp_refused_start_anyway">仍要啟動</string>
 
     <string name="create_vm_category_peripheral">外設</string>
     <string name="edit_vm_peripheral_empty">沒有外設</string>

@@ -59,6 +59,7 @@ import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ConsolePipeline;
 import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy;
 import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264RectProtocol;
+import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264SyncFrameCache;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
 
 public abstract class BaseVncActivity extends AppCompatActivity implements ImeInsetsExempt {
@@ -127,6 +128,16 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     private volatile H264ConsolePipeline h264;
     /** What this console is doing about H.264 and why. See {@link H264ProbePolicy}. */
     private final H264ProbePolicy h264Probe = new H264ProbePolicy();
+    /**
+     * The rect a decoder can start on, held for the connection rather than for the pipeline.
+     *
+     * <p>Here rather than inside {@link H264ConsolePipeline} because it has to survive one: this
+     * console's pipeline is built when there is a view to draw into, which on the presentation
+     * console is after a display has been chosen and again after every window rebuild, while the
+     * stream -- and the one reset-flagged rect that carries its parameter sets -- rides a
+     * connection that started earlier and does not stop for any of it.</p>
+     */
+    private final H264SyncFrameCache syncFrames = new H264SyncFrameCache();
     private final Runnable h264Tick = this::tickH264;
     /** What {@link #setStatus} last put in the status line, and the note appended to it. */
     private String statusText = "";
@@ -370,7 +381,17 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
             // than reading a clock of their own, which is what lets the schedule be tested.
             h264Probe.onStreamRect(SystemClock.elapsedRealtime());
             var pipeline = h264;
-            if (pipeline != null) pipeline.submitStreamRect(rect, width, height);
+            if (pipeline != null) {
+                pipeline.submitStreamRect(rect, width, height);
+                return;
+            }
+            // No pipeline yet, which for the presentation console is the ordinary state until a
+            // display has been chosen -- the connection does not wait for that choice, and the rect
+            // that starts the stream is sent once, on joining. Dropping it outright is what left
+            // that console showing nothing: the bare IDRs that follow carry no parameter sets, and
+            // nothing on the wire asks for another. Kept here instead, and the first pipeline built
+            // afterwards primes its decoder with it.
+            syncFrames.rememberIfSync(rect, width, height);
         }
 
         @Override
@@ -457,6 +478,11 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         boolean wasRunning = running;
         running = false;
         h264Probe.onDisconnected();
+        // The sync frame belonged to this connection's stream. The next connection joins the stream
+        // again and is sent its own; keeping this one would prime a decoder with the parameter sets
+        // of a stream nobody is sending any more. Cleared from this thread because this is the
+        // thread that writes it -- the loop above is the only other place it is touched.
+        syncFrames.clear();
         Log.i(TAG, "message loop ended");
         if (wasRunning) {
             mainHandler.post(this::scheduleAutoReconnect);
@@ -541,7 +567,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         if (h264View == view) return;
         stopH264();
         h264View = view;
-        h264 = view == null ? null : new H264ConsolePipeline(view, mainHandler, new H264Listener());
+        h264 = view == null ? null
+            : new H264ConsolePipeline(view, mainHandler, new H264Listener(), syncFrames);
     }
 
     /**

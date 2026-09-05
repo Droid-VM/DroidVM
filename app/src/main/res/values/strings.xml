@@ -1476,6 +1476,10 @@
     <string name="vm_hugepage_short_message">The huge-page reserve has %1$d MB free, but this VM needs about %2$d MB &#8212; %3$d MB short.\n\nThe reserve normally refills a couple of seconds after another VM exits. Starting now makes the hypervisor take ordinary memory instead, which it has to migrate out of CMA first; on a phone with nothing spare that has stalled the whole system for minutes, or rebooted it.\n\nWaiting a moment and starting again usually clears it.</string>
     <string name="vm_hugepage_short_settings">Huge-page settings</string>
     <string name="vm_hugepage_short_start_anyway">Start anyway</string>
+    <string name="vm_lend_mthp_refused_title">This kernel cannot lend in 256 MB parcels</string>
+    <string name="vm_lend_mthp_refused_message">This VM hands its guest RAM to the hypervisor in 256 MB parcels, and the resource manager on a 6.1 kernel commits every parcel as it arrives instead of paging it in on demand. It runs out a few parcels in, and the VM stops at GH_VM_START with \"failed to initialize virtual machine\" \u2014 a message that points at nothing.\n\nSingle-parcel preallocation hands the whole region over at once, which is what this kernel wants. A VM usually arrives set the other way by being imported from a package exported on a 6.6 phone, where parcels are paged in on demand and 256 MB ones are the better choice.</string>
+    <string name="vm_lend_mthp_refused_fix">Use single parcel and save</string>
+    <string name="vm_lend_mthp_refused_start_anyway">Start anyway</string>
 
     <string name="create_vm_category_peripheral">Peripherals</string>
     <string name="edit_vm_peripheral_empty">No peripherals</string>
