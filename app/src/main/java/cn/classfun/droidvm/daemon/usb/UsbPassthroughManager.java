@@ -9,6 +9,8 @@ import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
+import android.net.LocalSocket;
+import android.net.LocalSocketAddress;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -23,6 +25,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -53,7 +56,9 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * rules change -- and never when a VM goes down, so a stop releases devices but takes nothing.
  * The deciding is the {@link UsbRuleEngine}'s and happens under the same lock as the manual
  * bookkeeping; the attaching goes through the same path as a manual attach, so both kinds share
- * one record and one set of conflicts.</p>
+ * one record and one set of conflicts. When a pass runs is {@link UsbRulePassTiming}'s: a VM
+ * is RUNNING before its control socket listens, so the pass for that edge waits for the socket,
+ * and a pass that could not reach the VMM comes back rather than blame the device.</p>
  */
 public final class UsbPassthroughManager {
     private static final String TAG = "UsbPassthroughManager";
@@ -142,8 +147,8 @@ public final class UsbPassthroughManager {
     /**
      * Loads the rules and starts the inventory watch. Called once, from the server, and never
      * throws. A VM that is already RUNNING by now reached that state before anyone was listening
-     * and before there was an inventory to pick from, so one pass is queued for it -- the same
-     * pass its RUNNING edge would have run.
+     * and before there was an inventory to pick from, so the pass its RUNNING edge would have
+     * queued is queued here instead.
      */
     public void start(@NonNull Consumer<JSONObject> broadcaster) {
         this.broadcaster = broadcaster;
@@ -163,7 +168,10 @@ public final class UsbPassthroughManager {
         } catch (Exception e) {
             Log.w(TAG, "Failed to start the USB host inventory", e);
         }
-        queueAutoAttach("start");
+        // autoUp spawned these moments ago, so they get the same wait their edge would have.
+        context.getVMs().forEach((id, inst) -> {
+            if (inst.getState() == VMState.RUNNING) queueAutoAttachWhenReady(inst);
+        });
     }
 
     /**
@@ -298,16 +306,24 @@ public final class UsbPassthroughManager {
 
     /** Hands the device named by [sysfs] to [vm] and returns the guest port it landed on. */
     public int attach(@NonNull VMInstance vm, @NonNull String sysfs) {
-        return attach(vm, sysfs, null);
+        try {
+            return attach(vm, sysfs, null);
+        } catch (UsbVmmUnreachableException e) {
+            // To a caller this is a refusal like any other; only a rule pass acts on the difference.
+            throw new RequestException(fmt("crosvm usb attach failed: %s", e.getMessage()));
+        }
     }
 
     /**
      * The one attach path. [rule] is the decision that asked for this, or null when the user did;
      * it only goes on the record, so a device attached by rule and one attached by hand are the
      * same thing to every release, conflict and listing.
+     *
+     * @throws UsbVmmUnreachableException when the CLI never reached the VMM: the device was not
+     *                                    touched and nothing is known against it.
      */
     private int attach(@NonNull VMInstance vm, @NonNull String sysfs,
-                       @Nullable UsbRuleEngine.Decision rule) {
+                       @Nullable UsbRuleEngine.Decision rule) throws UsbVmmUnreachableException {
         if (vm.getState() != VMState.RUNNING)
             throw new RequestException("VM is not running");
         if (!vm.item.optBoolean("usb", false))
@@ -343,6 +359,10 @@ public final class UsbPassthroughManager {
         // long as the slowest host driver needs to let go.
         try {
             port = control.attach(device.node);
+        } catch (UsbVmmUnreachableException e) {
+            // The CLI opens the node before it connects and claims nothing until the VMM has
+            // the fd, so the host still holds every interface and there is nothing to restore.
+            throw e;
         } catch (UsbControlException e) {
             // A refusal can come after the VMM has already claimed part of the device, and it
             // never hands those interfaces back on its own. No record exists to release them
@@ -507,7 +527,7 @@ public final class UsbPassthroughManager {
             synchronized (lock) {
                 engine.forgetFailuresFor(vm.getId().toString());
             }
-            queueAutoAttach(fmt("VM %s running", vm.getName()));
+            queueAutoAttachWhenReady(vm);
             return;
         }
         if (state != VMState.STOPPING && state != VMState.STOPPED && state != VMState.REBOOTING)
@@ -577,7 +597,7 @@ public final class UsbPassthroughManager {
         synchronized (lock) {
             if (pendingAuto != null) pendingAuto.cancel(false);
             try {
-                pendingAuto = worker.schedule(() -> runAutoAttachQuietly("plug"),
+                pendingAuto = worker.schedule(() -> runPassQuietly("plug"),
                     AUTO_ATTACH_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
             } catch (RejectedExecutionException e) {
                 // shutdown() won the race; nothing is going to be attached any more.
@@ -586,19 +606,55 @@ public final class UsbPassthroughManager {
         }
     }
 
-    /** Queues a rule pass behind whatever the worker is doing; never blocks the caller. */
-    private void queueAutoAttach(@NonNull String reason) {
+    /**
+     * The pass a VM's RUNNING edge owes, once the VM can take part in it. RUNNING is set the
+     * moment the VMM is spawned (see VMInstance), seconds before its control loop listens, and
+     * a pass run at the edge had every attach fail on the connect. So the pass waits: a probe a
+     * second on the worker, for up to a minute, dropped if the VM leaves RUNNING meanwhile. A
+     * VM that never becomes ready is skipped with a warning -- the next trigger will find it.
+     */
+    private void queueAutoAttachWhenReady(@NonNull VMInstance vm) {
+        var reason = fmt("VM %s running", vm.getName());
+        UsbRulePassTiming.whenReady(this::schedule,
+            () -> vm.getState() == VMState.RUNNING,
+            () -> controlSocketReady(vm),
+            () -> runPassQuietly(reason),
+            () -> Log.i(TAG, fmt("USB rules pass (%s) dropped: VM left RUNNING", reason)),
+            () -> Log.w(TAG, fmt("USB rules pass (%s) skipped: control socket not ready after %d s",
+                reason, UsbRulePassTiming.READY_POLL_MS * UsbRulePassTiming.READY_MAX_POLLS / 1000)),
+            UsbRulePassTiming.READY_POLL_MS, UsbRulePassTiming.READY_MAX_POLLS);
+    }
+
+    /**
+     * Whether [vm]'s control socket accepts a connection, which is the VMM's control loop being
+     * up. Connecting and closing is all it takes: crosvm drops a tube that goes away without a
+     * request. Nothing is said over it, so this is the same probe for every backend that has a
+     * socket at all.
+     */
+    private static boolean controlSocketReady(@NonNull VMInstance vm) {
+        var path = vm.getControlSocketPath();
+        if (path == null) return false;
+        try (var socket = new LocalSocket(LocalSocket.SOCKET_SEQPACKET)) {
+            socket.connect(new LocalSocketAddress(path, LocalSocketAddress.Namespace.FILESYSTEM));
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** The worker as a scheduler; a task the shutting-down worker refuses has nothing to attach to. */
+    private void schedule(@NonNull Runnable task, long delayMs) {
         try {
-            worker.execute(() -> runAutoAttachQuietly(reason));
+            worker.schedule(task, delayMs, TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException e) {
-            Log.i(TAG, fmt("USB rules not run (%s): shutting down", reason));
+            Log.i(TAG, "USB rules task dropped: shutting down");
         }
     }
 
     /** Runs a rule pass on the worker and waits for it: the caller wants the count. */
     private int runAutoAttachAndWait(@NonNull String reason) {
         try {
-            return worker.submit(() -> runAutoAttach(reason)).get();
+            return worker.submit(() -> runPass(reason)).get();
         } catch (RejectedExecutionException e) {
             return 0;
         } catch (InterruptedException e) {
@@ -610,34 +666,78 @@ public final class UsbPassthroughManager {
         }
     }
 
-    private void runAutoAttachQuietly(@NonNull String reason) {
+    /**
+     * One pass, and if it found a VMM unreachable, up to {@link UsbRulePassTiming#MAX_RETRIES}
+     * more a couple of seconds apart -- the socket was not listening yet, and blaming the device
+     * would keep it on the host until the next trigger. Returns what the first pass attached.
+     */
+    private int runPass(@NonNull String reason) {
+        var result = runAutoAttach(reason);
+        if (result.unreachable) {
+            var again = fmt("%s, retry", reason);
+            UsbRulePassTiming.retry(this::schedule, () -> {
+                var r = runAutoAttachOrNull(again);
+                return r == null || !r.unreachable;
+            }, UsbRulePassTiming.RETRY_DELAY_MS, UsbRulePassTiming.MAX_RETRIES);
+        }
+        return result.applied;
+    }
+
+    private void runPassQuietly(@NonNull String reason) {
         try {
-            runAutoAttach(reason);
+            runPass(reason);
         } catch (Exception e) {
             Log.w(TAG, fmt("USB rules pass (%s) failed", reason), e);
+        }
+    }
+
+    /** A pass that threw is over, not one to try again. */
+    @Nullable
+    private PassResult runAutoAttachOrNull(@NonNull String reason) {
+        try {
+            return runAutoAttach(reason);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("USB rules pass (%s) failed", reason), e);
+            return null;
+        }
+    }
+
+    /** What one pass did, and whether a VMM it needed was not there to be asked. */
+    private static final class PassResult {
+        final int applied;
+        final boolean unreachable;
+
+        PassResult(int applied, boolean unreachable) {
+            this.applied = applied;
+            this.unreachable = unreachable;
         }
     }
 
     /**
      * One pass of the rules over everything plugged in, unclaimed and not held. Deciding is done
      * under the lock against the inventory's snapshot; the attaches themselves run outside it,
-     * one after another, through the same path a manual attach takes. Returns how many devices
-     * were attached. A device whose attach fails is marked for the VM it failed for, so the next
-     * pass passes that rule over instead of failing the same way again -- until the device is
-     * replugged or that VM next comes up.
+     * one after another, through the same path a manual attach takes. A device whose attach
+     * fails is marked for the VM it failed for, so the next pass passes that rule over instead
+     * of failing the same way again -- until the device is replugged or that VM next comes up.
+     * The exception is a VMM the CLI could not reach: that says nothing about the device, so
+     * nothing is remembered against it, the VM's other devices are left for the rerun rather
+     * than fail one by one, and the result says the pass should come back.
      */
-    private int runAutoAttach(@NonNull String reason) {
+    @NonNull
+    private PassResult runAutoAttach(@NonNull String reason) {
         List<UsbRuleEngine.Decision> plan;
         synchronized (lock) {
-            if (engine.getRules().isEmpty()) return 0;
+            if (engine.getRules().isEmpty()) return new PassResult(0, false);
             var plugged = new ArrayList<UsbRuleEngine.Device>();
             for (var device : inventory.snapshot()) plugged.add(UsbRuleEngine.Device.of(device));
             plan = engine.plan(plugged, attachments::containsKey, this::stateOf);
         }
         var applied = 0;
+        var unreachable = new HashSet<String>();
         for (var decision : plan) {
             // A null VM is the rule saying the host keeps it, which takes no action.
             if (decision.vm == null) continue;
+            if (unreachable.contains(decision.vm)) continue;
             var inst = context.getVMs().findById(decision.vm);
             if (inst == null) continue;
             var device = decision.device;
@@ -646,6 +746,10 @@ public final class UsbPassthroughManager {
                 attach(inst, device.sysfs, decision);
                 applied++;
                 broadcastAuto("usb_auto_attached", inst, decision, null);
+            } catch (UsbVmmUnreachableException e) {
+                unreachable.add(decision.vm);
+                Log.w(TAG, fmt("Auto attach of USB %s (%s) to VM %s by rule %s: %s; will retry",
+                    device.sysfs, device.id, inst.getName(), where, e.getMessage()));
             } catch (Exception e) {
                 synchronized (lock) {
                     engine.markFailed(device.sysfs, decision.vm);
@@ -655,9 +759,9 @@ public final class UsbPassthroughManager {
                 broadcastAuto("usb_auto_failed", inst, decision, e.getMessage());
             }
         }
-        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached",
-            reason, plan.size(), applied));
-        return applied;
+        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached%s",
+            reason, plan.size(), applied, unreachable.isEmpty() ? "" : ", VMM unreachable"));
+        return new PassResult(applied, !unreachable.isEmpty());
     }
 
     private void broadcastAuto(@NonNull String event, @NonNull VMInstance vm,

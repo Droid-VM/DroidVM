@@ -34,6 +34,8 @@ public final class CrosvmUsbControl {
     private static final long TIMEOUT_SECONDS = 15;
     /** How long a killed child gets to be reaped before we stop waiting for it. */
     private static final long TIMEOUT_KILL_SECONDS = 2;
+    /** What vm_control prints when the CLI cannot reach the control socket at all. */
+    private static final String CONNECT_FAILED = "failed to connect to socket";
 
     /** One line of {@code crosvm usb list}. */
     public static final class Entry {
@@ -100,11 +102,23 @@ public final class CrosvmUsbControl {
 
     /**
      * A CLI that died before printing has no refusal token to report, and an empty token would
-     * name a failure that never happened; what went wrong is on stderr instead.
+     * name a failure that never happened; what went wrong is on stderr instead. One such
+     * failure is told apart: the CLI never reached the VMM, which is about the socket and not
+     * about the device.
      */
     private static void requireOutput(@NonNull Output output) throws IOException {
-        if (output.stdout.trim().isEmpty())
-            throw new IOException(fmt("crosvm usb printed nothing; stderr: %s", output.stderr));
+        if (!output.stdout.trim().isEmpty()) return;
+        if (isUnreachable(output.stderr))
+            throw new UsbVmmUnreachableException(output.stderr);
+        throw new IOException(fmt("crosvm usb printed nothing; stderr: %s", output.stderr));
+    }
+
+    /**
+     * Whether [stderr] is the CLI saying it could not connect to the control socket -- the VMM
+     * not listening yet, or gone -- rather than anything the VMM or the device answered.
+     */
+    static boolean isUnreachable(@NonNull String stderr) {
+        return stderr.contains(CONNECT_FAILED);
     }
 
     @NonNull

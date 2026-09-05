@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.daemon.usb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
@@ -51,6 +52,20 @@ public final class CrosvmUsbControlParseTest {
         // report a VM with nothing attached.
         assertThrows(UsbControlException.class,
             () -> CrosvmUsbControl.parseList("devices 1 090c"));
+    }
+
+    @Test
+    public void aConnectFailureIsTheVmmBeingUnreachable() {
+        // What the CLI wrote, on device, when run at the RUNNING edge: the VMM was not up yet.
+        assertTrue(CrosvmUsbControl.isUnreachable(
+            "[ERROR vm_control::sys::linux] failed to connect to socket at "
+                + "\"/data/data/cn.classfun.droidvm/run/vm/crosvm.sock\": "
+                + "Connection refused (os error 111)\n"
+                + "exiting with error 1: usb subcommand failed"));
+        // Anything the VMM or the device answered is not that.
+        assertFalse(CrosvmUsbControl.isUnreachable("exiting with error 1: usb subcommand failed"));
+        assertFalse(CrosvmUsbControl.isUnreachable("no_available_port"));
+        assertFalse(CrosvmUsbControl.isUnreachable(""));
     }
 
     @Test
