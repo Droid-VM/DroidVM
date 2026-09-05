@@ -23,8 +23,11 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * <p>The flags are keyed by sysfs name and mean the device instance at that address: {@code held}
  * is set by a manual detach and says the user took the device back, so no trigger touches it
  * again; {@code failedFor} is the VM an attach failed for, so a rule that keeps failing is not
- * retried on every plug and every VM start. Both last until the inventory sees the node go, and
- * only then -- a rules save does not clear them.</p>
+ * retried on every plug. A hold lasts until the inventory sees the node go, and only then -- a
+ * rules save does not clear it. A failure is about one run of one VM: it also goes when that VM
+ * next reaches RUNNING, because the attach that failed may have failed for that instance alone
+ * -- a control socket not yet answering, a VM that went down between the decision and the CLI
+ * -- and a reboot would otherwise release the device and never take it back.</p>
  */
 public final class UsbRuleEngine {
     /** As much of a host device as a rule can see. */
@@ -90,9 +93,23 @@ public final class UsbRuleEngine {
         flags.computeIfAbsent(sysfs, k -> new Flags()).held = true;
     }
 
-    /** An attach to [vm] failed; do not offer that VM this device again until it is replugged. */
+    /**
+     * An attach to [vm] failed; do not offer that VM this device again until the device is
+     * replugged or the VM comes up again.
+     */
     public void markFailed(@NonNull String sysfs, @NonNull String vm) {
         flags.computeIfAbsent(sysfs, k -> new Flags()).failedFor = vm;
+    }
+
+    /** [vm] is a fresh instance; whatever failed against the previous one may work now. */
+    public void forgetFailuresFor(@NonNull String vm) {
+        var it = flags.entrySet().iterator();
+        while (it.hasNext()) {
+            var f = it.next().getValue();
+            if (!vm.equals(f.failedFor)) continue;
+            f.failedFor = null;
+            if (!f.held) it.remove();
+        }
     }
 
     /** The node is gone; whatever instance was there is forgotten, flags and all. */

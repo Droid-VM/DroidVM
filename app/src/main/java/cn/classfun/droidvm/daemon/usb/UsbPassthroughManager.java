@@ -501,6 +501,12 @@ public final class UsbPassthroughManager {
      */
     public void onVmState(@NonNull VMInstance vm, @NonNull VMState state) {
         if (state == VMState.RUNNING) {
+            // Cleared here, on the transition thread, so the queued pass sees it: a failure
+            // was against the instance that is gone, and this is the first moment there is a
+            // new one to try. Holds stay -- those are the user's, not the VM's.
+            synchronized (lock) {
+                engine.forgetFailuresFor(vm.getId().toString());
+            }
             queueAutoAttach(fmt("VM %s running", vm.getName()));
             return;
         }
@@ -617,7 +623,8 @@ public final class UsbPassthroughManager {
      * under the lock against the inventory's snapshot; the attaches themselves run outside it,
      * one after another, through the same path a manual attach takes. Returns how many devices
      * were attached. A device whose attach fails is marked for the VM it failed for, so the next
-     * pass passes that rule over instead of failing the same way again.
+     * pass passes that rule over instead of failing the same way again -- until the device is
+     * replugged or that VM next comes up.
      */
     private int runAutoAttach(@NonNull String reason) {
         List<UsbRuleEngine.Decision> plan;

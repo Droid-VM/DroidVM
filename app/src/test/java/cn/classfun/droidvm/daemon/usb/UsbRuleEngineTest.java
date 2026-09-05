@@ -213,11 +213,35 @@ public final class UsbRuleEngineTest {
         assertDecision(engine.decide(STICK, allRunning()), STICK, Layer.ANY, 1, VM_B);
         // The failure is the stick's alone.
         assertDecision(engine.decide(MOUSE, allRunning()), MOUSE, Layer.ANY, 0, VM_A);
-        // Failing for the only VM leaves the device where it is.
+        // Failing for the only VM leaves the device where it is; a rules save changes nothing.
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
         assertNull(engine.decide(STICK, allRunning()));
+        // Unplugging clears it.
         engine.forget(STICK.sysfs);
         assertDecision(engine.decide(STICK, allRunning()), STICK, Layer.ANY, 0, VM_A);
+    }
+
+    @Test
+    public void aFailureIsForgottenWhenThatVmComesUpAgain() {
+        // The reboot case: REBOOTING released the stick, RUNNING re-matched it, and the attach
+        // failed once against the fresh instance. The next RUNNING edge must try again.
+        var engine = engine(rules(Layer.ANY, List.of(
+            rule(null, null, VM_A),
+            rule(null, null, VM_B)
+        )));
+        engine.markFailed(STICK.sysfs, VM_A);
+        engine.markFailed(MOUSE.sysfs, VM_B);
+        assertDecision(engine.decide(STICK, allRunning()), STICK, Layer.ANY, 1, VM_B);
+
+        engine.forgetFailuresFor(VM_A);
+        assertDecision(engine.decide(STICK, allRunning()), STICK, Layer.ANY, 0, VM_A);
+        // Only A's failures went; the mouse still remembers B.
+        engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_B))));
+        assertNull(engine.decide(MOUSE, allRunning()));
+        // A hold is the user's and outlives any VM start.
+        engine.hold(STICK.sysfs);
+        engine.forgetFailuresFor(VM_A);
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning()).isEmpty());
     }
 
     @Test
