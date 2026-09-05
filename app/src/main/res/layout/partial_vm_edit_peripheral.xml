@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical">
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_peripheral">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_peripherals"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_peripheral_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_peripheral_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_serial">
+
+        <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+            android:id="@+id/list_serial_ports"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/edit_vm_serial_empty"
+            android:icon="@drawable/ic_add"
+            android:text="@string/edit_vm_serial_add" />
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

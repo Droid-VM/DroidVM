@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/presentation_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black">
@@ -11,5 +12,21 @@
         android:layout_gravity="center"
         android:contentDescription="@string/vnc_display_title"
         android:scaleType="fitCenter" />
+
+    <!--
+        The H.264 decoder's output, over the RFB canvas and showing the same screen. Unlike the
+        phone console's, this one is not laid out by a viewport controller (there is no zoom, no
+        pan and no chrome on a presentation display), so it is sized to the stream's aspect by
+        DisplayPresentation instead, which is what the ImageView above gets for free from
+        fitCenter. Not clickable and not focusable: this window carries no input at all. Input
+        arrives through the console activity's touchpad on the phone.
+    -->
+    <TextureView
+        android:id="@+id/texture_h264"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
 
 </FrameLayout>

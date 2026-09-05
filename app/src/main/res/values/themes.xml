@@ -30,6 +30,18 @@
         <item name="android:windowLightNavigationBar">false</item>
     </style>
 
+    <!-- Icon-only key: an ImageButton centres its drawable, which a Button's compound drawable
+         does not do reliably at these sizes. -->
+    <style name="ExtraKeyIcon">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:padding">0dp</item>
+        <item name="android:scaleType">center</item>
+        <item name="android:background">@drawable/extra_key_bg</item>
+        <item name="android:tint">@color/extra_key_text</item>
+    </style>
+
     <style name="ExtraKey" parent="Widget.Material3.Button.TextButton">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">match_parent</item>
@@ -42,7 +54,7 @@
         <item name="android:textSize">11sp</item>
         <item name="android:textColor">@color/extra_key_text</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:background">?attr/selectableItemBackground</item>
+        <item name="android:background">@drawable/extra_key_bg</item>
         <item name="backgroundTint">@null</item>
     </style>
 
@@ -59,6 +71,21 @@
         <item name="android:textAllCaps">false</item>
         <item name="android:background">?attr/selectableItemBackground</item>
         <item name="backgroundTint">@null</item>
+    </style>
+
+    <!-- Icon-only segmented button sized to sit inside a toolbar: the stock outlined button is
+         48dp plus 6dp insets, which an actionBarSize row cannot hold. -->
+    <style name="Widget.DroidVM.Button.ModeToggle" parent="Widget.Material3.Button.OutlinedButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">40dp</item>
+        <item name="android:minWidth">44dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:insetTop">0dp</item>
+        <item name="android:insetBottom">0dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="iconPadding">0dp</item>
+        <item name="iconGravity">textStart</item>
     </style>
 
     <style name="ShapeAppearanceOverlay.Fab.Circle" parent="">

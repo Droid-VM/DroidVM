@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.hugepage;
 
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
@@ -545,6 +548,99 @@ final class HugePageModel {
         updateSettings(changes);
     }
 
+    /* ================================================================== */
+    /*  Advanced knobs: loader-fed settings.prop keys                     */
+    /* ================================================================== */
+
+    /**
+     * The keys the advanced screen edits, in display order. All five are read by
+     * {@code load.sh} out of settings.prop and handed to the module at insmod;
+     * none of them is something the GUI can decide for the user, which is why
+     * they live behind an advanced section that shows raw key/value.
+     */
+    static final List<String> ADVANCED_KEYS = List.of(
+        "system_reserve_mb", "cma_reservoir_floor_mb",
+        "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
+
+    /**
+     * Knobs whose module param is writable at runtime (0600), so a save shows up
+     * without waiting for the next load. Two different reasons to be on this
+     * list: {@code cma_reservoir_floor_mb} is consulted on every flip, so writing
+     * it actually takes effect; the {@code boot_acquire} trio is writable
+     * precisely because the module never reads it - the write changes nothing and
+     * exists so a saved setting is visible somewhere the user can see it.
+     *
+     * <p>{@code system_reserve_mb} is deliberately absent: it sizes a table built
+     * once at insmod, so a later write would only lie about what is in force. An
+     * older module has these as 0400 and the write simply fails - the value still
+     * persisted, it just waits for the next load.
+     */
+    private static final List<String> LIVE_WRITABLE = List.of(
+        "cma_reservoir_floor_mb", "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
+
+    /** Module param carrying THIS device's default reserve, {@code min(RAM/2, 6144)}. */
+    private static final String SYSTEM_RESERVE_DEFAULT = "system_reserve_mb_default";
+
+    /**
+     * One advanced knob, as the two facts that can disagree: what settings.prop
+     * asks for and what the module is actually running. They differ while a save
+     * awaits the next load, and also when the insmod ladder degraded past the rung
+     * carrying that param - which is exactly the case a single number would hide.
+     */
+    static final class Knob {
+        /** settings.prop value, or null when the key is absent (module default). */
+        @Nullable final String saved;
+        /** Module readback, or null when unavailable (not loaded, or older .ko). */
+        @Nullable final String live;
+
+        private Knob(@Nullable String saved, @Nullable String live) {
+            this.saved = saved;
+            this.live = live;
+        }
+    }
+
+    /** Read every advanced knob: one settings.prop parse plus one read per param. */
+    @NonNull
+    Map<String, Knob> advancedKnobs() {
+        var saved = parseProp(safeRead(SETTINGS_PROP));
+        var out = new LinkedHashMap<String, Knob>();
+        for (var key : ADVANCED_KEYS) {
+            var live = safeRead(pathJoin(SYSFS_PARAMS, key)).trim();
+            out.put(key, new Knob(saved.get(key), live.isEmpty() ? null : live));
+        }
+        return out;
+    }
+
+    /**
+     * This device's default reserve in MB, or -1 when the module can't say. It is
+     * NOT the built-in 6144: the module caps the request at half of RAM, so an
+     * 8 GB phone defaults to 4096 and anything above that is a no-op there. A
+     * configured value overwrites {@code system_reserve_mb}, so this param is the
+     * only place the default survives once the user has set one.
+     */
+    int systemReserveDefaultMb() {
+        return readIntParam(SYSTEM_RESERVE_DEFAULT, -1);
+    }
+
+    /**
+     * Persist one advanced key ({@code null} removes it, restoring the module
+     * default), and apply it live when the param allows it. Persisting is the
+     * operation that matters - these keys exist to survive a reload - so a failed
+     * live write is not a failure, just a value that waits for the next load.
+     */
+    @NonNull
+    Result saveAdvanced(@NonNull String key, @Nullable String value) {
+        var changes = new LinkedHashMap<String, String>();
+        changes.put(key, value);
+        var t = updateSettings(changes);
+        if (!t.ok()) return Result.failed("settings", t.error);
+        if (value != null && LIVE_WRITABLE.contains(key)
+            && existsSticky(pathJoin(SYSFS_PARAMS, key))
+            && writeKnob(key, value).ok())
+            return Result.ok(key);
+        return Result.ok("settings");
+    }
+
     /** Read an integer sysfs param, or {@code def} when absent/unparseable. */
     private int readIntParam(@NonNull String name, int def) {
         var v = safeRead(pathJoin(SYSFS_PARAMS, name)).trim();
@@ -597,9 +693,33 @@ final class HugePageModel {
      */
     @NonNull
     Result saveTargets(long pages, long withCma) {
-        // Invariant (module plan.md sec.1): pool_want <= pool_want_with_cma. The kernel
-        // clamps a low live write itself, but the persisted pair must agree
-        // too or the next boot would insmod inconsistent targets.
+        // Persist the EFFECTIVE targets, not the raw input. The module is the
+        // single source of truth for clamping (to pool_size_max), coupling
+        // (pool_want <= pool_want_with_cma, sec. 4) and S-alignment. So when it is
+        // loaded: write the user's values to sysfs, read the pair BACK, and
+        // persist what actually stuck. settings.prop, the running pool and the
+        // UI then all agree, and the coupling/clamp/align rules are never
+        // reimplemented here (they drift - this once did its own Math.max yet
+        // still missed size_max and S-alignment).
+        if (existsSticky(pathJoin(SYSFS_PARAMS, "pool_want"))) {
+            var live = writeKnob("pool_want", Long.toString(pages));
+            boolean liveOk = live.ok();
+            if (withCma >= 0)
+                liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
+            long effWant = readKnobLong("pool_want", pages);
+            long effCma = withCma >= 0 ? readKnobLong("pool_want_with_cma", withCma) : -1;
+            var changes = new LinkedHashMap<String, String>();
+            changes.put("pool_want", Long.toString(effWant));
+            changes.put("pool_target", Long.toString(effWant));
+            if (effCma >= 0) changes.putAll(cmaTargetChanges(effCma));
+            var persisted = updateSettings(changes);
+            if (!persisted.ok()) return Result.failed("settings", persisted.error);
+            return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
+        }
+        // Not loaded: no sysfs to clamp against. Persist the raw values (with the
+        // minimal want<=with_cma coupling so the prop is self-consistent); insmod
+        // clamps/aligns them next boot, and the UI reads the effective pair back
+        // once the module is up.
         if (withCma >= 0) withCma = Math.max(withCma, pages);
         var changes = new LinkedHashMap<String, String>();
         changes.put("pool_want", Long.toString(pages));
@@ -607,11 +727,17 @@ final class HugePageModel {
         if (withCma >= 0) changes.putAll(cmaTargetChanges(withCma));
         var persisted = updateSettings(changes);
         if (!persisted.ok()) return Result.failed("settings", persisted.error);
-        var live = writeKnob("pool_want", Long.toString(pages));
-        boolean liveOk = live.ok();
-        if (withCma >= 0)
-            liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
-        return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
+        return Result.ok("settings", false);   // saved for next boot, not applied now
+    }
+
+    /** Read a single-value sysfs knob as a long; fallback if absent/unparseable. */
+    private static long readKnobLong(@NonNull String knob, long fallback) {
+        var t = safeRead(pathJoin(SYSFS_PARAMS, knob)).trim();
+        if (!t.isEmpty()) try {
+            return Long.parseLong(t);
+        } catch (NumberFormatException ignored) {
+        }
+        return fallback;
     }
 
     @NonNull
@@ -939,7 +1065,10 @@ final class HugePageModel {
     private Try<Source, List<UsageEntry>> usageFromKo() {
         if (!koAvailable()) return Try.fail(Source.KO, "KO attribution knobs absent");
         try {
-            // Reconcile, then read reconciled per-owner live page counts.
+            // Reconcile, then read the per-owner live page counts. One code
+            // path spans both module generations: the pre-v12 module computes
+            // these stats inside the reconcile pass (the write is required),
+            // while v12 keeps them live and accepts reconcile as a no-op.
             run("echo 1 > %s/reconcile", SYSFS_PARAMS);
             var livePages = new LinkedHashMap<Integer, Long>();
             for (var ln : safeRead(pathJoin(SYSFS_PARAMS, "served_summary")).split("\n")) {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.boot;
 
 import static android.view.View.GONE;
@@ -398,6 +401,19 @@ public final class VMEditBootTab extends VMEditBaseTab {
         return path.substring(path.lastIndexOf('/') + 1);
     }
 
+    /**
+     * The storage tab moved a disk row from {@code from} to {@code to}: keep pointing at the
+     * same disk, whichever position it now has (rows between them shift by one).
+     */
+    public void onDiskMoved(int from, int to) {
+        int idx = bootDiskIndex;
+        if (idx == from) idx = to;
+        else if (from < idx && idx <= to) idx--;
+        else if (to <= idx && idx < from) idx++;
+        bootDiskIndex = idx;
+        if (ddBootDisk != null) updateDiskDropdown();
+    }
+
     private void updateDiskDropdown() {
         var paths = diskPaths();
         var labels = new ArrayList<String>();
@@ -552,6 +568,10 @@ public final class VMEditBootTab extends VMEditBaseTab {
      * just-changed selection is reflected, then the stored config, then
      * the backend default. In such a VM a guest kernel without
      * CONFIG_DMA_RESTRICTED_POOL cannot drive virtio.
+     *
+     * <p>{@code PSEUDO_UNPROTECTED} is deliberately not in this list: its RAM is
+     * shared to the guest rather than lent, so there is no bounce pool and a
+     * stock kernel boots. Adding it here would warn about nothing.
      */
     private boolean isProtectedVm() {
         ProtectedVM pvm = null;

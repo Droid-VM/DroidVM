@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
@@ -11,6 +12,7 @@
 
         <cn.classfun.droidvm.ui.widgets.container.CardItemListView
             android:id="@+id/list_disks"
+            app:reorderable="true"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/edit_vm_disk_empty"
@@ -26,6 +28,7 @@
 
         <cn.classfun.droidvm.ui.widgets.container.CardItemListView
             android:id="@+id/list_shared_dirs"
+            app:reorderable="true"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:hint="@string/edit_vm_shared_dir_empty"

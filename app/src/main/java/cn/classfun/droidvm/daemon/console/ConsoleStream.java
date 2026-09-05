@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.console;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -37,6 +40,7 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     private Thread readerThread;
     private OutputStream logWriter = null;
     private boolean disableSave = false;
+    private boolean persistentLogEnabled = true;
 
     public ConsoleStream(@NonNull VMConfig config, @NonNull String name) {
         this.config = config;
@@ -83,7 +87,7 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
 
     public void appendBuffer(@NonNull byte[] data, int off, int len) {
         buffer.adds(data, off, len);
-        if (disableSave) return;
+        if (disableSave || !persistentLogEnabled) return;
         try {
             if (logWriter == null) {
                 var path = getPersistentPath();
@@ -104,6 +108,25 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
         } catch (Exception e) {
             Log.w(TAG, "Failed to write console log to output stream", e);
             disableSave = true;
+        }
+    }
+
+    /**
+     * Controls whether future output is copied to the persistent console log.
+     *
+     * <p>Agent control channels can carry credentials on their input side and protocol chatter
+     * on their output side. They still need the small in-memory ring buffer for normal stream
+     * handling, but have no useful history to retain on disk.</p>
+     */
+    public synchronized void setPersistentLogEnabled(boolean enabled) {
+        persistentLogEnabled = enabled;
+        if (!enabled && logWriter != null) {
+            try {
+                logWriter.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to close disabled console log", e);
+            }
+            logWriter = null;
         }
     }
 

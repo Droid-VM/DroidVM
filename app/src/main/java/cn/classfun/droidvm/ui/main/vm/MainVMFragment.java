@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.main.vm;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -14,24 +17,25 @@ import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.main.base.stateful.MainStatefulFragment;
 import cn.classfun.droidvm.ui.vm.VMActions;
+import cn.classfun.droidvm.ui.vm.VMCreateMenu;
+import cn.classfun.droidvm.ui.vm.VMDeletion;
 import cn.classfun.droidvm.ui.vm.console.VMConsoleRouter;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
 import cn.classfun.droidvm.ui.vm.pkg.exports.VMPkgExportActivity;
+import cn.classfun.droidvm.ui.vm.pkg.imports.VMPkgImportActivity;
 
 public final class MainVMFragment
     extends MainStatefulFragment<VMConfig, VMStore, VMAdapter, VMState>
@@ -73,7 +77,7 @@ public final class MainVMFragment
 
     @Override
     public void onFabClick(@NonNull View v) {
-        startActivity(new Intent(requireContext(), VMEditActivity.class));
+        VMCreateMenu.show(requireContext());
     }
 
     @NonNull
@@ -152,23 +156,16 @@ public final class MainVMFragment
         }
     }
 
-    private void deleteVM(@NonNull VMConfig config) {
+    private void deleteVM(@NonNull VMConfig config, boolean deleteDisks) {
         var ctx = requireContext();
         adapter.items.removeById(config.getId());
-        adapter.items.save(ctx);
+        boolean saved = adapter.items.save(ctx);
         refreshView();
-        DaemonConnection.getInstance().buildRequest("vm_delete")
-            .put("vm_id", config.getId().toString())
-            .invoke();
+        VMDeletion.releaseDaemonAndMaybeDeleteDisks(ctx, config, deleteDisks, saved);
     }
 
     private void confirmDeleteVM(@NonNull VMConfig config) {
-        var ctx = requireContext();
-        new MaterialAlertDialogBuilder(ctx)
-            .setTitle(config.getName())
-            .setMessage(R.string.vm_delete_confirm)
-            .setPositiveButton(R.string.vm_delete, (d, w) -> deleteVM(config))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        VMDeletion.confirm(requireContext(), config,
+            deleteDisks -> deleteVM(config, deleteDisks));
     }
 }

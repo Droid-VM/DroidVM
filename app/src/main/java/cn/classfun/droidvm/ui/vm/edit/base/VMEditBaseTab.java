@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.base;
 
 import android.view.View;
@@ -36,6 +39,12 @@ public abstract class VMEditBaseTab {
     protected final boolean showValidateFailed(@NonNull CharSequence message) {
         Snackbar.make(parent, view, message, Snackbar.LENGTH_LONG).show();
         return false;
+    }
+
+    /** Says something the user needs to know now, without failing anything -- e.g. that the
+     * option they just turned on depends on one in another tab. */
+    protected final void showHint(@NonNull CharSequence message) {
+        Snackbar.make(parent, view, message, Snackbar.LENGTH_LONG).show();
     }
 
     public abstract void loadConfig(@NonNull VMConfig config);

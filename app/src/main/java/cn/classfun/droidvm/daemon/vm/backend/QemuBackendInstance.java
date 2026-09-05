@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm.backend;
 
 import static android.net.LocalSocketAddress.Namespace.FILESYSTEM;
@@ -37,13 +40,16 @@ import cn.classfun.droidvm.daemon.vm.VMStartResult;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskBus;
-import cn.classfun.droidvm.lib.store.vm.DisplayBackend;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
+import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class QemuBackendInstance extends VMBackendInstance {
@@ -51,9 +57,13 @@ public final class QemuBackendInstance extends VMBackendInstance {
     private static final String RUN_PATH = pathJoin(DATA_DIR, "run");
     private String qmpSocketPath = null;
     private String uartSocketPath = null;
+    private String agentSocketPath = null;
     private int ioThreadCounter = 0;
     private int driveCounter = 0;
+    private final boolean agentMode;
     private final LocalSocketConsoleStream uartStream;
+    @Nullable
+    private final LocalSocketConsoleStream agentStream;
     private final InputConsoleStream stdoutStream;
     private final InputConsoleStream stderrStream;
     private final SimpleConsoleStream stdioStream;
@@ -63,7 +73,12 @@ public final class QemuBackendInstance extends VMBackendInstance {
         @NonNull VMConfig config
     ) {
         super(context, config);
+        agentMode = config.item.optBoolean("agent_mode", false);
         uartStream = new LocalSocketConsoleStream(config, "uart", null);
+        agentStream = agentMode
+            ? new LocalSocketConsoleStream(config, "agent", null) : null;
+        if (agentStream != null)
+            agentStream.setPersistentLogEnabled(false);
         stdoutStream = new InputConsoleStream(config, "stdout", null);
         stderrStream = new InputConsoleStream(config, "stderr", null);
         stdioStream = new SimpleConsoleStream(config, "stdio");
@@ -71,6 +86,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         addStream(stderrStream);
         addStream(stdioStream);
         addStream(uartStream);
+        if (agentStream != null) addStream(agentStream);
     }
 
     @NonNull
@@ -83,6 +99,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         deleteFile(qmpSocketPath);
         uartSocketPath = pathJoin(RUN_PATH, fmt("%s-uart.sock", config.getName()));
         deleteFile(uartSocketPath);
+        if (agentMode) {
+            agentSocketPath = pathJoin(RUN_PATH, fmt("%s-agent.sock", config.getName()));
+            deleteFile(agentSocketPath);
+        }
         Log.i(TAG, fmt("QMP socket path: %s", qmpSocketPath));
         var args = buildCommand();
         Log.i(TAG, fmt("Executing: %s", String.join(" ", args)));
@@ -97,23 +117,32 @@ public final class QemuBackendInstance extends VMBackendInstance {
             Log.e(TAG, "Failed to start qemu process", e);
             return result;
         }
-        waitForUartClient();
+        // agent0 is declared before the blocking UART chardev. Connect it first, then release
+        // QEMU's UART wait so no hvc0 boot output can race ahead of the daemon reader.
+        if (agentStream != null)
+            waitForSocketClient("agent", agentSocketPath, agentStream);
+        waitForSocketClient("UART", uartSocketPath, uartStream);
         return result;
     }
 
-    private void waitForUartClient() {
+    private void waitForSocketClient(
+        @NonNull String label,
+        @NonNull String socketPath,
+        @NonNull LocalSocketConsoleStream stream
+    ) {
         int i = 0;
-        Log.i(TAG, fmt("UART socket path: %s", uartSocketPath));
+        Log.i(TAG, fmt("%s socket path: %s", label, socketPath));
         while (true) {
             try {
-                var uart = new LocalSocket(LocalSocket.SOCKET_STREAM);
-                uart.connect(new LocalSocketAddress(uartSocketPath, FILESYSTEM));
-                Log.i(TAG, "UART client connected");
-                uartStream.setSocket(uart);
+                var socket = new LocalSocket(LocalSocket.SOCKET_STREAM);
+                socket.connect(new LocalSocketAddress(socketPath, FILESYSTEM));
+                Log.i(TAG, fmt("%s client connected", label));
+                stream.setSocket(socket);
                 return;
             } catch (Exception e) {
                 if (i >= 50) {
-                    Log.e(TAG, "failed to create UART socket after multiple attempts, giving up");
+                    Log.e(TAG, fmt(
+                        "failed to connect %s socket after multiple attempts, giving up", label));
                     throw new RuntimeException(e);
                 }
                 i++;
@@ -134,8 +163,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add(pathJoin(DATA_DIR, "usr", "share", "qemu"));
         var hyp = item.optString("hypervisor", "auto");
         var hypervisor = VMHypervisor.valueOf(hyp.toUpperCase());
-        if (hypervisor == VMHypervisor.AUTO)
-            hypervisor = VMHypervisor.findPreferredHypervisor(VMBackend.QEMU);
+        hypervisor = VMHypervisor.resolveConfigured(VMBackend.QEMU, hypervisor);
         if (hypervisor == null) throw new RuntimeException("No supported hypervisor found for QEMU backend");
         args.add("-accel");
         var defProtectedMode = ProtectedVM.PROTECTED_NORMAL;
@@ -182,7 +210,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         switch (protectedVm) {
             case PROTECTED_PROTECTED:
             case PROTECTED_WITHOUT_FIRMWARE:
-                long swiotlbMb = Math.max(item.optLong("swiotlb_mb", 64), 1);
+                long swiotlbMb = Math.max(item.optLong("swiotlb_mb", 256), 1);
                 args.add("-object");
                 args.add(fmt("arm-confidential-guest,id=prot0,swiotlb-size=%dM", swiotlbMb));
                 break;
@@ -211,7 +239,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
         if (item.optBoolean("hugepages", true))
             args.add("-mem-prealloc");
-        if (item.optBoolean("rng", true)) {
+        if (!agentMode && item.optBoolean("rng", true)) {
             args.add("-object");
             args.add("rng-random,filename=/dev/urandom,id=rng0");
             args.add("-device");
@@ -221,14 +249,25 @@ public final class QemuBackendInstance extends VMBackendInstance {
             args.add("-device");
             args.add("virtio-balloon-pci,disable-legacy=on,disable-modern=off");
         }
-        buildInputCommand(args);
-        buildUsbCommand(args);
+        if (!agentMode) buildInputCommand(args);
+        if (!agentMode) buildUsbCommand(args);
         buildDiskCommand(args);
-        buildNetCommand(args);
-        buildSharedDirCommand(args);
-        buildAudioCommand(args);
-        buildGpuCommand(args);
-        buildVncCommand(args);
+        if (!agentMode) {
+            buildNetCommand(args);
+            buildSharedDirCommand(args);
+            buildAudioCommand(args);
+            buildGpuCommand(args);
+            buildVncCommand(args);
+        }
+        if (agentMode) {
+            args.add("-chardev");
+            args.add(fmt(
+                "socket,id=agent0,path=%s,server=on,wait=off", agentSocketPath));
+            args.add("-device");
+            args.add("virtio-serial-pci,id=agent-bus,disable-legacy=on,disable-modern=off");
+            args.add("-device");
+            args.add("virtconsole,chardev=agent0,name=org.droidvm.agent");
+        }
         args.add("-chardev");
         args.add(fmt("socket,id=uart0,path=%s,server=on,wait=on", uartSocketPath));
         args.add("-serial");
@@ -308,7 +347,9 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     args.add(fmt("iothread,id=%s", ioId));
                     var driveArg = new StringBuilder();
                     driveArg.append(fmt("file=%s,if=none,id=%s", path, drId));
-                    driveArg.append(",cache=unsafe,aio=threads,discard=unmap");
+                    driveArg.append(agentMode
+                        ? ",cache=writeback,aio=threads,discard=unmap"
+                        : ",cache=unsafe,aio=threads,discard=unmap");
                     if (readonly) driveArg.append(",readonly=on");
                     args.add("-drive");
                     args.add(driveArg.toString());
@@ -323,7 +364,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     }
 
     private void buildInputCommand(@NonNull List<String> args) {
-        if (!config.item.optBoolean("display_enabled", false)) return;
+        if (!hasAnyScreen()) return;
         args.add("-device");
         args.add("virtio-multitouch-pci,disable-legacy=on,disable-modern=off");
         args.add("-device");
@@ -334,7 +375,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
         if (!config.item.optBoolean("usb", true)) return;
         args.add("-device");
         args.add("qemu-xhci,id=usb-bus,p2=15,p3=15");
-        if (config.item.optBoolean("display_enabled", false)) {
+        if (hasAnyScreen()) {
             args.add("-device");
             args.add("usb-tablet,bus=usb-bus.0");
             args.add("-device");
@@ -368,9 +409,27 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
     }
 
+    /**
+     * One virtio-sound-pci card on QEMU's aaudio driver, present when the VM has any audio
+     * peripheral.
+     *
+     * <p>Only the on/off decision is plumbed here. The mode, host endpoint, buffer and underrun
+     * settings of a VirtIO Sound peripheral are all crosvm-side concepts -- QEMU's aaudio driver
+     * opens whatever the platform routes to, in one process, as whatever uid QEMU runs as -- so
+     * they are ignored rather than half-honoured. Intel HDA is ignored here too, even though
+     * this QEMU does emulate one: wiring it would be a separate piece of work with its own
+     * verification. A config that predates the peripheral tab still works through the old
+     * {@code audio_enabled} key, which also stays available as an override.</p>
+     */
     private void buildAudioCommand(@NonNull List<String> args) {
-        var displayEnabled = config.item.optBoolean("display_enabled", false);
-        if (!config.item.optBoolean("audio_enabled", displayEnabled)) return;
+        boolean anyAudio = false;
+        for (var peripheral : VMPeripheralConfig.listOf(config.item)) {
+            if (peripheral.getType() == PeripheralType.VIRTIO_SOUND)
+                anyAudio = true;
+        }
+        if (!anyAudio) {
+            if (!config.item.optBoolean("audio_enabled", hasAnyScreen())) return;
+        }
         args.add("-audiodev");
         args.add("aaudio,id=snd0");
         args.add("-device");
@@ -411,13 +470,20 @@ public final class QemuBackendInstance extends VMBackendInstance {
         }
     }
 
+    /**
+     * The virtio-gpu device (with its renderer, if any) and QEMU's nearest thing to simplefb.
+     *
+     * <p>The virtio-gpu screen's switch is the device, exactly as on crosvm; the renderer only
+     * decides which QEMU device model implements it. The geometry is that screen's own, so a VM
+     * with both screens no longer has to give them one size.</p>
+     */
     private void buildGpuCommand(@NonNull List<String> args) {
         var item = config.item;
-        var useGpu = item.optBoolean("gpu_enabled", false);
-        var useDisplay = item.optBoolean("display_enabled", false);
-        if (!useGpu && !useDisplay) return;
-        var backend = optEnum(item, "display_backend", DisplayBackend.NONE);
-        if (useGpu) {
+        var gpuScreen = isScreenEnabled(VMScreenConfig.ID_GPU0);
+        var fbScreen = isScreenEnabled(VMScreenConfig.ID_SIMPLEFB);
+        if (!gpuScreen && !fbScreen) return;
+        if (gpuScreen) {
+            var gpu0 = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
             var gpuBackend = optEnum(item, "gpu_backend", GpuBackend.NONE);
             var gpuArg = new StringBuilder();
             boolean use3d = false;
@@ -431,16 +497,14 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     use3d = true;
                     break;
                 default:
+                    // 2D, or a config that never named a renderer: the plain device, which is what
+                    // "display without acceleration" is on this backend too.
                     gpuArg.append("virtio-gpu-pci");
                     break;
             }
             gpuArg.append(",disable-legacy=on,disable-modern=off");
-            if (useDisplay && backend == DisplayBackend.VIRTIO_GPU) {
-                long width = item.optLong("display_width", 1280);
-                long height = item.optLong("display_height", 720);
-                gpuArg.append(fmt(",xres=%d,yres=%d", width, height));
-                gpuArg.append(",edid=on");
-            }
+            gpuArg.append(fmt(",xres=%d,yres=%d", gpu0.getWidth(), gpu0.getHeight()));
+            gpuArg.append(",edid=on");
             if (use3d) {
                 gpuArg.append(",blob=on");
                 args.add("-display");
@@ -448,30 +512,55 @@ public final class QemuBackendInstance extends VMBackendInstance {
             }
             args.add("-device");
             args.add(gpuArg.toString());
-        } else if (backend == DisplayBackend.VIRTIO_GPU) {
-            long width = item.optLong("display_width", 1280);
-            long height = item.optLong("display_height", 720);
-            args.add("-device");
-            args.add(fmt("virtio-gpu-pci,disable-legacy=on,disable-modern=off,xres=%d,yres=%d,edid=on",
-                width, height));
         }
-        if (useDisplay && backend == DisplayBackend.SIMPLEFB) {
+        // ramfb takes no size: QEMU's firmware-programmed framebuffer gets its geometry from the
+        // guest, so the simplefb screen's width and height have nowhere to go here.
+        if (fbScreen) {
             args.add("-device");
             args.add("ramfb");
         }
     }
 
+    /**
+     * Whether the config asks for [screenId]'s display device.
+     *
+     * <p>QEMU has no {@code screen=} to bind an exporter to -- one {@code -vnc} serves whatever
+     * the machine displays -- so the per-screen model only reaches this far: the screen switches
+     * decide which devices exist, and the first screen exporting over VNC supplies the server's
+     * settings. Native display is refused for this backend in the editor, so it never appears
+     * here at all.</p>
+     */
+    private boolean hasAnyScreen() {
+        for (var screen : VMScreenConfig.listOf(config.item))
+            if (screen.isEnabled()) return true;
+        return false;
+    }
+
+    private boolean isScreenEnabled(@NonNull String screenId) {
+        var screen = VMScreenConfig.find(config.item, screenId);
+        return screen != null && screen.isEnabled();
+    }
+
     private void buildVncCommand(@NonNull List<String> args) {
-        var item = config.item;
-        if (!item.optBoolean("vnc_enabled", false)) return;
-        var host = item.optString("vnc_host", "0.0.0.0");
+        VMScreenConfig bound = null;
+        for (var screen : VMScreenConfig.listOf(config.item))
+            if (screen.isEnabled() && screen.getExporter() == DisplayExporter.VNC) {
+                bound = screen;
+                break;
+            }
+        if (bound == null) return;
+        var host = bound.getVncHost();
         if (host.isEmpty()) host = "0.0.0.0";
-        long port = Math.max(item.optLong("vnc_port", 5900), 1);
+        long port = Math.max(bound.getVncPort(), 1);
         long displayNum = port - 5900;
         if (displayNum < 0) displayNum = 0;
         var vncArg = new StringBuilder();
+        // "host:display", so an IPv6 literal has to be bracketed or its own colons are read as the
+        // separator. Reachable now that the host field offers the phone's own addresses and half of
+        // those are v6; an IPv4 address is untouched.
+        if (host.indexOf(':') >= 0) host = fmt("[%s]", host);
         vncArg.append(fmt("%s:%d", host, displayNum));
-        var password = item.optString("vnc_password", "");
+        var password = bound.getVncPassword();
         if (!password.isEmpty()) {
             args.add("-object");
             args.add(fmt("secret,id=vnc-password,data=%s", password));
@@ -575,6 +664,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
     @Override
     public void cleanup() {
         uartStream.close();
+        if (agentStream != null) agentStream.close();
         if (qmpSocketPath != null) {
             deleteFile(qmpSocketPath);
             qmpSocketPath = null;
@@ -582,6 +672,10 @@ public final class QemuBackendInstance extends VMBackendInstance {
         if (uartSocketPath != null) {
             deleteFile(uartSocketPath);
             uartSocketPath = null;
+        }
+        if (agentSocketPath != null) {
+            deleteFile(agentSocketPath);
+            agentSocketPath = null;
         }
     }
 }

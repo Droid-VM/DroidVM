@@ -5,6 +5,12 @@ import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.android.application)
+    // Compose is here for one screen: the Markdown notes editor and the cards that render what
+    // it wrote, which come from a Compose-only library. Everything else stays Java and Views.
+    // Kotlin itself needs no plugin -- AGP 9 compiles it out of the box and already owns the
+    // "kotlin" extension -- so only the Compose compiler plugin is applied, pinned to the same
+    // Kotlin version AGP carries.
+    alias(libs.plugins.kotlin.compose)
 }
 
 fun runGit(vararg args: String): String {
@@ -94,9 +100,32 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    kotlin {
+        compilerOptions {
+            jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11
+        }
+    }
     buildFeatures {
         aidl = true
         buildConfig = true
+        compose = true
+    }
+    sourceSets {
+        getByName("main") {
+            // Third-party source kept in the tree rather than pulled as an artifact, in its own
+            // root so that "not ours, and under its own licence" is structural. See its README.
+            kotlin.srcDir("src/main/vendor")
+        }
+    }
+    testOptions {
+        unitTests {
+            // Lets a unit test cover a class that logs. The alternative -- keeping every testable
+            // class free of android.util.Log -- stopped being tenable at the H.264 side channel,
+            // whose whole subject is a socket and a thread outliving the object that owned them,
+            // and which says so out loud when they do. Nothing here asserts on a stub's return
+            // value; the stubs are only there so the class under test can be built at all.
+            isReturnDefaultValues = true
+        }
     }
     packaging {
         jniLibs {
@@ -329,10 +358,18 @@ dependencies {
     implementation(libs.annotation.jvm)
     implementation(libs.appcompat)
     implementation(libs.auto.service.annotations)
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.animation)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.ui)
+    implementation(libs.compose.material3)
     implementation(libs.constraintlayout)
     implementation(libs.libsu.core)
     implementation(libs.libsu.nio)
     implementation(libs.libsu.service)
+    // The renderer itself lives in src/main/vendor; these are what it needs.
+    implementation(libs.markdown.parser)
+    implementation(libs.kotlinx.collections.immutable)
     implementation(libs.material)
     implementation(libs.okhttp3)
     implementation(libs.snakeyaml)

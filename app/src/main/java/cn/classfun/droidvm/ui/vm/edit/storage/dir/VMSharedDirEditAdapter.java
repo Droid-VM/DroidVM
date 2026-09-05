@@ -1,10 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.storage.dir;
 
+import static android.widget.Toast.LENGTH_LONG;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.ui.SimpleTextWatcher.simpleAfterTextWatcher;
 
 import android.content.Context;
 import android.view.View;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -57,11 +62,26 @@ public final class VMSharedDirEditAdapter
         holder.etPath.setText(dir.optString("path", ""));
         holder.etTag.setText(dir.optString("tag", ""));
         holder.etTimeout.setText(String.valueOf(dir.optLong("timeout", 5)));
-        holder.btnType.configure(SharedDirType.class, optEnum(dir, "type", SharedDirType.FS));
+        // 9P and DAX are keys the config format still carries but this build cannot honour: the
+        // P9 branch of crosvm's `--shared-dir` parser rejects every option the row writes, and the
+        // fs device compiles DAX out on arm64. Force both, and coerce the stored value too -- a row
+        // that reads "off" while the config says otherwise is the worse of the two lies.
+        holder.btnType.setOnValueChangedListener((Runnable) null);
+        dir.set("type", SharedDirType.FS);
+        holder.btnType.configure(SharedDirType.class, SharedDirType.FS);
+        holder.btnType.setUnavailable(() -> Toast.makeText(
+            holder.itemView.getContext(),
+            R.string.edit_vm_shared_dir_type_unavailable,
+            LENGTH_LONG
+        ).show());
         holder.btnCache.configure(SharedDirCache.class, optEnum(dir, "cache", SharedDirCache.AUTO));
         holder.switchWriteback.setChecked(dir.optBoolean("writeback", false));
-        holder.switchDax.setChecked(dir.optBoolean("dax", false));
+        dir.set("dax", false);
+        holder.switchDax.setOnCheckedChangeListener(null);
+        holder.switchDax.setChecked(false);
         holder.switchPosixAcl.setChecked(dir.optBoolean("posix_acl", true));
+        // Default off: a new share serves as the app, and asking for root is the deliberate act.
+        holder.switchRootAccess.setChecked(dir.optBoolean("root_access", false));
         holder.pathWatcher = simpleAfterTextWatcher(s -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
@@ -88,20 +108,24 @@ public final class VMSharedDirEditAdapter
             if (pos == RecyclerView.NO_POSITION) return;
             items.get(pos).set("writeback", checked);
         });
-        holder.switchDax.setOnCheckedChangeListener((btn, checked) -> {
-            int pos = holder.getBindingAdapterPosition();
-            if (pos == RecyclerView.NO_POSITION) return;
-            items.get(pos).set("dax", checked);
+        // A CompoundButton reports the click after the state has already flipped, so put it back.
+        holder.switchDax.setOnClickListener(v -> {
+            holder.switchDax.setChecked(false);
+            Toast.makeText(
+                holder.itemView.getContext(),
+                R.string.edit_vm_shared_dir_dax_unavailable,
+                LENGTH_LONG
+            ).show();
         });
         holder.switchPosixAcl.setOnCheckedChangeListener((btn, checked) -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             items.get(pos).set("posix_acl", checked);
         });
-        holder.btnType.setOnValueChangedListener((oldVal, newVal) -> {
+        holder.switchRootAccess.setOnCheckedChangeListener((btn, checked) -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
-            items.get(pos).set("type", newVal);
+            items.get(pos).set("root_access", checked);
         });
         holder.btnCache.setOnValueChangedListener((oldVal, newVal) -> {
             int pos = holder.getBindingAdapterPosition();

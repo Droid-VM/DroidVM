@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.widgets.row;
 
 import android.annotation.SuppressLint;
@@ -11,6 +14,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 
 import com.google.android.material.materialswitch.MaterialSwitch;
 
@@ -84,8 +88,28 @@ public final class SwitchRowWidget extends FrameLayout {
         }
     }
 
+    /**
+     * Sets the row's label after inflation, for a layout included more than once: the same block
+     * of rows appears for each screen, so the title cannot come from the XML attribute.
+     */
+    public void setText(@StringRes int textId) {
+        textView.setText(textId);
+        iconView.setContentDescription(context.getString(textId));
+    }
+
     public boolean isChecked() {
         return switchView.isChecked();
+    }
+
+    /**
+     * The row is clickable from {@code init} (tapping anywhere toggles the
+     * switch) and stops being so under {@link #setSwitchEnabled}; routing both
+     * through one override keeps the ripple honest about which it is.
+     */
+    @Override
+    public void setOnClickListener(@Nullable OnClickListener l) {
+        super.setOnClickListener(l);
+        RowTouchFeedback.apply(this, l != null);
     }
 
     /**

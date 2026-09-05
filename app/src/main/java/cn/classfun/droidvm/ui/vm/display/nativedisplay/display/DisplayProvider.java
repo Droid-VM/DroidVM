@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.nativedisplay.display;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.crosvm.DisplayConfig;
 import android.crosvm.ICrosvmAndroidDisplayService;
+import android.os.Build;
 import android.os.DeadObjectException;
 import android.os.Handler;
 import android.os.IBinder;
@@ -17,6 +21,7 @@ import androidx.annotation.NonNull;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -32,9 +37,30 @@ import java.util.function.Supplier;
  */
 final class DisplayProvider {
     private static final String TAG = "NativeDisplayProvider";
-    // Stop polling for the display binder after this many 1s rounds (the daemon-side
-    // waitForService already blocks up to 5s each), so a dead broker doesn't spin forever.
-    private static final int MAX_BINDER_ATTEMPTS = 30;
+    // Keep looking for the display binder for as long as this console is open, backing off from
+    // BINDER_RETRY_MIN_MS to BINDER_RETRY_MAX_MS between rounds.
+    //
+    // There used to be a cap of 30 rounds, because each round could cost the daemon a leaked,
+    // permanently-blocked thread (see NativeDisplayBinder) and spinning was genuinely expensive.
+    // It no longer is -- a round is one cheap ServiceManager lookup, answered instantly when the
+    // VM is not running -- and a cap is the wrong shape anyway: the thing being waited for is a
+    // guest booting, which has no upper bound. A guest that took longer than the cap left the
+    // console blank for the rest of its life with nothing left to retry it.
+    //
+    // Two things end the wait instead of a counter: the binder turning up, and the console
+    // closing (shutdown() interrupts this thread). A VM that exits while the console is open
+    // closes the console itself, so "the VM is never coming back" ends it too.
+    private static final long BINDER_RETRY_MIN_MS = 1000;
+    private static final long BINDER_RETRY_MAX_MS = 5000;
+    // Interval for re-reading the guest display size. crosvm's binder is pull-only (no resize
+    // push callback, and SELinux blocks crosvm from calling back into an untrusted_app), so the
+    // receiver polls the single source of truth -- getDisplayConfig() reflects the current scanout
+    // size, updated by C++ configure() on EVERY resolution change (UEFI modeset, Linux boot, and
+    // Linux runtime xrandr all flow through it). This is what lets the aspect ratio follow a guest
+    // resolution change mid-session. A resize is rare and user-driven, so 1s lag is fine.
+    private static final long CONFIG_POLL_MS = 1000;
+    /** virtio-gpu's cursor plane size; a smaller cursor image lands in its top-left. */
+    static final int CURSOR_PLANE_PX = 64;
 
     private final SurfaceView mainView;
     private int width;
@@ -51,8 +77,15 @@ final class DisplayProvider {
     private ICrosvmAndroidDisplayService displayService;
     private boolean needsSend = false;
     private boolean hasSavedFrame = false;
+    private boolean hasSavedCursorFrame = false;
+    private CursorPositionStream cursorStream;
+    private CursorPositionStream.Listener cursorListener;
+    private SurfaceView cursorView;
+    private boolean cursorSurfaceSent = false;
 
     private final IBinder.DeathRecipient deathRecipient;
+    /** One binder hunt at a time: both the death path and surfaceCreated ask for one. */
+    private final AtomicBoolean fetching = new AtomicBoolean();
 
     DisplayProvider(@NonNull SurfaceView mainView, int width, int height,
                     @NonNull Supplier<IBinder> binderProvider,
@@ -68,10 +101,41 @@ final class DisplayProvider {
             Log.w(TAG, "display service died - connection lost");
             onConnected.accept(false);
             displayService = null;
+            // The display service lives in crosvm. When the guest reboots (or crosvm otherwise
+            // restarts) the daemon relaunches crosvm, which registers a NEW display service under
+            // the same name -- but nothing re-fetches it, so the activity sat on "waiting for the
+            // VM screen" until the user closed and reopened it (seen on every provisioning reboot).
+            // Re-arm: the surface we hold is still valid, so mark it for re-delivery and poll for
+            // the new binder the same way the first attach did. shutdown() has already stopped
+            // the executor when the activity is going away, so a real teardown does not re-poll.
+            if (executor.isShutdown()) {
+                needsSend = false;
+                return;
+            }
             needsSend = false;
+            cursorSurfaceSent = false;
+            hasSavedFrame = false;
+            hasSavedCursorFrame = false;
+            if (cursorStream != null) {
+                cursorStream.close();
+                cursorStream = null;
+            }
+            // Do NOT hand the old Surface to the new crosvm. Its BufferQueue still carries the
+            // state the dead producer left behind (buffers dequeued and never returned): the CPU
+            // console path can still post to it, but the GPU-blit scanout path silently stops --
+            // observed as the early-boot console frozen on screen with a live cursor. Closing and
+            // reopening the activity fixed it because that creates fresh surfaces, so do exactly
+            // that here: bounce both SurfaceViews so surfaceDestroyed/surfaceCreated run and the
+            // usual send-once-per-surface path delivers brand-new surfaces once the binder is back.
+            recreateSurface(mainView);
+            if (cursorView != null) recreateSurface(cursorView);
+            Log.i(TAG, "re-fetching the display binder for the restarted VM (fresh surfaces)");
+            fetchBinder();
         });
 
-        mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            mainView.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        }
         mainView.getHolder().addCallback(new Callback());
 
         var surface = mainView.getHolder().getSurface();
@@ -82,35 +146,62 @@ final class DisplayProvider {
         fetchBinder();
     }
 
+    /* Tear down and re-create a SurfaceView's surface (fresh BufferQueue). On Android 14+ the main
+     * view uses SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT, so visibility does not govern the surface (a
+     * GONE/VISIBLE bounce was seen to do nothing, or to destroy the surface tens of seconds later
+     * and never bring it back). Android 13 keeps the platform's default lifecycle, but detaching is
+     * still the reliable way to force surfaceDestroyed. Re-adding then creates a brand-new surface
+     * and the usual send-once-per-surface path delivers it once the binder is back. */
+    private void recreateSurface(@NonNull SurfaceView view) {
+        var parent = view.getParent();
+        if (!(parent instanceof android.view.ViewGroup)) {
+            Log.w(TAG, "recreateSurface: view has no ViewGroup parent");
+            return;
+        }
+        var group = (android.view.ViewGroup) parent;
+        int idx = group.indexOfChild(view);
+        var lp = view.getLayoutParams();
+        Log.i(TAG, fmt("recreateSurface: detaching and re-attaching %s",
+            view.getClass().getSimpleName()));
+        group.removeView(view);
+        group.addView(view, idx, lp);
+    }
+
     private void fetchBinder() {
+        if (!fetching.compareAndSet(false, true)) return;
         executor.submit(() -> {
-            IBinder binder = null;
-            int attempts = 0;
-            while (!Thread.currentThread().isInterrupted() && attempts < MAX_BINDER_ATTEMPTS) {
-                try {
-                    binder = binderProvider.get();
-                } catch (Exception e) {
-                    Log.e(TAG, "binderProvider threw", e);
-                    binder = null;
+            try {
+                long backoff = BINDER_RETRY_MIN_MS;
+                int rounds = 0;
+                while (!Thread.currentThread().isInterrupted()) {
+                    IBinder binder;
+                    try {
+                        binder = binderProvider.get();
+                    } catch (Exception e) {
+                        Log.e(TAG, "binderProvider threw", e);
+                        binder = null;
+                    }
+                    if (binder != null) {
+                        final IBinder got = binder;
+                        mainHandler.post(() -> onBinderReady(got));
+                        return;
+                    }
+                    // One line early and then one a minute: a slow guest is normal and must not
+                    // be the reason a log is unreadable.
+                    if (rounds == 0 || rounds % 60 == 0)
+                        Log.i(TAG, fmt("display binder not there yet (round %d)", rounds + 1));
+                    rounds++;
+                    try {
+                        Thread.sleep(backoff);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                    backoff = Math.min(backoff * 2, BINDER_RETRY_MAX_MS);
                 }
-                if (binder != null) break;
-                attempts++;
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
+            } finally {
+                fetching.set(false);
             }
-            final IBinder got = binder;
-            if (got == null) {
-                // Give up rather than poll forever: the daemon broker may have died (the supplier
-                // returns null once rootService is dropped), so the display can't be reached.
-                Log.e(TAG, fmt("display binder unavailable after %d attempts", MAX_BINDER_ATTEMPTS));
-                mainHandler.post(() -> onConnected.accept(false));
-                return;
-            }
-            mainHandler.post(() -> onBinderReady(got));
         });
     }
 
@@ -133,8 +224,53 @@ final class DisplayProvider {
         } catch (Exception e) {
             Log.w(TAG, fmt("getDisplayConfig unavailable, using default %dx%d", width, height));
         }
+        // Attach the cursor position pipe, if anybody wants it. crosvm has always written guest
+        // cursor moves to this fd; nothing ever read it, so the backend dropped them all.
+        attachCursorStream();
+        if (cursorView != null) {
+            trySendCursorSurface(cursorView.getHolder());
+        }
+
         onConnected.accept(true);
         applyPendingSurface();
+        startConfigPoll(displayService);
+    }
+
+    // Watches for guest resolution changes: crosvm has no push channel, so re-read the current
+    // scanout size on the bg thread and, when it changes, re-lay-out the surface. Runs on the
+    // single background executor; a getDisplayConfig() failure (dead service) ends the loop.
+    private void startConfigPoll(@NonNull ICrosvmAndroidDisplayService svc) {
+        executor.submit(() -> {
+            while (!Thread.currentThread().isInterrupted()) {
+                try {
+                    Thread.sleep(CONFIG_POLL_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                DisplayConfig config;
+                try {
+                    config = svc.getDisplayConfig();
+                } catch (Exception e) {
+                    return; // service gone; deathRecipient handles teardown
+                }
+                if (config == null || config.width <= 0 || config.height <= 0) continue;
+                mainHandler.post(() -> applyConfigIfChanged(config));
+            }
+        });
+    }
+
+    // Main thread: apply a newly observed guest size. width/height stay main-thread-only.
+    private void applyConfigIfChanged(@NonNull DisplayConfig config) {
+        if (config.width == width && config.height == height) return;
+        Log.i(TAG, fmt("guest display size changed %dx%d -> %dx%d",
+            width, height, config.width, config.height));
+        width = config.width;
+        height = config.height;
+        // Keep the app-side buffer size in step with crosvm's setBuffersGeometry; guarded by
+        // needsSend, so the layout-driven surfaceChanged this triggers won't re-send the surface.
+        mainView.getHolder().setFixedSize(width, height);
+        onDisplayConfig.accept(config);
     }
 
     private void applyPendingSurface() {
@@ -212,12 +348,125 @@ final class DisplayProvider {
         }
     }
 
+    /**
+     * Ask for guest cursor positions. Safe to call before or after the display binder arrives:
+     * whichever happens second does the attaching, so a caller does not have to know which.
+     */
+    void setCursorListener(CursorPositionStream.Listener listener) {
+        cursorListener = listener;
+        attachCursorStream();
+    }
+
+    private void attachCursorStream() {
+        if (cursorListener == null || displayService == null || cursorStream != null) {
+            return;
+        }
+        cursorStream = CursorPositionStream.attach(displayService, cursorListener);
+    }
+
+    /**
+     * Give crosvm a Surface for the guest's HARDWARE cursor.
+     *
+     * Until something calls setSurface(_, forCursor=true), the native backend's cursor surface has
+     * no native window: lock() hands crosvm a sink buffer whose own comment says it "is never
+     * displayed on the physical screen", and unlockAndPost() returns without posting. The pointer
+     * is rendered perfectly and thrown away.
+     *
+     * Linux guests can be told to draw the pointer into the framebuffer instead, which is why this
+     * went unnoticed; Windows' virtio-gpu driver and UEFI have no equivalent and use the cursor
+     * plane unconditionally, so without this they have no visible pointer at all.
+     */
+    void setCursorView(SurfaceView view) {
+        cursorView = view;
+        if (view == null) {
+            return;
+        }
+        // Above the scanout SurfaceView. Both are surfaces in their own layers, so ordinary view
+        // z-order does not apply -- without this the cursor is composited BEHIND the display.
+        view.setZOrderMediaOverlay(true);
+        // Same rule as the scanout: this Surface must outlive a visibility change. The guest hides
+        // and re-shows its pointer constantly -- KDE drops to a software cursor whenever the
+        // hardware plane cannot keep up with a fast move and hands the plane straight back -- and
+        // the image comes back in ONE UPDATE_CURSOR, whose pixels are flushed microseconds after
+        // the position that tells the app to show the overlay again. Re-creating a destroyed
+        // Surface takes a frame plus a binder round trip, so those pixels land in the backend's
+        // sink buffer and are dropped, and every later MOVE_CURSOR carries a position and no image
+        // -- the pointer stays blank until the guest happens to change its shape. The activity
+        // therefore parks the overlay off-screen rather than setting it GONE; on Android 14+ this
+        // makes the Surface immune to visibility for good measure.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            view.setSurfaceLifecycle(SurfaceView.SURFACE_LIFECYCLE_FOLLOWS_ATTACHMENT);
+        }
+        view.getHolder().setFormat(android.graphics.PixelFormat.TRANSLUCENT);
+        view.getHolder().setFixedSize(CURSOR_PLANE_PX, CURSOR_PLANE_PX);
+        view.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override public void surfaceCreated(@NonNull SurfaceHolder h) {
+                cursorSurfaceSent = false;
+                trySendCursorSurface(h);
+            }
+            @Override public void surfaceChanged(@NonNull SurfaceHolder h, int f, int w, int hh) {
+                // Same rule as the main surface: setSurface at most once per surface lifetime.
+                trySendCursorSurface(h);
+            }
+            @Override public void surfaceDestroyed(@NonNull SurfaceHolder h) {
+                cursorSurfaceSent = false;
+                var svc = displayService;
+                if (svc == null) return;
+                // Keep the last pointer image the same way the scanout keeps its last frame. A
+                // cursor surface that really did die (the activity left the foreground, or the
+                // death path bounced it) comes back empty otherwise, and nothing repaints it: only
+                // UPDATE_CURSOR carries pixels, and a pointer that merely moves sends MOVE_CURSOR.
+                try {
+                    svc.saveFrameForSurface(true);
+                    hasSavedCursorFrame = true;
+                } catch (Exception e) {
+                    Log.w(TAG, "saveFrameForSurface(cursor) failed", e);
+                }
+                try {
+                    svc.removeSurface(true);
+                } catch (Exception e) {
+                    Log.w(TAG, "removeSurface(cursor) failed", e);
+                }
+            }
+        });
+        trySendCursorSurface(view.getHolder());
+    }
+
+    private void trySendCursorSurface(@NonNull SurfaceHolder holder) {
+        var svc = displayService;
+        if (svc == null || cursorSurfaceSent) return;
+        Surface surface = holder.getSurface();
+        if (surface == null || !surface.isValid()) return;
+        try {
+            svc.setSurface(surface, true);
+            cursorSurfaceSent = true;
+            Log.i(TAG, "cursor surface delivered");
+        } catch (IllegalArgumentException e) {
+            // Same known/benign binder reply behaviour as the main surface.
+            cursorSurfaceSent = true;
+        } catch (Exception e) {
+            Log.w(TAG, "setSurface(cursor) failed", e);
+            return;
+        }
+        if (hasSavedCursorFrame) {
+            try {
+                svc.drawSavedFrameForSurface(true);
+            } catch (Exception e) {
+                Log.w(TAG, "drawSavedFrameForSurface(cursor) failed", e);
+            }
+        }
+    }
+
     void shutdown() {
         if (displayService != null) {
             try {
                 displayService.asBinder().unlinkToDeath(deathRecipient, 0);
             } catch (Exception ignored) {
             }
+        }
+        if (cursorStream != null) {
+            cursorStream.close();
+            cursorStream = null;
         }
         executor.shutdownNow();
         displayService = null;

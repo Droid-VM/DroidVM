@@ -1,8 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm.pkg;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMExportUtils.buildHeader;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMExportUtils.collectBootFiles;
+import static cn.classfun.droidvm.daemon.vm.pkg.VMExportUtils.collectDisks;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMExportUtils.collectNetworks;
 import static cn.classfun.droidvm.daemon.vm.pkg.VMExportUtils.sanitizeVM;
 import static cn.classfun.droidvm.lib.archive.TarWriter.wrapCompressionOutput;
@@ -31,8 +35,6 @@ import java.util.UUID;
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.archive.RandomAccessFileOutputStream;
 import cn.classfun.droidvm.lib.archive.TarWriter;
-import cn.classfun.droidvm.lib.pkg.DiskEntry;
-import cn.classfun.droidvm.lib.pkg.DiskRef;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
 import cn.classfun.droidvm.lib.pkg.Phase;
@@ -56,7 +58,7 @@ public final class VMExportTask {
     public VMExportTask(
         @NonNull Server server,
         @NonNull JSONObject request
-    ) {
+    ) throws Exception {
         this.server = server;
         destPath = request.optString("dest_path");
         if (!destPath.startsWith("/"))
@@ -75,18 +77,14 @@ public final class VMExportTask {
         var wantedSet = new HashSet<Integer>();
         if (wanted != null) for (int i = 0; i < wanted.length(); i++)
             wantedSet.add(wanted.optInt(i, -1));
-        var arr = vm.item.opt("disks", DataItem.newArray());
-        for (int i = 0; i < arr.size(); i++) {
-            var e = arr.get(i);
-            if (!e.is(DataItem.Type.OBJECT)) continue;
-            if (!wantedSet.isEmpty() && !wantedSet.contains(i)) continue;
-            var disk = new DiskEntry(new DiskRef(i, e));
-            disk.build();
-            manifest.disks.add(disk);
-        }
+        // Walks the backing chains, so it can fail on an image whose base is gone. Doing it
+        // here, before the destination file is touched, keeps that a plain request error.
+        collectDisks(manifest, vm, wantedSet);
         collectBootFiles(manifest);
         collectNetworks(manifest, server.getContext().getNetworks(), vm);
         manifest.vm.item.remove("disks");
+        // Stamp last: the version is the highest any collected part needs.
+        manifest.manifestVersion = manifest.resolveVersion();
         totalItems = manifest.disks.size() + manifest.boots.size();
     }
 
