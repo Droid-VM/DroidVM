@@ -56,6 +56,17 @@ public final class UsbHostDevice {
     }
 
     public final String sysfs;
+    /**
+     * What a rule names the device by: {@code vid:pid:serial}, or {@code vid:pid} when it has no
+     * serial. Survives a replug; two serial-less units of the same model share it.
+     */
+    public final String id;
+    /**
+     * Where it is plugged in: the sysfs name without its {@code <bus>-} prefix ({@code 1-1.2.2}
+     * is {@code 1.2.2}). The bus is dropped on purpose -- the same physical socket enumerates a
+     * USB2 device on bus 1 and a USB3 device on bus 2, and only the port chain names the socket.
+     */
+    public final String port;
     public final int busnum;
     public final int devnum;
     public final String node;
@@ -73,6 +84,8 @@ public final class UsbHostDevice {
                           @NonNull String product, @NonNull String serial, @NonNull String speed,
                           @NonNull String deviceClass, @NonNull List<Interface> interfaces) {
         this.sysfs = sysfs;
+        this.id = deriveId(vid, pid, serial);
+        this.port = derivePort(sysfs);
         this.busnum = busnum;
         this.devnum = devnum;
         this.node = node;
@@ -174,6 +187,20 @@ public final class UsbHostDevice {
         }
     }
 
+    /** The rule identifier of a device: lowercase {@code vid:pid}, then the serial when it has one. */
+    @NonNull
+    public static String deriveId(@NonNull String vid, @NonNull String pid, @NonNull String serial) {
+        var base = fmt("%s:%s", vid.toLowerCase(Locale.ROOT), pid.toLowerCase(Locale.ROOT));
+        return serial.isEmpty() ? base : fmt("%s:%s", base, serial);
+    }
+
+    /** The port chain of a sysfs device name: {@code 2-1.4} is {@code 1.4}. */
+    @NonNull
+    public static String derivePort(@NonNull String sysfs) {
+        var dash = sysfs.indexOf('-');
+        return dash < 0 ? sysfs : sysfs.substring(dash + 1);
+    }
+
     /** A hub carries the rest of the tree; handing one to a VM would take its own children away. */
     public boolean isHub() {
         if (CLASS_HUB.equals(deviceClass)) return true;
@@ -198,6 +225,8 @@ public final class UsbHostDevice {
     public LinkedHashMap<String, Object> toMap() {
         var map = new LinkedHashMap<String, Object>();
         map.put("sysfs", sysfs);
+        map.put("id", id);
+        map.put("port", port);
         map.put("busnum", busnum);
         map.put("devnum", devnum);
         map.put("node", node);

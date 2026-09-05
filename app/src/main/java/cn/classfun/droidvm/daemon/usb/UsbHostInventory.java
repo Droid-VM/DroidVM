@@ -161,14 +161,18 @@ public final class UsbHostInventory {
         synchronized (rescanLock) {
             var previous = snapshot;
             all = scan();
+            // Keyed by address and device number, not by address alone: an unplug and replug
+            // that both land inside one quiet period put a new device at the same sysfs name,
+            // and by name the two scans would agree that nothing happened. The kernel hands
+            // every enumeration a fresh devnum, so that is what tells the two instances apart.
             var before = new HashSet<String>();
-            for (var device : previous) before.add(device.sysfs);
+            for (var device : previous) before.add(instanceKey(device));
             var after = new HashSet<String>();
-            for (var device : all) after.add(device.sysfs);
+            for (var device : all) after.add(instanceKey(device));
             for (var device : all)
-                if (!before.contains(device.sysfs)) added.add(device);
+                if (!before.contains(instanceKey(device))) added.add(device);
             for (var device : previous)
-                if (!after.contains(device.sysfs)) removed.add(device);
+                if (!after.contains(instanceKey(device))) removed.add(device);
             snapshot = all;
         }
         if (added.isEmpty() && removed.isEmpty()) return all;
@@ -180,6 +184,11 @@ public final class UsbHostInventory {
             Log.w(TAG, "USB inventory listener failed", e);
         }
         return all;
+    }
+
+    @NonNull
+    private static String instanceKey(@NonNull UsbHostDevice device) {
+        return fmt("%s#%d", device.sysfs, device.devnum);
     }
 
     private void scheduleRescan() {

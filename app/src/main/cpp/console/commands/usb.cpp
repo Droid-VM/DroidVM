@@ -5,6 +5,10 @@
 #include <charconv>
 #include <cstdio>
 #include <cstring>
+#include <format>
+#include <fstream>
+#include <sstream>
+#include <string>
 
 // A detach names either the host device or the guest port it was given; an all-digit argument is
 // the port, because a sysfs name always carries a '-'.
@@ -120,9 +124,101 @@ int UsbVmCommand::run(int, char *argv[]) {
     return 0;
 }
 
+class UsbRulesCommand : public Command {
+public:
+    [[nodiscard]] const char *name() const override { return "usb-rules"; }
+
+    [[nodiscard]] const char *description() const override {
+        return "Show, dry-run or replace the USB auto-attach rules";
+    }
+
+    [[nodiscard]] const char *usage() const override { return "[test | set <file>]"; }
+
+    [[nodiscard]] int min_args() const override { return 0; }
+
+    int run(int argc, char *argv[]) override;
+
+private:
+    static int show();
+
+    static int test();
+
+    static int set(const char *path);
+};
+
+int UsbRulesCommand::run(int argc, char *argv[]) {
+    if (argc < 3) return show();
+    if (strcmp(argv[2], "test") == 0) return test();
+    if (strcmp(argv[2], "set") == 0) {
+        if (argc < 4) {
+            fprintf(stderr, "Usage: %s usb-rules set <file>\n", argv[0]);
+            return 1;
+        }
+        return set(argv[3]);
+    }
+    fprintf(stderr, "Unknown usb-rules subcommand: %s\n", argv[2]);
+    return 1;
+}
+
+int UsbRulesCommand::show() {
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "usb_rules_get";
+    auto resp = ipc->send_request(req);
+    // The rules alone: this is the file the UI writes, so what prints is what `set` reads back.
+    printf("%s\n", IPCClient::json_to_string(resp["rules"], true).c_str());
+    return 0;
+}
+
+// What a rule pass would do with a device, in one word or one address.
+static std::string describe_result(const Json::Value &result) {
+    if (result.isNull()) return "none";
+    auto layer = result.get("layer", "?").asString();
+    auto index = result.get("index", 0).asInt();
+    auto vm = result.get("vm", Json::Value::null);
+    return std::format("{}[{}] -> {}", layer, index, vm.isNull() ? "host" : vm.asString());
+}
+
+int UsbRulesCommand::test() {
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "usb_rules_test";
+    auto resp = ipc->send_request(req);
+    printf("%-10s %-30s %-8s %-5s %-36s %s\n",
+           "SYSFS", "ID", "PORT", "HELD", "ATTACHED_VM", "RESULT");
+    for (const auto &dev: resp["devices"]) {
+        auto attached = dev.get("attached_vm", Json::Value::null);
+        printf("%-10s %-30s %-8s %-5s %-36s %s\n",
+               dev.get("sysfs", "").asCString(),
+               dev.get("id", "").asCString(),
+               dev.get("port", "").asCString(),
+               dev.get("held", false).asBool() ? "yes" : "no",
+               attached.isNull() ? "-" : attached.asCString(),
+               describe_result(dev.get("result", Json::Value::null)).c_str());
+    }
+    return 0;
+}
+
+int UsbRulesCommand::set(const char *path) {
+    std::ifstream in(path);
+    if (!in) {
+        fprintf(stderr, "Cannot open %s\n", path);
+        return 1;
+    }
+    std::stringstream buf;
+    buf << in.rdbuf();
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "usb_rules_set";
+    req["rules"] = IPCClient::parse_json(buf.str());
+    print_response(ipc->send_request(req));
+    return 0;
+}
+
 void command_register_usb(CommandRegistry &registry) {
     registry.register_command(std::make_unique<UsbListCommand>());
     registry.register_command(std::make_unique<UsbAttachCommand>());
     registry.register_command(std::make_unique<UsbDetachCommand>());
     registry.register_command(std::make_unique<UsbVmCommand>());
+    registry.register_command(std::make_unique<UsbRulesCommand>());
 }

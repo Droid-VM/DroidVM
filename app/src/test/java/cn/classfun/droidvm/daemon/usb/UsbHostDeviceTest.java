@@ -110,6 +110,34 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
+    public void theRuleIdIsVidPidAndSerial() throws Exception {
+        var root = folder.newFolder("sysfs");
+        var dev = writeFlashDrive(root);
+
+        assertEquals("090c:1000:0123456789ABCDEF", UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").id);
+        assertTrue(new File(dev, "serial").delete());
+        assertEquals("090c:1000", UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").id);
+    }
+
+    @Test
+    public void theRuleIdLowercasesTheHexAndKeepsTheSerial() {
+        assertEquals("090c:1000:ABC-def", UsbHostDevice.deriveId("090C", "1000", "ABC-def"));
+        assertEquals("0bda:8153", UsbHostDevice.deriveId("0BDA", "8153", ""));
+    }
+
+    @Test
+    public void thePortIsTheSysfsNameWithoutItsBus() throws Exception {
+        var root = folder.newFolder("sysfs");
+        assertEquals("1.1", UsbHostDevice.fromSysfs(writeFlashDrive(root), "/dev/bus/usb").port);
+        assertEquals("1.2.2", UsbHostDevice.derivePort("1-1.2.2"));
+        assertEquals("1.4", UsbHostDevice.derivePort("2-1.4"));
+        // One socket, two buses: a USB2 device enumerates on bus 1 and a USB3 one on bus 2, and
+        // only with the bus gone do the two name the same place.
+        assertEquals(UsbHostDevice.derivePort("1-1.4"), UsbHostDevice.derivePort("2-1.4"));
+        assertEquals("3", UsbHostDevice.derivePort("1-3"));
+    }
+
+    @Test
     public void aDeviceClassOfNineIsAHub() throws Exception {
         var root = folder.newFolder("sysfs");
         var dev = writeFlashDrive(root);
@@ -136,7 +164,7 @@ public final class UsbHostDeviceTest {
         bindDriver(new File(dev, "1-1.1:1.0"), "usb-storage");
 
         var map = UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").toMap();
-        assertEquals(Arrays.asList("sysfs", "busnum", "devnum", "node", "vid", "pid",
+        assertEquals(Arrays.asList("sysfs", "id", "port", "busnum", "devnum", "node", "vid", "pid",
                 "manufacturer", "product", "serial", "speed", "device_class", "host_in_use",
                 "interfaces"),
             new ArrayList<>(map.keySet()));

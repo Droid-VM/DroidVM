@@ -3,9 +3,11 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getPrebuiltBinaryPath;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.util.Log;
 
@@ -23,8 +25,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -42,6 +47,13 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * place that knows the device has to be given back -- the kernel does not rebind a driver by
  * itself once the claim is released, and crosvm does not notice an unplug until the next
  * transfer.</p>
+ *
+ * <p>Devices also get lent out without being asked for: the rules (§2.4 of the plan) are run over
+ * everything plugged in and unclaimed whenever a device appears, a VM reaches RUNNING, or the
+ * rules change -- and never when a VM goes down, so a stop releases devices but takes nothing.
+ * The deciding is the {@link UsbRuleEngine}'s and happens under the same lock as the manual
+ * bookkeeping; the attaching goes through the same path as a manual attach, so both kinds share
+ * one record and one set of conflicts.</p>
  */
 public final class UsbPassthroughManager {
     private static final String TAG = "UsbPassthroughManager";
@@ -57,6 +69,11 @@ public final class UsbPassthroughManager {
     /** How long a released interface may still show that claim before the host is offered it. */
     private static final long USBFS_RELEASE_TIMEOUT_MS = 10_000;
     private static final long USBFS_POLL_MS = 200;
+    /**
+     * A composite device's nodes show up one at a time and the inventory reports each batch; the
+     * rules run once the batches have stopped, so a device is offered whole.
+     */
+    private static final long AUTO_ATTACH_DEBOUNCE_MS = 400;
 
     /** One host device lent to one VM, for as long as both are alive. */
     static final class Attachment {
@@ -67,9 +84,13 @@ public final class UsbPassthroughManager {
         final String vid;
         final String pid;
         final String node;
+        /** The rule that made this attachment, or null when the user asked for it. */
+        @Nullable
+        final UsbRuleEngine.Decision rule;
 
         Attachment(@NonNull String vmId, @NonNull String vmName, int port, @NonNull String sysfs,
-                   @NonNull String vid, @NonNull String pid, @NonNull String node) {
+                   @NonNull String vid, @NonNull String pid, @NonNull String node,
+                   @Nullable UsbRuleEngine.Decision rule) {
             this.vmId = vmId;
             this.vmName = vmName;
             this.port = port;
@@ -77,6 +98,13 @@ public final class UsbPassthroughManager {
             this.vid = vid;
             this.pid = pid;
             this.node = node;
+            this.rule = rule;
+        }
+
+        /** "manual" or "auto": who asked for this attachment. */
+        @NonNull
+        String source() {
+            return rule == null ? "manual" : "auto";
         }
     }
 
@@ -89,11 +117,21 @@ public final class UsbPassthroughManager {
     private final Map<String, Integer> stopEpochs = new HashMap<>();
     private final Object lock = new Object();
     private final UsbHostInventory inventory = new UsbHostInventory(SYSFS_ROOT, DEV_ROOT);
-    private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
+    /** The rules and the per-device flags; every call into it is made under [lock]. */
+    private final UsbRuleEngine engine = new UsbRuleEngine();
+    private final File rulesFile = new File(pathJoin(DATA_DIR, "files"), UsbRulesFile.NAME);
+    /**
+     * One thread, so the releases of a stopping VM, the detach of an unplugged device and the
+     * rule passes run in the order they were queued: a pass never races the release that is
+     * making its candidates free.
+     */
+    private final ScheduledExecutorService worker = Executors.newSingleThreadScheduledExecutor(r -> {
         var t = new Thread(r, "usb-manager");
         t.setDaemon(true);
         return t;
     });
+    /** The debounced rule pass a plug event armed, if any. Guarded by [lock]. */
+    private ScheduledFuture<?> pendingAuto = null;
     private final ServerContext context;
     private volatile Consumer<JSONObject> broadcaster = null;
 
@@ -101,9 +139,18 @@ public final class UsbPassthroughManager {
         this.context = context;
     }
 
-    /** Starts the inventory watch. Called once, from the server, and never throws. */
+    /**
+     * Loads the rules and starts the inventory watch. Called once, from the server, and never
+     * throws. A VM that is already RUNNING by now reached that state before anyone was listening
+     * and before there was an inventory to pick from, so one pass is queued for it -- the same
+     * pass its RUNNING edge would have run.
+     */
     public void start(@NonNull Consumer<JSONObject> broadcaster) {
         this.broadcaster = broadcaster;
+        var rules = UsbRulesFile.load(rulesFile);
+        synchronized (lock) {
+            engine.setRules(rules);
+        }
         try {
             inventory.start(this::onInventoryChanged);
             var devices = inventory.snapshot();
@@ -116,6 +163,7 @@ public final class UsbPassthroughManager {
         } catch (Exception e) {
             Log.w(TAG, "Failed to start the USB host inventory", e);
         }
+        queueAutoAttach("start");
     }
 
     /**
@@ -150,20 +198,116 @@ public final class UsbPassthroughManager {
         // scan is four directories, so it is cheaper to read sysfs than to be wrong.
         for (var device : inventory.scan()) {
             Attachment attachment;
+            boolean held;
             synchronized (lock) {
                 attachment = attachments.get(device.sysfs);
+                held = engine.isHeld(device.sysfs);
             }
             var obj = device.toJson();
             obj.put("attached_vm", attachment == null ? JSONObject.NULL : attachment.vmId);
             obj.put("attached_vm_name", attachment == null ? JSONObject.NULL : attachment.vmName);
             obj.put("attached_port", attachment == null ? JSONObject.NULL : attachment.port);
+            obj.put("held", held);
+            obj.put("auto_rule", attachment == null || attachment.rule == null
+                ? JSONObject.NULL : ruleJson(attachment.rule));
             array.put(obj);
         }
         return array;
     }
 
+    /** The rules as the daemon holds them. */
+    @NonNull
+    public UsbRules getRules() {
+        synchronized (lock) {
+            return engine.getRules();
+        }
+    }
+
+    /**
+     * Replaces the rules: validated, kept, written out, and run once. Returns how many devices
+     * that run attached. A save is not a reason to take anything away -- devices already lent out
+     * are not candidates -- and does not clear a hold either.
+     */
+    public int setRules(@NonNull JSONObject json) {
+        var rules = UsbRules.fromJson(json, id -> context.getVMs().findById(id) != null);
+        synchronized (lock) {
+            engine.setRules(rules);
+        }
+        try {
+            UsbRulesFile.save(rulesFile, rules);
+        } catch (IOException e) {
+            // The rules are in force regardless; only the copy for the next daemon start is missing.
+            Log.w(TAG, fmt("Failed to write %s", rulesFile), e);
+        }
+        Log.i(TAG, fmt("USB rules set: exact=%d port=%d device=%d any=%d",
+            rules.layer(UsbRules.Layer.EXACT).size(), rules.layer(UsbRules.Layer.PORT).size(),
+            rules.layer(UsbRules.Layer.DEVICE).size(), rules.layer(UsbRules.Layer.ANY).size()));
+        return runAutoAttachAndWait("rules");
+    }
+
+    /**
+     * What the rules say about every plugged device, without acting on it. The match is reported
+     * for held and attached devices too -- the row says so, and "where would this go" is the
+     * question a user editing the rules is asking.
+     */
+    @NonNull
+    public JSONArray testRules() throws JSONException {
+        var array = new JSONArray();
+        // A fresh scan, for the same reason hostList takes one.
+        var devices = inventory.scan();
+        synchronized (lock) {
+            for (var device : devices) {
+                var attachment = attachments.get(device.sysfs);
+                var decision = engine.decide(UsbRuleEngine.Device.of(device), this::stateOf);
+                var obj = new JSONObject();
+                obj.put("sysfs", device.sysfs);
+                obj.put("id", device.id);
+                obj.put("port", device.port);
+                obj.put("held", engine.isHeld(device.sysfs));
+                obj.put("attached_vm", attachment == null ? JSONObject.NULL : attachment.vmId);
+                obj.put("result", decision == null ? JSONObject.NULL : decisionJson(decision));
+                array.put(obj);
+            }
+        }
+        return array;
+    }
+
+    @NonNull
+    private static JSONObject ruleJson(@NonNull UsbRuleEngine.Decision decision)
+        throws JSONException {
+        var obj = new JSONObject();
+        obj.put("layer", decision.layer.key);
+        obj.put("index", decision.index);
+        return obj;
+    }
+
+    @NonNull
+    private static JSONObject decisionJson(@NonNull UsbRuleEngine.Decision decision)
+        throws JSONException {
+        var obj = ruleJson(decision);
+        obj.put("vm", decision.vm == null ? JSONObject.NULL : decision.vm);
+        return obj;
+    }
+
+    /** The state of the VM [vmId] names, null when there is no such VM. */
+    @Nullable
+    private VMState stateOf(@NonNull String vmId) {
+        var inst = context.getVMs().findById(vmId);
+        return inst == null ? null : inst.getState();
+    }
+
     /** Hands the device named by [sysfs] to [vm] and returns the guest port it landed on. */
     public int attach(@NonNull VMInstance vm, @NonNull String sysfs) {
+        return attach(vm, sysfs, null);
+    }
+
+    /**
+     * The one attach path. [rule] is the decision that asked for this, or null when the user did;
+     * it only goes on the record, so a device attached by rule and one attached by hand are the
+     * same thing to every release, conflict and listing.
+     */
+    private int attach(@NonNull VMInstance vm, @NonNull String sysfs,
+                       @Nullable UsbRuleEngine.Decision rule) {
         if (vm.getState() != VMState.RUNNING)
             throw new RequestException("VM is not running");
         if (!vm.item.optBoolean("usb", false))
@@ -216,7 +360,7 @@ public final class UsbPassthroughManager {
             if (existing != null) lostTo = existing.vmName;
             else if (stopEpoch(vmId) != epoch) stopped = true;
             else attachments.put(sysfs, new Attachment(
-                vmId, vmName, port, sysfs, device.vid, device.pid, device.node));
+                vmId, vmName, port, sysfs, device.vid, device.pid, device.node, rule));
         }
         if (stopped) {
             // The VM went down while we were in the CLI and its release pass has already run.
@@ -235,8 +379,9 @@ public final class UsbPassthroughManager {
             }
             throw new RequestException(fmt("device already attached to VM %s", lostTo));
         }
-        Log.i(TAG, fmt("Attached USB %s (%s:%s) to VM %s on port %d",
-            sysfs, device.vid, device.pid, vmName, port));
+        Log.i(TAG, fmt("Attached USB %s (%s:%s) to VM %s on port %d (%s)",
+            sysfs, device.vid, device.pid, vmName, port, rule == null ? "manual"
+                : fmt("auto, rule %s[%d]", rule.layer.key, rule.index)));
         broadcastVm(vmId, vmName);
         broadcastHost();
         return port;
@@ -262,7 +407,11 @@ public final class UsbPassthroughManager {
         return epoch == null ? 0 : epoch;
     }
 
-    /** Takes a device back from [vm], addressed either by its sysfs name or by its guest port. */
+    /**
+     * Takes a device back from [vm], addressed either by its sysfs name or by its guest port.
+     * This is the user's doing, so the device is held: no rule offers it to a VM again until it
+     * is unplugged. The releases a stop or an unplug make are not detaches and hold nothing.
+     */
     public void detach(@NonNull VMInstance vm, @Nullable String sysfs, @Nullable Integer port) {
         var vmId = vm.getId().toString();
         Attachment attachment = null;
@@ -288,6 +437,7 @@ public final class UsbPassthroughManager {
             // still drop a record the stop hook missed -- refusing here would strand it.
             synchronized (lock) {
                 attachments.remove(attachment.sysfs);
+                engine.hold(attachment.sysfs);
             }
             Log.i(TAG, fmt("Dropped USB %s: VM %s is gone", attachment.sysfs, vm.getName()));
             restoreHostDrivers(attachment.sysfs);
@@ -308,8 +458,10 @@ public final class UsbPassthroughManager {
         }
         synchronized (lock) {
             attachments.remove(attachment.sysfs);
+            engine.hold(attachment.sysfs);
         }
-        Log.i(TAG, fmt("Detached USB %s from VM %s", attachment.sysfs, vm.getName()));
+        Log.i(TAG, fmt("Detached USB %s from VM %s; held until unplugged",
+            attachment.sysfs, vm.getName()));
         restoreHostDrivers(attachment.sysfs);
         broadcastVm(vmId, vm.getName());
         broadcastHost();
@@ -343,8 +495,15 @@ public final class UsbPassthroughManager {
      * still inside the CLI is refused, but the records stay, and hostList and vmList go on showing
      * the devices as attached, which is the truth. STOPPED and REBOOTING drop the records without
      * a word to the VMM -- that process is gone -- and a state transition is never blocked on it.
+     * RUNNING is the other edge the rules care about: the VM can take devices from then on, and
+     * a reboot is a REBOOTING release followed by this, which is how its devices find their way
+     * back. No release runs the rules -- a stop is never the reason a device changes hands.
      */
     public void onVmState(@NonNull VMInstance vm, @NonNull VMState state) {
+        if (state == VMState.RUNNING) {
+            queueAutoAttach(fmt("VM %s running", vm.getName()));
+            return;
+        }
         if (state != VMState.STOPPING && state != VMState.STOPPED && state != VMState.REBOOTING)
             return;
         try {
@@ -377,8 +536,9 @@ public final class UsbPassthroughManager {
             // Most state changes concern a VM that never held a device; say nothing about those.
             if (released.isEmpty()) return;
             for (var attachment : released) {
-                Log.i(TAG, fmt("Released USB %s (%s:%s) from VM %s",
-                    attachment.sysfs, attachment.vid, attachment.pid, vmName));
+                Log.i(TAG, fmt("Released USB %s (%s:%s, %s) from VM %s",
+                    attachment.sysfs, attachment.vid, attachment.pid, attachment.source(),
+                    vmName));
                 restoreHostDrivers(attachment.sysfs);
             }
             broadcastVm(vmId, vmName);
@@ -395,12 +555,120 @@ public final class UsbPassthroughManager {
             Attachment attachment;
             synchronized (lock) {
                 attachment = attachments.get(device.sysfs);
+                // The node is gone, and with it the instance a hold or a failure was about;
+                // whatever is plugged in there next is a new device the rules may take.
+                engine.forget(device.sysfs);
             }
             if (attachment == null) continue;
             worker.execute(() -> releaseUnplugged(attachment));
         }
-        for (var device : added) onDeviceAdded(device);
+        if (!added.isEmpty()) scheduleAutoAttach();
         broadcastHost();
+    }
+
+    /** Arms (or re-arms) the rule pass a plug owes, so a burst of nodes becomes one pass. */
+    private void scheduleAutoAttach() {
+        synchronized (lock) {
+            if (pendingAuto != null) pendingAuto.cancel(false);
+            try {
+                pendingAuto = worker.schedule(() -> runAutoAttachQuietly("plug"),
+                    AUTO_ATTACH_DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException e) {
+                // shutdown() won the race; nothing is going to be attached any more.
+                pendingAuto = null;
+            }
+        }
+    }
+
+    /** Queues a rule pass behind whatever the worker is doing; never blocks the caller. */
+    private void queueAutoAttach(@NonNull String reason) {
+        try {
+            worker.execute(() -> runAutoAttachQuietly(reason));
+        } catch (RejectedExecutionException e) {
+            Log.i(TAG, fmt("USB rules not run (%s): shutting down", reason));
+        }
+    }
+
+    /** Runs a rule pass on the worker and waits for it: the caller wants the count. */
+    private int runAutoAttachAndWait(@NonNull String reason) {
+        try {
+            return worker.submit(() -> runAutoAttach(reason)).get();
+        } catch (RejectedExecutionException e) {
+            return 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 0;
+        } catch (ExecutionException e) {
+            Log.w(TAG, fmt("USB rules pass (%s) failed", reason), e.getCause());
+            return 0;
+        }
+    }
+
+    private void runAutoAttachQuietly(@NonNull String reason) {
+        try {
+            runAutoAttach(reason);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("USB rules pass (%s) failed", reason), e);
+        }
+    }
+
+    /**
+     * One pass of the rules over everything plugged in, unclaimed and not held. Deciding is done
+     * under the lock against the inventory's snapshot; the attaches themselves run outside it,
+     * one after another, through the same path a manual attach takes. Returns how many devices
+     * were attached. A device whose attach fails is marked for the VM it failed for, so the next
+     * pass passes that rule over instead of failing the same way again.
+     */
+    private int runAutoAttach(@NonNull String reason) {
+        List<UsbRuleEngine.Decision> plan;
+        synchronized (lock) {
+            if (engine.getRules().isEmpty()) return 0;
+            var plugged = new ArrayList<UsbRuleEngine.Device>();
+            for (var device : inventory.snapshot()) plugged.add(UsbRuleEngine.Device.of(device));
+            plan = engine.plan(plugged, attachments::containsKey, this::stateOf);
+        }
+        var applied = 0;
+        for (var decision : plan) {
+            // A null VM is the rule saying the host keeps it, which takes no action.
+            if (decision.vm == null) continue;
+            var inst = context.getVMs().findById(decision.vm);
+            if (inst == null) continue;
+            var device = decision.device;
+            var where = fmt("%s[%d]", decision.layer.key, decision.index);
+            try {
+                attach(inst, device.sysfs, decision);
+                applied++;
+                broadcastAuto("usb_auto_attached", inst, decision, null);
+            } catch (Exception e) {
+                synchronized (lock) {
+                    engine.markFailed(device.sysfs, decision.vm);
+                }
+                Log.w(TAG, fmt("Auto attach of USB %s (%s) to VM %s by rule %s failed: %s",
+                    device.sysfs, device.id, inst.getName(), where, e.getMessage()));
+                broadcastAuto("usb_auto_failed", inst, decision, e.getMessage());
+            }
+        }
+        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached",
+            reason, plan.size(), applied));
+        return applied;
+    }
+
+    private void broadcastAuto(@NonNull String event, @NonNull VMInstance vm,
+                               @NonNull UsbRuleEngine.Decision decision, @Nullable String error) {
+        try {
+            var data = new JSONObject();
+            data.put("vm_id", vm.getId().toString());
+            data.put("vm_name", vm.getName());
+            data.put("sysfs", decision.device.sysfs);
+            data.put("id", decision.device.id);
+            data.put("port", decision.device.port);
+            data.put("layer", decision.layer.key);
+            data.put("index", decision.index);
+            if (error != null) data.put("error", error);
+            broadcast(event, data);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Failed to build %s", event), e);
+        }
     }
 
     /**
@@ -430,10 +698,6 @@ public final class UsbPassthroughManager {
         } catch (Exception e) {
             Log.w(TAG, "Failed to release an unplugged USB device", e);
         }
-    }
-
-    private void onDeviceAdded(@NonNull UsbHostDevice device) {
-        // M4 auto-attach rules go here.
     }
 
     /**

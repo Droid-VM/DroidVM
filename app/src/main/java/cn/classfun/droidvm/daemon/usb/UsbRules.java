@@ -1,0 +1,249 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
+package cn.classfun.droidvm.daemon.usb;
+
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
+
+import cn.classfun.droidvm.daemon.server.RequestException;
+
+/**
+ * The automatic USB attach rules: one global file of four ordered layers, each an ordered list.
+ * Order is priority, within a layer and across them. Rules are not per VM on purpose -- which VM
+ * gets a device when two of them want it is part of the rule, and a per-VM list has nowhere to
+ * say it.
+ *
+ * <p>Immutable once built, and validated on the way in: a rule the daemon holds is always one it
+ * could act on. The org.json conversion is kept at the edge ({@link #fromJson}, {@link #toJson})
+ * so the model and its validation run under the stubbed android.jar of a unit test.</p>
+ */
+public final class UsbRules {
+    public static final int VERSION = 1;
+    /** {@code vid:pid}, lowercase hex, then optionally {@code :serial}; a serial may hold anything. */
+    private static final Pattern ID = Pattern.compile("^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}(:.+)?$");
+    /** A port chain: {@code 1.2.2}, {@code 1.4}, or a root port {@code 3}. */
+    private static final Pattern PORT = Pattern.compile("^\\d+(\\.\\d+)*$");
+
+    /** The four layers, in the order they are consulted. */
+    public enum Layer {
+        EXACT("exact"),
+        PORT("port"),
+        DEVICE("device"),
+        ANY("any");
+
+        /** The key this layer goes under in the JSON file and on the wire. */
+        public final String key;
+
+        Layer(@NonNull String key) {
+            this.key = key;
+        }
+
+        @Nullable
+        public static Layer fromKey(@NonNull String key) {
+            for (var layer : values())
+                if (layer.key.equals(key)) return layer;
+            return null;
+        }
+    }
+
+    /**
+     * One entry. Which fields are set is decided by the layer it sits in; {@code vm} is a VM id,
+     * or null for "leave it with the host", which the {@link Layer#ANY} layer does not allow.
+     */
+    public static final class Rule {
+        @Nullable
+        public final String id;
+        @Nullable
+        public final String port;
+        @Nullable
+        public final String vm;
+
+        public Rule(@Nullable String id, @Nullable String port, @Nullable String vm) {
+            this.id = id;
+            this.port = port;
+            this.vm = vm;
+        }
+
+        /** Whether the device with [deviceId] at [devicePort] is one this rule speaks about. */
+        public boolean matches(@NonNull String deviceId, @NonNull String devicePort) {
+            if (id != null && !id.equals(deviceId)) return false;
+            return port == null || port.equals(devicePort);
+        }
+    }
+
+    private final Map<Layer, List<Rule>> layers;
+
+    private UsbRules(@NonNull Map<Layer, List<Rule>> layers) {
+        this.layers = layers;
+    }
+
+    @NonNull
+    public static UsbRules empty() {
+        return build(new EnumMap<>(Layer.class), null);
+    }
+
+    /**
+     * Builds a rule set, refusing anything the engine could not act on.
+     *
+     * @param vmExists says whether a VM id names a VM; null skips that check, for a file read
+     *                 back at start-up, where a rule for a VM deleted since is kept -- it can
+     *                 never match, and dropping the user's entry silently would be worse.
+     * @throws RequestException naming the layer, the index and what is wrong.
+     */
+    @NonNull
+    public static UsbRules build(@NonNull Map<Layer, List<Rule>> layers,
+                                 @Nullable Predicate<String> vmExists) {
+        var result = new EnumMap<Layer, List<Rule>>(Layer.class);
+        for (var layer : Layer.values()) {
+            var rules = layers.get(layer);
+            if (rules == null) rules = Collections.emptyList();
+            var checked = new ArrayList<Rule>(rules.size());
+            for (var i = 0; i < rules.size(); i++)
+                checked.add(validate(layer, i, rules.get(i), vmExists));
+            result.put(layer, Collections.unmodifiableList(checked));
+        }
+        return new UsbRules(result);
+    }
+
+    @NonNull
+    private static Rule validate(@NonNull Layer layer, int index, @NonNull Rule rule,
+                                 @Nullable Predicate<String> vmExists) {
+        var where = fmt("%s[%d]", layer.key, index);
+        var wantsId = layer == Layer.EXACT || layer == Layer.DEVICE;
+        var wantsPort = layer == Layer.EXACT || layer == Layer.PORT;
+        if (wantsId && rule.id == null)
+            throw new RequestException(fmt("%s: missing id", where));
+        if (!wantsId && rule.id != null)
+            throw new RequestException(fmt("%s: a %s rule takes no id", where, layer.key));
+        if (wantsPort && rule.port == null)
+            throw new RequestException(fmt("%s: missing port", where));
+        if (!wantsPort && rule.port != null)
+            throw new RequestException(fmt("%s: a %s rule takes no port", where, layer.key));
+        if (layer == Layer.ANY && rule.vm == null)
+            throw new RequestException(fmt("%s: vm must not be null in the any layer", where));
+        String id = null;
+        if (rule.id != null) {
+            if (!ID.matcher(rule.id).matches())
+                throw new RequestException(fmt(
+                    "%s: bad id %s (want vid:pid or vid:pid:serial)", where, rule.id));
+            // vid:pid is hex and the device side lowercases it; the serial is a string and is
+            // compared as the device reports it.
+            id = rule.id.substring(0, 9).toLowerCase(Locale.ROOT) + rule.id.substring(9);
+        }
+        if (rule.port != null && !PORT.matcher(rule.port).matches())
+            throw new RequestException(fmt(
+                "%s: bad port %s (want a port chain such as 1.2.2)", where, rule.port));
+        if (rule.vm != null) {
+            if (rule.vm.isEmpty())
+                throw new RequestException(fmt("%s: vm must be a VM id or null", where));
+            if (vmExists != null && !vmExists.test(rule.vm))
+                throw new RequestException(fmt("%s: VM not found: %s", where, rule.vm));
+        }
+        return new Rule(id, rule.port, rule.vm);
+    }
+
+    /** The rules of [layer], in priority order; never null. */
+    @NonNull
+    public List<Rule> layer(@NonNull Layer layer) {
+        var rules = layers.get(layer);
+        return rules == null ? Collections.emptyList() : rules;
+    }
+
+    public boolean isEmpty() {
+        for (var layer : Layer.values())
+            if (!layer(layer).isEmpty()) return false;
+        return true;
+    }
+
+    /**
+     * Reads the wire/file form. Unknown keys are refused rather than ignored: a misspelt layer
+     * would otherwise be a rule set that silently does nothing.
+     */
+    @NonNull
+    public static UsbRules fromJson(@NonNull JSONObject obj, @Nullable Predicate<String> vmExists) {
+        var layers = new EnumMap<Layer, List<Rule>>(Layer.class);
+        var keys = obj.keys();
+        while (keys.hasNext()) {
+            var key = keys.next();
+            if ("version".equals(key)) {
+                var version = obj.opt("version");
+                if (!(version instanceof Number) || ((Number) version).intValue() != VERSION)
+                    throw new RequestException(fmt("unsupported rules version %s", version));
+                continue;
+            }
+            var layer = Layer.fromKey(key);
+            if (layer == null)
+                throw new RequestException(fmt("unknown rules key: %s", key));
+            var array = obj.optJSONArray(key);
+            if (array == null) {
+                if (obj.isNull(key)) continue;
+                throw new RequestException(fmt("%s must be a list", key));
+            }
+            var rules = new ArrayList<Rule>(array.length());
+            for (var i = 0; i < array.length(); i++) {
+                var item = array.optJSONObject(i);
+                if (item == null)
+                    throw new RequestException(fmt("%s[%d] must be an object", key, i));
+                rules.add(ruleFromJson(key, i, item));
+            }
+            layers.put(layer, rules);
+        }
+        return build(layers, vmExists);
+    }
+
+    @NonNull
+    private static Rule ruleFromJson(@NonNull String layer, int index, @NonNull JSONObject item) {
+        var keys = item.keys();
+        while (keys.hasNext()) {
+            var key = keys.next();
+            if ("id".equals(key) || "port".equals(key) || "vm".equals(key)) continue;
+            throw new RequestException(fmt("%s[%d]: unknown field %s", layer, index, key));
+        }
+        return new Rule(optString(item, "id"), optString(item, "port"), optString(item, "vm"));
+    }
+
+    /** A string field, where an absent key and a JSON null both read as null. */
+    @Nullable
+    private static String optString(@NonNull JSONObject item, @NonNull String key) {
+        if (!item.has(key) || item.isNull(key)) return null;
+        var value = item.opt(key);
+        if (!(value instanceof String))
+            throw new RequestException(fmt("%s must be a string or null", key));
+        return (String) value;
+    }
+
+    /** The wire/file form: each rule carries exactly the fields its layer reads. */
+    @NonNull
+    public JSONObject toJson() throws JSONException {
+        var obj = new JSONObject();
+        obj.put("version", VERSION);
+        for (var layer : Layer.values()) {
+            var array = new JSONArray();
+            for (var rule : layer(layer)) {
+                var item = new JSONObject();
+                if (rule.id != null) item.put("id", rule.id);
+                if (rule.port != null) item.put("port", rule.port);
+                item.put("vm", rule.vm == null ? JSONObject.NULL : rule.vm);
+                array.put(item);
+            }
+            obj.put(layer.key, array);
+        }
+        return obj;
+    }
+}
