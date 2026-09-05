@@ -72,6 +72,7 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
+import cn.classfun.droidvm.lib.store.vm.VmmLogLevel;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
@@ -375,6 +376,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // Top-level flag (must precede `run`): makes crosvm surface CommandStatus
         // exit codes (see CrosvmExit) so runVM() can tell reset/crash/panic apart.
         args.add("--extended-status");
+        appendLogLevel(args, item);
         args.add("run");
         args.add("--name");
         args.add(config.getName());
@@ -1570,6 +1572,44 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void buildCodecCommand(@NonNull List<String> args, @Nullable VMHypervisor hypervisor) {
         appendCodecDevices(args, config.item, hypervisor, this::getAppUid);
+    }
+
+    /**
+     * Appends {@code --log-level <filter>} when this VM asked for one, or nothing.
+     *
+     * <p>Between the binary and {@code run}, because {@code --log-level} is a member of
+     * {@code CrosvmCmdlineArgs} and not of the {@code run} subcommand -- argh refuses it after
+     * {@code run} and the VM never starts, which is exactly what {@code extra_options} does to it
+     * and why that seam could not stand in for this ({@code arg parsing failed: Unrecognized
+     * argument: --log-level}, measured in {@code logs/vpu_wp/B11-acceptance.md} section 8).</p>
+     *
+     * <p>Nothing is emitted for the default, so the ordinary command line is unchanged and the
+     * VMM keeps argh's own {@code info}. A stored value that is not a filter is dropped with a
+     * warning rather than thrown: the level is an instrument, and an instrument must not be the
+     * reason a VM stops booting -- least of all one that boots today. The warning names the value
+     * and the reason, because the alternative is a VM that runs at a level nobody chose and says
+     * nothing about it.</p>
+     *
+     * <p>The VMM's level is also every device helper's: a helper is exec'd as
+     * {@code /proc/self/exe --log-level <filter> device media ...}, so this one flag is what makes
+     * a {@code debug!} in the camera, decoder or encoder backend reachable at all (defect D57 for
+     * the forwarding, D60 for this end of it; {@code deploy/vpu/README.md}, "Measurement
+     * traps").</p>
+     */
+    // Package-private and static, not private, so VmmLogLevelTest can assert the exact tokens
+    // and their position without standing up a VM.
+    static void appendLogLevel(@NonNull List<String> args, @NonNull DataItem item) {
+        String filter;
+        try {
+            filter = VmmLogLevel.filterFor(item);
+        } catch (IllegalArgumentException e) {
+            Log.w(TAG, fmt("%s; the VM keeps crosvm's default of %s",
+                e.getMessage(), VmmLogLevel.DEFAULT));
+            return;
+        }
+        if (filter == null) return;
+        args.add("--log-level");
+        args.add(filter);
     }
 
     /**
