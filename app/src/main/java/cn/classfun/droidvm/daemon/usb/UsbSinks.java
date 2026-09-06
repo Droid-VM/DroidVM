@@ -83,6 +83,16 @@ public final class UsbSinks {
     }
 
     /**
+     * Forgets every record. The master switch going off gives back everything this daemon hid,
+     * so there is nothing left for a record to be the provenance of -- and a device a write
+     * could not reach is better read off the host's own {@code authorized} flag, which is what
+     * the next pass does anyway.
+     */
+    public void clear() {
+        records.clear();
+    }
+
+    /**
      * What is owed to [sysfs], which a scan just reported deauthorized. [rulesSink] is whether
      * the rules decide a sink for it right now.
      *

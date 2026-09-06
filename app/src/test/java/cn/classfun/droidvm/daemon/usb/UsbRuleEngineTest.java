@@ -23,6 +23,7 @@ import java.util.function.Function;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Decision;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Device;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Pin;
+import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Save;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Layer;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Rule;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Target;
@@ -78,13 +79,22 @@ public final class UsbRuleEngineTest {
 
     /** Only the layers named are populated; every VM id is taken on trust. */
     private static UsbRules rules(Object... layerAndList) {
+        return UsbRules.build(layersOf(layerAndList), null);
+    }
+
+    /** The same rules with the master switch off: the one difference the gate reads. */
+    private static UsbRules disabled(Object... layerAndList) {
+        return UsbRules.build(false, layersOf(layerAndList), null);
+    }
+
+    private static Map<Layer, List<Rule>> layersOf(Object... layerAndList) {
         var map = new EnumMap<Layer, List<Rule>>(Layer.class);
         for (var i = 0; i < layerAndList.length; i += 2) {
             @SuppressWarnings("unchecked")
             var list = (List<Rule>) layerAndList[i + 1];
             map.put((Layer) layerAndList[i], list);
         }
-        return UsbRules.build(map, null);
+        return map;
     }
 
     private static UsbRuleEngine engine(UsbRules rules) {
@@ -489,5 +499,103 @@ public final class UsbRuleEngineTest {
         assertEquals(Pin.SINK, engine.pinOf(STICK.sysfs));
         assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
             .isEmpty());
+    }
+
+    // The master switch, trigger by trigger. Each of the five raises one of the two questions
+    // this class answers, so switching the rules off is answered here once and for all of them.
+
+    @Test
+    public void aPlugTakesNothingWhileTheSwitchIsOff() {
+        // The fast lane's whole question, asked on the FileObserver thread before any debounce:
+        // no rule takes the device, so nothing is deauthorized ahead of Android...
+        var engine = engine(disabled(Layer.ANY, List.of(sink(null, null))));
+        assertNull(engine.decide(STICK, allRunning(), anyController()));
+        // ... and the debounced pass 700 ms behind it plans nothing either.
+        assertTrue(engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController())
+            .isEmpty());
+    }
+
+    @Test
+    public void aVmReachingRunningTakesNothingWhileTheSwitchIsOff() {
+        var engine = engine(disabled(Layer.DEVICE, List.of(rule(STICK.id, null, VM_A))));
+        var running = states(VM_A, VMState.RUNNING);
+        assertTrue(engine.plan(List.of(STICK), s -> false, running, anyController()).isEmpty());
+        assertNull(engine.decide(STICK, running, anyController()));
+    }
+
+    @Test
+    public void aRulesSaveAppliesNothingWhileTheSwitchIsOff() {
+        // The pass a save runs asks the same question, so a save made while the switch is off
+        // keeps the rules and applies none of them.
+        var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
+        assertEquals(1, engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .size());
+        engine.setRules(disabled(Layer.ANY, List.of(sink(null, null))));
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .isEmpty());
+    }
+
+    @Test
+    public void aVmReleasingItsDevicesHidesNothingWhileTheSwitchIsOff() {
+        // A stop asks whether the rules want the device hidden rather than handed back; off,
+        // they want nothing, and the device goes back to the host like any other.
+        var engine = engine(disabled(Layer.DEVICE, List.of(sink(STICK.id, null))));
+        assertNull(engine.decide(STICK, states(VM_A, VMState.STOPPED), anyController()));
+    }
+
+    @Test
+    public void theDaemonStartPassSinksWithNoVmRunningAndSkipsTheVmRules() {
+        // The trigger the switch was added alongside: at start no VM is up, so a VM rule has
+        // nothing to attach to and only the sink acts -- which is the device that must be gone
+        // before Android settles.
+        var engine = engine(rules(
+            Layer.DEVICE, List.of(sink(STICK.id, null)),
+            Layer.ANY, List.of(rule(null, null, VM_A))
+        ));
+        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, states(), anyController());
+        assertEquals(1, plan.size());
+        assertSink(plan.get(0), STICK, Layer.DEVICE, 0);
+        // And nothing at all while the switch is off, which is what that pass is skipped for.
+        engine.setRules(disabled(
+            Layer.DEVICE, List.of(sink(STICK.id, null)),
+            Layer.ANY, List.of(rule(null, null, VM_A))
+        ));
+        assertTrue(engine.plan(List.of(STICK, MOUSE), s -> false, states(), anyController())
+            .isEmpty());
+    }
+
+    @Test
+    public void onlyTheSwitchesFallingEdgeGivesEverythingBack() {
+        var on = rules(Layer.ANY, List.of(sink(null, null)));
+        var off = disabled(Layer.ANY, List.of(sink(null, null)));
+        var engine = engine(on);
+        // On -> off, and only that, hands back what the rules took.
+        assertEquals(Save.RELEASE, engine.saveOwes(off));
+        engine.setRules(off);
+        // Off -> off gives nothing back: the save that turned it off already did, once.
+        assertEquals(Save.NOTHING,
+            engine.saveOwes(disabled(Layer.DEVICE, List.of(sink(STICK.id, null)))));
+        // Off -> on is the ordinary saved-rules pass, so turning it on applies them at once.
+        assertEquals(Save.PASS, engine.saveOwes(on));
+        engine.setRules(on);
+        assertEquals(Save.PASS, engine.saveOwes(on));
+    }
+
+    @Test
+    public void everyPinGoesBackWithTheDevicesWhenTheSwitchGoesOff() {
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        engine.pin(STICK.sysfs, Pin.SINK);
+        engine.pin(MOUSE.sysfs, Pin.HOST);
+        engine.markFailed(MOUSE.sysfs, VM_A);
+
+        engine.clearPins();
+        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
+        assertEquals(Pin.NONE, engine.pinOf(MOUSE.sysfs));
+        assertFalse(engine.isHeld(STICK.sysfs));
+        // The stick is the rules' again; the mouse's failure is about an attach that did not
+        // work, not about who owns the device, so it outlives the pins.
+        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
+        assertEquals(1, plan.size());
+        assertDecision(plan.get(0), STICK, Layer.ANY, 0, VM_A);
     }
 }

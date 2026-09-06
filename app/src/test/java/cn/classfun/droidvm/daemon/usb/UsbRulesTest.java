@@ -129,6 +129,24 @@ public final class UsbRulesTest {
     }
 
     @Test
+    public void theMasterSwitchIsOnUnlessTheRuleSetSaysOtherwise() {
+        // Absent reads as on, which is what every rule set written before there was a switch
+        // means -- so the two-argument build, the one every such caller uses, is the on form.
+        assertTrue(UsbRules.empty().isEnabled());
+        assertTrue(build(Layer.ANY, new Rule(null, null, VM, null)).isEnabled());
+
+        var map = new EnumMap<Layer, List<Rule>>(Layer.class);
+        map.put(Layer.ANY, List.of(new Rule(null, null, VM, null)));
+        assertTrue(UsbRules.build(true, map, null).isEnabled());
+        var off = UsbRules.build(false, map, null);
+        assertFalse(off.isEnabled());
+        // Off keeps every rule exactly as it is: nothing runs, and nothing is thrown away.
+        assertEquals(1, off.layer(Layer.ANY).size());
+        assertEquals(VM, off.layer(Layer.ANY).get(0).vm);
+        assertFalse(off.isEmpty());
+    }
+
+    @Test
     public void aTargetKeyIsTheOneWordItIsWrittenAs() {
         assertEquals(Target.HOST, Target.fromKey("host"));
         assertEquals(Target.VM, Target.fromKey("vm"));

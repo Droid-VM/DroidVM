@@ -59,9 +59,12 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
  * transfer.</p>
  *
  * <p>Devices also get lent out without being asked for: the rules (section 2.4 of the plan) are
- * run over everything plugged in and unclaimed whenever a device appears, a VM reaches RUNNING,
- * or the rules change -- and never when a VM goes down, so a stop releases devices but takes
- * nothing.
+ * run over everything plugged in and unclaimed whenever the daemon starts, a device appears, a
+ * VM reaches RUNNING, or the rules change -- and never when a VM goes down, so a stop releases
+ * devices but takes nothing. All five of those triggers do nothing at all while the rules carry
+ * their master switch off; only the direct actions -- attach, detach and the management page --
+ * still work, because those are how a user takes a device by hand. Turning that switch off is
+ * itself the one trigger that only gives: it hands back everything this daemon had taken.
  * The deciding is the {@link UsbRuleEngine}'s and happens under the same lock as the manual
  * bookkeeping; the attaching goes through the same path as a manual attach, so both kinds share
  * one record and one set of conflicts. When a pass runs is {@link UsbRulePassTiming}'s: a VM
@@ -237,7 +240,9 @@ public final class UsbPassthroughManager {
         });
         // And one pass whatever is running, which those per-VM ones cannot stand in for: with no
         // VM up there is nothing to attach, but a device a rule sinks still has to be sinked, and
-        // a device the previous run left deauthorized has to be adopted or given back.
+        // a device the previous run left deauthorized has to be adopted or given back. Queued
+        // after the rules are loaded and the first scan is in, and skipped like any other trigger
+        // when the switch says the rules do not run.
         schedule(() -> runPassQuietly("start"), 0);
     }
 
@@ -320,10 +325,22 @@ public final class UsbPassthroughManager {
      * that run acted on -- attached, hidden, or given back after the rule that hid them was
      * deleted. A save is not a reason to take anything away -- devices already lent out are not
      * candidates -- and does not clear a pin either.
+     *
+     * <p>The one save that takes rather than gives is the master switch's falling edge: a save
+     * that turns it off gives every device this daemon took back to the host, once, and runs no
+     * pass. A save that finds it already off does neither, and one that turns it on runs the
+     * ordinary pass, so the rules apply the moment they are allowed to.</p>
      */
     public int setRules(@NonNull JSONObject json) {
         var rules = UsbRules.fromJson(json, this::targetExists);
+        UsbRuleEngine.Save owed;
         synchronized (lock) {
+            // Asked and installed under one lock: the falling edge is a comparison with what the
+            // daemon held a moment ago, and the answer would be worth nothing if another save
+            // could land between the two. The new rules go in before the release runs, not
+            // after: with the switch already off no trigger can act, so nothing can hide or lend
+            // out a device behind the release's back.
+            owed = engine.saveOwes(rules);
             engine.setRules(rules);
         }
         try {
@@ -332,10 +349,18 @@ public final class UsbPassthroughManager {
             // The rules are in force regardless; only the copy for the next daemon start is missing.
             Log.w(TAG, fmt("Failed to write %s", rulesFile), e);
         }
-        Log.i(TAG, fmt("USB rules set: exact=%d port=%d device=%d any=%d",
+        Log.i(TAG, fmt("USB rules set: enabled=%s exact=%d port=%d device=%d any=%d",
+            rules.isEnabled(),
             rules.layer(UsbRules.Layer.EXACT).size(), rules.layer(UsbRules.Layer.PORT).size(),
             rules.layer(UsbRules.Layer.DEVICE).size(), rules.layer(UsbRules.Layer.ANY).size()));
-        return runAutoAttachAndWait("rules");
+        switch (owed) {
+            case RELEASE:
+                return releaseEverythingAndWait();
+            case NOTHING:
+                return 0;
+            default:
+                return runAutoAttachAndWait("rules");
+        }
     }
 
     /**
@@ -1188,6 +1213,75 @@ public final class UsbPassthroughManager {
     }
 
     /**
+     * Gives everything back on the worker and waits for it, the way a pass is run and waited
+     * on: a pass already queued runs first, finds the switch off and does nothing.
+     */
+    private int releaseEverythingAndWait() {
+        try {
+            return worker.submit(() -> releaseEverything()).get();
+        } catch (RejectedExecutionException e) {
+            return 0;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return 0;
+        } catch (ExecutionException e) {
+            Log.w(TAG, "Giving the USB devices back to the host failed", e.getCause());
+            return 0;
+        }
+    }
+
+    /**
+     * The master switch went off: every device this daemon took is given back to the host, once.
+     * The VMs lose theirs, the hidden ones are authorized again, and the records and the pins go
+     * with them -- nothing this daemon said about a device outlives the switch that let it speak.
+     * Returns how many devices were given back, which is what the save reports.
+     *
+     * <p>Best effort, per device: a VMM that will not answer must not leave the rest of the
+     * devices hidden, so each failure is logged and the next device is tried. Nothing here
+     * decides anything -- the rules are already off by the time this runs -- and no pass follows
+     * it, which is why this is the one path that may hand a device back without asking.</p>
+     *
+     * <p>The un-hiding is driven by the scan rather than by the sink records, the way the
+     * reconcile is: a device the host shows deauthorized is one Android cannot see, whoever hid
+     * it, and giving USB back to the host is a statement about what the host can see.</p>
+     */
+    private int releaseEverything() {
+        List<Attachment> held;
+        synchronized (lock) {
+            held = new ArrayList<>(attachments.values());
+        }
+        var given = 0;
+        var vms = new LinkedHashMap<String, String>();
+        for (var attachment : held) {
+            try {
+                dropFromHolder(attachment);
+                restoreHostDrivers(attachment.sysfs, attachment.vmId);
+                vms.put(attachment.vmId, attachment.vmName);
+                given++;
+                Log.i(TAG, fmt("Took USB %s (%s:%s) back from VM %s", attachment.sysfs,
+                    attachment.vid, attachment.pid, attachment.vmName));
+            } catch (Exception e) {
+                Log.w(TAG, fmt("Could not take USB %s back from VM %s: %s", attachment.sysfs,
+                    attachment.vmName, e.getMessage()));
+            }
+        }
+        for (var device : scanHost()) {
+            if (device.authorized) continue;
+            // unsink says what it could not write; a device whose write fails stays hidden until
+            // it is unplugged, and the pass that runs when the switch comes back on picks it up.
+            if (unsink(device.sysfs)) given++;
+        }
+        synchronized (lock) {
+            sinks.clear();
+            engine.clearPins();
+        }
+        Log.i(TAG, fmt("USB passthrough turned off: %d device(s) given back to the host", given));
+        for (var vm : vms.entrySet()) broadcastVm(vm.getKey(), vm.getValue());
+        broadcastHost();
+        return given;
+    }
+
+    /**
      * One pass, and if it found a VMM unreachable, up to {@link UsbRulePassTiming#MAX_RETRIES}
      * more a couple of seconds apart -- the socket was not listening yet, and blaming the device
      * would keep it on the host until the next trigger. Returns what the first pass attached.
@@ -1246,9 +1340,20 @@ public final class UsbPassthroughManager {
      *
      * <p>Every pass also reconciles the sinks, whatever the plan held and even when there are no
      * rules at all -- an empty rule set is exactly when every hidden device has to come back.</p>
+     *
+     * <p>And no pass at all while the master switch is off, which is what makes each of the five
+     * triggers a no-op: not even the reconcile, because giving a device back is the rules acting
+     * on it as much as taking one is, and the falling edge of that switch already gave back
+     * everything this daemon had taken.</p>
      */
     @NonNull
     private PassResult runAutoAttach(@NonNull String reason) {
+        synchronized (lock) {
+            if (!engine.rulesEnabled()) {
+                Log.i(TAG, fmt("USB rules pass (%s) skipped: passthrough is off", reason));
+                return new PassResult(0, false);
+            }
+        }
         List<UsbRuleEngine.Decision> plan;
         synchronized (lock) {
             var plugged = new ArrayList<UsbRuleEngine.Device>();
@@ -1517,6 +1622,12 @@ public final class UsbPassthroughManager {
      */
     private void onNodeAppearedFast(int busnum, int devnum) {
         try {
+            // Before the readlink, not after the decision: with the rules off this lane has
+            // nothing to do with a plug at all, and it runs on the thread every further inotify
+            // event for this bus is queued behind.
+            synchronized (lock) {
+                if (!engine.rulesEnabled()) return;
+            }
             var sysfs = sysfsNameOf(busnum, devnum);
             if (sysfs == null) return;
             var dir = new File(SYSFS_ROOT, sysfs);

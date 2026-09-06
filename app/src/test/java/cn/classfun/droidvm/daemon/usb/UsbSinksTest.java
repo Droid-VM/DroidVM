@@ -114,4 +114,20 @@ public final class UsbSinksTest {
         assertEquals(Reconcile.LEAVE, sinks.reconcile(STICK, true, Pin.NONE, false));
         assertEquals(Reconcile.LEAVE, sinks.reconcile(STICK, true, Pin.NONE, true));
     }
+
+    @Test
+    public void theSwitchGoingOffLeavesNoRecordBehind() {
+        // Everything hidden is authorized again on that edge, so a record would be provenance
+        // for a device nothing is hiding any more -- and the next pass reads the host's own
+        // authorized flag rather than this map anyway.
+        var sinks = new UsbSinks();
+        sinks.put(STICK, sinkDecision(), false, 7);
+        sinks.put("1-1.6", null, true, 3);
+        sinks.clear();
+        assertFalse(sinks.has(STICK));
+        assertFalse(sinks.has("1-1.6"));
+        assertNull(sinks.get(STICK));
+        // A device the write could not reach is decided by the rules again, from the scan.
+        assertEquals(Reconcile.RESTORE, sinks.reconcile(STICK, false, Pin.NONE, false));
+    }
 }

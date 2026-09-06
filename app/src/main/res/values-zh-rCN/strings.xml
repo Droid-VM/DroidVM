@@ -1592,6 +1592,8 @@
     <string name="settings_usb_devices_summary">直接指定单一设备的去向，不改规则</string>
     <string name="usb_rules_title">USB直通规则</string>
     <string name="usb_rules_unsaved">尚未保存的更改</string>
+    <string name="usb_rules_enabled">启用 USB 直通</string>
+    <string name="usb_rules_enabled_note">关闭时不会执行任何直通规则，设备全部留给 Android</string>
     <string name="usb_rules_layer_exact">1. 精确（设备＋port）</string>
     <string name="usb_rules_layer_port">2. port</string>
     <string name="usb_rules_layer_device">3. 设备</string>

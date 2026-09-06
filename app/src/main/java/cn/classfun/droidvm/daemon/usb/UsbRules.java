@@ -35,10 +35,11 @@ import cn.classfun.droidvm.daemon.server.RequestException;
  */
 public final class UsbRules {
     /**
-     * The container's shape, not the rules'. It stayed at 1 when {@code controller} and then
-     * {@code target} were added: both keys are optional on the way in and an absent one means
-     * what it always meant, so a file written before either existed is still exactly what it
-     * says, and a bump would only have made a new daemon refuse one.
+     * The container's shape, not the rules'. It stayed at 1 when {@code controller}, then
+     * {@code target}, then {@code enabled} were added: every one of those keys is optional on
+     * the way in and an absent one means what it always meant, so a file written before any of
+     * them existed is still exactly what it says, and a bump would only have made a new daemon
+     * refuse one.
      */
     public static final int VERSION = 1;
     /**
@@ -150,15 +151,30 @@ public final class UsbRules {
         }
     }
 
+    private final boolean enabled;
     private final Map<Layer, List<Rule>> layers;
 
-    private UsbRules(@NonNull Map<Layer, List<Rule>> layers) {
+    private UsbRules(boolean enabled, @NonNull Map<Layer, List<Rule>> layers) {
+        this.enabled = enabled;
         this.layers = layers;
     }
 
     @NonNull
     public static UsbRules empty() {
         return build(new EnumMap<>(Layer.class), null);
+    }
+
+    /**
+     * The master switch: whether the rules below it run at all. Off, every trigger is a no-op
+     * and the devices are Android's, while the rules themselves are kept exactly as they are --
+     * the page stays editable so a user can prepare them before turning it on.
+     *
+     * <p>It lives beside the layers rather than in a preference because it is saved by the same
+     * button as the rules, and the daemon has to read it in the same breath: a rule set whose
+     * switch arrived separately would run for as long as the two files disagreed.</p>
+     */
+    public boolean isEnabled() {
+        return enabled;
     }
 
     /**
@@ -174,6 +190,16 @@ public final class UsbRules {
     @NonNull
     public static UsbRules build(@NonNull Map<Layer, List<Rule>> layers,
                                  @Nullable BiPredicate<String, String> targetExists) {
+        // The form every caller that cannot mean the switch uses, and what an absent "enabled"
+        // reads as: the rules run, which is what every rule set meant before there was a switch
+        // to say otherwise.
+        return build(true, layers, targetExists);
+    }
+
+    /** As {@link #build(Map, BiPredicate)}, with the master switch the file carries. */
+    @NonNull
+    public static UsbRules build(boolean enabled, @NonNull Map<Layer, List<Rule>> layers,
+                                 @Nullable BiPredicate<String, String> targetExists) {
         var result = new EnumMap<Layer, List<Rule>>(Layer.class);
         for (var layer : Layer.values()) {
             var rules = layers.get(layer);
@@ -183,7 +209,7 @@ public final class UsbRules {
                 checked.add(validate(layer, i, rules.get(i), targetExists));
             result.put(layer, Collections.unmodifiableList(checked));
         }
-        return new UsbRules(result);
+        return new UsbRules(enabled, result);
     }
 
     @NonNull
@@ -262,9 +288,12 @@ public final class UsbRules {
     public static UsbRules fromJson(@NonNull JSONObject obj,
                                     @Nullable BiPredicate<String, String> targetExists) {
         var layers = new EnumMap<Layer, List<Rule>>(Layer.class);
+        // Absent reads as on, which is what every file written before the switch existed means.
+        var enabled = optBoolean(obj, "enabled", true);
         var keys = obj.keys();
         while (keys.hasNext()) {
             var key = keys.next();
+            if ("enabled".equals(key)) continue;
             if ("version".equals(key)) {
                 var version = obj.opt("version");
                 if (!(version instanceof Number) || ((Number) version).intValue() != VERSION)
@@ -288,7 +317,7 @@ public final class UsbRules {
             }
             layers.put(layer, rules);
         }
-        return build(layers, targetExists);
+        return build(enabled, layers, targetExists);
     }
 
     @NonNull
@@ -314,6 +343,20 @@ public final class UsbRules {
             optString(item, "controller"), target);
     }
 
+    /**
+     * A boolean field, where an absent key and a JSON null both read as [fallback]. Anything
+     * else is refused rather than read as false: a switch that quietly turned itself off would
+     * hand every device back without a word.
+     */
+    private static boolean optBoolean(@NonNull JSONObject obj, @NonNull String key,
+                                      boolean fallback) {
+        if (!obj.has(key) || obj.isNull(key)) return fallback;
+        var value = obj.opt(key);
+        if (!(value instanceof Boolean))
+            throw new RequestException(fmt("%s must be true or false", key));
+        return (Boolean) value;
+    }
+
     /** A string field, where an absent key and a JSON null both read as null. */
     @Nullable
     private static String optString(@NonNull JSONObject item, @NonNull String key) {
@@ -329,6 +372,9 @@ public final class UsbRules {
     public JSONObject toJson() throws JSONException {
         var obj = new JSONObject();
         obj.put("version", VERSION);
+        // Always written, the way a rule's target is: a file that leaves the switch to be
+        // inferred is one a reader has to know the default of.
+        obj.put("enabled", enabled);
         for (var layer : Layer.values()) {
             var array = new JSONArray();
             for (var rule : layer(layer)) {

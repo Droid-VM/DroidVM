@@ -42,16 +42,17 @@ import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
+import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 
 /**
  * Settings, Virtual Machine, USB passthrough: the automatic attach rules of plan section 2.4.
  *
  * <p>The daemon owns the rules. The page reads them with {@code usb_rules_get}, edits a copy
- * held in four adapters and pushes the whole object back with {@code usb_rules_set}; it never
- * touches the rules file itself. {@code usb_host_list} and {@code vm_list} only give the rows
- * and the pickers something readable to show. While the page is open it listens on the daemon
- * event stream, so a plug, an unplug, an automatic attach or an automatic sink shows up without
- * a reload.</p>
+ * held in four adapters and the master switch at the top, and pushes the whole object back with
+ * {@code usb_rules_set}; it never touches the rules file itself. {@code usb_host_list} and
+ * {@code vm_list} only give the rows and the pickers something readable to show. While the page
+ * is open it listens on the daemon event stream, so a plug, an unplug, an automatic attach or an
+ * automatic sink shows up without a reload.</p>
  */
 public final class UsbRulesActivity extends AppCompatActivity
     implements DaemonConnection.EventListener, UsbRuleAdapter.Listener {
@@ -66,8 +67,16 @@ public final class UsbRulesActivity extends AppCompatActivity
     private View root;
     private MaterialToolbar toolbar;
     private TextView tvStatus;
+    /**
+     * The master switch, which is an edit like any other: it takes effect when the page is
+     * saved, and saving it off is what makes the daemon give every device back. The zones below
+     * it stay editable while it is off, so rules can be prepared before they are allowed to run.
+     */
+    private SwitchRowWidget swEnabled;
     /** Edits not yet pushed to the daemon; guards both the back key and the resume reload. */
     private boolean dirty = false;
+    /** True while the daemon's own answer is being written into the switch, which is no edit. */
+    private boolean applying = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -84,6 +93,10 @@ public final class UsbRulesActivity extends AppCompatActivity
             public void handleOnBackPressed() {
                 confirmExit();
             }
+        });
+        swEnabled = findViewById(R.id.sw_usb_enabled);
+        swEnabled.setOnCheckedChangeListener(() -> {
+            if (!applying) setDirty(true);
         });
         bindList(R.id.list_exact, UsbRuleLayer.EXACT);
         bindList(R.id.list_port, UsbRuleLayer.PORT);
@@ -158,7 +171,11 @@ public final class UsbRulesActivity extends AppCompatActivity
     }
 
     private void applyRules(@Nullable JSONObject rules) {
+        applying = true;
         try {
+            // Absent reads as on, the way the daemon reads it: that is what every rules file
+            // written before there was a switch means.
+            swEnabled.setChecked(rules == null || rules.optBoolean("enabled", true));
             for (var layer : UsbRuleLayer.values()) {
                 var arr = rules == null ? null : rules.optJSONArray(layer.key);
                 adapterOf(layer).setItems(arr == null ? DataItem.newArray() : new DataItem(arr));
@@ -167,6 +184,8 @@ public final class UsbRulesActivity extends AppCompatActivity
             Log.w(TAG, "Malformed rules from daemon", e);
             showStatus(e.getMessage());
             return;
+        } finally {
+            applying = false;
         }
         setDirty(false);
         showStatus(null);
@@ -177,6 +196,7 @@ public final class UsbRulesActivity extends AppCompatActivity
     private JSONObject buildRules() throws JSONException {
         var rules = new JSONObject();
         rules.put("version", 1);
+        rules.put("enabled", swEnabled.isChecked());
         for (var layer : UsbRuleLayer.values())
             rules.put(layer.key, adapterOf(layer).getItems().toJsonArray());
         return rules;

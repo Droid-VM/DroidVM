@@ -41,6 +41,17 @@
                 tools:text="Daemon is not connected"
                 tools:visibility="visible" />
 
+            <!-- The master switch, above the zones and saved by the same button: toggling it
+                 alone changes nothing, and the four zones stay editable while it is off so
+                 rules can be prepared before they are allowed to run. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_usb_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_usb"
+                android:subtitle="@string/usb_rules_enabled_note"
+                android:text="@string/usb_rules_enabled" />
+
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

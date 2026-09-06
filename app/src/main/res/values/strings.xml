@@ -1633,6 +1633,8 @@
     <string name="settings_usb_devices_summary">Send one device somewhere now, without changing the rules</string>
     <string name="usb_rules_title">USB passthrough rules</string>
     <string name="usb_rules_unsaved">Unsaved changes</string>
+    <string name="usb_rules_enabled">Enable USB passthrough</string>
+    <string name="usb_rules_enabled_note">While this is off no rule runs, and every device stays with Android</string>
     <string name="usb_rules_layer_exact">1. Exact (device + port)</string>
     <string name="usb_rules_layer_port">2. Port</string>
     <string name="usb_rules_layer_device">3. Device</string>

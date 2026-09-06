@@ -165,8 +165,12 @@ int UsbRulesCommand::show() {
     Json::Value req;
     req["command"] = "usb_rules_get";
     auto resp = ipc->send_request(req);
+    // The master switch on its own line first: it makes every rule below it inert, and a reader
+    // scanning a long rule set should not have to find that out from one key inside the JSON.
+    auto rules = resp["rules"];
+    printf("passthrough: %s\n", rules.get("enabled", true).asBool() ? "enabled" : "disabled");
     // The rules alone: this is the file the UI writes, so what prints is what `set` reads back.
-    printf("%s\n", IPCClient::json_to_string(resp["rules"], true).c_str());
+    printf("%s\n", IPCClient::json_to_string(rules, true).c_str());
     return 0;
 }
 

@@ -30,6 +30,11 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * that failed may have failed for that instance alone -- a control socket not yet answering, a
  * VM that went down between the decision and the CLI -- and a reboot would otherwise release
  * the device and never take it back.</p>
+ *
+ * <p>The rule set also carries the master switch, and the two answers this class gives -- what
+ * takes a device, and what a whole pass would take -- are where it is honoured: a trigger asks
+ * the engine before it acts, so switching the rules off makes every trigger a no-op here rather
+ * than at each of the five places one is raised.</p>
  */
 public final class UsbRuleEngine {
     /** As much of a host device as a rule can see. */
@@ -102,6 +107,16 @@ public final class UsbRuleEngine {
         }
     }
 
+    /** What replacing the rules owes the devices this daemon has already taken. */
+    public enum Save {
+        /** Nothing: the switch was off before the save and is off after it. */
+        NOTHING,
+        /** The switch went off: everything taken is given back, once, and no pass runs. */
+        RELEASE,
+        /** The ordinary pass a save runs, which is also how turning the switch on applies. */
+        PASS,
+    }
+
     private static final class Flags {
         Pin pin = Pin.NONE;
         @Nullable
@@ -118,6 +133,25 @@ public final class UsbRuleEngine {
 
     public void setRules(@NonNull UsbRules rules) {
         this.rules = rules;
+    }
+
+    /** Whether the rules run at all right now: the master switch the rule set carries. */
+    public boolean rulesEnabled() {
+        return rules.isEnabled();
+    }
+
+    /**
+     * What saving [next] over the rules held right now owes, asked before they are replaced.
+     *
+     * <p>The release is the switch's falling edge and only that: it is the one save that has to
+     * undo work rather than do some, and a save that finds the switch already off has nothing
+     * left to give back. Turning it on runs the ordinary pass, because a save applies its rules
+     * and "the rules now run" is the biggest change a save can carry.</p>
+     */
+    @NonNull
+    public Save saveOwes(@NonNull UsbRules next) {
+        if (rules.isEnabled() && !next.isEnabled()) return Save.RELEASE;
+        return next.isEnabled() ? Save.PASS : Save.NOTHING;
     }
 
     /** Whether anything the user said about this device stops a trigger from touching it. */
@@ -173,6 +207,21 @@ public final class UsbRuleEngine {
     }
 
     /**
+     * Every pin dropped. The switch going off hands the devices back, and the user's answers
+     * about them go the same way: a pin says which trigger may not touch a device, and there
+     * are no triggers left to keep out. Failures are left where they are -- they are about an
+     * attach that did not work, not about who owns the device.
+     */
+    public void clearPins() {
+        var it = flags.entrySet().iterator();
+        while (it.hasNext()) {
+            var f = it.next().getValue();
+            f.pin = Pin.NONE;
+            if (f.failedFor == null) it.remove();
+        }
+    }
+
+    /**
      * What a trigger would do: one decision per device that is not attached and not pinned, and
      * none for a device no rule takes. A device appears at most once, and a device already lent
      * out or spoken for by the user is never in the answer, which is what keeps a rules save
@@ -188,6 +237,9 @@ public final class UsbRuleEngine {
                                @NonNull Function<String, VMState> stateOf,
                                @NonNull BiPredicate<String, String> hasController) {
         var decisions = new ArrayList<Decision>();
+        // Nothing to plan while the switch is off. Said here as well as in decide, because a
+        // pass that walked an empty plan would still have taken a lock per device to be told so.
+        if (!rules.isEnabled()) return decisions;
         for (var device : plugged) {
             if (attached.test(device.sysfs) || isHeld(device.sysfs)) continue;
             var decision = decide(device, stateOf, hasController);
@@ -213,6 +265,10 @@ public final class UsbRuleEngine {
     @Nullable
     public Decision decide(@NonNull Device device, @NonNull Function<String, VMState> stateOf,
                            @NonNull BiPredicate<String, String> hasController) {
+        // The master switch, at the one place every trigger passes through: with it off no rule
+        // takes anything, which is the whole of what "the rules do not run" means. The dry run
+        // reads the same answer, and says nothing would happen -- which is the truth.
+        if (!rules.isEnabled()) return null;
         var f = flags.get(device.sysfs);
         var failedFor = f == null ? null : f.failedFor;
         for (var layer : UsbRules.Layer.values()) {
