@@ -22,6 +22,13 @@ interface INativeDisplayRootService {
      * sidestepping both the SELinux 'connectto' denial (app->su socket) and the 'fd use' denial (app
      * receiving an su-owned fd). Returns true if written, false on any failure so the caller can fall
      * back to the vm_input IPC path.
+     *
+     * [screenId] is the screen the console sending the bytes is showing. The absolute channels
+     * (multi-touch, tablet) have one device per screen, because their coordinates only mean
+     * anything under one output's geometry, so the screen is what picks the device; the keyboard
+     * and the relative pointer are VM-wide and ignore it. A screen whose absolute input is
+     * switched off has no such device, and this returns false rather than sending the events to
+     * some other screen.
      */
-    boolean writeInput(String vmId, int channel, in byte[] data);
+    boolean writeInput(String vmId, String screenId, int channel, in byte[] data);
 }

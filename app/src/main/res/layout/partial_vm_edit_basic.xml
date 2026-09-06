@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical">
@@ -30,6 +31,9 @@
             app:ti_mode="size"
             app:ti_precision="1MiB" />
 
+        <!-- The icon button opens the per-vCPU affinity editor: its row list is a
+             function of this field's value, so it reads the count on open instead
+             of tracking edits to it. -->
         <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
             android:id="@+id/input_cpu"
             android:layout_width="match_parent"
@@ -37,6 +41,8 @@
             android:hint="@string/create_vm_cpu_hint"
             android:icon="@drawable/ic_cpu"
             android:inputType="number"
+            app:ti_iconButtonHint="@string/create_vm_cpu_affinity_title"
+            app:ti_iconButtonIcon="@drawable/ic_tune"
             app:ti_max="64"
             app:ti_min="1"
             app:ti_mode="number" />
@@ -150,6 +156,59 @@
             android:icon="@drawable/ic_bug"
             android:text="@string/create_vm_debug" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:minHeight="72dp"
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp">
+
+            <ImageView
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@string/vm_notes_title"
+                android:src="@drawable/ic_notes"
+                app:tint="?attr/colorControlNormal" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/vm_notes_title"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:id="@+id/tv_notes_summary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="13sp" />
+
+            </LinearLayout>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_edit_notes"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:text="@string/vm_notes_edit"
+                app:icon="@drawable/ic_edit" />
+
+        </LinearLayout>
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
@@ -166,6 +225,26 @@
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/et_extra_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="top"
+                android:inputType="text|textMultiLine"
+                android:minLines="3"
+                android:textSize="14sp"
+                android:layout_marginStart="24dp"
+                android:layout_marginEnd="24dp" />
+
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_environment_variables"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="@string/create_vm_environment_variables_hint">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_environment_variables"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="top"

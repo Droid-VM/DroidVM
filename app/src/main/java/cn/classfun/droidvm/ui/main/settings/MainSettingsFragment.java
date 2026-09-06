@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.main.settings;
 
 import static android.content.Intent.ACTION_VIEW;
@@ -22,11 +25,16 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
+import androidx.annotation.StringRes;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.os.LocaleListCompat;
 
+import android.widget.RadioGroup;
+
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.materialswitch.MaterialSwitch;
+import com.google.android.material.radiobutton.MaterialRadioButton;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -35,15 +43,15 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
+import cn.classfun.droidvm.daemon.vm.UsbAcmPool;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.data.Language;
@@ -54,6 +62,8 @@ import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
+import cn.classfun.droidvm.ui.disk.create.DiskCompress;
+import cn.classfun.droidvm.ui.disk.operation.OptimizeCompression;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.base.MainBaseFragment;
 import cn.classfun.droidvm.ui.setup.SetupActivity;
@@ -63,13 +73,16 @@ import cn.classfun.droidvm.ui.update.UpdateInfo;
 import cn.classfun.droidvm.ui.update.VersionCheck;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
+import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
 public final class MainSettingsFragment extends MainBaseFragment {
     private static final long DAEMON_REFRESH_INTERVAL_MS = 1000L;
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
-    public static final String KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE = "vm_keep_compress_on_optimize";
+    public static final String KEY_VM_OPTIMIZE_COMPRESSION = "vm_optimize_compression";
+    /** Sentinel for {@link #KEY_VM_OPTIMIZE_COMPRESSION}: prompt on every optimize. */
+    public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
     public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
@@ -85,8 +98,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemDaemonRestart;
     private SwitchRowWidget itemVMAutoConsole;
     private SwitchRowWidget itemVMClearLogsBeforeStart;
-    private SwitchRowWidget itemVMKeepCompressOnOptimize;
+    private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
+    private TextRowWidget itemUsbAcmPorts;
     private TextRowWidget itemCpuAffinity;
     private TextRowWidget itemLicense;
     private SwitchRowWidget itemAutoCheckUpdate;
@@ -94,6 +108,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemPrivacy;
     private TextRowWidget itemApiManager;
     private TextRowWidget itemHugepageReserve;
+    private TextRowWidget itemKernelModules;
     private TextRowWidget itemExportConfig;
     private TextRowWidget itemImportConfig;
     private DaemonHelper daemon;
@@ -142,8 +157,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemDaemonRestart = view.findViewById(R.id.item_daemon_restart);
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
-        itemVMKeepCompressOnOptimize = view.findViewById(R.id.item_vm_keep_compress_on_optimize);
+        itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
+        itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
         itemCpuAffinity = view.findViewById(R.id.item_cpu_affinity);
         itemLicense = view.findViewById(R.id.item_license);
         itemAutoCheckUpdate = view.findViewById(R.id.item_auto_check_update);
@@ -151,6 +167,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemPrivacy = view.findViewById(R.id.item_privacy);
         itemApiManager = view.findViewById(R.id.item_api_manager);
         itemHugepageReserve = view.findViewById(R.id.item_hugepage_reserve);
+        itemKernelModules = view.findViewById(R.id.item_kernel_modules);
         itemExportConfig = view.findViewById(R.id.item_export_config);
         itemImportConfig = view.findViewById(R.id.item_import_config);
         exportConfigLauncher = registerForActivityResult(
@@ -175,15 +192,19 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
         bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
-        bindOnChecked(itemVMKeepCompressOnOptimize, KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+        bindOnClick(itemVMOptimizeCompression, this::showOptimizeCompressionDialog);
+        refreshOptimizeCompressionSummary();
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
+        bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
+        refreshUsbAcmPortsSummary();
         bindOnChecked(itemAutoCheckUpdate, KEY_AUTO_CHECK_UPDATE, true);
         bindOnClick(itemCheckUpdate, this::checkUpdate);
         bindOnClick(itemPrivacy, this::showPrivacyPolicy);
         bindOnClick(itemApiManager, this::showApiManager);
         bindOnClick(itemHugepageReserve, this::showHugePageReserve);
+        bindOnClick(itemKernelModules, this::showKernelModules);
         bindOnClick(itemExportConfig, this::exportConfig);
         bindOnClick(itemImportConfig, this::importConfig);
         itemDaemonStatus.setSubtitle(R.string.settings_daemon_checking);
@@ -222,9 +243,120 @@ public final class MainSettingsFragment extends MainBaseFragment {
         return prefs.getBoolean(KEY_VM_CLEAR_LOGS_BEFORE_START, false);
     }
 
-    public static boolean isKeepCompressOnOptimizeEnabled(@NonNull Context context) {
+    /**
+     * The compression a disk optimize should target: the wire value of a member of
+     * {@link DiskCompress#CROSVM_SUPPORTED}, or {@link #OPTIMIZE_COMPRESSION_ASK} to prompt
+     * each time (the prompt's "remember" writes this back). A stored value that isn't (or is
+     * no longer) crosvm-supported reads as ask.
+     */
+    @NonNull
+    public static String getOptimizeCompression(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_VM_KEEP_COMPRESS_ON_OPTIMIZE, false);
+        var value = prefs.getString(KEY_VM_OPTIMIZE_COMPRESSION, OPTIMIZE_COMPRESSION_ASK);
+        var compress = DiskCompress.fromValue(value);
+        if (compress != null && compress.isCrosvmSupported()) return value;
+        return OPTIMIZE_COMPRESSION_ASK;
+    }
+
+    public static void setOptimizeCompression(@NonNull Context context, @NonNull String value) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit().putString(KEY_VM_OPTIMIZE_COMPRESSION, value).apply();
+    }
+
+    @StringRes
+    private static int optimizeCompressionLabel(@NonNull String value) {
+        var compress = DiskCompress.fromValue(value);
+        if (compress != null) return OptimizeCompression.labelOf(compress);
+        return R.string.settings_optimize_compression_ask;
+    }
+
+    private void refreshOptimizeCompressionSummary() {
+        itemVMOptimizeCompression.setSubtitle(
+            optimizeCompressionLabel(getOptimizeCompression(requireContext())));
+    }
+
+    /** Whether the USB ACM feature is switched on; VMs with an ACM port refuse to boot
+     *  without it, so the serial editor uses this to warn at configuration time. */
+    public static boolean isUsbAcmEnabled(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return prefs.getBoolean(UsbAcmPool.KEY_USB_ACM_ENABLE, UsbAcmPool.DEFAULT_ENABLE);
+    }
+
+    /**
+     * USB ACM pool size the daemon pre-binds; the same clamp the daemon applies, so the
+     * serial-port slot picker never offers a slot the pool will refuse.
+     */
+    public static int getUsbAcmPorts(@NonNull Context context) {
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        var n = prefs.getInt(UsbAcmPool.KEY_USB_ACM_PORTS, UsbAcmPool.DEFAULT_PORTS);
+        return Math.max(1, Math.min(UsbAcmPool.MAX_PORTS, n));
+    }
+
+    private void refreshUsbAcmPortsSummary() {
+        itemUsbAcmPorts.setSubtitle(isUsbAcmEnabled(requireContext())
+            ? getString(R.string.settings_usb_acm_ports_summary, getUsbAcmPorts(requireContext()))
+            : getString(R.string.settings_usb_acm_disabled));
+    }
+
+    // One dialog for the whole feature: the enable toggle on top (the daemon builds or tears
+    // the pool down as soon as the config lands), pool sizes below. The re-enumeration note
+    // sits under the toggle permanently instead of nagging through a second dialog.
+    private void showUsbAcmPortsDialog() {
+        var context = requireContext();
+        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        var view = getLayoutInflater().inflate(R.layout.dialog_usb_acm_ports, null);
+        MaterialSwitch enable = view.findViewById(R.id.switch_acm_enable);
+        RadioGroup group = view.findViewById(R.id.group_acm_ports);
+        for (int i = 1; i <= UsbAcmPool.MAX_PORTS; i++) {
+            var radio = new MaterialRadioButton(context);
+            radio.setId(i);
+            radio.setText(getString(R.string.settings_usb_acm_ports_summary, i));
+            radio.setMinHeight(48);
+            group.addView(radio);
+        }
+        enable.setChecked(isUsbAcmEnabled(context));
+        group.check(getUsbAcmPorts(context));
+        for (int i = 0; i < group.getChildCount(); i++)
+            group.getChildAt(i).setEnabled(enable.isChecked());
+        enable.setOnCheckedChangeListener((btn, checked) -> {
+            prefs.edit().putBoolean(UsbAcmPool.KEY_USB_ACM_ENABLE, checked).apply();
+            VMEventHandler.sendAppConfig(requireActivity());
+            for (int i = 0; i < group.getChildCount(); i++)
+                group.getChildAt(i).setEnabled(checked);
+            refreshUsbAcmPortsSummary();
+        });
+        group.setOnCheckedChangeListener((g, checkedId) -> {
+            if (checkedId <= 0) return;
+            prefs.edit().putInt(UsbAcmPool.KEY_USB_ACM_PORTS, checkedId).apply();
+            VMEventHandler.sendAppConfig(requireActivity());
+            refreshUsbAcmPortsSummary();
+        });
+        new MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.settings_usb_acm_ports_title)
+            .setView(view)
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
+    }
+
+    // Ask + every crosvm-supported compression; the list grows as CROSVM_SUPPORTED does.
+    private void showOptimizeCompressionDialog() {
+        var values = new ArrayList<String>();
+        values.add(OPTIMIZE_COMPRESSION_ASK);
+        for (var compress : DiskCompress.CROSVM_SUPPORTED) values.add(compress.value());
+        var labels = new String[values.size()];
+        for (int i = 0; i < values.size(); i++)
+            labels[i] = getString(optimizeCompressionLabel(values.get(i)));
+        var current = getOptimizeCompression(requireContext());
+        int checked = Math.max(0, values.indexOf(current));
+        new MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.settings_optimize_compression_title)
+            .setSingleChoiceItems(labels, checked, (d, which) -> {
+                setOptimizeCompression(requireContext(), values.get(which));
+                refreshOptimizeCompressionSummary();
+                d.dismiss();
+            })
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
     }
 
     public static boolean isAutoCheckUpdateEnabled(@NonNull Context context) {
@@ -314,78 +446,16 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showCpuAffinityDialog() {
         var ctx = requireContext();
-        var cores = CpuUtils.getCores();
-        int tiers = CpuUtils.tierCount(cores);
-        var labels = new String[cores.size()];
-        for (int i = 0; i < cores.size(); i++)
-            labels[i] = cpuCoreLabel(cores.get(i), tiers);
-
         // Saved selection, or the "filter out little cores" default when unset.
         var savedCsv = getQemuImgCpuAffinity(ctx);
-        var selectedIdx = parseCsvToSet(
-            savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv);
-        var checked = new boolean[cores.size()];
-        for (int i = 0; i < cores.size(); i++)
-            checked[i] = selectedIdx.contains(cores.get(i).index);
-
-        var dialog = new MaterialAlertDialogBuilder(ctx)
-            .setTitle(R.string.settings_cpu_affinity_title)
-            .setMultiChoiceItems(labels, checked, (d, which, isChecked) ->
-                checked[which] = isChecked)
-            .setNeutralButton(R.string.settings_cpu_affinity_big_only, null)
-            .setNegativeButton(android.R.string.cancel, null)
-            .setPositiveButton(android.R.string.ok, (d, w) -> {
-                var sb = new StringBuilder();
-                for (int i = 0; i < cores.size(); i++) {
-                    if (!checked[i]) continue;
-                    if (sb.length() > 0) sb.append(',');
-                    sb.append(cores.get(i).index);
-                }
+        CpuCorePickerDialog.show(
+            ctx, R.string.settings_cpu_affinity_title,
+            savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv,
+            picked -> {
                 ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, sb.toString()).apply();
+                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, picked).apply();
                 refreshCpuAffinitySummary();
-            })
-            .create();
-        dialog.show();
-        // Re-check only the big cores without dismissing the dialog.
-        dialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
-            var bigIdx = parseCsvToSet(CpuUtils.defaultBigCoresCsv());
-            var list = dialog.getListView();
-            for (int i = 0; i < cores.size(); i++) {
-                checked[i] = bigIdx.contains(cores.get(i).index);
-                list.setItemChecked(i, checked[i]);
-            }
-        });
-    }
-
-    @NonNull
-    private String cpuCoreLabel(@NonNull CpuUtils.CpuCore core, int tiers) {
-        var freq = CpuUtils.formatFreq(core.maxFreqKHz);
-        int tierRes;
-        if (tiers <= 1) tierRes = 0;
-        else if (core.tier == 0) tierRes = R.string.settings_cpu_affinity_tier_little;
-        else if (tiers >= 3 && core.tier == tiers - 1)
-            tierRes = R.string.settings_cpu_affinity_tier_prime;
-        else tierRes = R.string.settings_cpu_affinity_tier_big;
-        var sb = new StringBuilder(fmt("CPU%d", core.index));
-        if (!freq.isEmpty()) sb.append("    ").append(freq);
-        if (tierRes != 0) sb.append("    ").append(getString(tierRes));
-        return sb.toString();
-    }
-
-    @NonNull
-    private static Set<Integer> parseCsvToSet(@NonNull String csv) {
-        var set = new HashSet<Integer>();
-        if (csv.isEmpty()) return set;
-        for (var part : csv.split(",")) {
-            part = part.trim();
-            if (part.isEmpty()) continue;
-            try {
-                set.add(Integer.parseInt(part));
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return set;
+            });
     }
 
     private void showLicenseDialog() {
@@ -451,6 +521,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void showHugePageReserve() {
         startActivity(new Intent(requireContext(), HugePageActivity.class));
+    }
+
+    private void showKernelModules() {
+        KernelModuleDialog.show(getChildFragmentManager());
     }
 
     private void exportConfig() {

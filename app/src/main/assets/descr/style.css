@@ -1,0 +1,326 @@
+/*
+ * Shared stylesheet for the module description pages.
+ *
+ * THIS FILE IS THE AUTHORITY. 6_build_apk_prepare.sh copies it into the app at
+ * DroidVM/app/src/main/assets/descr/style.css, which is what actually renders on
+ * device (the app injects it inline; nothing is fetched at runtime). The copy is
+ * checked in so the app still builds without this repo -- edit it here, not there.
+ *
+ * The app injects, ahead of this file:
+ *   :root { --surface, --on-surface, --on-surface-variant, --primary, --error,
+ *           --outline, --surface-variant }   <- the live Material theme, so pages
+ *                                               follow dark mode and Material You
+ *   html[data-theme="dark"|"light"]
+ *   .i18n display rules selecting one language
+ *
+ * Opening a page straight in a browser therefore shows ALL languages stacked and
+ * the fallback palette below -- which is what you want when proofreading.
+ */
+
+:root {
+    --surface: #fdfcff;
+    --on-surface: #1a1c1e;
+    --on-surface-variant: #43474e;
+    --surface-variant: #e0e2ec;
+    --primary: #345ca8;
+    --error: #ba1a1a;
+    --outline: #74777f;
+}
+
+/*
+ * Traffic-light colours for what a request met: available / unavailable / held.
+ * Deliberately NOT taken from the app's palette -- under Material You --primary
+ * can be any hue, and "blue means you get it, orange means you don't" has to
+ * survive that. Only the greys and surfaces follow the theme.
+ */
+:root {
+    --fit: #1565c0;
+    --nofit: #b45309;
+    --held: #2e7d32;
+}
+
+/* Browser-preview only: on device the app states the theme outright, below. */
+@media (prefers-color-scheme: dark) {
+    :root {
+        --surface: #1a1c1e;
+        --on-surface: #e2e2e6;
+        --on-surface-variant: #c3c6cf;
+        --surface-variant: #43474e;
+        --primary: #adc6ff;
+        --error: #ffb4ab;
+        --outline: #8d9199;
+        --fit: #9fc5ff;
+        --nofit: #ffb877;
+        --held: #7edb96;
+    }
+}
+
+/*
+ * The app stamps data-theme on <html>, and that is the authority: a WebView's own
+ * idea of dark need not match the app's. Both directions are spelled out because
+ * either has to beat the media query above. Theme colours are absent here on
+ * purpose -- the app injects those as :root variables, and an attribute selector
+ * would outrank them and undo Material You.
+ */
+html[data-theme="dark"] {
+    --fit: #9fc5ff;
+    --nofit: #ffb877;
+    --held: #7edb96;
+}
+
+html[data-theme="light"] {
+    --fit: #1565c0;
+    --nofit: #b45309;
+    --held: #2e7d32;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    padding: 0 2px 8px;
+    background: var(--surface);
+    color: var(--on-surface);
+    font-family: system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.65;
+    /* The dialog is narrow; never let a long token push a sideways scrollbar. */
+    overflow-wrap: anywhere;
+}
+
+h2 {
+    margin: 18px 0 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--primary);
+}
+
+section:first-of-type h2 {
+    margin-top: 2px;
+}
+
+p {
+    margin: 0 0 10px;
+}
+
+code {
+    font-family: ui-monospace, monospace;
+    font-size: 0.92em;
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: var(--surface-variant);
+}
+
+/* Anything the text enumerates is a list, not a run-on sentence with numbers in it.
+   In a caption the list is what maps the drawing's rows to words, so it inherits the
+   caption's smaller type rather than resetting it. */
+ol, ul {
+    margin: 0 0 10px;
+    padding-left: 1.4em;
+}
+
+li {
+    margin-bottom: 5px;
+}
+
+li:last-child {
+    margin-bottom: 0;
+}
+
+/* ---- figures ---------------------------------------------------------- */
+
+/* Figures close a "why" section: the words first, then the picture that settles them. */
+figure {
+    margin: 14px 0 4px;
+    padding: 12px;
+    border: 1px solid var(--outline);
+    border-radius: 12px;
+}
+
+figure svg {
+    display: block;
+    width: 100%;
+    height: auto;
+}
+
+figcaption {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--on-surface-variant);
+}
+
+/* SVG text and shape roles. Diagrams are drawn in theme colours only -- no
+   hardcoded ink -- so they stay legible when the app flips to dark. */
+svg .lbl {
+    font: 500 9px system-ui, sans-serif;
+    fill: var(--on-surface-variant);
+}
+
+svg .lbl-strong {
+    font: 600 9.5px system-ui, sans-serif;
+    fill: var(--on-surface);
+}
+
+svg .used {
+    fill: var(--on-surface-variant);
+}
+
+svg .free {
+    fill: var(--surface-variant);
+}
+
+svg .keep {
+    fill: var(--primary);
+}
+
+svg .bad {
+    fill: var(--error);
+}
+
+svg .edge {
+    fill: none;
+    stroke: var(--outline);
+    stroke-width: 1;
+}
+
+svg .edge-strong {
+    fill: none;
+    stroke: var(--primary);
+    stroke-width: 1.5;
+}
+
+/* A request that cannot be satisfied, drawn over the memory it would need. */
+svg .miss {
+    fill: none;
+    stroke: var(--nofit);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+/* A request already covered by memory set aside for it, and that memory. */
+svg .hold {
+    fill: none;
+    stroke: var(--held);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+svg .pool {
+    fill: var(--held);
+    fill-opacity: 0.3;
+}
+
+/* A request that can be satisfied, drawn over the memory it will use. */
+svg .want {
+    fill: none;
+    stroke: var(--fit);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 3;
+}
+
+svg .dash {
+    fill: none;
+    stroke: var(--outline);
+    stroke-width: 1.2;
+    stroke-dasharray: 4 3;
+}
+
+svg .x-mark {
+    fill: none;
+    stroke: var(--nofit);
+    stroke-width: 2;
+    stroke-linecap: round;
+}
+
+svg .ok-mark {
+    fill: none;
+    stroke: var(--fit);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+svg .arrow {
+    fill: var(--primary);
+}
+
+svg .box {
+    fill: var(--surface-variant);
+}
+
+/* ---- three-mode table (udmabuf) --------------------------------------- */
+
+table {
+    width: 100%;
+    margin: 10px 0;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+th, td {
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--outline);
+}
+
+th {
+    font-weight: 600;
+    color: var(--on-surface-variant);
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+/* ---- language sections ------------------------------------------------ */
+
+.i18n + .i18n {
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 2px dashed var(--outline);
+}
+
+/* What the shades in a figure mean. Swatches are the same variables the SVG uses,
+   so a legend cannot drift from the drawing it explains. */
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 8px;
+    font-size: 12.5px;
+}
+
+.legend span {
+    white-space: nowrap;
+}
+
+.legend i {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-right: 5px;
+    border-radius: 3px;
+    vertical-align: -1px;
+}
+
+.legend .sw-used {
+    background: var(--on-surface-variant);
+}
+
+.legend .sw-free {
+    background: var(--surface-variant);
+}
+
+.legend .sw-keep {
+    background: var(--primary);
+}
+
+.legend .sw-pool {
+    background: var(--held);
+    opacity: 0.5;
+}
+

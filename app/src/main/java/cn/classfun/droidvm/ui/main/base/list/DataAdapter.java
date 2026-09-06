@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.main.base.list;
 
 import android.annotation.SuppressLint;
@@ -51,9 +54,19 @@ public abstract class DataAdapter<
         return new BaseViewHolder(v);
     }
 
+    /**
+     * The config shown at an adapter position. Defaults to store order; adapters that reorder
+     * or hide rows (e.g. the disk overlay tree) override this together with
+     * {@link #getItemCount()}.
+     */
+    @NonNull
+    protected D itemAt(int position) {
+        return items.get(position);
+    }
+
     @Override
     public void onBindViewHolder(@NonNull BaseViewHolder h, int position) {
-        var d = items.get(position);
+        var d = itemAt(position);
         var ctx = h.itemView.getContext();
         var drawable = AppCompatResources.getDrawable(ctx, getIconResId(d));
         h.itemIcon.setImageDrawable(drawable);
@@ -79,7 +92,7 @@ public abstract class DataAdapter<
     }
 
     @Override
-    public final int getItemCount() {
+    public int getItemCount() {
         return items.size();
     }
 

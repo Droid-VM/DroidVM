@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.base;
 
 import static android.view.KeyEvent.KEYCODE_ALT_LEFT;
@@ -18,6 +21,10 @@ public abstract class BaseExtraKeysAdapter implements KeyListener {
     protected final DisplayExtraKeysPanel panel;
 
     private boolean ctrlSticky, altSticky, shiftSticky, winSticky;
+    // Keys currently held via onKey(). One-shot modifiers wrap the whole hold group (applied on
+    // the first key down, released after the last key up) so simultaneous holds like W+A don't
+    // lose their modifiers halfway through.
+    private int heldKeys;
 
     protected BaseExtraKeysAdapter(@NonNull DisplayExtraKeysPanel panel) {
         this.panel = panel;
@@ -54,13 +61,19 @@ public abstract class BaseExtraKeysAdapter implements KeyListener {
         }
     }
 
-    /** Taps a key with the active modifiers wrapped around it. */
-    protected void tapKey(int androidKeyCode) {
-        if (!isReady()) return;
-        applyModifiers(true);
-        emitKey(androidKeyCode, true);
-        emitKey(androidKeyCode, false);
-        applyModifiers(false);
+    @Override
+    public void onKey(int androidKeyCode, boolean down) {
+        if (!isReady()) {
+            heldKeys = 0;
+            return;
+        }
+        if (down) {
+            if (heldKeys++ == 0) applyModifiers(true);
+            emitKey(androidKeyCode, true);
+        } else {
+            emitKey(androidKeyCode, false);
+            if (heldKeys > 0 && --heldKeys == 0) applyModifiers(false);
+        }
     }
 
     @Override

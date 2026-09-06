@@ -13,12 +13,19 @@ app/src/main/res/values-*/strings.xml
 # Privacy policy, one file per language.
 app/src/main/assets/privacy/*.txt
 
+# In-app description pages: prose, with an en/zh-CN/zh-TW block per page.
+app/src/main/assets/descr/*.html
+
 # Localized data: repo-listing display names and language endonyms.
 app/src/main/assets/data/repo.yaml
 app/src/main/assets/data/languages.yaml
 
 # Documentation (prose; may name languages/tools in their own script).
 *.md
+
+# Vendored third-party source (see app/src/main/vendor/README.md). Not ours to reformat: it is
+# kept byte-for-byte as upstream published it so that updating is a copy, not a merge.
+app/src/main/vendor/*
 
 # Third-party / tool-generated files we don't hand-edit.
 LICENSE.txt

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.ui;
 
 import android.app.Activity;
@@ -20,6 +23,11 @@ import androidx.core.view.WindowInsetsCompat;
  * inset that the app must consume. {@code android:fitsSystemWindows} only
  * applies the system bar insets, so without this the keyboard covers whatever
  * the user is typing into.
+ *
+ * <p>Activities use {@code windowSoftInputMode="adjustNothing"}: allowing the
+ * framework to resize the window as well as applying this inset can move the
+ * content twice on devices that still honor {@code adjustResize} under
+ * edge-to-edge.
  *
  * <p>This applier pads the bottom of every activity's content view by the IME
  * inset, lifting the content (and any scroll container within it) above the

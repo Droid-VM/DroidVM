@@ -46,4 +46,20 @@
         app:ti_mode="size"
         app:ti_precision="1MiB" />
 
+    <com.google.android.material.checkbox.MaterialCheckBox
+        android:id="@+id/cb_autogrow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/disk_resize_autogrow" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingStart="48dp"
+        android:paddingEnd="12dp"
+        android:text="@string/disk_resize_autogrow_description"
+        android:textColor="?attr/colorOnSurfaceVariant"
+        android:textSize="12sp" />
+
 </LinearLayout>

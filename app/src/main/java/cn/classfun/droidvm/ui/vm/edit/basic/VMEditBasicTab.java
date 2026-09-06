@@ -1,23 +1,38 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.basic;
 
+import static android.view.View.GONE;
+import static android.view.View.VISIBLE;
+import static java.lang.Integer.parseInt;
 import static cn.classfun.droidvm.lib.utils.FileUtils.checkFileName;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.store.vm.ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
+import android.content.Intent;
 import android.text.TextUtils;
-import android.util.Log;
 import android.view.View;
+import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.android.material.button.MaterialButton;
 import com.google.android.material.textfield.TextInputEditText;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.data.QcomChipName;
-import cn.classfun.droidvm.lib.data.QcomGunyahSupports;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementDraft;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -25,14 +40,18 @@ import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
+import cn.classfun.droidvm.ui.vm.notes.VMNotesActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
+import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
 
 public final class VMEditBasicTab extends VMEditBaseTab {
-    private final String TAG = "VMEditBasicTab";
+    /** Matches the ti_max on input_cpu in partial_vm_edit_basic.xml. */
+    private static final int MAX_VCPUS = 64;
     private TextInputRowWidget inputName;
     private TextInputRowWidget inputMemory;
     private TextInputRowWidget inputCpu;
@@ -49,7 +68,27 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
     private ChooseRowWidget chooseHypervisor;
+    private TextView tvNotesSummary;
+    private MaterialButton btnEditNotes;
+    private ActivityResultLauncher<Intent> notesLauncher;
+    /** The Markdown the editor screen last left; the tab only carries it to saveConfig. */
+    private String notes = "";
     private TextInputEditText etExtraOptions;
+    private TextInputEditText etEnvironmentVariables;
+
+    /** Host cores as reported by sysfs; read once, drives the cpuset picker. */
+    private List<CpuUtils.CpuCore> hostCores = List.of();
+    /**
+     * vCPU affinity held for the editor dialog and for save: vCPU index to host
+     * cores. Only vCPUs the user actually bound appear, matching crosvm's
+     * "absent means no mask". Edited through {@link VMCpuAffinityDialog}.
+     */
+    private final Map<Integer, List<Integer>> affinity = new TreeMap<>();
+    /** Auto-derive capacity/cluster; the dialog owns this, the tab persists it. */
+    private boolean cpuTopologyAuto = true;
+    /** Manual capacity/cluster overrides, only meaningful when auto is off. */
+    private String manualCapacity = "";
+    private String manualClusters = "";
 
     public VMEditBasicTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -58,6 +97,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     @Override
     public void initView() {
         inputName = view.findViewById(R.id.input_name);
+        tvNotesSummary = view.findViewById(R.id.tv_notes_summary);
+        btnEditNotes = view.findViewById(R.id.btn_edit_notes);
         inputMemory = view.findViewById(R.id.input_memory);
         inputCpu = view.findViewById(R.id.input_cpu);
         inputSwiotlb = view.findViewById(R.id.input_swiotlb);
@@ -74,43 +115,74 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend = view.findViewById(R.id.choose_backend);
         chooseHypervisor = view.findViewById(R.id.choose_hypervisor);
         etExtraOptions = view.findViewById(R.id.et_extra_options);
+        etEnvironmentVariables = view.findViewById(R.id.et_environment_variables);
     }
 
     @Override
     public void initValue() {
+        var act = new ActivityResultContracts.StartActivityForResult();
+        notesLauncher = parent.registerForActivityResult(act, result -> {
+            var edited = VMNotesActivity.resultOf(result.getResultCode(), result.getData());
+            if (edited == null) return;
+            notes = edited;
+            showNotesSummary();
+        });
+        btnEditNotes.setOnClickListener(v -> notesLauncher.launch(
+            VMNotesActivity.createIntent(parent, notes, inputName.getText())));
+        showNotesSummary();
         inputMemory.setValue(512, SizeUnit.MB);
         inputCpu.setValue(1);
         inputSwiotlb.setValue(64, SizeUnit.MB);
+        swBalloon.setChecked(false);
+        swPmu.setChecked(VMConfig.NEW_VM_DEFAULT_PMU);
+        swRng.setChecked(VMConfig.NEW_VM_DEFAULT_RNG);
+        swSmt.setChecked(VMConfig.NEW_VM_DEFAULT_SMT);
+        swUsb.setChecked(VMConfig.NEW_VM_DEFAULT_USB);
+        swSandbox.setChecked(false);
+        swHugepages.setChecked(VMConfig.NEW_VM_DEFAULT_HUGEPAGES);
         swDebug.setChecked(false);
-        chooseProtectedVm.configure(ProtectedVM.class, PROTECTED_WITHOUT_FIRMWARE);
+        chooseProtectedVm.configure(
+            ProtectedVM.class, VMConfig.NEW_VM_DEFAULT_PROTECTED_VM);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
-        chooseHypervisor.configure(VMHypervisor.class, VMHypervisor.DEFAULT);
-        choosePrepareLendMthp.configure(LendMthpMode.class, LendMthpMode.CHUNKED);
+        chooseHypervisor.configure(
+            VMHypervisor.class, VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
+        choosePrepareLendMthp.configure(
+            LendMthpMode.class, LendMthpMode.defaultForDevice(parent));
         parent.put("backend", VMBackend.DEFAULT);
-        parent.put("hypervisor", VMHypervisor.DEFAULT);
+        parent.put("hypervisor", chooseHypervisor.getSelectedItem());
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
-        try {
-            var socModel = QcomChipName.getCurrentSoC();
-            var gunyah = new QcomGunyahSupports(parent);
-            if (gunyah.isCapacitySupported(socModel, "no_mthp"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.DISABLED);
-            if (gunyah.isCapacitySupported(socModel, "mthp_chunked"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.CHUNKED);
-            if (gunyah.isCapacitySupported(socModel, "mthp_single"))
-                choosePrepareLendMthp.setSelectedItem(LendMthpMode.SINGLE);
-        } catch (Exception e) {
-            Log.w(TAG, "failed to load soc capacity", e);
+        chooseProtectedVm.setOnValueChangedListener((oldValue, newValue) -> updateProtectedVisibility());
+        updateProtectedVisibility();
+        initCpuTopology();
+    }
+
+    /**
+     * The row under the Notes label: the first line that says something, so the row shows what is
+     * in there without pretending to be the editor.
+     */
+    private void showNotesSummary() {
+        String summary = null;
+        for (var line : notes.split("\n")) {
+            var trimmed = line.trim();
+            if (!trimmed.isEmpty()) {
+                summary = trimmed;
+                break;
+            }
         }
+        tvNotesSummary.setText(summary == null
+            ? parent.getString(R.string.vm_notes_empty) : summary);
     }
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
         var item = config.item;
         inputName.setText(config.getName());
+        notes = config.getNotes();
+        showNotesSummary();
         inputMemory.setValue(item.optLong("memory_mb", 512), SizeUnit.MB);
         inputCpu.setValue(item.optLong("cpu_count", 1));
-        inputSwiotlb.setValue(item.optLong("swiotlb_mb", 64), SizeUnit.MB);
+        inputSwiotlb.setValue(item.optLong("swiotlb_mb", 256), SizeUnit.MB);
         swBalloon.setChecked(item.optBoolean("balloon", false));
         swPmu.setChecked(item.optBoolean("pmu", false));
         swRng.setChecked(item.optBoolean("rng", false));
@@ -122,7 +194,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
-        chooseHypervisor.setSelectedItem(optEnum(item, "hypervisor", VMHypervisor.DEFAULT));
+        var backend = optEnum(item, "backend", VMBackend.DEFAULT);
+        var configuredHypervisor = optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
+        var hypervisor = VMHypervisor.resolveConfigured(backend, configuredHypervisor);
+        chooseHypervisor.setSelectedItem(hypervisor != null
+            ? hypervisor : VMHypervisor.defaultForNewVm(backend));
         var extraOpts = item.opt("extra_options", null);
         if (extraOpts != null && extraOpts.is(DataItem.Type.ARRAY)) {
             var sb = new StringBuilder();
@@ -131,6 +207,123 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 sb.append(extraOpts.optString(i, ""));
             }
             etExtraOptions.setText(sb.toString());
+        }
+        var environmentVariables = item.opt("environment_variables", null);
+        if (environmentVariables != null && environmentVariables.is(DataItem.Type.ARRAY)) {
+            var sb = new StringBuilder();
+            for (int i = 0; i < environmentVariables.size(); i++) {
+                if (i > 0) sb.append('\n');
+                sb.append(environmentVariables.optString(i, ""));
+            }
+            etEnvironmentVariables.setText(sb.toString());
+        } else {
+            etEnvironmentVariables.setText("");
+        }
+        loadCpuTopology(item);
+        updateProtectedVisibility();
+    }
+
+    private void loadCpuTopology(@NonNull DataItem item) {
+        affinity.clear();
+        affinity.putAll(CpuPlacementPlan.parseAffinity(
+            item.optString(CpuPlacementPlan.KEY_AFFINITY, "")));
+        cpuTopologyAuto = item.optBoolean(CpuPlacementPlan.KEY_AUTO, true);
+        manualCapacity = item.optString(CpuPlacementPlan.KEY_CAPACITY, "");
+        manualClusters = item.optString(CpuPlacementPlan.KEY_CLUSTERS, "");
+    }
+
+    /**
+     * Wires up CPU placement: the vCPU affinity editor behind the CPU count field's
+     * icon button. The affinity, capacity and cluster flags are one decision from
+     * three sides -- affinity pins vCPU threads to host cores, capacity and cluster
+     * describe that placement to the guest via the FDT -- so they are edited together
+     * in {@link VMCpuAffinityDialog}.
+     */
+    private void initCpuTopology() {
+        hostCores = CpuUtils.getCores();
+        inputCpu.setIconButtonOnClickListener(this::showAffinityDialog);
+    }
+
+    /**
+     * Opens the affinity editor for the vCPU count as currently entered. Reading
+     * the count here rather than tracking edits is the point of the dialog: the
+     * row list cannot disagree with the field.
+     *
+     * <p>The count travels back the same way, because the dialog's simple mode
+     * derives it from the host cores that were checked -- one vCPU each.
+     */
+    private void showAffinityDialog() {
+        var draft = new CpuPlacementDraft(affinity, currentVcpuCount(),
+            cpuTopologyAuto, manualCapacity, manualClusters);
+        new VMCpuAffinityDialog(parent, draft, accepted -> {
+            affinity.clear();
+            affinity.putAll(accepted.affinity);
+            cpuTopologyAuto = accepted.auto;
+            manualCapacity = accepted.manualCapacity;
+            manualClusters = accepted.manualClusters;
+            if (accepted.vcpuCount != currentVcpuCount())
+                inputCpu.setValue(accepted.vcpuCount);
+        });
+    }
+
+    // Gunyah dynamic memory sharing is a hypervisor-level memory-sharing mechanism (the GPU is
+    // just its first user), so it sits with the other lend/share options rather than in the
+    // graphics tab where it used to live.
+    /**
+     * Show the SWIOTLB size only where a VM can use one.
+     *
+     * A bounce pool exists because the hypervisor has taken the guest's memory away from the
+     * host: virtio has to hand the host buffers it can still reach. An unprotected VM never lost
+     * that access, and a pseudo-unprotected one gets it back before the payload runs, so in both
+     * the field would ask for memory nothing would ever bounce through -- and in the second it
+     * would actively hurt, putting a restricted-dma-pool node in the tree of a guest kernel that
+     * was never built to honour one. The backend ignores the stored value in those modes; this
+     * keeps the field from claiming otherwise.
+     */
+    private void updateProtectedVisibility() {
+        var pvm = chooseProtectedVm.getSelectedItem();
+        boolean bounces = pvm == ProtectedVM.PROTECTED_PROTECTED
+            || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+        inputSwiotlb.setVisibility(bounces ? VISIBLE : GONE);
+    }
+
+    /** vCPU count as currently typed, clamped to the field's own 1..64 range. */
+    private int currentVcpuCount() {
+        try {
+            var text = inputCpu.getText().trim();
+            if (text.isEmpty()) return 1;
+            return Math.max(1, Math.min(parseInt(text), MAX_VCPUS));
+        } catch (Exception ignored) {
+            return 1;
+        }
+    }
+
+    @NonNull
+    private static String joinCsv(@NonNull Collection<Integer> values) {
+        var sb = new StringBuilder();
+        for (var value : values) {
+            if (sb.length() > 0) sb.append(',');
+            sb.append(value);
+        }
+        return sb.toString();
+    }
+
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+    private boolean checkInputField(
+        @NonNull TextInputEditText field,
+        boolean allowEmpty, int min, int max
+    ) {
+        field.setError(null);
+        try {
+            var text = getEditText(field);
+            if (text.isEmpty() && allowEmpty) return true;
+            var ret = parseInt(text);
+            if (ret < min || ret > max)
+                throw new IllegalArgumentException();
+            return true;
+        } catch (Exception ignored) {
+            field.setError(parent.getString(R.string.create_vm_error_invalid_number));
+            return false;
         }
     }
 
@@ -190,12 +383,81 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         return true;
     }
 
+    private boolean validateEnvironmentVariables() {
+        etEnvironmentVariables.setError(null);
+        for (var line : getEditText(etEnvironmentVariables).split("\n")) {
+            var trimmed = line.trim();
+            if (trimmed.isEmpty()) continue;
+            var separator = trimmed.indexOf('=');
+            if (separator <= 0 || trimmed.substring(0, separator).trim().isEmpty()) {
+                etEnvironmentVariables.setError(
+                    parent.getString(R.string.create_vm_error_invalid_environment_variable));
+                return false;
+            }
+        }
+        return true;
+    }
+
     @Override
     public boolean validateInput(@NonNull VMStore store) {
         if (!validateInputName(store)) return false;
         if (!validateInputMemory(store)) return false;
         if (!validateInputCpu(store)) return false;
         if (!validateHypervisor(store)) return false;
+        if (!validateEnvironmentVariables()) return false;
+        if (!validateCpuTopology()) return false;
+        return true;
+    }
+
+    /**
+     * The affinity dialog already keeps its own edits in range, so this mostly
+     * guards a stored config that was hand-edited, or a CPU count lowered after
+     * the affinity was set.
+     */
+    private boolean validateCpuTopology() {
+        if (!affinity.isEmpty()) {
+            int count = currentVcpuCount();
+            var hostIdx = CpuCorePickerDialog.hostCoreIndices(hostCores);
+            for (var entry : affinity.entrySet()) {
+                if (entry.getKey() >= count)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
+                for (var host : entry.getValue())
+                    if (!hostIdx.contains(host))
+                        return showValidateFailed(parent.getString(
+                            R.string.create_vm_error_cpu_affinity_host_oob, host));
+            }
+            if (!cpuTopologyAuto && !validateManualTopology(count)) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Hand-written capacity/cluster strings. Capacity is only range-checked;
+     * clusters additionally must not repeat a vCPU, which crosvm rejects
+     * ("CPU index must be unique").
+     */
+    private boolean validateManualTopology(int vcpuCount) {
+        var capacityText = manualCapacity.trim();
+        if (!capacityText.isEmpty()) {
+            var capacity = CpuPlacementPlan.parseCapacity(capacityText);
+            if (capacity.isEmpty())
+                return showValidateFailed(R.string.create_vm_error_cpu_capacity_invalid);
+            for (var entry : capacity.entrySet()) {
+                if (entry.getKey() >= vcpuCount)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
+                if (entry.getValue() > CpuUtils.MAX_CAPACITY)
+                    return showValidateFailed(R.string.create_vm_error_cpu_capacity_invalid);
+            }
+        }
+        var clusters = CpuPlacementPlan.parseClusters(manualClusters.trim());
+        var overlaps = CpuPlacementPlan.findClusterOverlaps(clusters);
+        if (!overlaps.isEmpty())
+            return showValidateFailed(parent.getString(
+                R.string.create_vm_error_cpu_clusters_overlap, joinCsv(overlaps)));
+        for (var cluster : clusters)
+            for (var vcpu : cluster)
+                if (vcpu >= vcpuCount)
+                    return showValidateFailed(R.string.create_vm_error_cpu_affinity_vcpu_oob);
         return true;
     }
 
@@ -203,6 +465,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     public void saveConfig(@NonNull VMConfig config) {
         var item = config.item;
         config.setName(inputName.getText());
+        config.setNotes(notes);
         item.set("memory_mb", inputMemory.getValue(SizeUnit.MB));
         item.set("cpu_count", inputCpu.getValue());
         item.set("swiotlb_mb", inputSwiotlb.getValue(SizeUnit.MB));
@@ -230,6 +493,34 @@ public final class VMEditBasicTab extends VMEditBaseTab {
                 arr.append(DataItem.newString(trimmed));
         }
         item.set("extra_options", arr);
+
+        var environmentVariables = DataItem.newArray();
+        var environmentText = getEditText(etEnvironmentVariables);
+        for (var line : environmentText.split("\n")) {
+            var trimmed = line.trim();
+            if (!trimmed.isEmpty())
+                environmentVariables.append(DataItem.newString(trimmed));
+        }
+        item.set("environment_variables", environmentVariables);
+        saveCpuTopology(item);
+    }
+
+    private void saveCpuTopology(@NonNull DataItem item) {
+        // An empty affinity string is how CpuPlacementPlan is told to emit no CPU
+        // placement flags at all; the dialog returns an empty map when turned off.
+        item.set(CpuPlacementPlan.KEY_AFFINITY, CpuPlacementPlan.formatAffinity(affinity));
+        item.set(CpuPlacementPlan.KEY_AUTO, cpuTopologyAuto);
+        item.set(CpuPlacementPlan.KEY_CAPACITY, manualCapacity);
+        item.set(CpuPlacementPlan.KEY_CLUSTERS, manualClusters);
+    }
+
+    /**
+     * The vCPU affinity as currently edited, so the graphics tab can warn when the
+     * GPU worker cpuset overlaps it. Read-only view: the dialog owns the edits.
+     */
+    @NonNull
+    public Map<Integer, List<Integer>> getCurrentAffinity() {
+        return affinity;
     }
 
     /**

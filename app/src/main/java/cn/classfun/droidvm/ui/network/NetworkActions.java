@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.network;
 
 import static android.widget.Toast.LENGTH_LONG;
@@ -71,6 +74,38 @@ public final class NetworkActions {
         conn.buildRequest("network_exists")
             .put("network_id", config.getId())
             .onResponse(onExists)
+            .onUnsuccessful(f)
+            .onError(err)
+            .invoke();
+    }
+
+    /**
+     * Makes the daemon's picture of a network match the store's: it creates the network there
+     * when the daemon does not know it yet, and modifies it when it does. Registering is not
+     * starting -- the instance lands STOPPED either way.
+     *
+     * <p>Every network the app writes to networks.json has to go through here, because the
+     * daemon only re-reads that file when it starts. A network it has never been told about is
+     * one it cannot resolve: a VM whose NIC names it refuses to start ("Network ... not found"),
+     * and an export of that VM silently packs no network at all.
+     *
+     * <p>Best effort and silent: a daemon that is not running yet will read the network out of
+     * networks.json when it starts, which is the case the setup wizard is normally in.
+     */
+    public static void syncToDaemon(@NonNull NetworkConfig config) {
+        var conn = DaemonConnection.getInstance();
+        DaemonConnection.OnUnsuccessful f = r ->
+            Log.w(TAG, fmt("Daemon refused the network sync: %s", r.optString("message", "")));
+        DaemonConnection.OnError err = e -> Log.w(TAG, "Daemon network sync failed", e);
+        conn.buildRequest("network_exists")
+            .put("network_id", config.getId())
+            .onResponse(resp -> conn
+                .buildRequest(resp.optBoolean("exists", false)
+                    ? "network_modify" : "network_create")
+                .put("config", config)
+                .onUnsuccessful(f)
+                .onError(err)
+                .invoke())
             .onUnsuccessful(f)
             .onError(err)
             .invoke();
@@ -160,7 +195,10 @@ public final class NetworkActions {
     ) {
         try {
             JsonUtils.forEachArray(resp, "data", (JSONObject vm) -> {
-                if (vm.optString("state", "stopped").equals("stopped")) return;
+                // vm_list reports the enum name ("STOPPED"); vm_status lower-cases it. Compare
+                // either way -- a case-sensitive match here read every stopped VM as running and
+                // so refused to delete any network a VM had ever been attached to.
+                if (vm.optString("state", "stopped").equalsIgnoreCase("stopped")) return;
                 var vmId = vm.optString("id", "");
                 var vmCfg = vmStore.findById(vmId);
                 if (vmCfg == null) return;

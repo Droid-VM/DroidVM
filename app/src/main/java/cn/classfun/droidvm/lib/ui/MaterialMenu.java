@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.ui;
 
 import android.content.Context;
@@ -39,6 +42,7 @@ public final class MaterialMenu {
     private final ListPopupWindow popup;
     private MenuItem.OnMenuItemClickListener listener;
     private int gravity = Gravity.NO_GRAVITY;
+    private View headerView;
 
     public MaterialMenu(@NonNull Context context, @NonNull View anchor) {
         this.context = context;
@@ -69,6 +73,19 @@ public final class MaterialMenu {
         @Nullable MenuItem.OnMenuItemClickListener listener
     ) {
         this.listener = listener;
+    }
+
+    /**
+     * Custom view rendered above the menu list inside the popup (ListPopupWindow prompt view) -
+     * e.g. a segmented input-mode selector. Set before {@link #show()}.
+     */
+    public void setHeaderView(@Nullable View header) {
+        this.headerView = header;
+    }
+
+    /** Closes the popup; header-view controls use this after handling a selection. */
+    public void dismiss() {
+        popup.dismiss();
     }
 
     @SuppressWarnings("unused")
@@ -104,6 +121,15 @@ public final class MaterialMenu {
         var adapter = new MenuAdapter(context, items, hasIcons);
         popup.setAdapter(adapter);
         var size = measureContent(adapter);
+        if (headerView != null) {
+            // Rendered above the list; grow the popup to fit it.
+            int spec = View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED);
+            headerView.measure(spec, spec);
+            size.x = Math.max(size.x, headerView.getMeasuredWidth());
+            size.y += headerView.getMeasuredHeight();
+            popup.setPromptPosition(ListPopupWindow.POSITION_PROMPT_ABOVE);
+            popup.setPromptView(headerView);
+        }
         popup.setContentWidth(size.x);
         popup.setHeight(size.y);
         popup.setBackgroundDrawable(createMaterial3Background());

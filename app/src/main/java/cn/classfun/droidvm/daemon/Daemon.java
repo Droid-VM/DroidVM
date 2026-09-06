@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon;
 
 import static android.os.Process.myPid;
@@ -29,6 +32,7 @@ import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import cn.classfun.droidvm.daemon.audio.HostAudioTable;
 import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
@@ -269,6 +273,10 @@ public final class Daemon {
             System.out.print("Another DroidVM Daemon is already running.\n");
             System.exit(1);
         }
+        // Publish the host's audio endpoints before any VM starts, and keep them current: a VM
+        // pinned to a headset needs to find it again by name after it is reconnected, and the
+        // number it had before will not be the number it has after.
+        HostAudioTable.start(DaemonSystemContext.get());
         daemonHash = getMyHash();
         Log.i(TAG, fmt("DroidVM Daemon hash: %s", daemonHash));
         writePidFile();

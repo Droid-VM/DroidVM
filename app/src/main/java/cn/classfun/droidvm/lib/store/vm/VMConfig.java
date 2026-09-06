@@ -1,6 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.store.vm;
 
 import static cn.classfun.droidvm.lib.Constants.PATH_EDK2_FIRMWARE;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_INITRD;
+import static cn.classfun.droidvm.lib.Constants.PATH_BUILTIN_KERNEL;
+
+import android.content.Context;
 
 import androidx.annotation.NonNull;
 
@@ -15,6 +22,14 @@ import cn.classfun.droidvm.lib.store.base.DataConfig;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public class VMConfig extends DataConfig {
+    public static final boolean NEW_VM_DEFAULT_HUGEPAGES = true;
+    public static final boolean NEW_VM_DEFAULT_PMU = true;
+    public static final boolean NEW_VM_DEFAULT_RNG = true;
+    public static final boolean NEW_VM_DEFAULT_SMT = true;
+    public static final boolean NEW_VM_DEFAULT_USB = true;
+    public static final ProtectedVM NEW_VM_DEFAULT_PROTECTED_VM =
+        ProtectedVM.PSEUDO_UNPROTECTED;
+
     public VMConfig() {
         setId(UUID.randomUUID());
         item.set("created_at", System.currentTimeMillis());
@@ -28,6 +43,114 @@ public class VMConfig extends DataConfig {
         }
         migrateBoot();
         migrateNicForwards();
+        // Configs from before "screens" describe one display chosen by an either/or backend
+        // enum; fold that into the per-screen bindings, dropping the legacy keys so nothing
+        // downstream can read a second, disagreeing answer.
+        VMScreenConfig.migrate(item);
+        // Configs from before "serial_ports" implicitly meant "COM1 = app console, rest sinks";
+        // make that explicit so every reader sees the same list.
+        VMSerialConfig.ensureDefaults(item);
+    }
+
+    /**
+     * Materializes the values shown by every tab when Customize opens for a new VM. Quick
+     * creation starts here and only replaces the fields it exposes, so both creation paths keep
+     * the same defaults as those defaults evolve.
+     */
+    @NonNull
+    public static VMConfig createWithCustomizeDefaults(@NonNull Context context) {
+        var config = new VMConfig();
+        var item = config.item;
+        item.set("memory_mb", 512L);
+        item.set("cpu_count", 1L);
+        item.set("swiotlb_mb", 256L);
+        item.set("balloon", false);
+        item.set("pmu", NEW_VM_DEFAULT_PMU);
+        item.set("rng", NEW_VM_DEFAULT_RNG);
+        item.set("smt", NEW_VM_DEFAULT_SMT);
+        item.set("usb", NEW_VM_DEFAULT_USB);
+        item.set("sandbox", false);
+        item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
+        item.set("strace", false);
+        item.set("gpu_vram_folio_threshold_kb", 1024L);
+        item.set(LendMthpMode.KEY, LendMthpMode.defaultForDevice(context));
+        item.set("protected_vm", NEW_VM_DEFAULT_PROTECTED_VM);
+        item.set("backend", VMBackend.DEFAULT);
+        item.set("hypervisor", VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
+        item.set("extra_options", DataItem.newArray());
+        item.set("environment_variables", DataItem.newArray());
+        item.set(CpuPlacementPlan.KEY_AFFINITY, "");
+        item.set(CpuPlacementPlan.KEY_AUTO, true);
+        item.set(CpuPlacementPlan.KEY_CAPACITY, "");
+        item.set(CpuPlacementPlan.KEY_CLUSTERS, "");
+
+        var boot = BootConfig.of(config);
+        boot.setProtocol(BootConfig.Protocol.UEFI);
+        boot.setUefiFirmware("");
+        boot.setUefiVarsEnabled(true);
+        boot.setUefiVars("");
+        boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
+        boot.setKernel(PATH_BUILTIN_KERNEL);
+        boot.setInitrd(PATH_BUILTIN_INITRD);
+        boot.setCmdline(BootConfig.DEFAULT_MANUAL_CMDLINE);
+        boot.setImageCmdline("");
+        boot.setImageDisk(0);
+        boot.setVdafix(true);
+        boot.setBootWait(BootConfig.DEFAULT_BOOT_WAIT);
+        item.set("auto_up", false);
+
+        item.set("disks", DataItem.newArray());
+        item.set("shared_dirs", DataItem.newArray());
+        item.set("networks", DataItem.newArray());
+
+        var gpu = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
+        gpu.setEnabled(false);
+        // Set even though the screen is off, because this is what the editor shows the moment the
+        // user turns virtio-gpu on -- the row's own default stopped being reachable when a new VM
+        // started going through loadConfig like an existing one. Nothing is exported until the
+        // screen is enabled: save() writes NONE for a screen that is off, and the backend emits
+        // exporters only for enabled screens.
+        gpu.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
+        gpu.setTransportCap(DisplayTransportCap.defaultFor(
+            VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
+        gpu.setInputEnabled(true);
+        // Written even though the screen is off and its exporter is not VNC, for the same reason
+        // the exporter above is: the editor loads this config over its rows, so what it shows the
+        // moment the user switches this screen to VNC is what is written here. The two screens get
+        // different ports because they can be exported at once and two servers may not share one.
+        gpu.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        gpu.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
+        gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
+        gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
+        gpu.setRefreshRate(VMScreenConfig.DEFAULT_REFRESH_RATE);
+        gpu.setDpiH(VMScreenConfig.DEFAULT_DPI);
+        gpu.setDpiV(VMScreenConfig.DEFAULT_DPI);
+
+        var simpleFb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
+        simpleFb.setEnabled(true);
+        simpleFb.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
+        simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
+            VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
+        simpleFb.setInputEnabled(true);
+        simpleFb.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
+        simpleFb.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
+        simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
+        simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
+        simpleFb.setPollHz(VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
+        item.set("display_blit_provider", GpuBlitProvider.TURNIP);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, false);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
+            CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH);
+        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, "");
+        VpuConfig.setEnabled(item, false);
+        VpuConfig.setHostPoolMb(item, VpuConfig.DEFAULT_HOST_POOL_MB);
+        VpuConfig.setGuestPoolMb(item, VpuConfig.DEFAULT_GUEST_POOL_MB);
+
+        var peripherals = DataItem.newArray();
+        peripherals.append(VMPeripheralConfig.createDefaultVirtioSound().item);
+        item.set("peripherals", peripherals);
+        VMSerialConfig.ensureDefaults(item);
+        return config;
     }
 
     /**
@@ -120,6 +243,23 @@ public class VMConfig extends DataConfig {
         }
 
         item.remove("port_forwards");
+    }
+
+    /**
+     * Free-form Markdown the user keeps with this VM -- what it is for, how to log in, what not
+     * to touch. Empty when unset, never null, so every reader can ask {@code isEmpty()}. It rides
+     * along in a package like any other field, which is the point: the notes are about the VM,
+     * not about the phone it happens to be on.
+     */
+    @NonNull
+    public final String getNotes() {
+        var notes = item.optString("notes", "");
+        return notes == null ? "" : notes;
+    }
+
+    public final void setNotes(@NonNull String notes) {
+        if (notes.isEmpty()) item.remove("notes");
+        else item.set("notes", notes);
     }
 
     /** Iterates this VM's NIC entries (the "networks" array). */

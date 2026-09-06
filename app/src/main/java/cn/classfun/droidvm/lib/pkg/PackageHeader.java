@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.pkg;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -40,7 +43,9 @@ public final class PackageHeader {
     }
 
     public void validate() throws IOException {
-        if (manifestVersion != PackageConstants.MANIFEST_VERSION)
+        // Older packages still import; newer ones are refused rather than half-understood.
+        if (manifestVersion < PackageConstants.MANIFEST_VERSION_BASE
+            || manifestVersion > PackageConstants.MANIFEST_VERSION)
             throw new IOException(fmt("unsupported vmpkg manifest version: %d", manifestVersion));
         if (Compression.fromType(compression) == null)
             throw new IOException(fmt("unsupported vmpkg compression: %d", compression));

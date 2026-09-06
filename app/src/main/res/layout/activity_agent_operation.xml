@@ -81,10 +81,11 @@
             android:textColor="#FF6B6B" />
     </LinearLayout>
 
-    <com.termux.view.TerminalView
-        android:id="@+id/terminal_view"
+    <cn.classfun.droidvm.lib.ui.termux.TerminalPanelView
+        android:id="@+id/terminal_panel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
         android:layout_margin="8dp"
         android:background="@android:color/black" />
 

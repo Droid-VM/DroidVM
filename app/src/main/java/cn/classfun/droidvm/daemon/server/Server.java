@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.server;
 
 import static android.system.Os.stat;
@@ -106,6 +109,13 @@ public final class Server {
             return;
         }
         writePortFile(sockAddr.getPort());
+        // Only now, with the port file written and a listener up. Auto-start waits on the
+        // huge-page reserve, and holding the daemon's whole reason for existing behind VMs that
+        // have not booted yet is what it used to do from the ServerContext constructor. By here
+        // the event callback is wired (our own constructor) and INT/TERM have handlers (Daemon's
+        // main, before this call), so the sweep's VMs report their states and a shutdown arriving
+        // mid-sweep is answered rather than ignored.
+        context.getVMs().autoUpAsync();
         try {
             Log.d(TAG, fmt("DroidVM Daemon is listening on %s", sockAddr.toString()));
             runningThread = Thread.currentThread();

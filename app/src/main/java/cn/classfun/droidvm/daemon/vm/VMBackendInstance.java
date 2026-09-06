@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm;
 
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
@@ -21,6 +24,7 @@ import java.util.Map;
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.utils.FileUtils;
 
@@ -47,9 +51,11 @@ public abstract class VMBackendInstance {
 
     /**
      * Writes pre-encoded evdev bytes to the running backend's native-display input channel on
-     * behalf of the UI. Only the crosvm backend implements this; others report not-delivered.
+     * behalf of the UI. [screenId] is the screen the console sending them is showing; it selects
+     * the device for the absolute channels and is ignored by the VM-wide ones. Only the crosvm
+     * backend implements this; others report not-delivered.
      */
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         return false;
     }
 
@@ -71,6 +77,26 @@ public abstract class VMBackendInstance {
         run("echo 1 > /proc/sys/vm/compact_memory");
     }
 
+    private void applyConfiguredEnvironment(@NonNull NativeProcess.Builder builder) {
+        var environment = config.item.opt("environment_variables", DataItem.newArray());
+        if (environment == null || !environment.is(DataItem.Type.ARRAY)) return;
+        for (var entry : environment.asArray()) {
+            if (entry == null || !entry.is(DataItem.Type.STRING)) continue;
+            var raw = entry.asString().trim();
+            var separator = raw.indexOf('=');
+            if (separator <= 0) {
+                Log.w(TAG, "Ignoring invalid VM environment variable entry");
+                continue;
+            }
+            var key = raw.substring(0, separator).trim();
+            if (key.isEmpty()) {
+                Log.w(TAG, "Ignoring VM environment variable with an empty name");
+                continue;
+            }
+            builder.environment(key, raw.substring(separator + 1));
+        }
+    }
+
     protected void prepareProcess(@NonNull NativeProcess.Builder builder) {
         String[] preload = {
             pathJoin(DATA_DIR, "lib", "libsimpledump.so"),
@@ -78,6 +104,7 @@ public abstract class VMBackendInstance {
         };
         builder.environment("LD_PRELOAD", String.join(":", preload));
         builder.environment("LD_LIBRARY_PATH", pathJoin(DATA_DIR, "usr", "lib"));
+        applyConfiguredEnvironment(builder);
         builder.maxOpenFiles(65536);
         builder.maxLockedMemory(RLIM_INFINITY);
         cleanUpMemory();

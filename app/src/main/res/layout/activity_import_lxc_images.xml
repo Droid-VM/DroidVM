@@ -211,6 +211,14 @@
                     app:ti_iconButtonHint="@string/disk_create_browse"
                     app:ti_iconButtonIcon="@drawable/ic_open_in" />
 
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_reset_password"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/lxc_reset_password_hint"
+                    android:icon="@drawable/ic_lock"
+                    android:inputType="textPassword" />
+
                 <com.google.android.material.card.MaterialCardView
                     android:id="@+id/card_info"
                     style="?attr/materialCardViewFilledStyle"
@@ -247,16 +255,97 @@
 
                 </com.google.android.material.card.MaterialCardView>
 
-                <cn.classfun.droidvm.ui.widgets.tools.DownloadWidget
-                    android:id="@+id/download_widget"
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <com.google.android.material.divider.MaterialDivider
+                android:id="@+id/divider_settings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:visibility="gone" />
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:id="@+id/tv_settings_header"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/linux_vm_category_settings"
+                android:visibility="gone"
+                app:cc_collapsible="false">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_vm_name"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="16dp"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginEnd="16dp"
-                    android:visibility="gone" />
+                    android:hint="@string/create_vm_name_hint"
+                    android:icon="@drawable/ic_edit"
+                    android:inputType="text" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_vm_cpu"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/create_vm_cpu_hint"
+                    android:icon="@drawable/ic_cpu"
+                    android:inputType="number"
+                    app:ti_max="64"
+                    app:ti_min="1"
+                    app:ti_mode="number" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_vm_memory"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/create_vm_memory_hint"
+                    android:icon="@drawable/ic_memory"
+                    android:inputType="number"
+                    app:ti_max="64GiB"
+                    app:ti_min="32MiB"
+                    app:ti_mode="size"
+                    app:ti_precision="1MiB" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_vm_disk_size"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/linux_vm_disk_size_hint"
+                    android:icon="@drawable/ic_nav_disk"
+                    android:inputType="number"
+                    app:ti_max="256TiB"
+                    app:ti_min="4MiB"
+                    app:ti_mode="size"
+                    app:ti_precision="1MiB" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget
+                    android:id="@+id/input_vm_root_password"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/linux_vm_root_password_hint"
+                    android:icon="@drawable/ic_lock"
+                    android:inputType="textPassword"
+                    app:ti_endIcon="@drawable/ic_content_copy"
+                    app:ti_iconButtonHint="@string/linux_vm_root_password_toggle"
+                    app:ti_iconButtonIcon="@drawable/ic_eye" />
+
+                <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+                    android:id="@+id/dropdown_vm_network"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/linux_vm_network_hint"
+                    android:icon="@drawable/ic_nav_network" />
 
             </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <!-- Shared by LXC import and Linux VM creation; it must remain visible
+                 when either mode hides its mode-specific section. -->
+            <cn.classfun.droidvm.ui.widgets.tools.DownloadWidget
+                android:id="@+id/download_widget"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginEnd="16dp"
+                android:visibility="gone" />
 
             <Space
                 android:layout_width="0dp"
