@@ -1646,6 +1646,7 @@
     <string name="usb_rules_target_vm">Attach to %1$s</string>
     <string name="usb_rules_target_controller">Attach to %1$s (%2$s)</string>
     <string name="usb_rules_unknown_controller">%1$s (missing controller %2$s)</string>
+    <string name="usb_rules_no_controller">%1$s (no USB controller)</string>
     <string name="usb_rules_unknown_vm">Unknown VM (%1$s)</string>
     <string name="usb_rules_unknown_device">Unknown device %1$s</string>
     <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>

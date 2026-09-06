@@ -16,7 +16,6 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,16 +52,18 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         this.listener = listener;
     }
 
-    /** What rows describe themselves against: the devices plugged in now and the VMs. */
+    /**
+     * What rows describe themselves against: the devices plugged in now, the VMs, and each VM's
+     * controller ids as vms.json has them -- the only copy that is current, see {@link VmEntry}.
+     */
     @SuppressLint("NotifyDataSetChanged")
-    public void setLookups(@NonNull List<UsbHostDeviceInfo> devices, @NonNull List<VmEntry> vms) {
+    public void setLookups(@NonNull List<UsbHostDeviceInfo> devices, @NonNull List<VmEntry> vms,
+                           @NonNull Map<String, List<String>> controllers) {
         this.devices = new ArrayList<>(devices);
         vmNames.clear();
         vmControllers.clear();
-        for (var vm : vms) {
-            vmNames.put(vm.id, vm.name);
-            vmControllers.put(vm.id, vm.controllers);
-        }
+        vmControllers.putAll(controllers);
+        for (var vm : vms) vmNames.put(vm.id, vm.name);
         notifyDataSetChanged();
     }
 
@@ -186,8 +187,12 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
      * host" for null, the uuid for a VM this app cannot see. The last layer's rows are the VM
      * itself, so there the name stands alone.
      *
-     * <p>A controller the VM does not list is called out rather than shown as a target like any
-     * other: that rule can never fire, and the only place it shows is here.</p>
+     * <p>A rule whose controller is not there is called out rather than shown as a target like
+     * any other: it can never fire, and this is the only place it shows. That covers a rule
+     * naming a controller the VM does not have, and equally a rule naming none -- which means
+     * the VM's first controller -- against a VM that has no controller at all. The second is
+     * what every rule written before controllers existed looks like, and what the picker on this
+     * page still writes.</p>
      */
     @NonNull
     private String vmLabel(@Nullable String vm, @Nullable String controller) {
@@ -195,11 +200,16 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         var name = vmNames.get(vm);
         var known = name != null;
         if (!known) name = context.getString(R.string.usb_rules_unknown_vm, vm);
-        var missing = known && controller != null && !controllersOf(vm).contains(controller);
-        if (missing) {
-            // The id is already in the sentence, so it is not repeated as a target below.
-            name = context.getString(R.string.usb_rules_unknown_controller, name, controller);
-            controller = null;
+        // Only vms.json can answer this, and only for a VM it still holds.
+        var listed = vmControllers.get(vm);
+        if (known && listed != null) {
+            if (controller == null && listed.isEmpty()) {
+                name = context.getString(R.string.usb_rules_no_controller, name);
+            } else if (controller != null && !listed.contains(controller)) {
+                // The id is already in the sentence, so it is not repeated as a target below.
+                name = context.getString(R.string.usb_rules_unknown_controller, name, controller);
+                controller = null;
+            }
         }
         if (layer == UsbRuleLayer.ANY)
             return controller == null
@@ -207,11 +217,5 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         return controller == null
             ? context.getString(R.string.usb_rules_target_vm, name)
             : context.getString(R.string.usb_rules_target_controller, name, controller);
-    }
-
-    @NonNull
-    private List<String> controllersOf(@NonNull String vm) {
-        var controllers = vmControllers.get(vm);
-        return controllers == null ? Collections.emptyList() : controllers;
     }
 }

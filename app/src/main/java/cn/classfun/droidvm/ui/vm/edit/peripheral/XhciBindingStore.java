@@ -123,6 +123,20 @@ final class XhciBindingStore {
         rows.remove(index);
     }
 
+    /**
+     * Names [vmId] on every row that carries no VM yet: the rows the user added this session.
+     *
+     * <p>Done to the working copy rather than to a copy of it on the way out, so that what the
+     * next snapshot holds is what the daemon was actually sent. A row snapshotted without its VM
+     * could not be matched against the daemon's copy of itself afterwards, and deleting it later
+     * in the same session would quietly do nothing.</p>
+     */
+    void stampVm(@NonNull String vmId) {
+        for (var layers : working.values())
+            for (var rows : layers.values())
+                for (int i = 0; i < rows.size(); i++) rows.set(i, rows.get(i).withVm(vmId));
+    }
+
     /** The rows of one layer as the page would have them now, across every card. */
     @NonNull
     List<Row> desired(@NonNull UsbRuleLayer layer) {

@@ -251,19 +251,56 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
      *
      * <p>Read afresh rather than merged against the copy loaded when the page opened: the
      * global rules page edits the same object, and the whole point of pushing a diff is that
-     * neither page eats the other's edits. Called after the VM config was saved, so the VM and
-     * the controller a rule names are ones the daemon can already find.</p>
+     * neither page eats the other's edits. Called after the VM config was saved, so a rule can
+     * name the VM it was written on.</p>
      */
-    public void pushUsbRules(@NonNull String vmId, @NonNull Runnable onDone,
+    public void pushUsbRules(@NonNull VMConfig config, @NonNull Runnable onDone,
                              @NonNull Consumer<String> onFailed) {
         if (pushing) return;
         pushing = true;
-        DaemonConnection.getInstance().buildRequest("usb_rules_get")
+        var vmId = config.getId().toString();
+        introduceVm(config, () -> DaemonConnection.getInstance().buildRequest("usb_rules_get")
             .onResponse(resp -> post(() ->
                 mergeAndPush(vmId, resp.optJSONObject("rules"), onDone, onFailed)))
             .onUnsuccessful(resp -> post(() -> fail(message(resp), onFailed)))
-            .onError(e -> post(() ->
-                fail(parent.getString(R.string.usb_rules_daemon_unavailable), onFailed)))
+            .onError(e -> post(() -> fail(daemonUnavailable(), onFailed)))
+            .invoke(), onFailed);
+    }
+
+    /**
+     * Makes sure the daemon knows the VM whose bindings are about to name it.
+     *
+     * <p>{@code usb_rules_set} refuses a rule whose target it cannot find, and the daemon's VM
+     * store is not vms.json: it is read once at daemon start and learns of a VM when one is
+     * created or started. A VM created in this editor would therefore have every binding
+     * refused with "VM not found" until it had been started once -- which is the first thing
+     * anyone does with this card, so the config goes over first.</p>
+     *
+     * <p>Only a VM the daemon has never heard of is sent. An existing one is left alone: what
+     * would refresh its copy is vm_modify, which builds a new instance and would throw away the
+     * console of the run the user is looking at, and a stale copy costs nothing here -- the
+     * daemon checks that the VM exists, and a controller it has not heard of yet is skipped when
+     * a device is offered rather than refused at save.</p>
+     */
+    private void introduceVm(@NonNull VMConfig config, @NonNull Runnable then,
+                             @NonNull Consumer<String> onFailed) {
+        var conn = DaemonConnection.getInstance();
+        conn.buildRequest("vm_exists")
+            .put("vm_id", config.getId().toString())
+            .onResponse(resp -> {
+                if (resp.optBoolean("exists", false)) {
+                    post(then);
+                    return;
+                }
+                conn.buildRequest("vm_create")
+                    .put("config", config)
+                    .onResponse(created -> post(then))
+                    .onUnsuccessful(created -> post(() -> fail(message(created), onFailed)))
+                    .onError(e -> post(() -> fail(daemonUnavailable(), onFailed)))
+                    .invoke();
+            })
+            .onUnsuccessful(resp -> post(() -> fail(message(resp), onFailed)))
+            .onError(e -> post(() -> fail(daemonUnavailable(), onFailed)))
             .invoke();
     }
 
@@ -274,9 +311,13 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             payload = new JSONObject();
             payload.put("version", UsbRules.VERSION);
             var live = rowsOf(current);
+            // The rows added this session only learn their VM here -- a new VM's id is minted by
+            // the save itself -- and they learn it in place, so the snapshot a landed push
+            // leaves behind is what the daemon was sent.
+            bindings.stampVm(vmId);
             for (var layer : UsbRuleLayer.values()) {
                 var merged = XhciBindingDiff.merge(live.get(layer), bindings.snapshot(layer),
-                    stamped(bindings.desired(layer), vmId), row -> bindings.owns(row, vmId));
+                    bindings.desired(layer), row -> bindings.owns(row, vmId));
                 payload.put(layer.key, jsonOf(merged));
             }
         } catch (JSONException e) {
@@ -292,14 +333,18 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
                 onDone.run();
             }))
             .onUnsuccessful(resp -> post(() -> fail(message(resp), onFailed)))
-            .onError(e -> post(() ->
-                fail(parent.getString(R.string.usb_rules_daemon_unavailable), onFailed)))
+            .onError(e -> post(() -> fail(daemonUnavailable(), onFailed)))
             .invoke();
     }
 
     private void fail(@NonNull String message, @NonNull Consumer<String> onFailed) {
         pushing = false;
         onFailed.accept(message);
+    }
+
+    @NonNull
+    private String daemonUnavailable() {
+        return parent.getString(R.string.usb_rules_daemon_unavailable);
     }
 
     /** The rules as they are now; nothing is loaded twice, so this runs once per edit session. */
@@ -374,14 +419,6 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             arr.put(obj);
         }
         return arr;
-    }
-
-    /** The page's rows with the VM filled in; see {@link Row#withVm}. */
-    @NonNull
-    private static List<Row> stamped(@NonNull List<Row> rows, @NonNull String vmId) {
-        var out = new ArrayList<Row>(rows.size());
-        for (var row : rows) out.add(row.withVm(vmId));
-        return out;
     }
 
     @NonNull

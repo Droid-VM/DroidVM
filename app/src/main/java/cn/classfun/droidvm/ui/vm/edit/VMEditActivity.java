@@ -287,6 +287,12 @@ public final class VMEditActivity extends SwipeableTabActivity {
             store.update(config);
         } else {
             store.add(config);
+            // The VM exists from here on, so this session is editing it, not creating one. The
+            // save can still end in the editor staying open -- the USB rules below -- and a
+            // second Save that took the creation path again would mint another id and leave two
+            // copies of the VM in the file, after refusing the name the first copy already has.
+            editVMId = config.getId();
+            editMode = true;
         }
         store.save(this);
         setResult(RESULT_OK);
@@ -296,8 +302,8 @@ public final class VMEditActivity extends SwipeableTabActivity {
         // the editor open, because the bindings only exist in this page until they are pushed.
         if (peripheralTab instanceof VMEditPeripheralTab
             && ((VMEditPeripheralTab) peripheralTab).hasPendingUsbRules()) {
-            ((VMEditPeripheralTab) peripheralTab).pushUsbRules(
-                config.getId().toString(), this::finish, this::showUsbRulesError);
+            ((VMEditPeripheralTab) peripheralTab)
+                .pushUsbRules(config, this::finish, this::showUsbRulesError);
             return;
         }
         finish();

@@ -1605,6 +1605,7 @@
     <string name="usb_rules_target_vm">接到 %1$s</string>
     <string name="usb_rules_target_controller">接到 %1$s（%2$s）</string>
     <string name="usb_rules_unknown_controller">%1$s（找不到控制器 %2$s）</string>
+    <string name="usb_rules_no_controller">%1$s（沒有 USB 控制器）</string>
     <string name="usb_rules_unknown_vm">未知的虛擬機器（%1$s）</string>
     <string name="usb_rules_unknown_device">未知裝置 %1$s</string>
     <string name="usb_rules_desc_exact">%1$s，port %2$s</string>

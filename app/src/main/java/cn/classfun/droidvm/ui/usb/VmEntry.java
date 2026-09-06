@@ -16,27 +16,23 @@ import java.util.List;
 import java.util.Locale;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.VMState;
-import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 
 /**
  * One row of {@code vm_list}: enough to name a rule's target and to say whether it could take
  * a device right now (only a running VM does).
+ *
+ * <p>What controllers that VM has is deliberately not read from here, although the row carries
+ * the whole config: the daemon's copy of a config is loaded once at daemon start and replaced
+ * only when a VM is created or started, so it answers with the controllers a VM had rather than
+ * the ones the editor gave it. That question goes to vms.json -- see
+ * {@code UsbRulesActivity.loadControllers}.</p>
  */
 public final class VmEntry {
     public final String id;
     public final String name;
     @Nullable
     public final VMState state;
-    /**
-     * The xHCI controllers this VM's config lists, in array order.
-     *
-     * <p>Kept so a rule that names a controller can be shown as what it is: one naming a
-     * controller the VM does not have can never fire, and a target that reads like every other
-     * would hide that.</p>
-     */
-    public final List<String> controllers;
     private final String rawState;
 
     private VmEntry(@NonNull JSONObject obj) {
@@ -50,24 +46,6 @@ public final class VmEntry {
         } catch (IllegalArgumentException ignored) {
         }
         state = parsed;
-        controllers = controllersOf(obj);
-    }
-
-    /** {@code vm_list} answers with the whole config, so the controller ids are already here. */
-    @NonNull
-    private static List<String> controllersOf(@NonNull JSONObject obj) {
-        var out = new ArrayList<String>();
-        var peripherals = obj.optJSONArray(VMXhciConfig.KEY_PERIPHERALS);
-        if (peripherals == null) return out;
-        for (int i = 0; i < peripherals.length(); i++) {
-            var entry = peripherals.optJSONObject(i);
-            if (entry == null) continue;
-            if (!PeripheralType.XHCI_USB.name().equalsIgnoreCase(entry.optString("type", "")))
-                continue;
-            var id = entry.optString(VMXhciConfig.KEY_ID, "");
-            if (!id.isEmpty()) out.add(id);
-        }
-        return out;
     }
 
     @NonNull

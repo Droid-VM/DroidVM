@@ -40,6 +40,8 @@ import java.util.Map;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
 
 /**
@@ -61,6 +63,8 @@ public final class UsbRulesActivity extends AppCompatActivity
     private final List<UsbHostDeviceInfo> devices = new ArrayList<>();
     private final List<VmEntry> vms = new ArrayList<>();
     private final Map<String, String> vmNames = new HashMap<>();
+    /** Each VM's xHCI controller ids, read from vms.json; see {@link #loadControllers}. */
+    private final Map<String, List<String>> vmControllers = new HashMap<>();
     private View root;
     private MaterialToolbar toolbar;
     private TextView tvStatus;
@@ -137,9 +141,34 @@ public final class UsbRulesActivity extends AppCompatActivity
 
     /** Names and devices always; the rules only while there is nothing unsaved to clobber. */
     private void refreshAll() {
+        loadControllers();
         loadVms();
         loadDevices();
         if (!dirty) loadRules();
+    }
+
+    /**
+     * Which xHCI controllers each VM has, from vms.json rather than from {@code vm_list}.
+     *
+     * <p>This is what decides whether a rule's target still exists, and only the config file can
+     * say: the daemon's copy of a VM is loaded once at daemon start and replaced only when a VM
+     * is created or started, so a controller added in the editor would read as missing here and
+     * one deleted there would go on reading as a healthy target until the VM was next started --
+     * wrong in both directions, on the one surface that reports a dangling rule.</p>
+     */
+    private void loadControllers() {
+        var store = new VMStore();
+        store.load(this);
+        vmControllers.clear();
+        store.forEach((id, config) -> {
+            if (id == null) return;
+            var ids = new ArrayList<String>();
+            for (var controller : VMXhciConfig.listControllers(config.item))
+                if (!controller.getControllerId().isEmpty())
+                    ids.add(controller.getControllerId());
+            vmControllers.put(id.toString(), ids);
+        });
+        pushLookups();
     }
 
     // Daemon requests. Every callback arrives on the connection's executor, so each hops to
@@ -250,7 +279,7 @@ public final class UsbRulesActivity extends AppCompatActivity
     }
 
     private void pushLookups() {
-        for (var adapter : adapters.values()) adapter.setLookups(devices, vms);
+        for (var adapter : adapters.values()) adapter.setLookups(devices, vms, vmControllers);
     }
 
     // UsbRuleAdapter.Listener

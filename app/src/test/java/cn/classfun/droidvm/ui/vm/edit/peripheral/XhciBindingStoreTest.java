@@ -144,6 +144,27 @@ public final class XhciBindingStoreTest {
     }
 
     @Test
+    public void aRowAddedThisSessionIsSnapshottedWithTheVmItWasSentWith() {
+        // The VM is named on the working rows before the push, not on a copy of them: a row
+        // snapshotted without its VM could not be matched against the daemon's copy of itself,
+        // and deleting it later in the same session would quietly do nothing.
+        var store = new XhciBindingStore();
+        store.load(rules(), List.of("xhci-0"), VM);
+        store.add("xhci-0", UsbRuleLayer.DEVICE, new Row("0bda:8153", null, null, "xhci-0"));
+        store.stampVm(VM);
+        store.markSaved();
+        assertFalse(store.isDirty());
+        var asSent = store.snapshot(UsbRuleLayer.DEVICE).get(0);
+        assertEquals(VM, asSent.vm);
+
+        store.remove("xhci-0", UsbRuleLayer.DEVICE, 0);
+        var merged = XhciBindingDiff.merge(new ArrayList<>(List.of(asSent)),
+            store.snapshot(UsbRuleLayer.DEVICE), store.desired(UsbRuleLayer.DEVICE),
+            row -> store.owns(row, VM));
+        assertTrue(merged.isEmpty());
+    }
+
+    @Test
     public void nothingIsLoadedUntilTheDaemonAnswers() {
         // An unreachable daemon leaves the zones empty and the save with nothing to push, which
         // is what keeps a failed read from truncating the user's rules.

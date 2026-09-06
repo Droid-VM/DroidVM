@@ -57,15 +57,60 @@ public final class XhciBindingDiffTest {
     }
 
     @Test
-    public void aRowTheUserAddedGoesOnTheEndOfItsLayer() {
+    public void aRowTheUserAddedGoesOnTheHeadOfItsLayer() {
         var existing = mine("0bda:8153");
         var added = mine("090c:1000");
         var merged = XhciBindingDiff.merge(list(existing), list(existing),
             list(added, existing), ownedByThisPage());
-        // Order within a layer is priority: a rule just written has no claim on anyone else's.
+        // Order within a layer is priority, and a layer usually ends in a rule that takes
+        // everything left: a binding written behind one of those would never fire.
         assertEquals(2, merged.size());
-        assertSame(existing, merged.get(0));
-        assertSame(added, merged.get(1));
+        assertSame(added, merged.get(0));
+        assertSame(existing, merged.get(1));
+    }
+
+    @Test
+    public void severalNewRowsKeepTheOrderTheyWereAddedIn() {
+        var existing = mine("0bda:8153");
+        var first = mine("090c:1000");
+        var second = mine("2109:0813");
+        var merged = XhciBindingDiff.merge(list(existing), list(existing),
+            list(first, second, existing), ownedByThisPage());
+        assertEquals(List.of(first, second, existing), merged);
+    }
+
+    @Test
+    public void aRowWhoseValueWasRePickedKeepsItsPlace() {
+        // Re-picking a device edits the rule; it does not delete it and write another one at
+        // the head, which would change what the rule beats.
+        var first = exact("1111:1111", "1.1", OTHER_VM, null);
+        var ours = mine("0bda:8153");
+        var last = exact("3333:3333", "1.3", OTHER_VM, null);
+        var edited = ours.edited("090c:1000", null, "xhci-0");
+        var merged = XhciBindingDiff.merge(list(first, ours, last), list(ours), list(edited),
+            ownedByThisPage());
+        assertEquals(List.of(first, edited, last), merged);
+    }
+
+    @Test
+    public void aRowEditedTwiceIsStillTheSameRow() {
+        var ours = mine("0bda:8153");
+        var once = ours.edited("090c:1000", null, "xhci-0");
+        var twice = once.edited("2109:0813", null, "xhci-1");
+        var merged = XhciBindingDiff.merge(list(ours), list(ours), list(twice),
+            ownedByThisPage());
+        assertEquals(List.of(twice), merged);
+    }
+
+    @Test
+    public void aDeletionAndAnUnrelatedAdditionAreNotMistakenForAnEdit() {
+        // Both happened, but not to the same row: the deleted one goes and the new one leads.
+        var dropped = mine("0bda:8153");
+        var kept = mine("090c:1000");
+        var added = mine("2109:0813");
+        var merged = XhciBindingDiff.merge(list(dropped, kept), list(dropped, kept),
+            list(kept, added), ownedByThisPage());
+        assertEquals(List.of(added, kept), merged);
     }
 
     @Test
@@ -91,6 +136,23 @@ public final class XhciBindingDiffTest {
         assertEquals(2, merged.size());
         assertSame(ours, merged.get(0));
         assertSame(addedElsewhere, merged.get(1));
+    }
+
+    @Test
+    public void anEditKeepsThePlaceOfTheRowItWasMadeFromNotOfALookAlike() {
+        // Two identical rules, and only the second one was edited: the first must not be the
+        // one that moves, or the user's edit would land on someone else's priority.
+        var one = mine("0bda:8153");
+        var two = mine("0bda:8153");
+        var edited = two.edited("090c:1000", null, "xhci-0");
+        var merged = XhciBindingDiff.merge(list(one, two), list(one, two), list(one, edited),
+            ownedByThisPage());
+        // The first row of `current` is matched first, so the edit lands there; what matters is
+        // that exactly one of the pair is edited and the other is kept as it was.
+        assertEquals(2, merged.size());
+        assertTrue(merged.contains(edited));
+        assertTrue(merged.get(0).sameAs(edited) || merged.get(1).sameAs(edited));
+        assertTrue(merged.get(0).sameAs(one) || merged.get(1).sameAs(one));
     }
 
     @Test

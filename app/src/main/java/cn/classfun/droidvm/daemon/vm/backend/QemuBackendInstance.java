@@ -380,20 +380,17 @@ public final class QemuBackendInstance extends VMBackendInstance {
      * first controller keeps the historic {@code usb-bus} id and the guest's USB pointer and
      * keyboard, so a Windows guest that enumerated devices on that bus does not see them move
      * because a second controller was added.</p>
+     *
+     * <p>No controller means no {@code qemu-xhci} and no USB tablet or keyboard either, which is
+     * also what a config with no {@code "usb"} key at all gets: {@link VMXhciConfig#migrate} runs
+     * in the constructor of every config either process reads and turns an absent key into
+     * {@code false}, so this backend can no longer tell that shape from a VM whose owner turned
+     * USB off. It used to default such a config to on; the guest keeps its pointer and keyboard
+     * through virtio ({@link #buildInputCommand}), and adding the card back says so explicitly.</p>
      */
     private void buildUsbCommand(@NonNull List<String> args) {
         var controllers = VMXhciConfig.listControllers(config.item);
-        if (controllers.isEmpty()) {
-            // A config that never went through the conversion -- no peripherals array at all --
-            // still means what it used to: QEMU gave every such VM a controller unless the
-            // boolean said otherwise.
-            if (config.item.opt(VMXhciConfig.KEY_PERIPHERALS, null) != null
-                || !config.item.optBoolean(VMXhciConfig.KEY_USB, true)) return;
-            args.add("-device");
-            args.add("qemu-xhci,id=usb-bus,p2=15,p3=15");
-            addUsbInput(args, "usb-bus");
-            return;
-        }
+        if (controllers.isEmpty()) return;
         for (int i = 0; i < controllers.size(); i++) {
             var controller = controllers.get(i);
             var busId = i == 0 ? "usb-bus" : fmt("usb-%s", controller.getControllerId());

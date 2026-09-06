@@ -493,18 +493,21 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         var inflater = LayoutInflater.from(container.getContext());
         for (int i = 0; i < rows.size(); i++) {
             final int index = i;
+            final var row = rows.get(i);
             var view = inflater.inflate(R.layout.item_xhci_binding, container, false);
             MaterialButton value = view.findViewById(R.id.btn_xhci_binding);
             MaterialButton remove = view.findViewById(R.id.btn_xhci_binding_remove);
-            value.setText(rowLabel(layer, rows.get(i)));
+            value.setText(rowLabel(layer, row));
             // The catch-all row is every device no earlier rule claimed: there is nothing to
             // pick, so the value is text on a button rather than a picker.
             value.setClickable(layer.needsSubject());
             if (layer.needsSubject())
                 value.setOnClickListener(v -> XhciAddBindingDialog.pick(context, layer,
                     xhciHost.hostDevices(), (picked, id, port) -> {
+                        // An edit of the rule, not a new one: it keeps the place it had, which
+                        // inside a layer is its priority.
                         store.replace(controllerId, picked, index,
-                            new Row(id, port, null, controllerId));
+                            row.edited(id, port, controllerId));
                         notifyItemChangedSafe(holder.getBindingAdapterPosition());
                     }));
             remove.setOnClickListener(v -> {

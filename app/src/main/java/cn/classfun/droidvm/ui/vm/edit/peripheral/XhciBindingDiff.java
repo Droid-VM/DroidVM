@@ -17,8 +17,13 @@ import java.util.function.Predicate;
  * <p>The rules file is not this page's to own: the global rules page edits the same object, and
  * both read-modify-write the whole of it. So the card does not push the list it is showing --
  * it pushes what changed. Rows it never spoke for keep their place and their order, rows it
- * deleted are taken out wherever they sit, and rows it added go on the end of their layer, which
- * is where a new rule belongs when order is priority.</p>
+ * deleted are taken out wherever they sit, a row whose value was re-picked stays where it was,
+ * and rows it added go on the head of their layer.</p>
+ *
+ * <p>The head, not the tail: order inside a layer is priority, and a layer usually ends in the
+ * rule that catches everything left. A binding appended behind one of those would never be
+ * reached, which reads as "why does this device not attach"; in front of it, it does what the
+ * user just asked for and the rules page is still where a different order is arranged.</p>
  *
  * <p>Three-way rather than "replace all of mine": a rule someone added to this controller while
  * the editor was open is mine by the predicate but is not in the snapshot, so it survives. That
@@ -44,13 +49,28 @@ public final class XhciBindingDiff {
         public final String vm;
         @Nullable
         public final String controller;
+        /**
+         * What makes this row the same rule as the one it was edited from.
+         *
+         * <p>Rows are compared by their fields everywhere else, deliberately: two identical
+         * rules in one layer are two rules. But re-picking a row's device is not "delete this
+         * rule and write another" -- the rule kept its place in the list the user was looking
+         * at, and that place is its priority. Never compared, never written to the wire.</p>
+         */
+        private final Object identity;
 
         public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
                    @Nullable String controller) {
+            this(id, port, vm, controller, new Object());
+        }
+
+        private Row(@Nullable String id, @Nullable String port, @Nullable String vm,
+                    @Nullable String controller, @NonNull Object identity) {
             this.id = id;
             this.port = port;
             this.vm = vm;
             this.controller = controller;
+            this.identity = identity;
         }
 
         /**
@@ -61,7 +81,26 @@ public final class XhciBindingDiff {
          */
         @NonNull
         public Row withVm(@NonNull String vmId) {
-            return vm != null ? this : new Row(id, port, vmId, controller);
+            return vm != null ? this : new Row(id, port, vmId, controller, identity);
+        }
+
+        /**
+         * The same row pointed at something else: the picker a row's value button reopens edits
+         * the rule, it does not replace it, so the result stays the row it was.
+         *
+         * <p>The controller is written explicitly, whatever the row carried before: a rule
+         * touched through a card names the card it was touched on, so deleting that controller
+         * leaves the rule visibly dangling instead of quietly moving it to another one.</p>
+         */
+        @NonNull
+        public Row edited(@Nullable String newId, @Nullable String newPort,
+                          @Nullable String newController) {
+            return new Row(newId, newPort, vm, newController, identity);
+        }
+
+        /** Whether [other] is this same row before it was edited; see {@link #identity}. */
+        public boolean isEditOf(@NonNull Row other) {
+            return identity == other.identity;
         }
 
         /** Field-wise equality, null-safe. Rows are compared, never identified: two identical
@@ -104,15 +143,18 @@ public final class XhciBindingDiff {
             if (mine.test(row)) {
                 int at = indexOfSame(deleted, row);
                 if (at >= 0) {
-                    deleted.remove(at);
+                    // A row that was edited rather than removed takes the place of the one it
+                    // was edited from; anything else the page deleted simply goes.
+                    var edit = takeEditOf(added, deleted.remove(at));
+                    if (edit != null) out.add(edit);
                     continue;
                 }
             }
             out.add(row);
         }
-        // At the tail, in the order the page made them: within a layer, order is priority, and a
-        // rule the user just wrote has no claim on anyone else's.
-        out.addAll(added);
+        // At the head, in the order the page made them: a layer usually ends in a rule that
+        // takes everything left, and a binding written behind one of those never fires.
+        out.addAll(0, added);
         return out;
     }
 
@@ -126,6 +168,14 @@ public final class XhciBindingDiff {
             rest.remove(at);
         }
         return true;
+    }
+
+    /** The pending addition that is [row] after an edit of its value, taken out of [added]. */
+    @Nullable
+    private static Row takeEditOf(@NonNull List<Row> added, @NonNull Row row) {
+        for (int i = 0; i < added.size(); i++)
+            if (added.get(i).isEditOf(row)) return added.remove(i);
+        return null;
     }
 
     private static int indexOfSame(@NonNull List<Row> rows, @NonNull Row row) {

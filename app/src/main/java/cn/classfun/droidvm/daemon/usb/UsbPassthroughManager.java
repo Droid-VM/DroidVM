@@ -275,23 +275,21 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * Whether a rule's target is one the daemon can act on.
+     * Whether a rule's target is one the daemon can act on: a VM it knows about.
      *
-     * <p>A controller is only refused when the daemon's copy of that VM lists controllers and none
-     * of them is the named one. That copy is read once at daemon start and only refreshed by the
-     * vm_create/vm_modify a VM start sends, so a VM whose controller was added since would
-     * otherwise have the save that just added it rejected. The strict half still catches what
-     * matters: a controller the daemon knows is gone.</p>
+     * <p>The controller a rule names is deliberately not checked here, however tempting it looks.
+     * The daemon's copy of a VM config is read once at daemon start and only replaced when a VM
+     * is created or started, so it cannot tell a controller that does not exist from one the
+     * editor added a moment ago -- and every controller this codebase writes is added that way.
+     * Refusing on that copy would refuse the very save that added the card, and would throw away
+     * the whole payload, including the rules the user changed on the cards that do exist.</p>
+     *
+     * <p>Nothing is lost by trusting it: a rule naming a controller the VM turns out not to have
+     * is passed over when a device is offered ({@link #vmHasController}), never acted on wrongly,
+     * and the rules page labels it as the dangling rule it is.</p>
      */
     private boolean targetExists(@NonNull String vmId, @Nullable String controllerId) {
-        var inst = context.getVMs().findById(vmId);
-        if (inst == null) return false;
-        if (controllerId == null) return true;
-        var controllers = VMXhciConfig.listControllers(inst.item);
-        if (controllers.isEmpty()) return true;
-        for (var controller : controllers)
-            if (controllerId.equals(controller.getControllerId())) return true;
-        return false;
+        return context.getVMs().findById(vmId) != null;
     }
 
     /**

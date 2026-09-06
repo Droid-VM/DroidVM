@@ -168,6 +168,9 @@ public final class UsbRulesTest {
 
     @Test
     public void aControllerMustExistWhenThereIsAStoreToAsk() {
+        // The model's contract, asked with a hand-written predicate. What the daemon supplies
+        // answers on the VM alone (UsbPassthroughManager.targetExists says why), so this is the
+        // shape a caller with a current copy of the config would use, not today's refusal.
         var map = new EnumMap<Layer, List<Rule>>(Layer.class);
         map.put(Layer.ANY, List.of(new Rule(null, null, VM, XHCI1)));
         var message = assertThrows(RequestException.class,
