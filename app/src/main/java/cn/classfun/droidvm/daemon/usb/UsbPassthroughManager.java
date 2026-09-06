@@ -1331,9 +1331,12 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * One pass of the rules over everything plugged in, unclaimed and not pinned. Deciding is
-     * done under the lock against the inventory's snapshot; the attaches themselves run outside
-     * it, one after another, through the same path a manual attach takes. A device whose attach
+     * One pass of the rules over everything plugged in, unclaimed and not pinned. Which rule
+     * matches is decided under the lock against the inventory's snapshot -- a question the
+     * snapshot answers as well as a scan does -- while a sink re-reads the device it is about,
+     * because {@code authorized} is the one thing that snapshot cannot be trusted on (see
+     * {@link #freshDeviceAt}). The attaches themselves run outside the lock, one after another,
+     * through the same path a manual attach takes. A device whose attach
      * fails is marked for the VM it failed for, so the next pass passes that rule over instead
      * of failing the same way again -- until the device is replugged or that VM next comes up.
      * The exception is a VMM the CLI could not reach: that says nothing about the device, so
@@ -1370,6 +1373,10 @@ public final class UsbPassthroughManager {
         }
         var attached = 0;
         var sinked = 0;
+        // Sink decisions this pass took no action on. Counted for the summary line alone: the
+        // reason is logged where it is known, and a pass that decides to hide a device and then
+        // does not must never read as one that had nothing to do.
+        var skipped = 0;
         var unreachable = new HashSet<String>();
         for (var decision : plan) {
             var device = decision.device;
@@ -1377,18 +1384,37 @@ public final class UsbPassthroughManager {
             // The rule saying the host keeps it, which takes no action.
             if (decision.target == UsbRules.Target.HOST) continue;
             if (decision.target == UsbRules.Target.SINK) {
-                var host = deviceAt(device.sysfs);
-                // Unplugged since the snapshot; the removal diff is on its way.
-                if (host == null) continue;
-                // Already hidden and not this run's doing -- the previous daemon run's devices
-                // at start-up. The reconcile below adopts them: a record is minted, nothing is
-                // written, and nothing is announced about something that happened before the
-                // daemon was there to announce it.
-                if (!host.authorized && !isSinked(device.sysfs)) continue;
+                // From sysfs and not from the snapshot the plan was made against: both the flag
+                // this decides on and the devnum the record is minted with have to be the
+                // device's own truth right now. See freshDeviceAt.
+                var host = freshDeviceAt(device.sysfs);
+                if (host == null) {
+                    // Unplugged since the plan; the removal diff is on its way.
+                    skipped++;
+                    Log.i(TAG, fmt("USB %s is gone; rule %s hides nothing", device.sysfs, where));
+                    continue;
+                }
+                UsbSinks.Owed owed;
+                synchronized (lock) {
+                    owed = sinks.owedBySink(device.sysfs, host.authorized);
+                }
+                if (owed == UsbSinks.Owed.ADOPT) {
+                    // Already hidden and not this run's doing -- the previous daemon run's
+                    // devices at start-up. The reconcile below adopts them: a record is minted,
+                    // nothing is written, and nothing is announced about something that happened
+                    // before the daemon was there to announce it. Logged all the same, because a
+                    // decision that writes nothing is precisely what the summary line cannot say.
+                    skipped++;
+                    Log.i(TAG, fmt("USB %s is hidden already and not this run's doing; rule %s "
+                        + "leaves it to the reconcile", device.sysfs, where));
+                    continue;
+                }
                 if (sinkDevice(device.sysfs, host.devnum, decision, false)) {
                     sinked++;
                     broadcastAuto("usb_auto_sinked", null, decision, null);
                 } else if (!isSinked(device.sysfs)) {
+                    // The write failed; setAuthorized said which file, this says whose rule.
+                    skipped++;
                     broadcastAuto("usb_auto_failed", null, decision,
                         fmt("could not deauthorize %s", device.sysfs));
                 }
@@ -1420,7 +1446,8 @@ public final class UsbPassthroughManager {
         // An attach broadcasts for itself; these two are the pass's own doing.
         if (sinked > 0 || restored > 0) broadcastHost();
         Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached, %d sinked, "
-                + "%d given back%s", reason, plan.size(), attached, sinked, restored,
+                + "%d given back%s%s", reason, plan.size(), attached, sinked, restored,
+            skipped == 0 ? "" : fmt(", %d sink decision(s) not acted on", skipped),
             unreachable.isEmpty() ? "" : ", VMM unreachable"));
         return new PassResult(attached + sinked + restored, !unreachable.isEmpty());
     }
@@ -1745,11 +1772,28 @@ public final class UsbPassthroughManager {
     private UsbHostDevice deviceAt(@NonNull String sysfs) {
         for (var device : inventory.snapshot())
             if (device.sysfs.equals(sysfs)) return device;
+        return freshDeviceAt(sysfs);
+    }
+
+    /**
+     * The device at [sysfs] as sysfs describes it this moment, or null when it is not there.
+     *
+     * <p>What {@link #deviceAt} is not, and the difference decides things wherever {@code
+     * authorized} or {@code devnum} does: deauthorizing a device creates and removes no
+     * {@code /dev/bus/usb} node, so the inventory's watch never fires, nothing invalidates its
+     * snapshot, and a device this daemon hid and then gave back keeps a stale {@code authorized}
+     * there until it is replugged. A handful of small reads, which is what every list here
+     * already pays for the same reason.</p>
+     */
+    @Nullable
+    private static UsbHostDevice freshDeviceAt(@NonNull String sysfs) {
+        // [sysfs] can have come from a request; keep the read inside the device root.
         var dir = new File(SYSFS_ROOT, sysfs);
         if (!SYSFS_ROOT.equals(dir.getParent()) || !dir.isDirectory()) return null;
         try {
             return UsbHostDevice.fromSysfs(dir, DEV_ROOT);
         } catch (IOException e) {
+            // Disconnected mid-read: the removal diff is on its way.
             return null;
         }
     }

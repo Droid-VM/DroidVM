@@ -20,6 +20,7 @@ import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Pin;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Layer;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Rule;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Target;
+import cn.classfun.droidvm.daemon.usb.UsbSinks.Owed;
 import cn.classfun.droidvm.daemon.usb.UsbSinks.Reconcile;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
@@ -66,6 +67,40 @@ public final class UsbSinksTest {
         sinks.remove(STICK);
         assertFalse(sinks.has(STICK));
         assertNull(sinks.get(STICK));
+    }
+
+    @Test
+    public void aRecordSaysWhoHidADeviceAndNeverWhetherItIsHidden() {
+        // The bug this pins. Sink the device by rule, delete the rule -- the reconcile writes
+        // authorized=1 and the record goes with it -- then set the same rule again. The device
+        // is back on the host with its drivers bound, and only the host says so: writing
+        // authorized creates and removes no /dev/bus/usb node, so the inventory's watch never
+        // fires and its snapshot still reads deauthorized. A pass that asked the snapshot and
+        // the missing record got both halves wrong at once, hid nothing, and said nothing.
+        var sinks = new UsbSinks();
+        sinks.put(STICK, sinkDecision(), false, 7);
+        assertEquals(Reconcile.RESTORE, sinks.reconcile(STICK, false, Pin.NONE, false));
+        sinks.remove(STICK);
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, true));
+
+        // And the other way round: a record left over from an instance that is gone, or from a
+        // write that never landed, is no reason to leave an authorized device on the host.
+        sinks.put(STICK, sinkDecision(), false, 7);
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, true));
+    }
+
+    @Test
+    public void aDeviceHiddenByNobodyHereIsLeftToTheReconcile() {
+        // Daemon start, or somebody's shell: hidden, with no record to say this run did it. The
+        // pass writes nothing and the reconcile adopts it, so that nothing is announced about
+        // something that happened before the daemon was there to announce it.
+        var sinks = new UsbSinks();
+        assertEquals(Owed.ADOPT, sinks.owedBySink(STICK, false));
+        assertEquals(Reconcile.ADOPT, sinks.reconcile(STICK, false, Pin.NONE, true));
+        sinks.put(STICK, sinkDecision(), false, 7);
+        // Ours now: hiding it again is the sink's own no-op, and it is adopted no second time.
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, false));
+        assertEquals(Reconcile.LEAVE, sinks.reconcile(STICK, false, Pin.NONE, true));
     }
 
     @Test

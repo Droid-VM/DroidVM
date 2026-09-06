@@ -49,6 +49,14 @@ public final class UsbSinks {
         }
     }
 
+    /** What a rule pass owes a device its rules have just decided to sink. */
+    public enum Owed {
+        /** Hide it: the host still has the device, whatever this map remembers. */
+        HIDE,
+        /** Hidden already and by nothing this run recorded, so {@link #reconcile} adopts it. */
+        ADOPT,
+    }
+
     /** What is owed to a device the host shows deauthorized. */
     public enum Reconcile {
         /** Nothing: it is spoken for, or it is already recorded as this daemon's doing. */
@@ -90,6 +98,28 @@ public final class UsbSinks {
      */
     public void clear() {
         records.clear();
+    }
+
+    /**
+     * What is owed to [sysfs], which the rules have just decided to sink. [authorized] is what
+     * the host says about the device this moment, and it has to be exactly that: read now, from
+     * the device, never carried in from a scan.
+     *
+     * <p>Writing {@code authorized} creates and removes no {@code /dev/bus/usb} node, so nothing
+     * tells an inotify watch on that tree to look again and a cached flag stays whatever the
+     * last plug event left there. A pass that read the flag from such a cache skipped the sink
+     * of a device this daemon had itself un-sunk -- rule deleted, device given back and the
+     * record dropped with it, then the same rule set again -- because the cache said hidden and
+     * the missing record said not ours, and both halves were wrong at once. A record says who
+     * hid a device; only the host says whether it is hidden.</p>
+     */
+    @NonNull
+    public Owed owedBySink(@NonNull String sysfs, boolean authorized) {
+        // Authorized and recorded at once means the record is about an instance that is gone, or
+        // about a write that never landed. Either way the host still has a device to hide.
+        if (authorized) return Owed.HIDE;
+        // Hidden and already ours: the sink is idempotent per instance and writes nothing.
+        return records.containsKey(sysfs) ? Owed.HIDE : Owed.ADOPT;
     }
 
     /**
