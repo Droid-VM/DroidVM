@@ -60,7 +60,14 @@ public final class BootPlan {
     private static final long LBX_TIMEOUT_MS = 30_000;
 
     public final boolean uefi;
-    /** Custom UEFI firmware path; empty = builtin (QEMU honors, crosvm ignores). */
+    /**
+     * Custom UEFI firmware path; empty = the backend's builtin EDK2.
+     *
+     * <p>Honoured by both backends. crosvm takes it in the same positional slot a direct-boot
+     * kernel would go in and opens it as an ordinary file, so there is nothing about the builtin
+     * path it is attached to -- which is what a comment here used to claim, while the command
+     * builder passed the builtin whatever this said.</p>
+     */
     @NonNull
     public final String firmware;
     /** Custom UEFI vars path; empty = builtin EDK2 vars. */
