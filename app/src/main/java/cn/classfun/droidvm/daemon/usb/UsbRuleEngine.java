@@ -21,14 +21,15 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * flags and turns a list of devices into a list of decisions; attaching, broadcasting and
  * persisting are the manager's, which also owns the lock every call here is made under.
  *
- * <p>The flags are keyed by sysfs name and mean the device instance at that address: {@code held}
- * is set by a manual detach and says the user took the device back, so no trigger touches it
- * again; {@code failedFor} is the VM an attach failed for, so a rule that keeps failing is not
- * retried on every plug. A hold lasts until the inventory sees the node go, and only then -- a
- * rules save does not clear it. A failure is about one run of one VM: it also goes when that VM
- * next reaches RUNNING, because the attach that failed may have failed for that instance alone
- * -- a control socket not yet answering, a VM that went down between the decision and the CLI
- * -- and a reboot would otherwise release the device and never take it back.</p>
+ * <p>The flags are keyed by sysfs name and mean the device instance at that address: {@code pin}
+ * is the user's own answer for the device -- a manual detach, or the management page saying
+ * where it belongs -- so no trigger touches it again; {@code failedFor} is the VM an attach
+ * failed for, so a rule that keeps failing is not retried on every plug. A pin lasts until the
+ * inventory sees the node go, and only then -- a rules save does not clear it. A failure is
+ * about one run of one VM: it also goes when that VM next reaches RUNNING, because the attach
+ * that failed may have failed for that instance alone -- a control socket not yet answering, a
+ * VM that went down between the decision and the CLI -- and a reboot would otherwise release
+ * the device and never take it back.</p>
  */
 public final class UsbRuleEngine {
     /** As much of a host device as a rule can see. */
@@ -49,11 +50,16 @@ public final class UsbRuleEngine {
         }
     }
 
-    /** The rule that took a device: where it sits in the rule set, and the VM, null for the host. */
+    /**
+     * The rule that took a device: where it sits in the rule set, what it does with the device,
+     * and the VM when that is where it goes.
+     */
     public static final class Decision {
         public final Device device;
         public final UsbRules.Layer layer;
         public final int index;
+        /** Carried rather than inferred from {@link #vm}, so every reader says the same thing. */
+        public final UsbRules.Target target;
         @Nullable
         public final String vm;
         /**
@@ -65,17 +71,39 @@ public final class UsbRuleEngine {
         public final String controller;
 
         Decision(@NonNull Device device, @NonNull UsbRules.Layer layer, int index,
-                 @Nullable String vm, @Nullable String controller) {
+                 @NonNull UsbRules.Target target, @Nullable String vm,
+                 @Nullable String controller) {
             this.device = device;
             this.layer = layer;
             this.index = index;
+            this.target = target;
             this.vm = vm;
             this.controller = controller;
         }
     }
 
+    /**
+     * What the user said about a device, which outranks every rule until it is unplugged. A
+     * rule-made sink sets none of these: it is the rules' doing, so the rules may undo it.
+     */
+    public enum Pin {
+        /** Nothing was said; the rules decide. */
+        NONE("none"),
+        /** The user took it back by hand, or asked for it to stay on the host. */
+        HOST("host"),
+        /** The user asked for it to be hidden from everything. */
+        SINK("sink");
+
+        /** The key this pin goes under on the wire. */
+        public final String key;
+
+        Pin(@NonNull String key) {
+            this.key = key;
+        }
+    }
+
     private static final class Flags {
-        boolean held = false;
+        Pin pin = Pin.NONE;
         @Nullable
         String failedFor = null;
     }
@@ -92,14 +120,26 @@ public final class UsbRuleEngine {
         this.rules = rules;
     }
 
+    /** Whether anything the user said about this device stops a trigger from touching it. */
     public boolean isHeld(@NonNull String sysfs) {
+        return pinOf(sysfs) != Pin.NONE;
+    }
+
+    /** What the user said about this device, {@link Pin#NONE} when nothing. */
+    @NonNull
+    public Pin pinOf(@NonNull String sysfs) {
         var f = flags.get(sysfs);
-        return f != null && f.held;
+        return f == null ? Pin.NONE : f.pin;
+    }
+
+    /** The user's answer for the device; it stands until the device is unplugged. */
+    public void pin(@NonNull String sysfs, @NonNull Pin pin) {
+        flags.computeIfAbsent(sysfs, k -> new Flags()).pin = pin;
     }
 
     /** The user took the device back by hand; leave it alone until it is unplugged. */
     public void hold(@NonNull String sysfs) {
-        flags.computeIfAbsent(sysfs, k -> new Flags()).held = true;
+        pin(sysfs, Pin.HOST);
     }
 
     /**
@@ -117,7 +157,7 @@ public final class UsbRuleEngine {
             var f = it.next().getValue();
             if (!vm.equals(f.failedFor)) continue;
             f.failedFor = null;
-            if (!f.held) it.remove();
+            if (f.pin == Pin.NONE) it.remove();
         }
     }
 
@@ -127,9 +167,10 @@ public final class UsbRuleEngine {
     }
 
     /**
-     * What a trigger would do: one decision per device that is not attached and not held, and
+     * What a trigger would do: one decision per device that is not attached and not pinned, and
      * none for a device no rule takes. A device appears at most once, and a device already lent
-     * out is never in the answer, which is what keeps a rules save from taking devices away.
+     * out or spoken for by the user is never in the answer, which is what keeps a rules save
+     * from taking devices away.
      *
      * @param attached says whether a device is already some VM's.
      * @param stateOf  the state of a VM by id, null when there is no such VM.
@@ -151,10 +192,11 @@ public final class UsbRuleEngine {
 
     /**
      * The rule that takes [device], regardless of whether anything is stopping it from being
-     * acted on: layers in order, list order within a layer. A null-VM hit stops the search with
-     * "host"; a rule whose VM is not running, whose VM no longer has the controller it names, or
-     * that already failed for this device, is passed over and the search goes on. Null when
-     * nothing matches.
+     * acted on: layers in order, list order within a layer. A host or a sink hit stops the
+     * search, both being something that is true here and now -- a sink in particular is never
+     * held back by a failure, which is one VM's business and not a sysfs write's; a rule whose
+     * VM is not running, whose VM no longer has the controller it names, or that already failed
+     * for this device, is passed over and the search goes on. Null when nothing matches.
      *
      * <p>A missing controller is a skip and not an attach that fails: it is a configuration fact
      * rather than something that might work next time, so remembering it against the VM would
@@ -172,11 +214,13 @@ public final class UsbRuleEngine {
             for (var index = 0; index < list.size(); index++) {
                 var rule = list.get(index);
                 if (!rule.matches(device.id, device.port)) continue;
-                if (rule.vm == null) return new Decision(device, layer, index, null, null);
+                if (rule.target != UsbRules.Target.VM)
+                    return new Decision(device, layer, index, rule.target, null, null);
                 if (stateOf.apply(rule.vm) != VMState.RUNNING) continue;
                 if (!hasController.test(rule.vm, rule.controller)) continue;
                 if (rule.vm.equals(failedFor)) continue;
-                return new Decision(device, layer, index, rule.vm, rule.controller);
+                return new Decision(device, layer, index, UsbRules.Target.VM, rule.vm,
+                    rule.controller);
             }
         }
         return null;

@@ -72,7 +72,6 @@ public class VMConfig extends DataConfig {
         item.set("pmu", NEW_VM_DEFAULT_PMU);
         item.set("rng", NEW_VM_DEFAULT_RNG);
         item.set("smt", NEW_VM_DEFAULT_SMT);
-        item.set("usb", NEW_VM_DEFAULT_USB);
         item.set("sandbox", false);
         item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
         item.set("strace", false);

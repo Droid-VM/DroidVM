@@ -19,13 +19,30 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  *
  * <p>The migration is called the way {@code VMConfig(JSONObject)} calls it, on a hand-built
  * {@link DataItem}: org.json is a stub under the test android.jar (see UsbRulesTest), so the
- * config is built directly rather than parsed.</p>
+ * config is built directly rather than parsed. That is also why the legacy key is written here
+ * by name -- it is the key an older build wrote, and this codebase no longer has a constant for
+ * it because nothing writes it any more.</p>
  */
 public final class VMXhciMigrationTest {
+    /** The VM-level boolean an older build wrote, and the only thing the fold reads. */
+    private static final String KEY_USB = "usb";
+
     /** A config as an older build wrote it: the boolean, and no peripheral for it. */
     private static DataItem legacy(boolean usb) {
         var item = DataItem.newObject();
-        item.set(VMXhciConfig.KEY_USB, usb);
+        item.set(KEY_USB, usb);
+        return item;
+    }
+
+    /** Whether a config carries the legacy key at all. */
+    private static boolean hasUsbKey(DataItem item) {
+        return item.opt(KEY_USB, (DataItem) null) != null;
+    }
+
+    /** A config as this build writes one: the controller list and the counter, no boolean. */
+    private static DataItem saved(String id) {
+        var item = withPeripherals(controllerEntry(id, 8, 8));
+        item.set(VMXhciConfig.KEY_NEXT, 1L);
         return item;
     }
 
@@ -79,7 +96,7 @@ public final class VMXhciMigrationTest {
         var item = DataItem.newObject();
         VMXhciConfig.migrate(item);
         assertTrue(VMXhciConfig.listControllers(item).isEmpty());
-        assertFalse(item.optBoolean(VMXhciConfig.KEY_USB, true));
+        assertFalse(VMXhciConfig.isEnabled(item));
     }
 
     @Test
@@ -102,6 +119,7 @@ public final class VMXhciMigrationTest {
         var daemon = legacy(true);
         VMXhciConfig.migrate(app);
         VMXhciConfig.migrate(daemon);
+        assertEquals("xhci-0", VMXhciConfig.firstControllerId(app));
         assertEquals(VMXhciConfig.firstControllerId(app), VMXhciConfig.firstControllerId(daemon));
 
         // And the daemon's re-run over what the app saved leaves that id alone.
@@ -109,6 +127,53 @@ public final class VMXhciMigrationTest {
         VMXhciConfig.migrate(pushed);
         assertEquals(1, VMXhciConfig.listControllers(pushed).size());
         assertEquals("xhci-0", VMXhciConfig.firstControllerId(pushed));
+    }
+
+    @Test
+    public void anImportedConfigYieldsTheSameIdEveryTimeItIsRead() {
+        // The vm or vmpkg case: a config that only ever said "usb": 1 may never be saved, so
+        // every read of it -- in the app, in the daemon, at every start -- has to produce the id
+        // the rule that targets it is holding. A random id minted at read time would dangle.
+        for (var run = 0; run < 3; run++) {
+            var imported = legacy(true);
+            VMXhciConfig.migrate(imported);
+            var controllers = VMXhciConfig.listControllers(imported);
+            assertEquals(1, controllers.size());
+            assertEquals("xhci-0", controllers.get(0).getControllerId());
+            assertNotNull(VMXhciConfig.findController(imported, "xhci-0"));
+        }
+    }
+
+    @Test
+    public void aRuleStillResolvesOnceTheConfigIsSavedInTheNewFormat() {
+        // What the editor writes now: peripherals and the counter, and no "usb" key at all. A
+        // rule that named the id the import minted has to go on finding it.
+        var imported = legacy(true);
+        VMXhciConfig.migrate(imported);
+        var rulesTarget = VMXhciConfig.firstControllerId(imported);
+
+        var stored = saved(rulesTarget);
+        assertFalse(hasUsbKey(stored));
+        VMXhciConfig.migrate(stored);
+        assertEquals(1, VMXhciConfig.listControllers(stored).size());
+        assertNotNull(VMXhciConfig.findController(stored, rulesTarget));
+        assertEquals(rulesTarget, VMXhciConfig.firstControllerId(stored));
+        assertTrue(VMXhciConfig.isEnabled(stored));
+    }
+
+    @Test
+    public void theLegacyKeyIsReadAndNeverWritten() {
+        // It is an import signal, not a mirror: nothing reads the boolean any more, so writing
+        // one would only be a second answer to "has this VM any USB".
+        var converted = legacy(true);
+        VMXhciConfig.migrate(converted);
+        assertTrue(VMXhciConfig.isEnabled(converted));
+
+        var fresh = DataItem.newObject();
+        VMXhciConfig.addController(fresh);
+        assertFalse(hasUsbKey(fresh));
+        VMXhciConfig.migrate(fresh);
+        assertFalse(hasUsbKey(fresh));
     }
 
     @Test
@@ -165,26 +230,18 @@ public final class VMXhciMigrationTest {
         item.opt(VMXhciConfig.KEY_PERIPHERALS, DataItem.newArray()).remove(0);
         VMXhciConfig.migrate(item);
         assertTrue(VMXhciConfig.listControllers(item).isEmpty());
-        assertFalse(item.optBoolean(VMXhciConfig.KEY_USB, true));
+        assertFalse(VMXhciConfig.isEnabled(item));
     }
 
     @Test
-    public void theUsbMirrorFollowsTheControllerList() {
-        // Nothing new reads the boolean, but a build that does not know the peripheral type reads
-        // nothing else -- so it has to keep saying what the list says.
-        var converted = legacy(true);
-        VMXhciConfig.migrate(converted);
-        assertTrue(converted.optBoolean(VMXhciConfig.KEY_USB, false));
-
-        var off = legacy(false);
-        VMXhciConfig.migrate(off);
-        assertFalse(off.optBoolean(VMXhciConfig.KEY_USB, true));
-
-        // A config whose controller was added without the boolean being touched still agrees.
+    public void theControllerListOutranksTheLegacyBoolean() {
+        // A config that says "usb": false and carries a controller has USB: the list is the
+        // answer, and the boolean is only consulted when there is no list to read.
         var handWritten = withPeripherals(controllerEntry("xhci-0", 8, 8));
-        handWritten.set(VMXhciConfig.KEY_USB, false);
+        handWritten.set(KEY_USB, false);
         VMXhciConfig.migrate(handWritten);
-        assertTrue(handWritten.optBoolean(VMXhciConfig.KEY_USB, false));
+        assertTrue(VMXhciConfig.isEnabled(handWritten));
+        assertEquals(1, VMXhciConfig.listControllers(handWritten).size());
     }
 
     @Test
@@ -211,7 +268,7 @@ public final class VMXhciMigrationTest {
         // listControllers reads the type, not the position: a card with the same shape of keys is
         // still a sound card, and a VM that has only one has no USB.
         var item = withPeripherals(VMPeripheralConfig.createDefaultVirtioSound().item);
-        item.set(VMXhciConfig.KEY_USB, false);
+        item.set(KEY_USB, false);
         VMXhciConfig.migrate(item);
         assertTrue(VMXhciConfig.listControllers(item).isEmpty());
         assertFalse(VMXhciConfig.isEnabled(item));

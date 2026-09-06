@@ -21,7 +21,9 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -66,6 +68,14 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
  * is RUNNING before its control socket listens, so the pass for that edge waits for the socket,
  * and a pass that could not reach the VMM comes back rather than blame the device.</p>
  *
+ * <p>A rule may also ask for a device to be hidden rather than lent out: writing {@code 0} to
+ * its {@code authorized} attribute makes the kernel drop the device's configuration and every
+ * interface, so Android never binds a driver to it and never raises its own dialog about it.
+ * That is the sink. It is the one outcome this daemon has to reach before Android does, which is
+ * why it has a lane of its own ({@link #onNodeAppearedFast}) beside the debounced rule pass; and
+ * it is the one outcome nothing on disk records, so what is sinked is worked out again at every
+ * pass from the host's own {@code authorized} flags and the rules ({@link #reconcileSinks}).</p>
+ *
  * <p>Giving a device back is not always possible at the moment it is asked for: the VMM's usbfs
  * claim on an interface can outlive the wait -- on device, a VMM whose xHCI had died kept its
  * claims until the process exited -- and such an interface is left unbound. It is not left for
@@ -98,6 +108,18 @@ public final class UsbPassthroughManager {
      * rules run once the batches have stopped, so a device is offered whole.
      */
     private static final long AUTO_ATTACH_DEBOUNCE_MS = 400;
+    /**
+     * How long a device that has just been authorized again is given to come back before it is
+     * attached anyway. The kernel re-reads the configuration and binds the drivers itself, which
+     * took about a second on the test phone; this is three times that.
+     */
+    private static final long AUTHORIZE_TIMEOUT_MS = 3000;
+    private static final long AUTHORIZE_POLL_MS = 50;
+    /** usbfs's char device major, and how many device minors each bus is given. */
+    private static final int USBFS_MAJOR = 189;
+    private static final int USBFS_DEVICES_PER_BUS = 128;
+    /** The kernel's own index of char devices, which answers "what is behind this node". */
+    private static final String CHAR_DEV_ROOT = "/sys/dev/char";
 
     /** One host device lent to one VM, for as long as both are alive. */
     static final class Attachment {
@@ -108,13 +130,20 @@ public final class UsbPassthroughManager {
         final String vid;
         final String pid;
         final String node;
+        /**
+         * The controller it landed on: what the rule named, or the VM's first one when it named
+         * none. Recorded because a list is asked which xHCI a device is on, and only the attach
+         * knows -- crosvm emulates the controller and takes no argument for it.
+         */
+        @Nullable
+        final String controller;
         /** The rule that made this attachment, or null when the user asked for it. */
         @Nullable
         final UsbRuleEngine.Decision rule;
 
         Attachment(@NonNull String vmId, @NonNull String vmName, int port, @NonNull String sysfs,
                    @NonNull String vid, @NonNull String pid, @NonNull String node,
-                   @Nullable UsbRuleEngine.Decision rule) {
+                   @Nullable String controller, @Nullable UsbRuleEngine.Decision rule) {
             this.vmId = vmId;
             this.vmName = vmName;
             this.port = port;
@@ -122,6 +151,7 @@ public final class UsbPassthroughManager {
             this.vid = vid;
             this.pid = pid;
             this.node = node;
+            this.controller = controller;
             this.rule = rule;
         }
 
@@ -141,6 +171,8 @@ public final class UsbPassthroughManager {
     private final Map<String, Integer> stopEpochs = new HashMap<>();
     /** Interfaces a restore pass could not give back yet. Guarded by [lock]. */
     private final UsbLeftovers leftovers = new UsbLeftovers();
+    /** The devices this daemon deauthorized, and why. Guarded by [lock]. */
+    private final UsbSinks sinks = new UsbSinks();
     private final Object lock = new Object();
     private final UsbHostInventory inventory = new UsbHostInventory(SYSFS_ROOT, DEV_ROOT);
     /** The rules and the per-device flags; every call into it is made under [lock]. */
@@ -178,6 +210,8 @@ public final class UsbPassthroughManager {
             engine.setRules(rules);
         }
         try {
+            // Before the watch, so no node can appear without the lane hearing about it.
+            inventory.setFastListener(this::onNodeAppearedFast);
             inventory.start(this::onInventoryChanged);
             var devices = inventory.snapshot();
             var summary = new StringBuilder();
@@ -193,6 +227,10 @@ public final class UsbPassthroughManager {
         context.getVMs().forEach((id, inst) -> {
             if (inst.getState() == VMState.RUNNING) queueAutoAttachWhenReady(inst);
         });
+        // And one pass whatever is running, which those per-VM ones cannot stand in for: with no
+        // VM up there is nothing to attach, but a device a rule sinks still has to be sinked, and
+        // a device the previous run left deauthorized has to be adopted or given back.
+        schedule(() -> runPassQuietly("start"), 0);
     }
 
     /**
@@ -227,21 +265,38 @@ public final class UsbPassthroughManager {
         // scan is four directories, so it is cheaper to read sysfs than to be wrong.
         for (var device : scanHost()) {
             Attachment attachment;
-            boolean held;
+            UsbRuleEngine.Pin pin;
+            UsbSinks.Record sink;
             synchronized (lock) {
                 attachment = attachments.get(device.sysfs);
-                held = engine.isHeld(device.sysfs);
+                pin = engine.pinOf(device.sysfs);
+                sink = sinks.get(device.sysfs);
             }
             var obj = device.toJson();
             obj.put("attached_vm", attachment == null ? JSONObject.NULL : attachment.vmId);
             obj.put("attached_vm_name", attachment == null ? JSONObject.NULL : attachment.vmName);
             obj.put("attached_port", attachment == null ? JSONObject.NULL : attachment.port);
-            obj.put("held", held);
+            obj.put("attached_controller", attachment == null || attachment.controller == null
+                ? JSONObject.NULL : attachment.controller);
+            obj.put("pin", pin.key);
+            // What "held" always meant -- a device no trigger may touch -- so a reader that only
+            // knows the boolean still reads the truth.
+            obj.put("held", pin != UsbRuleEngine.Pin.NONE);
+            obj.put("sink", sink == null ? JSONObject.NULL : sinkJson(sink));
             obj.put("auto_rule", attachment == null || attachment.rule == null
                 ? JSONObject.NULL : ruleJson(attachment.rule));
             array.put(obj);
         }
         return array;
+    }
+
+    /** Which controller [sysfs] is attached to, null when it is not attached at all. */
+    @Nullable
+    public String attachedController(@NonNull String sysfs) {
+        synchronized (lock) {
+            var attachment = attachments.get(sysfs);
+            return attachment == null ? null : attachment.controller;
+        }
     }
 
     /** The rules as the daemon holds them. */
@@ -254,8 +309,9 @@ public final class UsbPassthroughManager {
 
     /**
      * Replaces the rules: validated, kept, written out, and run once. Returns how many devices
-     * that run attached. A save is not a reason to take anything away -- devices already lent out
-     * are not candidates -- and does not clear a hold either.
+     * that run acted on -- attached, hidden, or given back after the rule that hid them was
+     * deleted. A save is not a reason to take anything away -- devices already lent out are not
+     * candidates -- and does not clear a pin either.
      */
     public int setRules(@NonNull JSONObject json) {
         var rules = UsbRules.fromJson(json, this::targetExists);
@@ -322,6 +378,7 @@ public final class UsbPassthroughManager {
                 obj.put("id", device.id);
                 obj.put("port", device.port);
                 obj.put("held", engine.isHeld(device.sysfs));
+                obj.put("authorized", device.authorized);
                 obj.put("attached_vm", attachment == null ? JSONObject.NULL : attachment.vmId);
                 obj.put("result", decision == null ? JSONObject.NULL : decisionJson(decision));
                 array.put(obj);
@@ -346,7 +403,18 @@ public final class UsbPassthroughManager {
     private static JSONObject decisionJson(@NonNull UsbRuleEngine.Decision decision)
         throws JSONException {
         var obj = ruleJson(decision);
+        obj.put("target", decision.target.key);
         obj.put("vm", decision.vm == null ? JSONObject.NULL : decision.vm);
+        return obj;
+    }
+
+    /** What a sink record says about a device: which rule did it, or that the user did. */
+    @NonNull
+    private static JSONObject sinkJson(@NonNull UsbSinks.Record record) throws JSONException {
+        var obj = new JSONObject();
+        obj.put("layer", record.layer == null ? JSONObject.NULL : record.layer.key);
+        obj.put("index", record.index);
+        obj.put("manual", record.manual);
         return obj;
     }
 
@@ -360,7 +428,7 @@ public final class UsbPassthroughManager {
     /** Hands the device named by [sysfs] to [vm] and returns the guest port it landed on. */
     public int attach(@NonNull VMInstance vm, @NonNull String sysfs) {
         try {
-            return attach(vm, sysfs, null);
+            return attach(vm, sysfs, null, null);
         } catch (UsbVmmUnreachableException e) {
             // To a caller this is a refusal like any other; only a rule pass acts on the difference.
             throw new RequestException(fmt("crosvm usb attach failed: %s", e.getMessage()));
@@ -368,26 +436,28 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * The one attach path. [rule] is the decision that asked for this, or null when the user did;
-     * it only goes on the record, so a device attached by rule and one attached by hand are the
-     * same thing to every release, conflict and listing.
+     * The one attach path. [wanted] is the controller it should land on, null for the VM's
+     * first; [rule] is the decision that asked for this, or null when the user did, and only
+     * goes on the record, so a device attached by rule and one attached by hand are the same
+     * thing to every release, conflict and listing.
      *
      * @throws UsbVmmUnreachableException when the CLI never reached the VMM: the device was not
      *                                    touched and nothing is known against it.
      */
-    private int attach(@NonNull VMInstance vm, @NonNull String sysfs,
+    private int attach(@NonNull VMInstance vm, @NonNull String sysfs, @Nullable String wanted,
                        @Nullable UsbRuleEngine.Decision rule) throws UsbVmmUnreachableException {
         if (vm.getState() != VMState.RUNNING)
             throw new RequestException("VM is not running");
-        // What the rule asked for, or the VM's first controller when it asked for no particular
-        // one. crosvm's `usb attach` takes no controller argument -- it emulates one -- so this is
-        // the whole of resolving it today; what it buys is that a rule naming a controller the VM
-        // does not have is refused rather than quietly landing on another one.
-        var wanted = rule == null ? null : rule.controller;
-        if (VMXhciConfig.findController(vm.item, wanted) == null)
+        // What was asked for, or the VM's first controller when nothing was. crosvm's
+        // `usb attach` takes no controller argument -- it emulates one -- so this is the whole of
+        // resolving it today; what it buys is that a rule naming a controller the VM does not
+        // have is refused rather than quietly landing on another one.
+        var controller = VMXhciConfig.findController(vm.item, wanted);
+        if (controller == null)
             throw new RequestException(wanted == null
                 ? "VM has no USB controller"
                 : fmt("VM has no USB controller %s", wanted));
+        var controllerId = controller.getControllerId();
         var socket = vm.getControlSocketPath();
         if (socket == null)
             throw new RequestException("VM has no control socket");
@@ -404,6 +474,29 @@ public final class UsbPassthroughManager {
         if (device == null) device = readUnlistedDevice(sysfs);
         if (device.isHub())
             throw new RequestException("refusing to attach a hub");
+        // A sinked device has no configuration and no interface for the VMM to claim, so it has
+        // to be given back to the kernel first -- and then waited for, because the drivers it
+        // binds on the way back are what the VMM takes over. Whatever fails after this point
+        // re-sinks it rather than restoring the host drivers: that restore is a drivers_probe,
+        // which is exactly the event a sink exists to prevent.
+        boolean wasSinked;
+        synchronized (lock) {
+            wasSinked = sinks.has(sysfs);
+        }
+        if (wasSinked || !device.authorized) {
+            if (!setAuthorized(sysfs, true))
+                throw new RequestException(fmt("could not authorize %s", sysfs));
+            synchronized (lock) {
+                sinks.remove(sysfs);
+            }
+            awaitInterfaces(sysfs);
+            // Re-read for the interfaces and the node; busnum and devnum do not change, because
+            // deauthorizing is not an unplug and nothing was re-enumerated.
+            device = readUnlistedDevice(sysfs);
+            if (!device.authorized)
+                throw new RequestException(fmt("%s is still deauthorized", sysfs));
+            wasSinked = true;
+        }
         var vmId = vm.getId().toString();
         var vmName = vm.getName();
         int epoch;
@@ -431,11 +524,11 @@ public final class UsbPassthroughManager {
             // A refusal can come after the VMM has already claimed part of the device, and it
             // never hands those interfaces back on its own. No record exists to release them
             // later either, so this is the only chance to give them to the host.
-            restoreHostDrivers(sysfs, vmId);
+            undoAttach(sysfs, vmId, wasSinked);
             throw new RequestException(CrosvmUsbControl.attachFailureMessage(
                 e.token, e.stderr, vmmLogSince(vmmLog, vmmMark)));
         } catch (IOException e) {
-            restoreHostDrivers(sysfs, vmId);
+            undoAttach(sysfs, vmId, wasSinked);
             throw new RequestException(fmt("crosvm usb attach failed: %s", e.getMessage()));
         }
         String lostTo = null;
@@ -445,8 +538,8 @@ public final class UsbPassthroughManager {
             if (existing != null) lostTo = existing.vmName;
             else if (stopEpoch(vmId) != epoch) stopped = true;
             else {
-                attachments.put(sysfs, new Attachment(
-                    vmId, vmName, port, sysfs, device.vid, device.pid, device.node, rule));
+                attachments.put(sysfs, new Attachment(vmId, vmName, port, sysfs, device.vid,
+                    device.pid, device.node, controllerId.isEmpty() ? null : controllerId, rule));
                 // The VMM holds the whole device now, and this record's release will give the
                 // whole device back; whatever an earlier restore could not is not owed twice.
                 leftovers.forgetDevice(sysfs);
@@ -455,8 +548,8 @@ public final class UsbPassthroughManager {
         if (stopped) {
             // The VM went down while we were in the CLI and its release pass has already run.
             // Filing the record now would strand the device on a dead VM forever, and there is
-            // nobody left to send a detach to, so just hand it straight back to the host.
-            restoreHostDrivers(sysfs, vmId);
+            // nobody left to send a detach to, so just hand it straight back.
+            undoAttach(sysfs, vmId, wasSinked);
             throw new RequestException("VM is not running");
         }
         if (lostTo != null) {
@@ -475,6 +568,44 @@ public final class UsbPassthroughManager {
         broadcastVm(vmId, vmName);
         broadcastHost();
         return port;
+    }
+
+    /**
+     * The recovery after an attach that did not land. A device that was hidden goes back to
+     * being hidden: the drivers_probe {@link #restoreHostDrivers} writes is precisely what makes
+     * Android bind the device and ask the user about it, and a failed attach is no reason to
+     * undo the rule that hid it.
+     */
+    private void undoAttach(@NonNull String sysfs, @NonNull String vmId, boolean wasSinked) {
+        if (!wasSinked) {
+            restoreHostDrivers(sysfs, vmId);
+            return;
+        }
+        var device = deviceAt(sysfs);
+        sinkDevice(sysfs, device == null ? -1 : device.devnum, null, false);
+    }
+
+    /**
+     * Waits for a device that has just been authorized again to come back with its interfaces.
+     * Gives up quietly: a configuration with no interface at all is rare but legal, and crosvm's
+     * own refusal is a better message than one invented here. What must not happen is attaching
+     * a device that is still deauthorized, and that is read back by the caller.
+     */
+    private static void awaitInterfaces(@NonNull String sysfs) {
+        var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(AUTHORIZE_TIMEOUT_MS);
+        while (interfacesOf(sysfs).isEmpty()) {
+            if (System.nanoTime() - deadline >= 0) {
+                Log.w(TAG, fmt("USB %s still has no interface %d ms after being authorized",
+                    sysfs, AUTHORIZE_TIMEOUT_MS));
+                return;
+            }
+            try {
+                Thread.sleep(AUTHORIZE_POLL_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
     }
 
     /** The device behind a sysfs name the scan did not return, or the step-4 refusal. */
@@ -519,6 +650,29 @@ public final class UsbPassthroughManager {
         }
         if (attachment == null)
             throw new RequestException("device not attached to this VM");
+        // Before the VMM is told, not after: a rule pass runs on the worker while this runs on
+        // an IPC thread, and a device that is momentarily neither attached nor spoken for is one
+        // that pass can take.
+        synchronized (lock) {
+            engine.pin(attachment.sysfs, UsbRuleEngine.Pin.HOST);
+        }
+        dropAttachment(attachment, vm);
+        Log.i(TAG, fmt("Detached USB %s from VM %s; held until unplugged",
+            attachment.sysfs, vm.getName()));
+        restoreHostDrivers(attachment.sysfs, vmId);
+        broadcastVm(vmId, vm.getName());
+        broadcastHost();
+    }
+
+    /**
+     * Tells [vm]'s VMM to drop [attachment] and takes the record with it, leaving the device
+     * itself alone: what happens to it next is the caller's, because a detach hands it back to
+     * the host while the management page may be hiding it or moving it to another VM.
+     *
+     * @throws RequestException when the CLI could not be reached; the record stays, because the
+     *                          device is still the VM's until we know it is not.
+     */
+    private void dropAttachment(@NonNull Attachment attachment, @NonNull VMInstance vm) {
         var socket = vm.getControlSocketPath();
         var state = vm.getState();
         if (socket == null || state == VMState.STOPPING || state == VMState.STOPPED
@@ -527,12 +681,8 @@ public final class UsbPassthroughManager {
             // still drop a record the stop hook missed -- refusing here would strand it.
             synchronized (lock) {
                 attachments.remove(attachment.sysfs);
-                engine.hold(attachment.sysfs);
             }
             Log.i(TAG, fmt("Dropped USB %s: VM %s is gone", attachment.sysfs, vm.getName()));
-            restoreHostDrivers(attachment.sysfs, vmId);
-            broadcastVm(vmId, vm.getName());
-            broadcastHost();
             return;
         }
         var control = new CrosvmUsbControl(getPrebuiltBinaryPath("crosvm"), socket);
@@ -543,18 +693,187 @@ public final class UsbPassthroughManager {
                 throw new RequestException(fmt("crosvm usb detach failed: %s", e.token));
             Log.i(TAG, fmt("VMM had already dropped port %d (%s)", attachment.port, e.token));
         } catch (IOException e) {
-            // The record stays: the device is still the VM's until we know it is not.
             throw new RequestException(fmt("crosvm usb detach failed: %s", e.getMessage()));
         }
         synchronized (lock) {
             attachments.remove(attachment.sysfs);
-            engine.hold(attachment.sysfs);
         }
-        Log.i(TAG, fmt("Detached USB %s from VM %s; held until unplugged",
-            attachment.sysfs, vm.getName()));
-        restoreHostDrivers(attachment.sysfs, vmId);
-        broadcastVm(vmId, vm.getName());
+    }
+
+    /**
+     * The management page's direct action: [sysfs] goes where [target] says, right now, without
+     * the rules being consulted or run again. Returns what it did, and what the device was
+     * before, so the page can say so and a retry after a half-applied batch is not blind. Runs
+     * on the IPC thread, the way attach and detach already do.
+     *
+     * <p>What keeps the next rule pass from undoing it depends on the target. A host or a sink
+     * is pinned, and a pin lasts until the device is unplugged -- a rules save does not clear it
+     * -- which is what a manual override has to mean, and what the page has to say on the row. A
+     * VM needs no pin: the attachment record is already the shield, and when that VM stops the
+     * rules own the device again, which is the honest reading of "put it on this VM".</p>
+     *
+     * <p>The pin is set before the device is touched, never after: this runs while a pass may be
+     * running on the worker, and a device that is momentarily neither attached nor pinned is one
+     * that pass can take.</p>
+     */
+    @NonNull
+    public JSONObject setTarget(@NonNull String sysfs, @NonNull UsbRules.Target target,
+                                @Nullable VMInstance vm, @Nullable String controller)
+        throws JSONException {
+        // Read from sysfs rather than from the snapshot: this validates the name the request
+        // sent before anything is written to it.
+        var device = readUnlistedDevice(sysfs);
+        if (target != UsbRules.Target.HOST && device.isHub())
+            throw new RequestException("refusing to take a hub away from the host");
+        Attachment previous;
+        UsbSinks.Record sinked;
+        synchronized (lock) {
+            previous = attachments.get(sysfs);
+            sinked = sinks.get(sysfs);
+        }
+        var res = new JSONObject();
+        res.put("device", sysfs);
+        res.put("target", target.key);
+        res.put("previous", previousJson(previous, sinked));
+        Integer port = null;
+        switch (target) {
+            case SINK:
+                setTargetSink(device, previous);
+                break;
+            case VM:
+                if (vm == null) throw new RequestException("missing vm_id");
+                port = setTargetVm(vm, sysfs, controller, previous);
+                break;
+            default:
+                setTargetHost(device, previous, sinked);
+                break;
+        }
+        String landedOn = null;
+        if (target == UsbRules.Target.VM) {
+            synchronized (lock) {
+                var now = attachments.get(sysfs);
+                landedOn = now == null ? null : now.controller;
+            }
+        }
+        res.put("vm_id", vm == null ? JSONObject.NULL : vm.getId().toString());
+        res.put("controller", landedOn == null ? JSONObject.NULL : landedOn);
+        res.put("port", port == null ? JSONObject.NULL : port);
+        return res;
+    }
+
+    /** What a device was before the direct action, in the words the request uses. */
+    @NonNull
+    private static JSONObject previousJson(@Nullable Attachment attachment,
+                                           @Nullable UsbSinks.Record sink) throws JSONException {
+        var target = UsbRules.Target.HOST;
+        if (attachment != null) target = UsbRules.Target.VM;
+        else if (sink != null) target = UsbRules.Target.SINK;
+        var obj = new JSONObject();
+        obj.put("target", target.key);
+        obj.put("vm_id", attachment == null ? JSONObject.NULL : attachment.vmId);
+        obj.put("port", attachment == null ? JSONObject.NULL : attachment.port);
+        return obj;
+    }
+
+    /** The direct action's "leave it on the host": the pin, then whatever has to be undone. */
+    private void setTargetHost(@NonNull UsbHostDevice device, @Nullable Attachment previous,
+                               @Nullable UsbSinks.Record sinked) {
+        var sysfs = device.sysfs;
+        synchronized (lock) {
+            engine.pin(sysfs, UsbRuleEngine.Pin.HOST);
+        }
+        if (previous != null) {
+            var holder = context.getVMs().findById(previous.vmId);
+            // The manual take-back, whole: the CLI, the record, the restore and the broadcasts.
+            if (holder != null) {
+                detach(holder, sysfs, null);
+                return;
+            }
+            synchronized (lock) {
+                attachments.remove(sysfs);
+            }
+            restoreHostDrivers(sysfs, previous.vmId);
+            broadcastVm(previous.vmId, previous.vmName);
+            broadcastHost();
+            return;
+        }
+        // Nothing owed to the host here: the kernel re-reads the configuration on the way back
+        // and binds the drivers itself, so there is no drivers_probe to write.
+        if ((sinked != null || !device.authorized) && !unsink(sysfs))
+            throw new RequestException(fmt("could not authorize %s", sysfs));
         broadcastHost();
+    }
+
+    /** The direct action's "hide it": the pin, the VMM's copy taken away, then authorized=0. */
+    private void setTargetSink(@NonNull UsbHostDevice device, @Nullable Attachment previous) {
+        var sysfs = device.sysfs;
+        synchronized (lock) {
+            engine.pin(sysfs, UsbRuleEngine.Pin.SINK);
+        }
+        if (previous != null) dropFromHolder(previous);
+        // And deliberately no restoreHostDrivers on the way through, though the VMM has just
+        // let go: probing would bind the host drivers this is about to take away again, and
+        // Android's dialog rides on precisely that.
+        if (!sinkDevice(sysfs, device.devnum, null, true) && !isSinked(sysfs)) {
+            synchronized (lock) {
+                engine.pin(sysfs, UsbRuleEngine.Pin.NONE);
+            }
+            if (previous != null) restoreHostDrivers(sysfs, previous.vmId);
+            throw new RequestException(fmt("could not deauthorize %s", sysfs));
+        }
+        if (previous != null) broadcastVm(previous.vmId, previous.vmName);
+        broadcastHost();
+    }
+
+    /**
+     * The direct action's move to a VM: the previous holder loses the device first, which is
+     * what the user asked for. Nothing is pinned afterwards, the attachment being the shield --
+     * but the window between the two halves is fenced with a host pin, or a pass running on the
+     * worker could take a device that belongs to nobody for that moment.
+     */
+    private int setTargetVm(@NonNull VMInstance vm, @NonNull String sysfs,
+                            @Nullable String controller, @Nullable Attachment previous) {
+        var vmId = vm.getId().toString();
+        // crosvm emulates the controller and takes no argument for it, so there is nothing a
+        // move inside one VM could change, and a detach and attach could only lose the device.
+        if (previous != null && previous.vmId.equals(vmId)) return previous.port;
+        synchronized (lock) {
+            engine.pin(sysfs, UsbRuleEngine.Pin.HOST);
+        }
+        var landed = false;
+        try {
+            if (previous != null) {
+                dropFromHolder(previous);
+                Log.i(TAG, fmt("Took USB %s from VM %s for VM %s",
+                    sysfs, previous.vmName, vm.getName()));
+                broadcastVm(previous.vmId, previous.vmName);
+            }
+            var port = attach(vm, sysfs, controller, null);
+            landed = true;
+            return port;
+        } catch (UsbVmmUnreachableException e) {
+            // To this caller a VMM that never answered is a refusal like any other.
+            throw new RequestException(fmt("crosvm usb attach failed: %s", e.getMessage()));
+        } finally {
+            // A move that did not land leaves the device on the host -- through the detach
+            // above, or through the attach's own recovery -- and the rules own it again.
+            if (!landed && previous != null) restoreHostDrivers(sysfs, previous.vmId);
+            synchronized (lock) {
+                engine.pin(sysfs, UsbRuleEngine.Pin.NONE);
+            }
+        }
+    }
+
+    /** Takes [attachment] away from whichever VM holds it, or from the records when it is gone. */
+    private void dropFromHolder(@NonNull Attachment attachment) {
+        var holder = context.getVMs().findById(attachment.vmId);
+        if (holder != null) {
+            dropAttachment(attachment, holder);
+            return;
+        }
+        synchronized (lock) {
+            attachments.remove(attachment.sysfs);
+        }
     }
 
     /** What [vmId] currently holds. */
@@ -573,6 +892,8 @@ public final class UsbPassthroughManager {
             obj.put("pid", attachment.pid);
             obj.put("port", attachment.port);
             obj.put("node", attachment.node);
+            obj.put("controller", attachment.controller == null
+                ? JSONObject.NULL : attachment.controller);
             array.put(obj);
         }
         return array;
@@ -643,6 +964,11 @@ public final class UsbPassthroughManager {
                 Log.i(TAG, fmt("Released USB %s (%s:%s, %s) from VM %s",
                     attachment.sysfs, attachment.vid, attachment.pid, attachment.source(),
                     vmName));
+                // A stop is still not a reason to hand a device to another VM -- nothing here
+                // attaches -- but it is a reason to ask whether the rules want it hidden: the
+                // drivers_probe a restore writes is what makes Android bind the device and ask
+                // the user about it, and a device the rules sink must never see that.
+                if (sinkIfRulesSay(attachment.sysfs)) continue;
                 restoreHostDrivers(attachment.sysfs, vmId);
             }
             var recovered = left.isEmpty() ? 0
@@ -670,6 +996,9 @@ public final class UsbPassthroughManager {
                 // And with it the interfaces still owed to the host: there is no host driver
                 // to bind to a device that is not there.
                 dropped = leftovers.forgetDevice(device.sysfs);
+                // A replug is a clean slate by construction: authorized resets to 1 on
+                // re-enumeration, so whatever we deauthorized is not what comes back.
+                sinks.remove(device.sysfs);
             }
             if (!dropped.isEmpty())
                 Log.i(TAG, fmt("USB %s was unplugged with %d interface(s) still owed to the host",
@@ -864,63 +1193,87 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * One pass of the rules over everything plugged in, unclaimed and not held. Deciding is done
-     * under the lock against the inventory's snapshot; the attaches themselves run outside it,
-     * one after another, through the same path a manual attach takes. A device whose attach
+     * One pass of the rules over everything plugged in, unclaimed and not pinned. Deciding is
+     * done under the lock against the inventory's snapshot; the attaches themselves run outside
+     * it, one after another, through the same path a manual attach takes. A device whose attach
      * fails is marked for the VM it failed for, so the next pass passes that rule over instead
      * of failing the same way again -- until the device is replugged or that VM next comes up.
      * The exception is a VMM the CLI could not reach: that says nothing about the device, so
      * nothing is remembered against it, the VM's other devices are left for the rerun rather
      * than fail one by one, and the result says the pass should come back.
+     *
+     * <p>Every pass also reconciles the sinks, whatever the plan held and even when there are no
+     * rules at all -- an empty rule set is exactly when every hidden device has to come back.</p>
      */
     @NonNull
     private PassResult runAutoAttach(@NonNull String reason) {
         List<UsbRuleEngine.Decision> plan;
         synchronized (lock) {
-            if (engine.getRules().isEmpty()) return new PassResult(0, false);
             var plugged = new ArrayList<UsbRuleEngine.Device>();
             for (var device : inventory.snapshot()) plugged.add(UsbRuleEngine.Device.of(device));
             plan = engine.plan(plugged, attachments::containsKey, this::stateOf,
                 this::vmHasController);
         }
-        var applied = 0;
+        var attached = 0;
+        var sinked = 0;
         var unreachable = new HashSet<String>();
         for (var decision : plan) {
-            // A null VM is the rule saying the host keeps it, which takes no action.
-            if (decision.vm == null) continue;
-            if (unreachable.contains(decision.vm)) continue;
-            var inst = context.getVMs().findById(decision.vm);
-            if (inst == null) continue;
             var device = decision.device;
             var where = fmt("%s[%d]", decision.layer.key, decision.index);
+            // The rule saying the host keeps it, which takes no action.
+            if (decision.target == UsbRules.Target.HOST) continue;
+            if (decision.target == UsbRules.Target.SINK) {
+                var host = deviceAt(device.sysfs);
+                // Unplugged since the snapshot; the removal diff is on its way.
+                if (host == null) continue;
+                if (sinkDevice(device.sysfs, host.devnum, decision, false)) {
+                    sinked++;
+                    broadcastAuto("usb_auto_sinked", null, decision, null);
+                } else if (!isSinked(device.sysfs)) {
+                    broadcastAuto("usb_auto_failed", null, decision,
+                        fmt("could not deauthorize %s", device.sysfs));
+                }
+                continue;
+            }
+            // A VM decision always names one; the other two targets returned above.
+            var vmId = decision.vm;
+            if (vmId == null || unreachable.contains(vmId)) continue;
+            var inst = context.getVMs().findById(vmId);
+            if (inst == null) continue;
             try {
-                attach(inst, device.sysfs, decision);
-                applied++;
+                attach(inst, device.sysfs, decision.controller, decision);
+                attached++;
                 broadcastAuto("usb_auto_attached", inst, decision, null);
             } catch (UsbVmmUnreachableException e) {
-                unreachable.add(decision.vm);
+                unreachable.add(vmId);
                 Log.w(TAG, fmt("Auto attach of USB %s (%s) to VM %s by rule %s: %s; will retry",
                     device.sysfs, device.id, inst.getName(), where, e.getMessage()));
             } catch (Exception e) {
                 synchronized (lock) {
-                    engine.markFailed(device.sysfs, decision.vm);
+                    engine.markFailed(device.sysfs, vmId);
                 }
                 Log.w(TAG, fmt("Auto attach of USB %s (%s) to VM %s by rule %s failed: %s",
                     device.sysfs, device.id, inst.getName(), where, e.getMessage()));
                 broadcastAuto("usb_auto_failed", inst, decision, e.getMessage());
             }
         }
-        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached%s",
-            reason, plan.size(), applied, unreachable.isEmpty() ? "" : ", VMM unreachable"));
-        return new PassResult(applied, !unreachable.isEmpty());
+        var restored = reconcileSinks();
+        // An attach broadcasts for itself; these two are the pass's own doing.
+        if (sinked > 0 || restored > 0) broadcastHost();
+        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached, %d sinked, "
+                + "%d given back%s", reason, plan.size(), attached, sinked, restored,
+            unreachable.isEmpty() ? "" : ", VMM unreachable"));
+        return new PassResult(attached + sinked + restored, !unreachable.isEmpty());
     }
 
-    private void broadcastAuto(@NonNull String event, @NonNull VMInstance vm,
+    /** [vm] is null for an outcome that names no VM, which is what a sink is. */
+    private void broadcastAuto(@NonNull String event, @Nullable VMInstance vm,
                                @NonNull UsbRuleEngine.Decision decision, @Nullable String error) {
         try {
             var data = new JSONObject();
-            data.put("vm_id", vm.getId().toString());
-            data.put("vm_name", vm.getName());
+            data.put("vm_id", vm == null ? JSONObject.NULL : vm.getId().toString());
+            data.put("vm_name", vm == null ? JSONObject.NULL : vm.getName());
+            data.put("target", decision.target.key);
             data.put("sysfs", decision.device.sysfs);
             data.put("id", decision.device.id);
             data.put("port", decision.device.port);
@@ -961,6 +1314,250 @@ public final class UsbPassthroughManager {
             broadcastHost();
         } catch (Exception e) {
             Log.w(TAG, "Failed to release an unplugged USB device", e);
+        }
+    }
+
+    /**
+     * Writes one byte to {@code <sysfs>/authorized} and says whether it landed.
+     *
+     * <p>Not through {@code run("echo ...")}, the way {@link #restoreHostDrivers} writes
+     * drivers_probe: that forks a shell, and this write sits on the path that has to reach a
+     * freshly plugged device before Android does -- microseconds against milliseconds.</p>
+     */
+    private static boolean setAuthorized(@NonNull String sysfs, boolean value) {
+        var file = new File(new File(SYSFS_ROOT, sysfs), "authorized");
+        try (var out = new FileOutputStream(file)) {
+            out.write(value ? '1' : '0');
+            return true;
+        } catch (IOException e) {
+            Log.w(TAG, fmt("Cannot write %s: %s", file, e.getMessage()));
+            return false;
+        }
+    }
+
+    /**
+     * Hides [sysfs] from everything: no configuration, no interfaces, nothing for Android or a
+     * host driver to bind to. [by] is the rule that asked, null when the user did, and [manual]
+     * says which of those it was -- a manual sink is the one no rule pass may give back.
+     *
+     * <p>Idempotent for a device already sinked as the same instance, which is what lets the
+     * debounced pass walk over what {@link #onNodeAppearedFast} did without writing again.
+     * Returns whether this call is what sank it.</p>
+     */
+    private boolean sinkDevice(@NonNull String sysfs, int devnum,
+                               @Nullable UsbRuleEngine.Decision by, boolean manual) {
+        synchronized (lock) {
+            var record = sinks.get(sysfs);
+            if (record != null && record.devnum == devnum) {
+                // Already ours. A manual ask over a rule-made sink still upgrades the record,
+                // which is the half that keeps the reconcile from giving the device back.
+                if (manual && !record.manual) sinks.put(sysfs, by, true, devnum);
+                return false;
+            }
+        }
+        if (!setAuthorized(sysfs, false)) {
+            Log.w(TAG, fmt("Failed to deauthorize USB %s", sysfs));
+            return false;
+        }
+        synchronized (lock) {
+            sinks.put(sysfs, by, manual, devnum);
+            // Deauthorizing takes the interfaces away from whoever held them, so nothing is owed
+            // to the host any more; authorizing the device again has the kernel bind them itself.
+            leftovers.forgetDevice(sysfs);
+        }
+        String why;
+        if (by != null) why = fmt("rule %s[%d]", by.layer.key, by.index);
+        else if (manual) why = "manual";
+        else why = "put back after a failed attach";
+        Log.i(TAG, fmt("Sinked USB %s (%s)", sysfs, why));
+        return true;
+    }
+
+    /** Gives a sinked device back. False when the write failed and it is still hidden. */
+    private boolean unsink(@NonNull String sysfs) {
+        if (!setAuthorized(sysfs, true)) {
+            Log.w(TAG, fmt("Failed to authorize USB %s", sysfs));
+            return false;
+        }
+        synchronized (lock) {
+            sinks.remove(sysfs);
+        }
+        return true;
+    }
+
+    private boolean isSinked(@NonNull String sysfs) {
+        synchronized (lock) {
+            return sinks.has(sysfs);
+        }
+    }
+
+    /**
+     * Sinks [sysfs] if the rules decide that for it right now, and says whether it did. Only
+     * that outcome is acted on: a decision naming a running VM is ignored and the device is left
+     * where it is, which is how the release path can ask the rules a question without ever
+     * taking a device from anyone.
+     */
+    private boolean sinkIfRulesSay(@NonNull String sysfs) {
+        var device = deviceAt(sysfs);
+        if (device == null) return false;
+        UsbRuleEngine.Decision decision;
+        synchronized (lock) {
+            // The user's word outranks the rules, in both directions.
+            if (engine.pinOf(sysfs) != UsbRuleEngine.Pin.NONE) return false;
+            decision = engine.decide(UsbRuleEngine.Device.of(device), this::stateOf,
+                this::vmHasController);
+        }
+        if (decision == null || decision.target != UsbRules.Target.SINK) return false;
+        return sinkDevice(sysfs, device.devnum, decision, false);
+    }
+
+    /**
+     * Every device the host shows deauthorized, against what the rules say about it now, and
+     * how many were given back. This is the un-sink, and nothing else can do it: a device no
+     * rule takes is absent from a plan in exactly the way a device a rule leaves on the host is,
+     * so a deleted sink rule leaves no trace for a plan to act on.
+     *
+     * <p>Driven by the scan rather than by the records, which is what makes it the whole answer
+     * at daemon start too: a device the previous run sank, or somebody's shell did, is adopted
+     * when the rules do sink it and authorized back when they do not.</p>
+     */
+    private int reconcileSinks() {
+        var restored = 0;
+        for (var device : scanHost()) {
+            if (device.authorized) continue;
+            UsbSinks.Reconcile owed;
+            synchronized (lock) {
+                var attached = attachments.containsKey(device.sysfs);
+                if (attached)
+                    Log.w(TAG, fmt("USB %s is attached and deauthorized at once", device.sysfs));
+                var decision = engine.decide(UsbRuleEngine.Device.of(device), this::stateOf,
+                    this::vmHasController);
+                owed = sinks.reconcile(device.sysfs, attached, engine.pinOf(device.sysfs),
+                    decision != null && decision.target == UsbRules.Target.SINK);
+                if (owed == UsbSinks.Reconcile.ADOPT)
+                    sinks.put(device.sysfs, decision, false, device.devnum);
+            }
+            if (owed == UsbSinks.Reconcile.ADOPT) {
+                Log.i(TAG, fmt("USB %s is deauthorized and the rules say so; adopting it",
+                    device.sysfs));
+                continue;
+            }
+            if (owed != UsbSinks.Reconcile.RESTORE) continue;
+            Log.i(TAG, fmt("USB %s was left deauthorized; nothing sinks it, giving it back",
+                device.sysfs));
+            if (unsink(device.sysfs)) restored++;
+        }
+        return restored;
+    }
+
+    /**
+     * A device node appeared: the fast lane, on the inventory's FileObserver thread, before any
+     * debounce. Sinking is the only thing it ever does, and the only thing that cannot wait --
+     * Android binds the drivers and raises its dialog within a couple of hundred milliseconds of
+     * the node appearing, while the debounced pass is 700 ms away at best and queued behind
+     * whatever the worker is doing. Attaching, un-sinking, the leftovers and the authoritative
+     * broadcast all stay on that pass, which arrives to find this work done and does nothing.
+     *
+     * <p>Bounded, as {@link UsbHostInventory.FastListener} requires: a readlink, four small
+     * reads and one write, with the decision taken under the lock and the write outside it.</p>
+     */
+    private void onNodeAppearedFast(int busnum, int devnum) {
+        try {
+            var sysfs = sysfsNameOf(busnum, devnum);
+            if (sysfs == null) return;
+            var dir = new File(SYSFS_ROOT, sysfs);
+            // A hub carries the rest of the tree; hiding one would take its children with it.
+            if (UsbHostDevice.isHubClass(readAttribute(dir, "bDeviceClass"))) return;
+            var vid = readAttribute(dir, "idVendor");
+            var pid = readAttribute(dir, "idProduct");
+            // Gone again already, or never a device: the rescan reports whatever this was.
+            if (vid.isEmpty() || pid.isEmpty()) return;
+            var device = new UsbRuleEngine.Device(sysfs,
+                UsbHostDevice.deriveId(vid, pid, readAttribute(dir, "serial")),
+                UsbHostDevice.derivePort(sysfs));
+            UsbRuleEngine.Decision decision;
+            synchronized (lock) {
+                // The diff that drops the previous instance's flags is still a quiet period
+                // away, and a pin or a sink record left by the unit that was in this socket
+                // before must not decide anything about this one.
+                if (!isKnownInstance(sysfs, devnum)) {
+                    engine.forget(sysfs);
+                    sinks.remove(sysfs);
+                }
+                if (attachments.containsKey(sysfs)) return;
+                if (engine.pinOf(sysfs) == UsbRuleEngine.Pin.HOST) return;
+                decision = engine.decide(device, this::stateOf, this::vmHasController);
+            }
+            if (decision == null || decision.target != UsbRules.Target.SINK) return;
+            if (!sinkDevice(sysfs, devnum, decision, false)) return;
+            // Off the hot path: a broadcast takes a full scan, and every further inotify event
+            // for this bus is waiting behind this thread.
+            schedule(() -> {
+                broadcastAuto("usb_auto_sinked", null, decision, null);
+                broadcastHost();
+            }, 0);
+        } catch (Exception e) {
+            Log.w(TAG, fmt("Fast USB pass for bus %d device %d failed", busnum, devnum), e);
+        }
+    }
+
+    /** Whether the last scan already knows this instance of [sysfs]. Must be called under [lock]. */
+    private boolean isKnownInstance(@NonNull String sysfs, int devnum) {
+        for (var device : inventory.snapshot())
+            if (device.sysfs.equals(sysfs)) return device.devnum == devnum;
+        return false;
+    }
+
+    /**
+     * The sysfs directory name of the device behind {@code /dev/bus/usb/<bus>/<dev>}, through
+     * the kernel's own char-device index -- one readlink and no scan. usbfs hands each bus 128
+     * device minors. A kernel that does not publish the link falls back to reading busnum and
+     * devnum out of the device directories, which is still well under a millisecond.
+     */
+    @Nullable
+    private static String sysfsNameOf(int busnum, int devnum) {
+        var minor = (busnum - 1) * USBFS_DEVICES_PER_BUS + (devnum - 1);
+        try {
+            var link = Files.readSymbolicLink(
+                new File(CHAR_DEV_ROOT, fmt("%d:%d", USBFS_MAJOR, minor)).toPath());
+            var name = link.getFileName();
+            if (name != null) return name.toString();
+        } catch (IOException | UnsupportedOperationException e) {
+            // No such index on this kernel; the readdir below is the answer.
+        }
+        var entries = new File(SYSFS_ROOT).listFiles();
+        if (entries == null) return null;
+        for (var entry : entries) {
+            if (!entry.isDirectory()) continue;
+            if (!String.valueOf(busnum).equals(readAttribute(entry, "busnum"))) continue;
+            if (!String.valueOf(devnum).equals(readAttribute(entry, "devnum"))) continue;
+            return entry.getName();
+        }
+        return null;
+    }
+
+    /** One small sysfs attribute, trimmed; {@code ""} when it is not there to be read. */
+    @NonNull
+    private static String readAttribute(@NonNull File dir, @NonNull String name) {
+        try {
+            return new String(Files.readAllBytes(new File(dir, name).toPath()),
+                StandardCharsets.UTF_8).trim();
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
+    }
+
+    /** The device at [sysfs] as the last scan saw it, read from sysfs when the scan has not. */
+    @Nullable
+    private UsbHostDevice deviceAt(@NonNull String sysfs) {
+        for (var device : inventory.snapshot())
+            if (device.sysfs.equals(sysfs)) return device;
+        var dir = new File(SYSFS_ROOT, sysfs);
+        if (!SYSFS_ROOT.equals(dir.getParent()) || !dir.isDirectory()) return null;
+        try {
+            return UsbHostDevice.fromSysfs(dir, DEV_ROOT);
+        } catch (IOException e) {
+            return null;
         }
     }
 

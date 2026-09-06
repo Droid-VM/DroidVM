@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.daemon.usb;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -21,8 +22,10 @@ import java.util.function.Function;
 
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Decision;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Device;
+import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Pin;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Layer;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Rule;
+import cn.classfun.droidvm.daemon.usb.UsbRules.Target;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
 /**
@@ -49,6 +52,11 @@ public final class UsbRuleEngineTest {
     /** A rule that names one controller inside its target VM. */
     private static Rule rule(String id, String port, String vm, String controller) {
         return new Rule(id, port, vm, controller);
+    }
+
+    /** A rule that hides whatever it matches. */
+    private static Rule sink(String id, String port) {
+        return new Rule(id, port, null, null, Target.SINK);
     }
 
     /** Every VM has every controller: what these cases vary is the state table. */
@@ -104,6 +112,18 @@ public final class UsbRuleEngineTest {
         assertEquals(layer, decision.layer);
         assertEquals(index, decision.index);
         assertEquals(vm, decision.vm);
+        assertEquals(vm == null ? Target.HOST : Target.VM, decision.target);
+    }
+
+    private static void assertSink(Decision decision, Device device, Layer layer, int index) {
+        assertNotNull(decision);
+        assertEquals(device.sysfs, decision.device.sysfs);
+        assertEquals(layer, decision.layer);
+        assertEquals(index, decision.index);
+        assertEquals(Target.SINK, decision.target);
+        // Nothing to attach to, and nothing for a controller to be inside of.
+        assertNull(decision.vm);
+        assertNull(decision.controller);
     }
 
     private static void assertDecision(Decision decision, Device device, Layer layer, int index,
@@ -381,5 +401,93 @@ public final class UsbRuleEngineTest {
         var have = controllers(Map.of(VM_A, List.of("xhci-0")));
         assertDecision(engine.decide(STICK, allRunning(), have), STICK, Layer.DEVICE, 0, VM_A,
             null);
+    }
+
+    @Test
+    public void aSinkStopsTheSearchTheWayAHostRuleDoes() {
+        var engine = engine(rules(
+            Layer.PORT, List.of(sink(null, STICK.port)),
+            Layer.DEVICE, List.of(rule(STICK.id, null, VM_A)),
+            Layer.ANY, List.of(rule(null, null, VM_A))
+        ));
+        assertSink(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.PORT, 0);
+        // It is an action, so it shows up in a plan and a dry run like any other decision.
+        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
+        assertEquals(2, plan.size());
+        assertSink(plan.get(0), STICK, Layer.PORT, 0);
+        assertDecision(plan.get(1), MOUSE, Layer.ANY, 0, VM_A);
+    }
+
+    @Test
+    public void aSinkNeedsNoVmToBeRunningAndNoFailureCanBlockIt() {
+        // Deauthorizing is a one-byte write to sysfs: there is no VM whose state could hold it
+        // back, and a failure remembered against a VM is not the sink's business.
+        var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
+        assertSink(engine.decide(STICK, states(), anyController()), STICK, Layer.ANY, 0);
+        engine.markFailed(STICK.sysfs, VM_A);
+        engine.markFailed(STICK.sysfs, VM_B);
+        assertSink(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0);
+        // And a VM rule that was passed over still lets the sink behind it have its turn.
+        engine.setRules(rules(
+            Layer.PORT, List.of(rule(null, STICK.port, VM_A)),
+            Layer.DEVICE, List.of(sink(STICK.id, null))
+        ));
+        assertSink(engine.decide(STICK, states(VM_A, VMState.STOPPED), anyController()),
+            STICK, Layer.DEVICE, 0);
+    }
+
+    @Test
+    public void aSinkNeverTakesADeviceThatIsAttachedOrPinned() {
+        var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
+        assertTrue(engine.plan(List.of(STICK), STICK.sysfs::equals, allRunning(), anyController())
+            .isEmpty());
+        engine.pin(MOUSE.sysfs, Pin.HOST);
+        assertTrue(engine.plan(List.of(MOUSE), s -> false, allRunning(), anyController())
+            .isEmpty());
+    }
+
+    @Test
+    public void bothPinsHoldADeviceAndOnlyAnUnplugClearsThem() {
+        // "Held" is what it always was -- a device no trigger may touch -- and it is now the
+        // answer to two questions: the user took it back, or the user hid it.
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        assertFalse(engine.isHeld(STICK.sysfs));
+        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
+
+        engine.hold(STICK.sysfs);
+        assertEquals(Pin.HOST, engine.pinOf(STICK.sysfs));
+        assertTrue(engine.isHeld(STICK.sysfs));
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .isEmpty());
+
+        engine.pin(STICK.sysfs, Pin.SINK);
+        assertEquals(Pin.SINK, engine.pinOf(STICK.sysfs));
+        assertTrue(engine.isHeld(STICK.sysfs));
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .isEmpty());
+        // A rules save does not lift either of them; pulling the cable does.
+        engine.setRules(rules(Layer.DEVICE, List.of(rule(STICK.id, null, VM_A))));
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .isEmpty());
+        engine.forget(STICK.sysfs);
+        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
+        assertEquals(1, engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .size());
+    }
+
+    @Test
+    public void aVmComingUpClearsItsFailuresAndLeavesEveryPinWhereItIs() {
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        engine.markFailed(STICK.sysfs, VM_A);
+        engine.pin(STICK.sysfs, Pin.SINK);
+        engine.markFailed(MOUSE.sysfs, VM_A);
+
+        engine.forgetFailuresFor(VM_A);
+        // The mouse's failure went with the VM; the stick's pin is the user's and stays.
+        assertDecision(engine.decide(MOUSE, allRunning(), anyController()), MOUSE, Layer.ANY, 0,
+            VM_A);
+        assertEquals(Pin.SINK, engine.pinOf(STICK.sysfs));
+        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
+            .isEmpty());
     }
 }

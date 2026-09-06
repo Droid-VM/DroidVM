@@ -147,6 +147,21 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
+    public void authorizedIsReadFromSysfsAndAbsentMeansAuthorized() throws Exception {
+        var root = folder.newFolder("sysfs");
+        var dev = writeFlashDrive(root);
+        // A device nobody deauthorized: the file is there and says 1.
+        write(dev, "authorized", "1\n");
+        assertTrue(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized);
+        // Sinked: no configuration, no interfaces, nothing for Android to bind.
+        write(dev, "authorized", "0\n");
+        assertFalse(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized);
+        // A kernel or a device without the attribute is not a deauthorized one.
+        assertTrue(new File(dev, "authorized").delete());
+        assertTrue(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized);
+    }
+
+    @Test
     public void anInterfaceWithNoDriverIsNotInUse() throws Exception {
         var root = folder.newFolder("sysfs");
         var dev = writeFlashDrive(root);
@@ -166,7 +181,7 @@ public final class UsbHostDeviceTest {
         var map = UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").toMap();
         assertEquals(Arrays.asList("sysfs", "id", "port", "busnum", "devnum", "node", "vid", "pid",
                 "manufacturer", "product", "serial", "speed", "device_class", "host_in_use",
-                "interfaces"),
+                "authorized", "interfaces"),
             new ArrayList<>(map.keySet()));
         var interfaces = (List<?>) map.get("interfaces");
         assertNotNull(interfaces);

@@ -176,6 +176,10 @@ static std::string describe_result(const Json::Value &result) {
     if (result.isNull()) return "none";
     auto layer = result.get("layer", "?").asString();
     auto index = result.get("index", 0).asInt();
+    // The sink writes authorized=0, so it names no VM and is not the host keeping the device.
+    auto outcome = result.get("target", Json::Value::null);
+    if (!outcome.isNull() && outcome.asString() == "sink")
+        return std::format("{}[{}] -> sink", layer, index);
     auto vm = result.get("vm", Json::Value::null);
     if (vm.isNull()) return std::format("{}[{}] -> host", layer, index);
     auto controller = result.get("controller", Json::Value::null);
@@ -190,15 +194,17 @@ int UsbRulesCommand::test() {
     Json::Value req;
     req["command"] = "usb_rules_test";
     auto resp = ipc->send_request(req);
-    printf("%-10s %-30s %-8s %-5s %-36s %s\n",
-           "SYSFS", "ID", "PORT", "HELD", "ATTACHED_VM", "RESULT");
+    // AUTH beside HELD, because the dry run is where a person checks that a sink took effect.
+    printf("%-10s %-30s %-8s %-5s %-5s %-36s %s\n",
+           "SYSFS", "ID", "PORT", "HELD", "AUTH", "ATTACHED_VM", "RESULT");
     for (const auto &dev: resp["devices"]) {
         auto attached = dev.get("attached_vm", Json::Value::null);
-        printf("%-10s %-30s %-8s %-5s %-36s %s\n",
+        printf("%-10s %-30s %-8s %-5s %-5s %-36s %s\n",
                dev.get("sysfs", "").asCString(),
                dev.get("id", "").asCString(),
                dev.get("port", "").asCString(),
                dev.get("held", false).asBool() ? "yes" : "no",
+               dev.get("authorized", true).asBool() ? "yes" : "no",
                attached.isNull() ? "-" : attached.asCString(),
                describe_result(dev.get("result", Json::Value::null)).c_str());
     }
@@ -221,10 +227,49 @@ int UsbRulesCommand::set(const char *path) {
     return 0;
 }
 
+// The direct action, and the way to check the whole feature from a shell: no rules are read,
+// written or re-run, and the device goes where the argument says.
+class UsbTargetCommand : public Command {
+public:
+    [[nodiscard]] const char *name() const override { return "usb-target"; }
+
+    [[nodiscard]] const char *description() const override {
+        return "Send one USB device to the host, a VM or the sink, without touching the rules";
+    }
+
+    [[nodiscard]] const char *usage() const override {
+        return "<sysfs> host|sink|<vm_id>[/<controller>]";
+    }
+
+    [[nodiscard]] int min_args() const override { return 2; }
+
+    int run(int argc, char *argv[]) override;
+};
+
+int UsbTargetCommand::run(int, char *argv[]) {
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "usb_set_target";
+    req["device"] = argv[2];
+    std::string target = argv[3];
+    if (target == "host" || target == "sink") {
+        req["target"] = target;
+    } else {
+        // A VM, and after a slash the controller inside it; without one the VM's first.
+        auto slash = target.find('/');
+        req["target"] = "vm";
+        req["vm_id"] = resolve_vm_id(target.substr(0, slash));
+        if (slash != std::string::npos) req["controller"] = target.substr(slash + 1);
+    }
+    print_response(ipc->send_request(req));
+    return 0;
+}
+
 void command_register_usb(CommandRegistry &registry) {
     registry.register_command(std::make_unique<UsbListCommand>());
     registry.register_command(std::make_unique<UsbAttachCommand>());
     registry.register_command(std::make_unique<UsbDetachCommand>());
     registry.register_command(std::make_unique<UsbVmCommand>());
     registry.register_command(std::make_unique<UsbRulesCommand>());
+    registry.register_command(std::make_unique<UsbTargetCommand>());
 }

@@ -77,12 +77,18 @@ public final class UsbHostDevice {
     public final String serial;
     public final String speed;
     public final String deviceClass;
+    /**
+     * Whether the kernel lets this device be configured at all. False is the sink: no
+     * configuration, no interfaces, nothing for Android or a host driver to bind to.
+     */
+    public final boolean authorized;
     public final List<Interface> interfaces;
 
     private UsbHostDevice(@NonNull String sysfs, int busnum, int devnum, @NonNull String node,
                           @NonNull String vid, @NonNull String pid, @NonNull String manufacturer,
                           @NonNull String product, @NonNull String serial, @NonNull String speed,
-                          @NonNull String deviceClass, @NonNull List<Interface> interfaces) {
+                          @NonNull String deviceClass, boolean authorized,
+                          @NonNull List<Interface> interfaces) {
         this.sysfs = sysfs;
         this.id = deriveId(vid, pid, serial);
         this.port = derivePort(sysfs);
@@ -96,6 +102,7 @@ public final class UsbHostDevice {
         this.serial = serial;
         this.speed = speed;
         this.deviceClass = deviceClass;
+        this.authorized = authorized;
         this.interfaces = interfaces;
     }
 
@@ -123,7 +130,9 @@ public final class UsbHostDevice {
             readOptional(devDir, "product"),
             readOptional(devDir, "serial"),
             readOptional(devDir, "speed"),
-            deviceClass, interfaces
+            // Absent reads as authorized: a kernel or a device without the attribute is not a
+            // device somebody deauthorized.
+            deviceClass, !"0".equals(readOptional(devDir, "authorized")), interfaces
         );
     }
 
@@ -201,9 +210,14 @@ public final class UsbHostDevice {
         return dash < 0 ? sysfs : sysfs.substring(dash + 1);
     }
 
+    /** Whether a {@code bDeviceClass} value is the hub class, for a reader that has only that. */
+    public static boolean isHubClass(@NonNull String deviceClass) {
+        return CLASS_HUB.equals(deviceClass);
+    }
+
     /** A hub carries the rest of the tree; handing one to a VM would take its own children away. */
     public boolean isHub() {
-        if (CLASS_HUB.equals(deviceClass)) return true;
+        if (isHubClass(deviceClass)) return true;
         for (var iface : interfaces)
             if (CLASS_HUB.equals(iface.cls)) return true;
         return false;
@@ -238,6 +252,7 @@ public final class UsbHostDevice {
         map.put("speed", speed);
         map.put("device_class", deviceClass);
         map.put("host_in_use", hostInUse());
+        map.put("authorized", authorized);
         var list = new ArrayList<LinkedHashMap<String, Object>>();
         for (var iface : interfaces) {
             var item = new LinkedHashMap<String, Object>();

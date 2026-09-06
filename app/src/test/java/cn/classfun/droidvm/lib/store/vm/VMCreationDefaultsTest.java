@@ -65,7 +65,6 @@ public final class VMCreationDefaultsTest {
         assertEquals(1, controllers.size());
         assertEquals("xhci-0", controllers.get(0).getControllerId());
         assertEquals(VMConfig.NEW_VM_DEFAULT_USB, VMXhciConfig.isEnabled(item));
-        assertEquals(VMConfig.NEW_VM_DEFAULT_USB, item.optBoolean(VMXhciConfig.KEY_USB, false));
 
         var gpu = VMScreenConfig.find(item, VMScreenConfig.ID_GPU0);
         assertNotNull(gpu);

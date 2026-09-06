@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 
 import com.google.auto.service.AutoService;
 
+import org.json.JSONObject;
+
 import cn.classfun.droidvm.daemon.server.ClientRequest;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.RequestHandler;
@@ -34,10 +36,14 @@ public final class UsbAttachHandler extends RequestHandler {
         var device = params.optString("device", "");
         if (device.isEmpty())
             throw new RequestException("missing device");
-        var port = request.getContext().getUsb().attach(inst, device);
+        var manager = request.getContext().getUsb();
+        var port = manager.attach(inst, device);
+        var controller = manager.attachedController(device);
         var res = request.res();
         res.put("vm_id", vmId);
         res.put("device", device);
         res.put("port", port);
+        // Which xHCI it landed on: the rule named one or it did not, and only the attach knows.
+        res.put("controller", controller == null ? JSONObject.NULL : controller);
     }
 }

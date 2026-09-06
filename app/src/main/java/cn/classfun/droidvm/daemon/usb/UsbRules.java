@@ -35,10 +35,10 @@ import cn.classfun.droidvm.daemon.server.RequestException;
  */
 public final class UsbRules {
     /**
-     * The container's shape, not the rules'. It stayed at 1 when {@code controller} was added:
-     * the key is optional and an absent one means what it always meant, so a file written before
-     * it existed is still exactly what it says, and a bump would only have made a new daemon
-     * refuse one.
+     * The container's shape, not the rules'. It stayed at 1 when {@code controller} and then
+     * {@code target} were added: both keys are optional on the way in and an absent one means
+     * what it always meant, so a file written before either existed is still exactly what it
+     * says, and a bump would only have made a new daemon refuse one.
      */
     public static final int VERSION = 1;
     /**
@@ -75,9 +75,37 @@ public final class UsbRules {
         }
     }
 
+    /** What a rule does with the device it matches. */
+    public enum Target {
+        /** Leave it where it is; the last word on the device, so the search stops here. */
+        HOST("host"),
+        /** Hand it to the rule's VM, once that VM is running and has the controller. */
+        VM("vm"),
+        /**
+         * Deauthorize it: the kernel drops its configuration and every interface, so Android
+         * never binds a driver and never raises its "open this app for the device" dialog.
+         */
+        SINK("sink");
+
+        /** The key this target goes under in the JSON file and on the wire. */
+        public final String key;
+
+        Target(@NonNull String key) {
+            this.key = key;
+        }
+
+        @Nullable
+        public static Target fromKey(@NonNull String key) {
+            for (var target : values())
+                if (target.key.equals(key)) return target;
+            return null;
+        }
+    }
+
     /**
-     * One entry. Which fields are set is decided by the layer it sits in; {@code vm} is a VM id,
-     * or null for "leave it with the host", which the {@link Layer#ANY} layer does not allow.
+     * One entry. Which fields are set is decided by the layer it sits in; {@code target} says
+     * what happens to the device it matches, and {@code vm} is set for -- and only for -- a
+     * {@link Target#VM} rule.
      *
      * <p>{@code controller} names one xHCI controller inside that VM. Null means the VM's first
      * one, which is what every rule written before controllers existed meant and still means --
@@ -94,13 +122,25 @@ public final class UsbRules {
         public final String vm;
         @Nullable
         public final String controller;
+        @NonNull
+        public final Target target;
 
+        /**
+         * The four-field form, where the VM says the target: that is what a rule written before
+         * targets existed meant, and what every caller that cannot mean a sink means.
+         */
         public Rule(@Nullable String id, @Nullable String port, @Nullable String vm,
                     @Nullable String controller) {
+            this(id, port, vm, controller, vm == null ? Target.HOST : Target.VM);
+        }
+
+        public Rule(@Nullable String id, @Nullable String port, @Nullable String vm,
+                    @Nullable String controller, @NonNull Target target) {
             this.id = id;
             this.port = port;
             this.vm = vm;
             this.controller = controller;
+            this.target = target;
         }
 
         /** Whether the device with [deviceId] at [devicePort] is one this rule speaks about. */
@@ -160,8 +200,16 @@ public final class UsbRules {
             throw new RequestException(fmt("%s: missing port", where));
         if (!wantsPort && rule.port != null)
             throw new RequestException(fmt("%s: a %s rule takes no port", where, layer.key));
-        if (layer == Layer.ANY && rule.vm == null)
-            throw new RequestException(fmt("%s: vm must not be null in the any layer", where));
+        // The any layer is the last one, so nothing follows a rule in it: "keep it on the host"
+        // there is what already happens, and a row that does nothing reads as one that does.
+        if (layer == Layer.ANY && rule.target == Target.HOST)
+            throw new RequestException(fmt("%s: the any layer takes no host rule", where));
+        if (rule.target == Target.SINK && rule.vm != null)
+            throw new RequestException(fmt("%s: a sink rule takes no vm", where));
+        if (rule.target == Target.VM && rule.vm == null)
+            throw new RequestException(fmt("%s: a vm rule needs a vm", where));
+        if (rule.target == Target.HOST && rule.vm != null)
+            throw new RequestException(fmt("%s: a host rule takes no vm", where));
         if (rule.controller != null) {
             // A host rule keeps the device on the host; there is no controller for it to name.
             if (rule.vm == null)
@@ -190,7 +238,7 @@ public final class UsbRules {
                     ? fmt("%s: VM not found: %s", where, rule.vm)
                     : fmt("%s: VM %s has no USB controller %s", where, rule.vm, rule.controller));
         }
-        return new Rule(id, rule.port, rule.vm, rule.controller);
+        return new Rule(id, rule.port, rule.vm, rule.controller, rule.target);
     }
 
     /** The rules of [layer], in priority order; never null. */
@@ -249,11 +297,21 @@ public final class UsbRules {
         while (keys.hasNext()) {
             var key = keys.next();
             if ("id".equals(key) || "port".equals(key) || "vm".equals(key)
-                || "controller".equals(key)) continue;
+                || "controller".equals(key) || "target".equals(key)) continue;
             throw new RequestException(fmt("%s[%d]: unknown field %s", layer, index, key));
         }
-        return new Rule(optString(item, "id"), optString(item, "port"), optString(item, "vm"),
-            optString(item, "controller"));
+        var vm = optString(item, "vm");
+        var wanted = optString(item, "target");
+        // A row with no target is one written before there was a target to write: the vm field
+        // is the whole of what it said, and it goes on saying it.
+        var target = wanted == null ? (vm == null ? Target.HOST : Target.VM)
+            : Target.fromKey(wanted);
+        // Not a fallback to host: a misspelt target would be a rule that quietly does the
+        // opposite of what it says.
+        if (target == null)
+            throw new RequestException(fmt("%s[%d]: unknown target %s", layer, index, wanted));
+        return new Rule(optString(item, "id"), optString(item, "port"), vm,
+            optString(item, "controller"), target);
     }
 
     /** A string field, where an absent key and a JSON null both read as null. */
@@ -277,9 +335,12 @@ public final class UsbRules {
                 var item = new JSONObject();
                 if (rule.id != null) item.put("id", rule.id);
                 if (rule.port != null) item.put("port", rule.port);
-                item.put("vm", rule.vm == null ? JSONObject.NULL : rule.vm);
-                // Left out when there is none, so a host rule and a rule from before controllers
-                // existed come back out byte for byte as they went in.
+                // Always written, because a reader that has to infer the outcome from the other
+                // fields is a second answer to a question this key already answers.
+                item.put("target", rule.target.key);
+                // Left out when there is none: a host and a sink rule have no VM, and a rule
+                // that means the VM's first controller names none.
+                if (rule.vm != null) item.put("vm", rule.vm);
                 if (rule.controller != null) item.put("controller", rule.controller);
                 array.put(item);
             }

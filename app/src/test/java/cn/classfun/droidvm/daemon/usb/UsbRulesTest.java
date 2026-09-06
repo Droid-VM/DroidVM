@@ -19,6 +19,7 @@ import java.util.List;
 import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Layer;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Rule;
+import cn.classfun.droidvm.daemon.usb.UsbRules.Target;
 
 /**
  * The validation a rule set goes through on the way in. The JSON edge is not covered: org.json
@@ -64,8 +65,79 @@ public final class UsbRulesTest {
     }
 
     @Test
-    public void anyRefusesANullVm() {
-        assertTrue(refused(Layer.ANY, new Rule(null, null, null, null)).contains("any[0]: vm must not be null"));
+    public void anyRefusesAHostRule() {
+        // Nothing follows the last layer, so "keep it on the host" there is what already
+        // happens; a row that does nothing has to read as one that does.
+        assertTrue(refused(Layer.ANY, new Rule(null, null, null, null))
+            .contains("any[0]: the any layer takes no host rule"));
+    }
+
+    @Test
+    public void aRuleWithNoTargetTakesTheOneItsVmMeans() {
+        // The four-field form is what every existing caller and every rules file written before
+        // targets existed says, and it still says exactly what it said.
+        assertEquals(Target.HOST, new Rule("090c:1000", "1.2.2", null, null).target);
+        assertEquals(Target.VM, new Rule("090c:1000", "1.2.2", VM, null).target);
+        assertEquals(Target.VM, new Rule(null, null, VM, XHCI0).target);
+        // And it survives validation, which rebuilds the rule.
+        assertEquals(Target.HOST, build(Layer.PORT, new Rule(null, "1.2", null, null))
+            .layer(Layer.PORT).get(0).target);
+        assertEquals(Target.VM, build(Layer.ANY, new Rule(null, null, VM, null))
+            .layer(Layer.ANY).get(0).target);
+    }
+
+    @Test
+    public void aSinkRuleNamesNoVmAndIsAllowedInEveryLayer() {
+        var sink = new Rule(null, "1.2.2", null, null, Target.SINK);
+        var kept = build(Layer.PORT, sink).layer(Layer.PORT).get(0);
+        assertEquals(Target.SINK, kept.target);
+        assertNull(kept.vm);
+        assertNull(kept.controller);
+        // The one row the capped any zone holds, and the most likely sink rule there is.
+        assertEquals(Target.SINK, build(Layer.ANY, new Rule(null, null, null, null, Target.SINK))
+            .layer(Layer.ANY).get(0).target);
+        assertEquals(Target.SINK,
+            build(Layer.DEVICE, new Rule("090c:1000", null, null, null, Target.SINK))
+                .layer(Layer.DEVICE).get(0).target);
+        assertEquals(Target.SINK,
+            build(Layer.EXACT, new Rule("090c:1000", "1.2.2", null, null, Target.SINK))
+                .layer(Layer.EXACT).get(0).target);
+    }
+
+    @Test
+    public void aTargetAndAVmMustAgree() {
+        assertTrue(refused(Layer.PORT, new Rule(null, "1.2.2", VM, null, Target.SINK))
+            .contains("port[0]: a sink rule takes no vm"));
+        assertTrue(refused(Layer.PORT, new Rule(null, "1.2.2", null, XHCI0, Target.SINK))
+            .contains("port[0]: controller needs a vm"));
+        assertTrue(refused(Layer.PORT, new Rule(null, "1.2.2", null, null, Target.VM))
+            .contains("port[0]: a vm rule needs a vm"));
+        assertTrue(refused(Layer.PORT, new Rule(null, "1.2.2", VM, null, Target.HOST))
+            .contains("port[0]: a host rule takes no vm"));
+    }
+
+    @Test
+    public void aSinkRuleIsNeverAskedAboutATarget() {
+        // There is no VM and no controller to look up, so the predicate that answers for one is
+        // not consulted -- a sink rule cannot dangle.
+        var map = new EnumMap<Layer, List<Rule>>(Layer.class);
+        map.put(Layer.ANY, List.of(new Rule(null, null, null, null, Target.SINK)));
+        var rules = UsbRules.build(map, (vm, controller) -> {
+            throw new AssertionError("targetExists asked about a sink rule");
+        });
+        assertEquals(Target.SINK, rules.layer(Layer.ANY).get(0).target);
+    }
+
+    @Test
+    public void aTargetKeyIsTheOneWordItIsWrittenAs() {
+        assertEquals(Target.HOST, Target.fromKey("host"));
+        assertEquals(Target.VM, Target.fromKey("vm"));
+        assertEquals(Target.SINK, Target.fromKey("sink"));
+        // An unknown token is null here, and the reader turns that into a refusal by name
+        // rather than a rule that quietly does the opposite of what it says.
+        assertNull(Target.fromKey("Sink"));
+        assertNull(Target.fromKey("drop"));
+        assertNull(Target.fromKey(""));
     }
 
     @Test

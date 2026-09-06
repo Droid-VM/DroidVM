@@ -195,10 +195,6 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         // Never below what the config already handed out: an id is only safe to mint once.
         config.item.set(VMXhciConfig.KEY_NEXT,
             Math.max(xhciNext, config.item.optLong(VMXhciConfig.KEY_NEXT, 0)));
-        // The boolean the General tab's switch used to write. It is a mirror of the controller
-        // list now, and this is the one place that keeps it honest -- see VMXhciConfig.KEY_USB
-        // for why it is still on disk at all.
-        config.item.set(VMXhciConfig.KEY_USB, VMXhciConfig.isEnabled(config.item));
     }
 
     // VMPeripheralEditAdapter.XhciHost

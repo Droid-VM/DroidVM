@@ -44,14 +44,11 @@ public final class VMXhciConfig {
     /** Next controller index to hand out; never reused, so a deleted id cannot be re-adopted. */
     public static final String KEY_NEXT = "xhci_next";
     /**
-     * The VM-level boolean this list replaced, kept as a derived mirror of "has any controller".
-     *
-     * <p>Nothing new reads it -- {@link #isEnabled} is the question -- but it stays on disk for
-     * the same reason the legacy boot keys do: a build that does not know
-     * {@link PeripheralType#XHCI_USB} resolves the type to VIRTIO_SOUND (an unknown token falls
-     * back to the default) and would otherwise start the VM with no USB at all.</p>
+     * The VM-level boolean this list replaced. Read once, by {@link #migrate}, and never
+     * written: it is the import signal of a config an older build wrote -- a vm or a vmpkg that
+     * may never be saved again -- and nothing else in this codebase asks it anything.
      */
-    public static final String KEY_USB = "usb";
+    private static final String KEY_USB = "usb";
     /** Prefix of every minted id; the number after it is {@link #KEY_NEXT}'s. */
     public static final String ID_PREFIX = "xhci-";
     /** crosvm's fixed geometry, and the value that raises no warning on the default backend. */
@@ -121,34 +118,29 @@ public final class VMXhciConfig {
     }
 
     /**
-     * Brings a config up to the current USB schema: the VM-level "usb" boolean becomes one xHCI
-     * controller, and the boolean stays behind as {@link #KEY_USB}'s mirror of the list.
+     * Brings a config up to the current USB schema: the VM-level "usb" boolean of an imported
+     * vm or vmpkg becomes the one xHCI controller it meant.
      *
      * <p>An absent "usb" key reads as off, which is what crosvm and the passthrough manager
-     * always made of it; only QEMU defaulted it to on, and it keeps that reading for the one
-     * shape this cannot tell apart -- a config with no peripherals array at all.</p>
+     * always made of it; QEMU defaulted it to on, and no longer does -- "no controller" is
+     * uniformly "no USB".</p>
      *
      * <p>Idempotent, and identical in both processes: run twice, or once here and once in the
-     * daemon on the same input, and the same controller with the same id comes out.</p>
+     * daemon on the same input, and the same controller with the same id comes out. That matters
+     * more than it looks -- an imported config may never be saved, so every read of it has to
+     * produce the id a rule is pointing at.</p>
      */
     public static void migrate(@NonNull DataItem vmItem) {
         // First, so a hand-written or half-converted entry gets its id before anything counts.
         ensureIds(vmItem);
-        if (!listControllers(vmItem).isEmpty()) {
-            vmItem.set(KEY_USB, true);
-            return;
-        }
+        if (!listControllers(vmItem).isEmpty()) return;
         // The counter is this fold's evidence that it has already run on this config, the way
         // each of VMScreenConfig's has one: without it, a VM whose last controller the user
         // removed would grow a new one -- under a new id, dangling every rule that named the old
         // one -- every time the config was read back.
         var converted = vmItem.optLong(KEY_NEXT, -1) >= 0;
-        if (converted || !vmItem.optBoolean(KEY_USB, false)) {
-            vmItem.set(KEY_USB, false);
-            return;
-        }
+        if (converted || !vmItem.optBoolean(KEY_USB, false)) return;
         addController(vmItem);
-        vmItem.set(KEY_USB, true);
     }
 
     /** A stored port count, held to what the editor can express. */
