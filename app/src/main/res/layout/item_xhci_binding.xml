@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One binding under an xHCI controller: a device, a port, or both, depending on which of the four
+  zones the row sits in. Which zone it is in is its layer, and the zone's heading states that, so
+  unlike a sound endpoint the row carries no label of its own, and the whole width is the value,
+  which is long: a name, an id and a port path.
+
+  The value is a button because tapping it re-opens that zone's picker: replacing what a rule
+  points at is the same gesture as choosing it in the first place.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_xhci_binding"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="0dp"
+        android:layout_height="36dp"
+        android:layout_weight="1"
+        android:minWidth="72dp"
+        android:textSize="12sp"
+        tools:text="Realtek USB LAN (0bda:8153, port 1.2.2)"
+        tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+    <!-- Same height as the value button beside it, for the reason item_sound_endpoint gives. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_xhci_binding_remove"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="40dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:contentDescription="@string/edit_vm_xhci_device_remove"
+        app:icon="@drawable/ic_close"
+        app:iconSize="18dp"
+        tools:ignore="TouchTargetSizeCheck" />
+
+</LinearLayout>

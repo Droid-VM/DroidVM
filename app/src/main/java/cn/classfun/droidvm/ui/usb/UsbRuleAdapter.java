@@ -16,6 +16,7 @@ import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +43,8 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     private final UsbRuleLayer layer;
     private final Listener listener;
     private List<UsbHostDeviceInfo> devices = new ArrayList<>();
-    private Map<String, String> vmNames = new HashMap<>();
+    private final Map<String, String> vmNames = new HashMap<>();
+    private final Map<String, List<String>> vmControllers = new HashMap<>();
 
     public UsbRuleAdapter(@NonNull Context context, @NonNull UsbRuleLayer layer,
                           @NonNull Listener listener) {
@@ -51,12 +53,16 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         this.listener = listener;
     }
 
-    /** What rows describe themselves against: the devices plugged in now and the VM names. */
+    /** What rows describe themselves against: the devices plugged in now and the VMs. */
     @SuppressLint("NotifyDataSetChanged")
-    public void setLookups(@NonNull List<UsbHostDeviceInfo> devices,
-                           @NonNull Map<String, String> vmNames) {
+    public void setLookups(@NonNull List<UsbHostDeviceInfo> devices, @NonNull List<VmEntry> vms) {
         this.devices = new ArrayList<>(devices);
-        this.vmNames = new HashMap<>(vmNames);
+        vmNames.clear();
+        vmControllers.clear();
+        for (var vm : vms) {
+            vmNames.put(vm.id, vm.name);
+            vmControllers.put(vm.id, vm.controllers);
+        }
         notifyDataSetChanged();
     }
 
@@ -121,6 +127,7 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         var id = rule.optString("id", "");
         var port = rule.optString("port", "");
         var vm = rule.optString("vm", null);
+        var controller = rule.optString("controller", null);
         String title;
         String subtitle;
         switch (layer) {
@@ -143,7 +150,7 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
                 break;
             }
             default: {
-                title = vmLabel(vm);
+                title = vmLabel(vm, controller);
                 subtitle = "";
                 break;
             }
@@ -155,7 +162,7 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             holder.tvTarget.setVisibility(GONE);
         } else {
             holder.tvTarget.setVisibility(VISIBLE);
-            holder.tvTarget.setText(vmLabel(vm));
+            holder.tvTarget.setText(vmLabel(vm, controller));
         }
     }
 
@@ -175,15 +182,36 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     }
 
     /**
-     * "Attach to name" for a VM, "keep on host" for null, the uuid for a VM this app cannot
-     * see. The last layer's rows are the VM itself, so there the name stands alone.
+     * "Attach to name" for a VM, with the controller after it when the rule names one, "keep on
+     * host" for null, the uuid for a VM this app cannot see. The last layer's rows are the VM
+     * itself, so there the name stands alone.
+     *
+     * <p>A controller the VM does not list is called out rather than shown as a target like any
+     * other: that rule can never fire, and the only place it shows is here.</p>
      */
     @NonNull
-    private String vmLabel(@Nullable String vm) {
+    private String vmLabel(@Nullable String vm, @Nullable String controller) {
         if (vm == null) return context.getString(R.string.usb_rules_keep_host);
         var name = vmNames.get(vm);
-        if (name == null) name = context.getString(R.string.usb_rules_unknown_vm, vm);
-        if (layer == UsbRuleLayer.ANY) return name;
-        return context.getString(R.string.usb_rules_target_vm, name);
+        var known = name != null;
+        if (!known) name = context.getString(R.string.usb_rules_unknown_vm, vm);
+        var missing = known && controller != null && !controllersOf(vm).contains(controller);
+        if (missing) {
+            // The id is already in the sentence, so it is not repeated as a target below.
+            name = context.getString(R.string.usb_rules_unknown_controller, name, controller);
+            controller = null;
+        }
+        if (layer == UsbRuleLayer.ANY)
+            return controller == null
+                ? name : context.getString(R.string.usb_rules_vm_label_fmt, name, controller);
+        return controller == null
+            ? context.getString(R.string.usb_rules_target_vm, name)
+            : context.getString(R.string.usb_rules_target_controller, name, controller);
+    }
+
+    @NonNull
+    private List<String> controllersOf(@NonNull String vm) {
+        var controllers = vmControllers.get(vm);
+        return controllers == null ? Collections.emptyList() : controllers;
     }
 }

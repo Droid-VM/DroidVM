@@ -230,6 +230,187 @@
 
         </LinearLayout>
 
+        <!-- ===== xHCI USB controller: the ports it offers, and what the rules bind to it ===== -->
+        <LinearLayout
+            android:id="@+id/group_xhci"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <!-- Which controller this card is. Only worth saying when the VM has more than one:
+                 that is the only case where a rule below could have meant the other. -->
+            <TextView
+                android:id="@+id/tv_xhci_id"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:text="xhci-0"
+                tools:visibility="visible" />
+
+            <!-- Says where the rows below actually live: they are the app-wide attach rules seen
+                 through this controller, not a list this VM's config carries. -->
+            <TextView
+                android:id="@+id/tv_xhci_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/edit_vm_xhci_rules_note"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+
+            <!--
+              The four layers of the attach rules, in the order the daemon tries them, each with a
+              heading and a rule between them. Both stay put when a zone is empty: a zone with no
+              rows still has to say which layer it is, or an empty card would read as one list
+              rather than as four that happen to be empty.
+            -->
+            <TextView
+                android:id="@+id/tv_xhci_zone_exact"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="@string/usb_rules_layer_exact"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/xhci_zone_exact"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <TextView
+                android:id="@+id/tv_xhci_zone_port"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_layer_port"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/xhci_zone_port"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <TextView
+                android:id="@+id/tv_xhci_zone_device"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_layer_device"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/xhci_zone_device"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <TextView
+                android:id="@+id/tv_xhci_zone_any"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_layer_any"
+                android:textColor="?attr/colorPrimary"
+                android:textSize="12sp" />
+
+            <LinearLayout
+                android:id="@+id/xhci_zone_any"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- Adding a binding and the two controller-wide port counts: the VirtIO Sound row,
+                 for the same reason: none of the three belongs to any row above. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_xhci_device_add"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/edit_vm_xhci_device_add"
+                    android:textSize="12sp"
+                    app:icon="@drawable/ic_add"
+                    app:iconSize="18dp"
+                    tools:ignore="TouchTargetSizeCheck" />
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_xhci_usb2_ports"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:title="@string/edit_vm_xhci_usb2_ports"
+                    app:pb_mode="dialog" />
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_xhci_usb3_ports"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:title="@string/edit_vm_xhci_usb3_ports"
+                    app:pb_mode="dialog" />
+
+            </LinearLayout>
+
+            <!-- Two lines rather than the card's shared warning below: both crosvm limits can be
+                 true at once, and that one is rewritten by every host-endpoint bind. -->
+            <TextView
+                android:id="@+id/tv_xhci_warn_multi"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/edit_vm_xhci_crosvm_one_only"
+                android:textColor="?attr/colorError"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+            <TextView
+                android:id="@+id/tv_xhci_warn_ports"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/edit_vm_xhci_crosvm_ports_fixed"
+                android:textColor="?attr/colorError"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
         <TextView
             android:id="@+id/tv_peripheral_warning"
             android:layout_width="match_parent"

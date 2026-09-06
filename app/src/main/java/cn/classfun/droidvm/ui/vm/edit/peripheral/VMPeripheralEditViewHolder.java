@@ -30,6 +30,19 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final MaterialButton btnAddEndpoint;
     final PickerButtonWidget btnBuffer;
     final PickerButtonWidget btnUnderrun;
+    // xHCI USB controller
+    final View groupXhci;
+    final TextView tvXhciId;
+    final TextView tvXhciNote;
+    final LinearLayout xhciZoneExact;
+    final LinearLayout xhciZonePort;
+    final LinearLayout xhciZoneDevice;
+    final LinearLayout xhciZoneAny;
+    final MaterialButton btnXhciAdd;
+    final PickerButtonWidget btnUsb2Ports;
+    final PickerButtonWidget btnUsb3Ports;
+    final TextView tvXhciWarnMulti;
+    final TextView tvXhciWarnPorts;
     // intel hda
     final View groupIntelHda;
     final View groupVirtioCamera;
@@ -50,6 +63,18 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         btnAddEndpoint = itemView.findViewById(R.id.btn_sound_endpoint_add);
         btnBuffer = itemView.findViewById(R.id.btn_sound_buffer);
         btnUnderrun = itemView.findViewById(R.id.btn_sound_underrun);
+        groupXhci = itemView.findViewById(R.id.group_xhci);
+        tvXhciId = itemView.findViewById(R.id.tv_xhci_id);
+        tvXhciNote = itemView.findViewById(R.id.tv_xhci_note);
+        xhciZoneExact = itemView.findViewById(R.id.xhci_zone_exact);
+        xhciZonePort = itemView.findViewById(R.id.xhci_zone_port);
+        xhciZoneDevice = itemView.findViewById(R.id.xhci_zone_device);
+        xhciZoneAny = itemView.findViewById(R.id.xhci_zone_any);
+        btnXhciAdd = itemView.findViewById(R.id.btn_xhci_device_add);
+        btnUsb2Ports = itemView.findViewById(R.id.btn_xhci_usb2_ports);
+        btnUsb3Ports = itemView.findViewById(R.id.btn_xhci_usb3_ports);
+        tvXhciWarnMulti = itemView.findViewById(R.id.tv_xhci_warn_multi);
+        tvXhciWarnPorts = itemView.findViewById(R.id.tv_xhci_warn_ports);
         groupIntelHda = itemView.findViewById(R.id.group_intel_hda);
         groupVirtioCamera = itemView.findViewById(R.id.group_virtio_camera);
         btnCameraDevice = itemView.findViewById(R.id.btn_camera_device);

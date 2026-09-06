@@ -205,7 +205,6 @@
     <string name="create_vm_pmu">PMU (Performance Monitor Unit)</string>
     <string name="create_vm_rng">RNG (Random Number Generator)</string>
     <string name="create_vm_smt">SMT (Simultaneous MultiThread)</string>
-    <string name="create_vm_usb">USB (Universal Serial Bus)</string>
     <string name="create_vm_debug">Debug trace</string>
     <string name="create_vm_protected_vm">Protected VM</string>
     <string name="create_vm_swiotlb_hint">SWIOTLB Size (Protected VM)</string>
@@ -1579,6 +1578,22 @@
     <string name="edit_vm_peripheral_host_output">Output</string>
     <string name="edit_vm_peripheral_host_input">Input</string>
     <string name="edit_vm_peripheral_type_xhci">xHCI USB controller</string>
+    <string name="edit_vm_xhci_rules_note">Bindings live in the app-wide automatic USB attach rules.</string>
+    <string name="edit_vm_xhci_device_add">Add device</string>
+    <string name="edit_vm_xhci_device_remove">Remove binding</string>
+    <string name="edit_vm_xhci_any_device">Any USB device</string>
+    <string name="edit_vm_xhci_usb2_ports">USB 2.0 ports</string>
+    <string name="edit_vm_xhci_usb3_ports">USB 3.0 ports</string>
+    <string name="edit_vm_xhci_port_item">%1$d Port</string>
+    <string name="edit_vm_xhci_add_custom">Custom...</string>
+    <string name="edit_vm_xhci_custom_title">Custom binding</string>
+    <string name="edit_vm_xhci_custom_id">Device id (vid:pid or vid:pid:serial)</string>
+    <string name="edit_vm_xhci_custom_port">Port path, for example 1.2.2</string>
+    <string name="edit_vm_xhci_custom_bad_id">Enter vid:pid, optionally with a serial</string>
+    <string name="edit_vm_xhci_custom_bad_port">Enter a port chain such as 1.2.2</string>
+    <string name="edit_vm_xhci_crosvm_one_only">crosvm supports one xHCI controller; the device is skipped when the VM starts.</string>
+    <string name="edit_vm_xhci_crosvm_ports_fixed">crosvm supports 8 ports; this setting is ignored when the VM starts.</string>
+    <string name="edit_vm_xhci_rules_save_failed">The VM was saved, but its USB bindings were not: %1$s</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>
@@ -1629,6 +1644,8 @@
     <string name="usb_rules_add">Add rule</string>
     <string name="usb_rules_keep_host">Keep on host</string>
     <string name="usb_rules_target_vm">Attach to %1$s</string>
+    <string name="usb_rules_target_controller">Attach to %1$s (%2$s)</string>
+    <string name="usb_rules_unknown_controller">%1$s (missing controller %2$s)</string>
     <string name="usb_rules_unknown_vm">Unknown VM (%1$s)</string>
     <string name="usb_rules_unknown_device">Unknown device %1$s</string>
     <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>

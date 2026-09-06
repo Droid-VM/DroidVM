@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     The last entry of a zone's device list, for a device that is not plugged in right now. Each
+     field is checked against the pattern the daemon checks, so a value that gets past this dialog
+     is one the rules save will take: being told about a typo after the VM config was already
+     written is later than it needs to be. A field the layer does not use is not shown: a port rule
+     that also carried an id would be an exact rule wearing the wrong name.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ti_custom_id"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/edit_vm_xhci_custom_id">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ti_custom_port"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/edit_vm_xhci_custom_port">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_port"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

@@ -5,7 +5,6 @@ package cn.classfun.droidvm.ui.usb;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.content.Context;
 import android.content.DialogInterface;
@@ -21,7 +20,6 @@ import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -35,19 +33,6 @@ import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
  * rule is handed back in the wire shape, ready to sit in the layer's adapter.
  */
 public final class UsbRuleAddDialog {
-    /** A row of the device/port dropdown: the label shown and the id/port it stands for. */
-    private static final class Subject {
-        final String label;
-        final String id;
-        final String port;
-
-        Subject(@NonNull String label, @NonNull String id, @NonNull String port) {
-            this.label = label;
-            this.id = id;
-            this.port = port;
-        }
-    }
-
     /** A row of the target dropdown; a null vm is "keep on host". */
     private static final class Target {
         final String label;
@@ -62,7 +47,7 @@ public final class UsbRuleAddDialog {
 
     private final Context context;
     private final UsbRuleLayer layer;
-    private final List<Subject> subjects;
+    private final List<UsbRuleSubjects.Subject> subjects;
     private final List<Target> targets;
     private final Consumer<DataItem> onAdd;
     private int subjectIndex = -1;
@@ -74,7 +59,7 @@ public final class UsbRuleAddDialog {
                              @NonNull List<VmEntry> vms, @NonNull Consumer<DataItem> onAdd) {
         this.context = context;
         this.layer = layer;
-        this.subjects = buildSubjects(context, layer, devices);
+        this.subjects = UsbRuleSubjects.of(context, layer, devices);
         this.targets = buildTargets(context, layer, vms);
         this.onAdd = onAdd;
     }
@@ -97,8 +82,8 @@ public final class UsbRuleAddDialog {
         if (layer.needsSubject()) {
             var row = layer == UsbRuleLayer.PORT ? ddPort : ddDevice;
             row.setVisibility(VISIBLE);
-            row.setAdapter(new ArrayAdapter<>(
-                context, android.R.layout.simple_list_item_1, subjectLabels()));
+            row.setAdapter(new ArrayAdapter<>(context, android.R.layout.simple_list_item_1,
+                UsbRuleSubjects.labelsOf(subjects)));
             row.setOnItemClickListener((p, v, pos, id) -> {
                 subjectIndex = pos;
                 updateOk();
@@ -167,55 +152,10 @@ public final class UsbRuleAddDialog {
     }
 
     @NonNull
-    private String[] subjectLabels() {
-        var labels = new String[subjects.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = subjects.get(i).label;
-        return labels;
-    }
-
-    @NonNull
     private String[] targetLabels() {
         var labels = new String[targets.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = targets.get(i).label;
         return labels;
-    }
-
-    /**
-     * One row per plugged-in device for the exact and device layers (the device layer folds
-     * two identical serial-less devices into one, as the rule would), one row per occupied
-     * port for the port layer. Hubs never arrive: the daemon leaves them out of the list.
-     */
-    @NonNull
-    private static List<Subject> buildSubjects(@NonNull Context context,
-                                               @NonNull UsbRuleLayer layer,
-                                               @NonNull List<UsbHostDeviceInfo> devices) {
-        var out = new LinkedHashMap<String, Subject>();
-        for (var device : devices) {
-            var name = device.displayName(context);
-            switch (layer) {
-                case EXACT:
-                    out.putIfAbsent(fmt("%s@%s", device.id, device.port), new Subject(
-                        context.getString(R.string.usb_rules_pick_device_exact_fmt,
-                            name, device.id, device.port),
-                        device.id, device.port));
-                    break;
-                case PORT:
-                    out.putIfAbsent(device.port, new Subject(
-                        context.getString(R.string.usb_rules_pick_device_port_fmt,
-                            device.port, name),
-                        "", device.port));
-                    break;
-                case DEVICE:
-                    out.putIfAbsent(device.id, new Subject(
-                        context.getString(R.string.usb_rules_pick_device_device_fmt,
-                            name, device.id),
-                        device.id, ""));
-                    break;
-                default:
-                    break;
-            }
-        }
-        return new ArrayList<>(out.values());
     }
 
     @NonNull

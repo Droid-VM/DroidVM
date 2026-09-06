@@ -250,7 +250,7 @@ public final class UsbRulesActivity extends AppCompatActivity
     }
 
     private void pushLookups() {
-        for (var adapter : adapters.values()) adapter.setLookups(devices, vmNames);
+        for (var adapter : adapters.values()) adapter.setLookups(devices, vms);
     }
 
     // UsbRuleAdapter.Listener
