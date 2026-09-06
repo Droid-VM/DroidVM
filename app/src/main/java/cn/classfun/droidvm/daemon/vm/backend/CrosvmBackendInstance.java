@@ -494,8 +494,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
         if (boot.uefi) {
-            // crosvm has no custom-firmware support; always builtin EDK2
-            args.add(PATH_EDK2_FIRMWARE);
+            args.add(boot.firmware.isEmpty() ? PATH_EDK2_FIRMWARE : boot.firmware);
             if (boot.varsEnabled) {
                 var vars = boot.vars.isEmpty() ? PATH_EDK2_VARS : boot.vars;
                 args.add("--pflash");
