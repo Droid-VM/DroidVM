@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.widgets.row;
 
 import android.content.Context;
@@ -11,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.enums.EnumPicker;
 import cn.classfun.droidvm.lib.store.enums.EnumPicker.EnumPickerChanged;
 import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
 
@@ -86,6 +90,18 @@ public final class ChooseRowWidget extends FrameLayout {
         buttonView.setItems(items);
     }
 
+    /**
+     * Items the row lists but refuses, each shown greyed with {@code note} after its label. Call
+     * after the {@code setItems} that installs them: a new item set clears the refusals, because
+     * the same constant can be reachable under one set and not under another.
+     */
+    @SafeVarargs
+    public final <E extends Enum<E>> void setDisabledItems(
+        @Nullable CharSequence note, @NonNull E... refused
+    ) {
+        buttonView.setDisabledItems(note, refused);
+    }
+
     public void setOnValueChangedListener(@Nullable EnumPickerChanged<Enum<?>> listener) {
         buttonView.setOnValueChangedListener(listener);
     }
@@ -103,8 +119,23 @@ public final class ChooseRowWidget extends FrameLayout {
         return (E) buttonView.getPicker().getSelectedItem();
     }
 
-    public void setSelectedItem(Enum<?> val) {
-        buttonView.setSelectedItem(val);
+    /**
+     * Selects {@code val}, or this row's default when the picker will not take it -- an item the
+     * row does not list, or lists only to refuse; see {@link EnumPicker#setSelectedItem}.
+     *
+     * @return whether {@code val} itself was selected
+     */
+    @SuppressWarnings("UnusedReturnValue")
+    public boolean setSelectedItem(Enum<?> val) {
+        return buttonView.setSelectedItem(val);
+    }
+
+    /**
+     * The value a refused selection falls back to; see {@link EnumPicker#setDefaultItem}. Call
+     * after the {@code setItems} that installs the set, like {@link #setDisabledItems}.
+     */
+    public void setDefaultItem(Enum<?> val) {
+        buttonView.setDefaultItem(val);
     }
 
     @Override

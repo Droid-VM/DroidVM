@@ -1,0 +1,22 @@
+# Signatures that already exceeded check_arity.py's parameter limit when the
+# check was introduced. This is a debt list, not a blessing: new code must not
+# grow it, and an entry should be deleted the moment its signature is reworked
+# (group the related parameters into an object, or split the method).
+#
+# One "<repo-relative path>:<method or constructor name>" per line; the entry
+# covers every overload of that name in that file. Blank lines and '#' comments
+# are ignored.
+
+# A DNAT rule passed as eight positional values; wants a rule object.
+app/src/main/java/cn/classfun/droidvm/daemon/network/backend/FirewallHelper.java:applyDnat
+app/src/main/java/cn/classfun/droidvm/daemon/network/backend/FirewallHelper.java:removeDnat
+app/src/main/java/cn/classfun/droidvm/daemon/network/backend/iptables/IptablesBackend.java:applyDnat
+app/src/main/java/cn/classfun/droidvm/daemon/network/backend/iptables/IptablesBackend.java:removeDnat
+
+# Huge-page process rows: a data holder built positionally (10 and 12 wide).
+app/src/main/java/cn/classfun/droidvm/ui/hugepage/HugePageProcess.java:HugePageProcess
+app/src/main/java/cn/classfun/droidvm/ui/hugepage/HugePageProcessActivity.java:showResult
+app/src/main/java/cn/classfun/droidvm/ui/hugepage/SegmentedBar.java:setStorage
+
+# Import progress reported as ten loose counters.
+app/src/main/java/cn/classfun/droidvm/ui/vm/pkg/imports/VMPkgImportActivity.java:onProgress

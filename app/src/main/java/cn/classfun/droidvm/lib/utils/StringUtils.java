@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.utils;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -12,6 +15,7 @@ import android.content.Context;
 import android.net.Uri;
 import android.provider.DocumentsContract;
 import android.system.Os;
+import android.text.InputFilter;
 import android.widget.EditText;
 
 import androidx.annotation.NonNull;
@@ -22,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.SecureRandom;
+import java.util.Collection;
 import java.util.Formatter;
 import java.util.Locale;
 
@@ -165,6 +170,26 @@ public final class StringUtils {
         return extension(path).toLowerCase(Locale.ROOT);
     }
 
+    /**
+     * {@code name} reduced to one path component that is safe to create on disk and to name an
+     * entry inside a package: path separators, control characters and the punctuation Windows
+     * reserves all become {@code _}. Falls back to {@code fallback} when nothing usable is left
+     * (an empty name, or one that would name a directory rather than a file in it), so callers
+     * never have to handle the degenerate case themselves.
+     */
+    @NonNull
+    public static String safeFileName(@NonNull String name, @NonNull String fallback) {
+        var sb = new StringBuilder(name.length());
+        for (int i = 0; i < name.length(); i++) {
+            char c = name.charAt(i);
+            if (c < 0x20 || c == 0x7f || "\\/:*?\"<>|".indexOf(c) >= 0) c = '_';
+            sb.append(c);
+        }
+        var out = sb.toString().trim();
+        if (out.isEmpty() || out.equals(".") || out.equals("..")) return fallback;
+        return out;
+    }
+
     @NonNull
     public static String pathJoin(@NonNull String base, @NonNull String child) {
         if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
@@ -201,6 +226,18 @@ public final class StringUtils {
         return sb.toString();
     }
 
+    /**
+     * A {@code "\n- a\n- b"} bullet list, the shape the disk and VM dialogs paste
+     * into a message resource. The leading newline is part of it: the list always
+     * follows a sentence, and every caller was writing that newline by hand.
+     */
+    @NonNull
+    public static String bulletList(@NonNull Collection<String> items) {
+        var sb = new StringBuilder();
+        for (var item : items) sb.append("\n- ").append(item);
+        return sb.toString();
+    }
+
     @NonNull
     public static String fmt(String fmt, Object... args) {
         return new Formatter(Locale.ROOT).format(fmt, args).toString();
@@ -221,6 +258,75 @@ public final class StringUtils {
         for (int i = 0; i < length; i++)
             sb.append(CHARS.charAt(random.nextInt(CHARS.length())));
         return sb.toString();
+    }
+
+    /**
+     * The only symbols allowed in passwords that ride through the temp rescue
+     * VM's generated chpasswd script. Everything quoting- or expansion-related
+     * (' " \ $ `), whitespace, and shell/script metacharacters stay out, so a
+     * password cannot break the script even if an escaping layer regresses.
+     */
+    public static final String SHELL_SAFE_PASSWORD_SYMBOLS = "!@#%^*+-=_.,:?";
+
+    public static final String GROUPED_PASSWORD_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    public static final String GROUPED_PASSWORD_LOWER = "abcdefghijkmnpqrstuvwxyz";
+    public static final String GROUPED_PASSWORD_DIGITS = "23456789";
+    public static final String GROUPED_PASSWORD_SYMBOLS = "!@#%*+-=?";
+
+    public static boolean isShellSafePasswordChar(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+            || (c >= '0' && c <= '9')
+            || SHELL_SAFE_PASSWORD_SYMBOLS.indexOf(c) >= 0;
+    }
+
+    /** Gate for the rescue-VM password path: letters, digits and the safe symbols only. */
+    public static boolean isShellSafePassword(@NonNull CharSequence password) {
+        for (int i = 0; i < password.length(); i++)
+            if (!isShellSafePasswordChar(password.charAt(i))) return false;
+        return true;
+    }
+
+    /** Whitelist filter for password fields feeding {@link #isShellSafePassword}. */
+    @NonNull
+    public static InputFilter shellSafePasswordFilter() {
+        return (source, start, end, dest, dstart, dend) -> {
+            boolean clean = true;
+            for (int i = start; i < end && clean; i++)
+                clean = isShellSafePasswordChar(source.charAt(i));
+            if (clean) return null; // accept unchanged
+            var sb = new StringBuilder(end - start);
+            for (int i = start; i < end; i++)
+                if (isShellSafePasswordChar(source.charAt(i)))
+                    sb.append(source.charAt(i));
+            return sb.toString();
+        };
+    }
+
+    /**
+     * Grouped as 2 uppercase + 3 lowercase + 4 digits + 2 symbols, so the value
+     * stays strong yet easy to read back and retype on a VM console. Glyphs that
+     * are ambiguous on screen (I/O vs l/o vs 0/1) are left out of every group,
+     * and each group draws only from the shell-safe whitelist above.
+     */
+    @NonNull
+    public static String generateGroupedPassword() {
+        var random = new SecureRandom();
+        var sb = new StringBuilder(11);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_UPPER, 2);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_LOWER, 3);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_DIGITS, 4);
+        appendRandomChars(sb, random, GROUPED_PASSWORD_SYMBOLS, 2);
+        return sb.toString();
+    }
+
+    private static void appendRandomChars(
+        @NonNull StringBuilder sb,
+        @NonNull SecureRandom random,
+        @NonNull String charset,
+        int count
+    ) {
+        for (int i = 0; i < count; i++)
+            sb.append(charset.charAt(random.nextInt(charset.length())));
     }
 
     @NonNull

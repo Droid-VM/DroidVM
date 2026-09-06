@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.create;
 
 import static android.view.View.GONE;
@@ -269,9 +272,18 @@ public final class DiskCreateActivity extends AppCompatActivity {
             inputName.setError(R.string.disk_create_error_exists);
             return;
         }
+        // Link the overlay to its registered backing so the tree and lock rules see it. A
+        // manually-typed backing path counts too when it resolves to a registered disk.
+        var manualBacking = backing;
         runOnPool(() -> {
             var store = new DiskStore();
             store.load(this);
+            if (backingId != null) {
+                config.setParentId(backingId);
+            } else if (!manualBacking.isEmpty()) {
+                var registered = store.findByPath(manualBacking);
+                if (registered != null) config.setParentId(registered.getId());
+            }
             store.add(config);
             store.save(this);
         });
@@ -291,6 +303,10 @@ public final class DiskCreateActivity extends AppCompatActivity {
             } else if (!backing.isEmpty() && format == DiskFormat.QCOW2)
                 obj.put("backing_path", backing);
             var intent = createIntent(this, config.getId(), obj);
+            // A create that worked needs no success screen: the new disk showing up (in the
+            // list, or in the VM row that asked for it) is the feedback. Failures still stay.
+            intent.putExtra(cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity
+                .EXTRA_AUTOFINISH, true);
             startActivity(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start create activity", e);

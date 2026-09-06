@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.archive;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -125,6 +128,14 @@ public final class TarReader implements AutoCloseable {
     }
 
     private static long parseOctal(@NonNull byte[] hdr, int off, int len) {
+        // GNU base-256: bit 7 of the first byte set, the rest big-endian. GNU tar, bsdtar and
+        // Python's tarfile all write sizes >= 8 GiB (12 octal digits won't fit) this way, and
+        // without this branch such an entry parsed as 0 -> a 0-byte disk on import.
+        if ((hdr[off] & 0x80) != 0) {
+            long v = hdr[off] & 0x7f;
+            for (int i = off + 1; i < off + len; i++) v = (v << 8) | (hdr[i] & 0xff);
+            return v;
+        }
         var s = cstr(hdr, off, len);
         if (s.isEmpty()) return 0;
         var trimmed = s.trim();

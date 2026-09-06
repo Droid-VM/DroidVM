@@ -15,12 +15,17 @@
         android:id="@+id/ti_icon"
         android:layout_width="24dp"
         android:layout_height="24dp"
-        android:contentDescription="@null" />
+        android:layout_gravity="center_vertical"
+        android:visibility="gone"
+        android:contentDescription="@null"
+        tools:src="@drawable/ic_cpu"
+        tools:visibility="visible" />
 
     <LinearLayout
+        android:id="@+id/ti_text_container"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="32dp"
+        android:layout_marginStart="0dp"
         android:layout_weight="1"
         android:orientation="vertical">
 

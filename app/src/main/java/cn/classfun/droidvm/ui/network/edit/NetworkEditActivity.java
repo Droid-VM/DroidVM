@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.network.edit;
 
 import static android.view.View.GONE;
@@ -29,7 +32,6 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
@@ -39,27 +41,26 @@ import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.daemon.network.backend.UplinkResolver;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
-import cn.classfun.droidvm.lib.store.network.Ipv6Source;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkConfigValidator;
+import cn.classfun.droidvm.lib.store.network.NetworkConflicts;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.ui.network.NetworkActions;
+import cn.classfun.droidvm.ui.network.NetworkPresets;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class NetworkEditActivity extends AppCompatActivity {
     public static final String EXTRA_NETWORK_ID = "network_id";
-    /** bridge + "v"/"." + 2-char VLAN code must fit IFNAMSIZ (15 usable). */
-    private static final int MAX_BRIDGE_NAME_LEN = 12;
     /** Interface-name charset: ASCII letters, digits, hyphen, underscore. */
     private static final InputFilter BRIDGE_NAME_CHARSET = (src, start, end, dst, ds, de) ->
         src.subSequence(start, end).toString().matches("[A-Za-z0-9_-]*") ? null : "";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final Random random = new Random();
     private final List<VlanConfig> vlans = new ArrayList<>();
     private final List<VlanCardBinder> binders = new ArrayList<>();
     // parallel uplink picker entries: display label, stored value (logical id
@@ -140,7 +141,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         btnAddVlan.setOnClickListener(v -> onAddVlan());
         inputMac.setEndIconOnClickListener(v -> inputMac.setText(generateRandomMac()));
         inputBridge.setFilters(
-            new InputFilter.LengthFilter(MAX_BRIDGE_NAME_LEN),
+            new InputFilter.LengthFilter(NetworkPresets.MAX_BRIDGE_NAME_LEN),
             BRIDGE_NAME_CHARSET
         );
         fab.setOnClickListener(v -> onSaveClicked());
@@ -334,97 +335,21 @@ public final class NetworkEditActivity extends AppCompatActivity {
     /** A new VLAN entry with paired random networks (empty when exhausted). */
     @NonNull
     private VlanConfig newVlan(int vlanId) {
-        var vlan = VlanConfig.createDefault(vlanId);
-        var pair = generatePairedCidrs();
-        if (pair != null) {
-            vlan.ipv4().set("cidr", pair[0]);
-            vlan.ipv6().set("cidr", pair[1]);
-        }
-        var ipv6 = vlan.ipv6();
-        if (bridgeType == BridgeType.GVISOR) {
-            // gVisor has IPv6 SNAT, so the ULA prefix is routable: default on
-            ipv6.set("snat", true);
-        } else {
-            // a Linux bridge has no IPv6 NAT and Android rarely holds a
-            // routed prefix, so serving the ULA via DHCPv6/SLAAC hands VMs
-            // addresses with no connectivity: default to a static ULA CIDR
-            // with serving off, and pre-fill the Wi-Fi PD uplink for when the
-            // user switches the source to DHCP-PD
-            ipv6.set("snat", false);
-            ipv6.set("source", Ipv6Source.STATIC.key());
-            var pd = DataItem.newObject();
-            pd.set("uplink", UplinkResolver.ID_WIFI);
-            ipv6.set("pd", pd);
-            ipv6.get("dhcp").set("enabled", false);
-            ipv6.get("slaac").set("enabled", false);
-        }
-        return vlan;
+        return NetworkPresets.newVlan(vlanId, bridgeType, generatePairedCidrs());
     }
 
     /**
-     * Picks N in 50-250 so that 192.168.N.1/24 and fd00:N::1/64 are both
-     * free of overlaps with every other network and this network's other
-     * VLANs. Returns null when no N fits.
+     * A free subnet pair, avoiding every other network and this network's own
+     * VLAN cards. Null when nothing in the pool fits.
      */
     @Nullable
     private String[] generatePairedCidrs() {
         var used4 = new ArrayList<IPv4Network>();
         var used6 = new ArrayList<IPv6Network>();
-        collectUsedNetworks(used4, used6);
-        for (int attempt = 0; attempt < 400; attempt++) {
-            int n = 50 + random.nextInt(201); // 50-250
-            IPv4Network cand4;
-            IPv6Network cand6;
-            try {
-                cand4 = IPv4Network.parse(fmt("192.168.%d.1/24", n));
-                cand6 = IPv6Network.parse(fmt("fd00:%d::1/64", n));
-            } catch (Exception e) {
-                continue;
-            }
-            boolean conflicts = false;
-            for (var ex : used4)
-                if (cand4.overlaps(ex)) {
-                    conflicts = true;
-                    break;
-                }
-            if (!conflicts) for (var ex : used6)
-                if (cand6.overlaps(ex)) {
-                    conflicts = true;
-                    break;
-                }
-            if (!conflicts) return new String[]{cand4.toString(), cand6.toString()};
-        }
-        return null;
-    }
-
-    /** Subnets in use by other networks and by this network's VLAN cards. */
-    private void collectUsedNetworks(
-        @NonNull List<IPv4Network> out4, @NonNull List<IPv6Network> out6
-    ) {
         storeAllBinders();
-        var sources = new ArrayList<>(vlans);
-        store.forEach((id, cfg) -> {
-            if (id.equals(editNetworkId)) return;
-            sources.addAll(cfg.getVlans());
-        });
-        for (var vlan : sources) {
-            var net4 = vlan.getIpv4Network();
-            if (net4 != null) out4.add(net4);
-            for (var cidr : vlan.getIpv4Secondary()) {
-                try {
-                    out4.add(IPv4Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-            var net6 = vlan.getIpv6Network();
-            if (net6 != null) out6.add(net6);
-            for (var cidr : vlan.getIpv6Secondary()) {
-                try {
-                    out6.add(IPv6Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        NetworkConflicts.collectSubnets(vlans, used4, used6);
+        NetworkPresets.collectStoreNetworks(store, editNetworkId, bridgeType, used4, used6);
+        return NetworkPresets.pickFreeCidrPair(used4, used6);
     }
 
     private void loadExistingConfig() {
@@ -531,7 +456,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
             return;
         }
         if (!bridgeName.matches("[a-zA-Z][a-zA-Z0-9_-]*")
-            || bridgeName.length() > MAX_BRIDGE_NAME_LEN) {
+            || bridgeName.length() > NetworkPresets.MAX_BRIDGE_NAME_LEN) {
             inputBridge.setError(getString(R.string.network_edit_error_bridge_invalid));
             return;
         }
@@ -564,9 +489,9 @@ public final class NetworkEditActivity extends AppCompatActivity {
             Toast.makeText(this, e.getMessage(), LENGTH_LONG).show();
             return;
         }
-        var overlap = checkOverlaps(config);
-        if (overlap != null) {
-            Toast.makeText(this, overlap, LENGTH_LONG).show();
+        var conflict = checkConflicts(config);
+        if (conflict != null) {
+            Toast.makeText(this, conflict, LENGTH_LONG).show();
             return;
         }
         if (editMode) {
@@ -575,7 +500,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
             store.add(config);
         }
         store.save(this);
-        syncToDaemon(config);
+        NetworkActions.syncToDaemon(config);
         Toast.makeText(this,
             editMode ? getString(R.string.network_edit_saved, name) :
                 getString(R.string.network_create_success, name),
@@ -583,86 +508,28 @@ public final class NetworkEditActivity extends AppCompatActivity {
         finish();
     }
 
-    /** Push the modified config to the daemon if it already knows the network. */
-    private void syncToDaemon(@NonNull NetworkConfig config) {
-        var conn = DaemonConnection.getInstance();
-        conn.buildRequest("network_exists")
-            .put("network_id", config.getId())
-            .onResponse(resp -> {
-                if (!resp.optBoolean("exists", false)) return;
-                conn.buildRequest("network_modify")
-                    .put("config", config)
-                    .onUnsuccessful(r -> {
-                    })
-                    .onError(e -> {
-                    })
-                    .invoke();
-            })
-            .onUnsuccessful(r -> {
-            })
-            .onError(e -> {
-            })
-            .invoke();
-    }
-
+    /**
+     * The reason this config cannot be saved alongside the others, or null when it can. Only
+     * networks of the same kind are consulted -- see {@link NetworkConflicts} for why a Linux
+     * bridge and a gVisor network are free to hold the same prefix.
+     */
     @Nullable
-    private String checkOverlaps(@NonNull NetworkConfig config) {
-        var myV4 = new ArrayList<IPv4Network>();
-        var myV6 = new ArrayList<IPv6Network>();
-        for (var vlan : config.getVlans()) {
-            var net4 = vlan.getIpv4Network();
-            if (net4 != null) myV4.add(net4);
-            for (var cidr : vlan.getIpv4Secondary()) {
-                try {
-                    myV4.add(IPv4Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
-            var net6 = vlan.getIpv6Network();
-            if (net6 != null) myV6.add(net6);
-            for (var cidr : vlan.getIpv6Secondary()) {
-                try {
-                    myV6.add(IPv6Network.parse(cidr));
-                } catch (Exception ignored) {
-                }
-            }
+    private String checkConflicts(@NonNull NetworkConfig config) {
+        var self = NetworkConflicts.findSelfOverlap(config);
+        if (self != null)
+            return getString(R.string.network_edit_error_self_overlap, self[0], self[1]);
+        var conflict = NetworkConflicts.find(config, store, editNetworkId);
+        if (conflict == null) return null;
+        switch (conflict.kind) {
+            case IPV4:
+                return getString(R.string.network_edit_error_ipv4_overlap,
+                    conflict.mine, conflict.otherName(), conflict.theirs);
+            case IPV6:
+                return getString(R.string.network_edit_error_ipv6_overlap,
+                    conflict.mine, conflict.otherName(), conflict.theirs);
+            default:
+                return getString(R.string.network_edit_error_uplink_taken,
+                    conflict.mine, conflict.otherName());
         }
-        // overlaps within this network
-        for (int i = 0; i < myV4.size(); i++)
-            for (int j = i + 1; j < myV4.size(); j++)
-                if (myV4.get(i).overlaps(myV4.get(j)))
-                    return getString(R.string.network_edit_error_self_overlap,
-                        myV4.get(i).toString(), myV4.get(j).toString());
-        for (int i = 0; i < myV6.size(); i++)
-            for (int j = i + 1; j < myV6.size(); j++)
-                if (myV6.get(i).overlaps(myV6.get(j)))
-                    return getString(R.string.network_edit_error_self_overlap,
-                        myV6.get(i).toString(), myV6.get(j).toString());
-        // overlaps against other networks
-        var result = new String[1];
-        store.forEach((id, other) -> {
-            if (result[0] != null || id.equals(editNetworkId)) return;
-            for (var vlan : other.getVlans()) {
-                var otherNet = vlan.getIpv4Network();
-                if (otherNet != null) {
-                    for (var mine : myV4) {
-                        if (!mine.overlaps(otherNet)) continue;
-                        result[0] = getString(R.string.network_edit_error_ipv4_overlap,
-                            mine.toString(), other.getName(), otherNet);
-                        return;
-                    }
-                }
-                var otherNet6 = vlan.getIpv6Network();
-                if (otherNet6 != null) {
-                    for (var mine : myV6) {
-                        if (!mine.overlaps(otherNet6)) continue;
-                        result[0] = getString(R.string.network_edit_error_ipv6_overlap,
-                            mine.toString(), other.getName(), otherNet6);
-                        return;
-                    }
-                }
-            }
-        });
-        return result[0];
     }
 }

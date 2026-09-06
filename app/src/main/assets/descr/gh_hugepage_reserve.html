@@ -1,0 +1,211 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="style.css">
+<title>GH-Hugepage-Reserve</title>
+</head>
+<body>
+
+<!-- The figure closes each language's "why" section, so it is written once per
+     language block. Keep the three SVG copies identical; only the caption differs.
+     The circled numbers in the drawing are the caption list's numbers. -->
+
+<div class="i18n" data-lang="en">
+    <section>
+        <h2>Why it's needed</h2>
+        <p>A Gunyah VM's memory has to be supplied as 2MB huge pages — each one a single contiguous block. The system, though, normally hands out memory in 4KB small pages, many of which can never be moved once placed.</p>
+        <p>The longer the phone runs, the more those small pages scatter, and the fewer places remain where a full 2MB block can still be assembled. By the time a VM boots there are often not enough huge pages left, and it fails with Out of memory.</p>
+        <figure>
+            <svg viewBox="0 0 300 106" role="img">
+                <circle class="edge" cx="8" cy="13" r="7"/>
+                <text class="lbl" x="8" y="16.5" text-anchor="middle">1</text>
+                <rect class="free" x="20" y="4" width="280" height="18" rx="3"/>
+                <rect class="used" x="20" y="4" width="70" height="18"/>
+                <rect class="want" x="104" y="2" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="51" r="7"/>
+                <text class="lbl" x="8" y="54.5" text-anchor="middle">2</text>
+                <rect class="free" x="20" y="42" width="280" height="18" rx="3"/>
+                <g class="used">
+                    <rect x="20" y="42" width="28" height="18"/>
+                    <rect x="60" y="42" width="6" height="18"/>
+                    <rect x="96" y="42" width="6" height="18"/>
+                    <rect x="132" y="42" width="6" height="18"/>
+                    <rect x="168" y="42" width="6" height="18"/>
+                    <rect x="204" y="42" width="6" height="18"/>
+                    <rect x="240" y="42" width="6" height="18"/>
+                    <rect x="276" y="42" width="6" height="18"/>
+                </g>
+                <rect class="miss" x="104" y="40" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="89" r="7"/>
+                <text class="lbl" x="8" y="92.5" text-anchor="middle">3</text>
+                <rect class="free" x="20" y="80" width="280" height="18" rx="3"/>
+                <rect class="pool" x="104" y="80" width="56" height="18"/>
+                <g class="used">
+                    <rect x="20" y="80" width="42" height="18"/>
+                    <rect x="74" y="80" width="4" height="18"/>
+                    <rect x="88" y="80" width="4" height="18"/>
+                    <rect x="170" y="80" width="4" height="18"/>
+                    <rect x="196" y="80" width="4" height="18"/>
+                    <rect x="222" y="80" width="4" height="18"/>
+                    <rect x="248" y="80" width="4" height="18"/>
+                    <rect x="274" y="80" width="4" height="18"/>
+                </g>
+                <rect class="hold" x="104" y="78" width="56" height="22" rx="3"/>
+            </svg>
+            <figcaption>
+                The dashed frame is the same 2MB huge page in all three rows, and all three have the same amount of memory in use — only its layout differs.
+                <ol>
+                    <li>Fresh boot: what is in use sits packed at the left, so that stretch is whole. Blue: the VM gets its page.</li>
+                    <li>Later: only part of it is still packed, the rest has crumbled into slivers spread across everything. Orange: no 2MB fits anywhere.</li>
+                    <li>With the reserve: memory is just as broken up, but the reserve keeps that stretch whole. Green: the page was set aside before the crumbling started.</li>
+                </ol>
+                <span class="legend"><span><i class="sw-used"></i>in use</span><span><i class="sw-free"></i>free</span><span><i class="sw-pool"></i>reserve</span></span>
+            </figcaption>
+        </figure>
+    </section>
+    <section>
+        <h2>What it does</h2>
+        <p>Right after boot, while memory is still whole, it takes and holds a batch of 2MB huge pages — the amount is adjustable on the management screen. A booting VM is served straight from that reserve, and when the VM shuts down the pages are recovered into the pool for reuse.</p>
+    </section>
+    <section>
+        <h2>Note</h2>
+        <p>This module has to load very early in boot, before memory fragments, so it is installed separately as a Magisk / KernelSU / APatch module rather than being loaded by this app.</p>
+    </section>
+</div>
+
+<div class="i18n" data-lang="zh-CN">
+    <section>
+        <h2>原因</h2>
+        <p>Gunyah VM 的内存必须以 2MB 的大页来供应，每一个都是一整块连续的内存。但系统平常是以 4KB 的小页在分配内存，而且其中不少一旦放下就不能再搬动。</p>
+        <p>开机越久，这些小页越是四处散落，能凑出完整 2MB 的位置就越来越少；到 VM 要开机时，往往已经凑不齐足够的大页，只能失败并显示 Out of memory。</p>
+        <figure>
+            <svg viewBox="0 0 300 106" role="img">
+                <circle class="edge" cx="8" cy="13" r="7"/>
+                <text class="lbl" x="8" y="16.5" text-anchor="middle">1</text>
+                <rect class="free" x="20" y="4" width="280" height="18" rx="3"/>
+                <rect class="used" x="20" y="4" width="70" height="18"/>
+                <rect class="want" x="104" y="2" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="51" r="7"/>
+                <text class="lbl" x="8" y="54.5" text-anchor="middle">2</text>
+                <rect class="free" x="20" y="42" width="280" height="18" rx="3"/>
+                <g class="used">
+                    <rect x="20" y="42" width="28" height="18"/>
+                    <rect x="60" y="42" width="6" height="18"/>
+                    <rect x="96" y="42" width="6" height="18"/>
+                    <rect x="132" y="42" width="6" height="18"/>
+                    <rect x="168" y="42" width="6" height="18"/>
+                    <rect x="204" y="42" width="6" height="18"/>
+                    <rect x="240" y="42" width="6" height="18"/>
+                    <rect x="276" y="42" width="6" height="18"/>
+                </g>
+                <rect class="miss" x="104" y="40" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="89" r="7"/>
+                <text class="lbl" x="8" y="92.5" text-anchor="middle">3</text>
+                <rect class="free" x="20" y="80" width="280" height="18" rx="3"/>
+                <rect class="pool" x="104" y="80" width="56" height="18"/>
+                <g class="used">
+                    <rect x="20" y="80" width="42" height="18"/>
+                    <rect x="74" y="80" width="4" height="18"/>
+                    <rect x="88" y="80" width="4" height="18"/>
+                    <rect x="170" y="80" width="4" height="18"/>
+                    <rect x="196" y="80" width="4" height="18"/>
+                    <rect x="222" y="80" width="4" height="18"/>
+                    <rect x="248" y="80" width="4" height="18"/>
+                    <rect x="274" y="80" width="4" height="18"/>
+                </g>
+                <rect class="hold" x="104" y="78" width="56" height="22" rx="3"/>
+            </svg>
+            <figcaption>
+                虚线框在三行都是同一个 2MB 大页，三行的已使用总量也一样多，差别只在分布。
+                <ol>
+                    <li>刚开机：已使用的都挤在左边，这一段是完整的。蓝色：VM 要得到。</li>
+                    <li>用久了：只剩一部分还集中，其余碎成细条散落各处。橙色：哪里都塞不下 2MB。</li>
+                    <li>有保留池：内存一样零碎，但保留池把这一段整块留住。绿色：这个大页在碎掉之前就先留下来了。</li>
+                </ol>
+                <span class="legend"><span><i class="sw-used"></i>已使用</span><span><i class="sw-free"></i>空闲</span><span><i class="sw-pool"></i>保留池</span></span>
+            </figcaption>
+        </figure>
+    </section>
+    <section>
+        <h2>功能</h2>
+        <p>趁刚开机、内存还完整的时候，先抢下一批 2MB 大页并保留起来（数量可在管理页调整）。VM 开机时直接从保留池供应；VM 关机归还后，页面回收回池中，重复使用。</p>
+    </section>
+    <section>
+        <h2>备注</h2>
+        <p>这个模块必须在开机很早期就加载（否则内存已经碎了），所以以 Magisk / KernelSU / APatch 模块的形式另外安装，而不是由本 App 加载。</p>
+    </section>
+</div>
+
+<div class="i18n" data-lang="zh-TW">
+    <section>
+        <h2>原因</h2>
+        <p>Gunyah VM 的記憶體必須以 2MB 的大頁來供應，每一個都是一整塊連續的記憶體。但系統平常是以 4KB 的小頁在配置記憶體，而且其中不少一旦放下就不能再搬動。</p>
+        <p>開機越久，這些小頁越是四處散落，能湊出完整 2MB 的位置就越來越少；到 VM 要開機時，往往已經湊不齊足夠的大頁，只能失敗並顯示 Out of memory。</p>
+        <figure>
+            <svg viewBox="0 0 300 106" role="img">
+                <circle class="edge" cx="8" cy="13" r="7"/>
+                <text class="lbl" x="8" y="16.5" text-anchor="middle">1</text>
+                <rect class="free" x="20" y="4" width="280" height="18" rx="3"/>
+                <rect class="used" x="20" y="4" width="70" height="18"/>
+                <rect class="want" x="104" y="2" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="51" r="7"/>
+                <text class="lbl" x="8" y="54.5" text-anchor="middle">2</text>
+                <rect class="free" x="20" y="42" width="280" height="18" rx="3"/>
+                <g class="used">
+                    <rect x="20" y="42" width="28" height="18"/>
+                    <rect x="60" y="42" width="6" height="18"/>
+                    <rect x="96" y="42" width="6" height="18"/>
+                    <rect x="132" y="42" width="6" height="18"/>
+                    <rect x="168" y="42" width="6" height="18"/>
+                    <rect x="204" y="42" width="6" height="18"/>
+                    <rect x="240" y="42" width="6" height="18"/>
+                    <rect x="276" y="42" width="6" height="18"/>
+                </g>
+                <rect class="miss" x="104" y="40" width="56" height="22" rx="3"/>
+
+                <circle class="edge" cx="8" cy="89" r="7"/>
+                <text class="lbl" x="8" y="92.5" text-anchor="middle">3</text>
+                <rect class="free" x="20" y="80" width="280" height="18" rx="3"/>
+                <rect class="pool" x="104" y="80" width="56" height="18"/>
+                <g class="used">
+                    <rect x="20" y="80" width="42" height="18"/>
+                    <rect x="74" y="80" width="4" height="18"/>
+                    <rect x="88" y="80" width="4" height="18"/>
+                    <rect x="170" y="80" width="4" height="18"/>
+                    <rect x="196" y="80" width="4" height="18"/>
+                    <rect x="222" y="80" width="4" height="18"/>
+                    <rect x="248" y="80" width="4" height="18"/>
+                    <rect x="274" y="80" width="4" height="18"/>
+                </g>
+                <rect class="hold" x="104" y="78" width="56" height="22" rx="3"/>
+            </svg>
+            <figcaption>
+                虛線框在三行都是同一個 2MB 大頁，三行的已使用總量也一樣多，差別只在分布。
+                <ol>
+                    <li>剛開機：已使用的都擠在左邊，這一段是完整的。藍色：VM 要得到。</li>
+                    <li>用久了：只剩一部分還集中，其餘碎成細條散落各處。橘色：哪裡都塞不下 2MB。</li>
+                    <li>有保留池：記憶體一樣零碎，但保留池把這一段整塊留住。綠色：這個大頁在碎掉之前就先留下來了。</li>
+                </ol>
+                <span class="legend"><span><i class="sw-used"></i>已使用</span><span><i class="sw-free"></i>空閒</span><span><i class="sw-pool"></i>保留池</span></span>
+            </figcaption>
+        </figure>
+    </section>
+    <section>
+        <h2>功能</h2>
+        <p>趁剛開機、記憶體還完整的時候，先搶下一批 2MB 大頁並保留起來（數量可在管理頁調整）。VM 開機時直接從保留池供應；VM 關機歸還後，頁面回收回池中，重複使用。</p>
+    </section>
+    <section>
+        <h2>備註</h2>
+        <p>這個模組必須在開機很早期就載入（否則記憶體已經碎了），所以以 Magisk / KernelSU / APatch 模組的形式另外安裝，而不是由本 App 載入。</p>
+    </section>
+</div>
+
+</body>
+</html>

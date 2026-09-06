@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.pkg.exports;
 
 import static android.view.View.GONE;
@@ -8,6 +11,7 @@ import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
+import static cn.classfun.droidvm.lib.utils.StringUtils.safeFileName;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.annotation.SuppressLint;
@@ -40,17 +44,24 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.archive.Compression;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.pkg.DiskChainPlan;
 import cn.classfun.droidvm.lib.pkg.DiskRef;
 import cn.classfun.droidvm.lib.pkg.Phase;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.lib.utils.ShareUtils;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
@@ -82,6 +93,12 @@ public final class VMPkgExportActivity extends AppCompatActivity
     private Compression compression = PackageConstants.DEFAULT_COMPRESSION;
     private long volumeSize = 0;
     private VMPkgExportDiskAdapter adapter;
+    // What each listed disk drags in behind it: the backing images the package has to carry
+    // too, resolved off the UI thread because every hop is a qemu-img call. Keyed by VM disk
+    // slot; a slot whose chain could not be walked lands in chainErrors instead.
+    private final Map<Integer, List<String>> diskChains = new HashMap<>();
+    private final Map<String, Long> chainSizes = new HashMap<>();
+    private final Map<Integer, String> chainErrors = new HashMap<>();
     private String pendingTaskId = null;
     private String path = null;
     private int exportVolumeIndex = 0;
@@ -213,16 +230,73 @@ public final class VMPkgExportActivity extends AppCompatActivity
         adapter.notifyDataSetChanged();
         tvNoDisks.setVisibility(adapter.disks.isEmpty() ? VISIBLE : GONE);
         updateDiskSummary();
+        scanChains();
+    }
+
+    /**
+     * Resolve each listed disk's backing chain in the background. The package carries those
+     * files too, so without them the summary understates a chained VM by the whole size of its
+     * base images - and that number is what the user sizes volumes and free space against.
+     */
+    private void scanChains() {
+        var refs = new ArrayList<>(adapter.disks);
+        runOnPool(() -> {
+            var chains = new HashMap<Integer, List<String>>();
+            var sizes = new HashMap<String, Long>();
+            var errors = new HashMap<Integer, String>();
+            for (var ref : refs) {
+                try {
+                    var parents = new ArrayList<String>();
+                    for (var m : DiskChainPlan.build(List.of(ref), ImageUtils::backingOf)) {
+                        if (m.path.equals(ref.path)) continue;
+                        parents.add(m.path);
+                        sizes.put(m.path, new File(m.path).length());
+                    }
+                    chains.put(ref.index, parents);
+                } catch (Exception e) {
+                    var msg = e.getMessage();
+                    errors.put(ref.index, msg == null ? e.toString() : msg);
+                }
+            }
+            mainHandler.post(() -> applyChains(chains, sizes, errors));
+        });
+    }
+
+    private void applyChains(
+        @NonNull Map<Integer, List<String>> chains,
+        @NonNull Map<String, Long> sizes,
+        @NonNull Map<Integer, String> errors
+    ) {
+        diskChains.clear();
+        diskChains.putAll(chains);
+        chainSizes.clear();
+        chainSizes.putAll(sizes);
+        chainErrors.clear();
+        chainErrors.putAll(errors);
+        var counts = new HashMap<Integer, Integer>();
+        for (var entry : chains.entrySet())
+            counts.put(entry.getKey(), entry.getValue().size());
+        adapter.setChains(counts, errors);
+        updateDiskSummary();
     }
 
     private void updateDiskSummary() {
         int selectedCount = 0;
         long totalSize = 0;
+        // A base image shared by two selected disks ships once, so count paths, not disks.
+        var counted = new HashSet<String>();
         for (var disk : adapter.disks) {
             if (!adapter.selected.contains(disk.index)) continue;
             selectedCount++;
-            if (disk.path != null && !disk.path.isEmpty())
+            if (disk.path != null && !disk.path.isEmpty() && counted.add(disk.path))
                 totalSize += new File(disk.path).length();
+            var parents = diskChains.get(disk.index);
+            if (parents == null) continue;
+            for (var parent : parents) {
+                if (!counted.add(parent)) continue;
+                var size = chainSizes.get(parent);
+                totalSize += size == null ? 0 : size;
+            }
         }
         tvDiskSummary.setText(getString(
             R.string.vmpkg_export_disk_summary,
@@ -281,15 +355,7 @@ public final class VMPkgExportActivity extends AppCompatActivity
     }
 
     private void launchCreateDocument() {
-        var base = config.getName();
-        var sb = new StringBuilder();
-        for (int i = 0; i < base.length(); i++) {
-            char ch = base.charAt(i);
-            if ("\\/:*?\"<>|".indexOf(ch) >= 0 || ch < 0x20) ch = '_';
-            sb.append(ch);
-        }
-        if (sb.length() == 0) sb.append("vm");
-        var name = sb.toString();
+        var name = safeFileName(config.getName(), "vm");
         var ext = fmt(".%s", EXTENSION);
         if (!name.endsWith(ext)) name += ext;
         createDocLauncher.launch(name);
@@ -303,6 +369,13 @@ public final class VMPkgExportActivity extends AppCompatActivity
                     R.string.vmpkg_export_disk_missing,
                     disk.path == null ? "" : disk.path
                 ));
+                return false;
+            }
+            // A chain we could not walk is a package that would import unbootable. The daemon
+            // refuses it as well; catching it here costs the user nothing but a toast.
+            var chainError = chainErrors.get(disk.index);
+            if (chainError != null) {
+                showToast(R.string.vmpkg_export_disk_chain_missing, chainError);
                 return false;
             }
         }

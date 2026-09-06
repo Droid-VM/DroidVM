@@ -33,3 +33,9 @@ jobs:
 
       - name: Use fmt() instead of string concatenation
         run: python3 scripts/ci/check_string_concat.py
+
+      - name: Icons are vector drawables
+        run: python3 scripts/ci/check_vector_icons.py
+
+      - name: No signature over the parameter limit
+        run: python3 scripts/ci/check_arity.py

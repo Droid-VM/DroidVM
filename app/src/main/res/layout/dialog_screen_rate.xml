@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     The rate dropdown's last entry. One number, bounded by what the screen this belongs to
+     accepts: a mode's refresh rate and a framebuffer's poll rate have different ceilings, so the
+     hint and the bounds are set by ScreenBindingRow rather than here.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_custom_rate"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/create_vm_display_refresh_rate">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_rate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="number"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

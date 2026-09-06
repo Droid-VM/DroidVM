@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.pkg.imports;
 
 import static android.view.View.GONE;
@@ -19,7 +22,10 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.storage.StorageManager;
+import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -28,6 +34,7 @@ import androidx.activity.result.contract.ActivityResultContracts.OpenDocument;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.compose.ui.platform.ComposeView;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -38,16 +45,21 @@ import com.google.android.material.floatingactionbutton.ExtendedFloatingActionBu
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.text.DateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.pkg.NetworkImportPlan;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageInput;
 import cn.classfun.droidvm.lib.pkg.PackageManifest;
@@ -59,13 +71,14 @@ import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.ui.markdown.MarkdownRender;
 import cn.classfun.droidvm.ui.vm.info.VMInfoActivity;
 import cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer;
-import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class VMPkgImportActivity extends AppCompatActivity
     implements DaemonConnection.EventListener {
+    private static final String TAG = "VMPkgImport";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final String defaultPath = pathJoin(externalPath(), "DroidVM");
     private CollapsingToolbarLayout collapsingToolbar;
@@ -80,9 +93,10 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private TextView tvDiskSummary;
     private TextInputRowWidget inputTarget;
     private CollapsibleContainer ccNetworks;
+    private CollapsibleContainer ccNotes;
+    private ComposeView notesPreview;
     private RecyclerView containerDisks;
-    private RecyclerView containerNetworks;
-    private ChooseRowWidget chooseNetworkMode;
+    private LinearLayout containerNetworks;
     private TextView tvStatus;
     private TextView tvFile;
     private TextView tvProgressDetail;
@@ -93,11 +107,12 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private String masterRealPath;
     private PackageManifest preview;
     private VMPkgImportDiskAdapter diskAdapter;
-    private VMPkgImportNetworkAdapter networkAdapter;
+    private final List<VMPkgImportNetworkBinder> networkBinders = new ArrayList<>();
+    /** Loaded when a package is previewed; what the cards check themselves against. */
+    private NetworkStore networkStore;
     private String pendingTaskId = null;
     private int importVolumeTotal = 0;
     private boolean importing = false;
-    private NetworkImportMode networkMode = NetworkImportMode.AUTO;
     private final ActivityResultLauncher<String[]> openDocLauncher =
         registerForActivityResult(new OpenDocument(), this::onDocPicked);
 
@@ -117,9 +132,10 @@ public final class VMPkgImportActivity extends AppCompatActivity
         tvDiskSummary = findViewById(R.id.tv_disk_summary);
         inputTarget = findViewById(R.id.input_target);
         ccNetworks = findViewById(R.id.cc_networks);
+        ccNotes = findViewById(R.id.cc_notes);
+        notesPreview = findViewById(R.id.notes_preview);
         containerDisks = findViewById(R.id.container_disks);
         containerNetworks = findViewById(R.id.container_networks);
-        chooseNetworkMode = findViewById(R.id.choose_network_mode);
         tvStatus = findViewById(R.id.tv_status);
         tvFile = findViewById(R.id.tv_file);
         tvProgressDetail = findViewById(R.id.tv_progress_detail);
@@ -134,15 +150,9 @@ public final class VMPkgImportActivity extends AppCompatActivity
         });
         btnImport.setOnClickListener(v -> doImport());
         diskAdapter = new VMPkgImportDiskAdapter();
-        networkAdapter = new VMPkgImportNetworkAdapter();
         containerDisks.setLayoutManager(new LinearLayoutManager(this));
         containerDisks.setAdapter(diskAdapter);
-        containerNetworks.setLayoutManager(new LinearLayoutManager(this));
-        containerNetworks.setAdapter(networkAdapter);
         inputTarget.setText(defaultPath);
-        chooseNetworkMode.configure(NetworkImportMode.class, NetworkImportMode.AUTO);
-        chooseNetworkMode.setOnValueChangedListener(() ->
-            networkMode = chooseNetworkMode.getSelectedItem());
         var filter = new String[]{PackageConstants.MIME, "*/*"};
         btnPick.setOnClickListener(v -> {
             if (!importing) openDocLauncher.launch(filter);
@@ -249,23 +259,24 @@ public final class VMPkgImportActivity extends AppCompatActivity
         );
         tvPackageMeta.setText(meta.trim());
         long totalSize = 0;
+        int diskCount = 0;
         diskAdapter.disks.clear();
         for (var d : preview.disks) {
             totalSize += d.size;
+            // Backing images take up room like anything else, but they are not disks the VM
+            // gets: counting them as disks would say this package holds more than it does.
+            if (d.attached) diskCount++;
             diskAdapter.disks.add(d);
         }
         diskAdapter.notifyDataSetChanged();
-        networkAdapter.networks.clear();
-        networkAdapter.networks.addAll(preview.networks);
-        networkAdapter.notifyDataSetChanged();
-        var hasNetworks = !preview.networks.isEmpty();
-        ccNetworks.setVisibility(hasNetworks ? VISIBLE : GONE);
-        chooseNetworkMode.setVisibility(hasNetworks ? VISIBLE : GONE);
+        showNotes();
+        buildNetworkCards();
+        ccNetworks.setVisibility(networkBinders.isEmpty() ? GONE : VISIBLE);
         if (inputTarget.getText().trim().isEmpty())
             inputTarget.setText(defaultPath);
         tvDiskSummary.setText(getString(
             R.string.vmpkg_import_disk_summary,
-            preview.disks.size(),
+            diskCount,
             formatSize(totalSize)
         ));
         tvStatus.setText("");
@@ -273,6 +284,74 @@ public final class VMPkgImportActivity extends AppCompatActivity
         groupSummary.setVisibility(VISIBLE);
         btnImport.setVisibility(VISIBLE);
         btnImport.setEnabled(true);
+    }
+
+    /**
+     * The notes the packaged VM carries, rendered before anything is imported: they are where an
+     * author says what the VM is and what to do with it, which is exactly what someone looking at
+     * a package they were handed wants to read first.
+     */
+    private void showNotes() {
+        var notes = preview == null ? "" : preview.vm.getNotes();
+        if (notes.trim().isEmpty()) {
+            ccNotes.setVisibility(GONE);
+            return;
+        }
+        ccNotes.setVisibility(VISIBLE);
+        MarkdownRender.bind(notesPreview, notes);
+    }
+
+    /**
+     * One card per network the package carries, each deciding for itself. A package holds one
+     * network per distinct one its VM's adapters were on, and they need not be alike -- an L2
+     * bridge and a routed gVisor network can travel together -- so what can be done with one of
+     * them says nothing about the next.
+     */
+    private void buildNetworkCards() {
+        networkBinders.clear();
+        containerNetworks.removeAllViews();
+        if (preview == null) return;
+        networkStore = new NetworkStore();
+        networkStore.load(this);
+        var plan = new NetworkImportPlan(networkStore);
+        var inflater = LayoutInflater.from(this);
+        for (var packaged : preview.networks) {
+            var view = inflater.inflate(
+                R.layout.item_vmpkg_import_network, containerNetworks, false);
+            var binder = new VMPkgImportNetworkBinder(view, packaged, this::refreshCreatePreviews);
+            binder.bind(plan);
+            networkBinders.add(binder);
+            containerNetworks.addView(view);
+        }
+        refreshCreatePreviews();
+    }
+
+    /**
+     * Settles the name and bridge name each network being created would end up with, in card
+     * order and against one plan, so that two packaged networks that want the same name are not
+     * both shown taking it. Redone whenever a card changes its mind: a name freed by a card that
+     * switched to joining is a name the next one can have.
+     */
+    private void refreshCreatePreviews() {
+        if (networkStore == null) return;
+        var plan = new NetworkImportPlan(networkStore);
+        for (var binder : networkBinders)
+            binder.setPrepared(binder.mode() == NetworkImportMode.CREATE
+                ? plan.prepareCreate(binder.packaged) : null);
+    }
+
+    /** What the cards decided, as the import request carries it. */
+    @NonNull
+    private JSONArray buildNetworkPlan() {
+        var arr = new JSONArray();
+        for (var binder : networkBinders) {
+            try {
+                arr.put(binder.toEntry().toJson());
+            } catch (JSONException e) {
+                Log.w(TAG, "Failed to encode a network import decision", e);
+            }
+        }
+        return arr;
     }
 
     private void doImport() {
@@ -303,7 +382,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
         conn.buildRequest("vm_import")
             .put("src_path", srcPath)
             .put("target_dir", targetFolder().getPath())
-            .put("network_mode", networkMode.id)
+            .put("network_plan", buildNetworkPlan())
             .onResponse(resp -> {
                 var tid = resp.optString("task_id", "");
                 if (!tid.isEmpty()) pendingTaskId = tid;
@@ -414,24 +493,28 @@ public final class VMPkgImportActivity extends AppCompatActivity
             else vmStore.update(vm);
             var diskStore = new DiskStore();
             diskStore.load(this);
+            var pathByArchive = new HashMap<String, String>();
             for (int i = 0; i < disks.length(); i++) {
                 var diskJson = disks.optJSONObject(i);
                 if (diskJson == null) continue;
                 var path = diskJson.optString("path");
                 var file = new File(path);
-                var parent = file.getParent();
+                var folder = file.getParent();
                 var name = file.getName();
                 if (path.isEmpty()) {
                     name = diskJson.optString("name", "");
-                    parent = diskJson.optString("folder", "");
-                    path = pathJoin(parent, name);
+                    folder = diskJson.optString("folder", "");
+                    path = pathJoin(folder, name);
                 }
+                var archive = diskJson.optString("archive_path", "");
+                if (!archive.isEmpty() && !path.isEmpty()) pathByArchive.put(archive, path);
                 if (!path.isEmpty() && diskStore.findByPath(path) != null) continue;
                 var disk = new DiskConfig();
                 disk.setName(name);
-                disk.item.set("folder", parent == null ? "" : parent);
+                disk.item.set("folder", folder == null ? "" : folder);
                 diskStore.add(disk);
             }
+            linkImportedChains(diskStore, disks, pathByArchive);
             var networkStore = new NetworkStore();
             networkStore.load(this);
             for (int i = 0; i < networks.length(); i++) {
@@ -459,6 +542,31 @@ public final class VMPkgImportActivity extends AppCompatActivity
         }
     }
 
+    /**
+     * Record the overlay-to-base links the package described, so imported disks show as one
+     * tree in branch management right away rather than waiting for the header walk to
+     * rediscover them the next time something opens them.
+     */
+    private void linkImportedChains(
+        @NonNull DiskStore store,
+        @NonNull JSONArray disks,
+        @NonNull HashMap<String, String> pathByArchive
+    ) {
+        for (int i = 0; i < disks.length(); i++) {
+            var diskJson = disks.optJSONObject(i);
+            if (diskJson == null) continue;
+            var backing = diskJson.optString("backing_archive", "");
+            if (backing.isEmpty()) continue;
+            var childPath = diskJson.optString("path", "");
+            var parentPath = pathByArchive.get(backing);
+            if (childPath.isEmpty() || parentPath == null) continue;
+            var child = store.findByPath(childPath);
+            var parent = store.findByPath(parentPath);
+            if (child == null || parent == null) continue;
+            child.setParentId(parent.getId());
+        }
+    }
+
     private void onImportFailure(@Nullable String msg) {
         var message = msg == null ? "Unknown error" : msg;
         mainHandler.post(() -> {
@@ -479,7 +587,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
         this.importing = importing;
         btnPick.setEnabled(!importing);
         btnImport.setEnabled(!importing && preview != null);
-        chooseNetworkMode.setEnabled(!importing);
+        for (var binder : networkBinders) binder.setEnabled(!importing);
         pbRun.setVisibility(importing ? VISIBLE : GONE);
         pbRun.setIndeterminate(importing);
     }

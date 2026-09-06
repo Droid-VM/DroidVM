@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.diag;
 
 import android.os.Handler;
@@ -62,6 +65,10 @@ public final class LogHelper implements DaemonConnection.EventListener {
         var event = data.optString("event");
         if (event.equals("exited")) {
             vmLogContexts.remove(vmId);
+            // Dropping the context re-arms every once-handler for this vmId's next boot, so
+            // whatever they accumulated under it has to go at the same moment or the next boot
+            // inherits it -- the handlers are singletons, only their state is per VM.
+            for (var handler : handlers) handler.onLogContextReset(vmId);
             return;
         }
         var logs = vmLogContexts.computeIfAbsent(vmId, k -> new LogContext(vmId));
@@ -73,6 +80,9 @@ public final class LogHelper implements DaemonConnection.EventListener {
         buff.adds(text.getBytes(StandardCharsets.UTF_8));
         var full = new String(buff.peekAll(), StandardCharsets.UTF_8);
         for (var handler : handlers) {
+            // Before the disabled check, so a handler that reports what the log said keeps
+            // reading it after it has fired; match() below may rely on having been fed first.
+            handler.observe(vmId, stream, full);
             if (logs.disabled.contains(handler)) continue;
             if (!handler.match(vmId, stream, full)) continue;
             Runnable show = () -> vmEventHandler.queueActivityTask(act -> handler.show(act, vmId, vmName));

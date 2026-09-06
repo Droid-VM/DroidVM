@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit;
 
 import static java.util.Objects.requireNonNull;
@@ -27,11 +30,14 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
+import cn.classfun.droidvm.lib.ui.CameraPermission;
+import cn.classfun.droidvm.lib.ui.RecordAudioPermission;
 import cn.classfun.droidvm.lib.ui.SwipeableTabActivity;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 
 public final class VMEditActivity extends SwipeableTabActivity {
     private static final String TAG = "VMEditActivity";
@@ -47,6 +53,10 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public Consumer<Uri> currentPicker = null;
     public boolean editMode = false;
     public UUID editVMId = null;
+    private RecordAudioPermission recordAudioPermission;
+    private CameraPermission cameraPermission;
+    /** A microphone permission choice has already been offered during this edit session. */
+    private boolean micPermissionHandled = false;
     private final Map<String, Object> sharedData = new HashMap<>();
 
 
@@ -57,6 +67,25 @@ public final class VMEditActivity extends SwipeableTabActivity {
     @SuppressWarnings("unchecked")
     public <T> T get(@NonNull String key, T def) {
         return (T) sharedData.getOrDefault(key, def);
+    }
+
+    /** Host mic permission gate, shared with the peripheral tab. */
+    @NonNull
+    public RecordAudioPermission getRecordAudioPermission() {
+        return recordAudioPermission;
+    }
+
+    /** Shares one microphone permission prompt between adding a device and saving the VM. */
+    public void ensureRecordAudioThen(@NonNull Runnable action) {
+        micPermissionHandled = true;
+        recordAudioPermission.ensureThen(action);
+    }
+
+    /** Host camera permission gate, shared with the peripheral tab. Unlike the mic one, a
+     *  refusal here stops the peripheral being added -- see {@link CameraPermission}. */
+    @NonNull
+    public CameraPermission getCameraPermission() {
+        return cameraPermission;
     }
 
     private void pickerResult(Uri uri) {
@@ -75,6 +104,10 @@ public final class VMEditActivity extends SwipeableTabActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_vm_edit);
+        // Registered here, ahead of the tabs: an ActivityResultLauncher can only be created
+        // before the activity reaches STARTED.
+        recordAudioPermission = new RecordAudioPermission(this);
+        cameraPermission = new CameraPermission(this);
         tabs = createTabInstances();
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         tabLayout = findViewById(R.id.tab_layout);
@@ -159,7 +192,14 @@ public final class VMEditActivity extends SwipeableTabActivity {
         fab.setOnClickListener(v -> doSave());
         setupTabs();
         tabs.forEach(VMEditBaseTab::initValue);
+        // Both paths load a config. Without this a new VM showed whatever android:text the
+        // layout happened to carry, so every numeric field had two defaults -- the XML one the
+        // user actually got, and the optLong fallback that only applied when editing an older
+        // VM missing that key. They had already drifted: the DRM pool offered 1024 in the form
+        // while the code said 8, and nothing could notice, because each is only reachable from
+        // a path the other never takes.
         if (editMode) loadExistingConfig();
+        else tabs.forEach(tab -> tab.loadConfig(VMConfig.createWithCustomizeDefaults(this)));
     }
 
     private void loadExistingConfig() {
@@ -182,6 +222,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     private void doSave() {
+        var peripheralTab = getTab(VMEditTab.TAB_PERIPHERAL);
+        if (!micPermissionHandled
+            && peripheralTab instanceof VMEditPeripheralTab
+            && ((VMEditPeripheralTab) peripheralTab).hasMicrophone()) {
+            ensureRecordAudioThen(this::doSave);
+            return;
+        }
         // Commit any field still being edited: NIC MAC/offset/forward inputs
         // write back to the model on focus loss, so flush the focused view
         // before reading the tabs' config.
@@ -220,7 +267,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
                 return;
             }
         } else {
-            config = new VMConfig();
+            config = VMConfig.createWithCustomizeDefaults(this);
         }
         for (var tab : tabs) {
             try {

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.server;
 
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
@@ -17,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
+import cn.classfun.droidvm.daemon.vm.VMInstance;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
 import cn.classfun.droidvm.daemon.vm.pkg.VMExportTask;
 import cn.classfun.droidvm.daemon.vm.pkg.VMImportTask;
@@ -30,14 +34,25 @@ public final class ServerContext {
     private final Map<UUID, VMExportTask> exportTasks = new ConcurrentHashMap<>();
     private final Map<UUID, VMImportTask> importTasks = new ConcurrentHashMap<>();
     public DataItem appConfig = DataItem.newObject();
+    /**
+     * Where VM events go. Here rather than on the store because loading vms.json builds every
+     * VMInstance against a throwaway store (see VMInstanceStore.createEmpty) and the callback is
+     * installed after the load -- so a store-owned field reached none of the VMs that existed at
+     * startup, which is all of them, and every state change, reboot and exit was fired into a
+     * null. The context is the one object both stores share, so putting it here cannot go stale.
+     */
+    public volatile VMInstance.VMEventCallback vmEventCallback = null;
 
     public ServerContext() {
         Log.i(TAG, "loading config files...");
         var filesDir = pathJoin(DATA_DIR, "files");
-        vms.load(new File(filesDir, vms.getFileName()));
+        // Networks first, and wire the store in BEFORE loading VMs: loading builds each VMInstance
+        // against a throwaway store (see VMInstanceStore.createEmpty), so the link has to exist by
+        // then or the instances never see it.
         networks.load(new File(filesDir, networks.getFileName()));
-        Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         vms.setNetworkStore(networks);
+        vms.load(new File(filesDir, vms.getFileName()));
+        Log.i(TAG, fmt("config files loaded: %d VMs, %d networks", vms.size(), networks.size()));
         // Strays survive a daemon crash or a forced (SIGKILL) takeover: the
         // children are orphaned, not killed. Reap any left over from a previous
         // daemon before we start fresh and auto-up. VM backends are matched by
@@ -58,11 +73,10 @@ public final class ServerContext {
         } catch (Exception e) {
             Log.w(TAG, "Failed to auto up networks", e);
         }
-        try {
-            vms.autoUp();
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to auto up VMs", e);
-        }
+        // VMs are NOT started here. Their sweep waits on the huge-page reserve -- seconds a VM, and
+        // the pkill above is what makes the reserve short -- and everything the daemon is for comes
+        // after this constructor: the socket, the signal handlers, the VM event callback. It runs
+        // from Server.run() instead, behind all three. See VMInstanceStore.autoUpAsync.
         try {
             routerWatcher.start();
         } catch (Exception e) {

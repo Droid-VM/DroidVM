@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.pkg.exports;
 
 import static android.view.View.GONE;
@@ -16,8 +19,10 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.google.android.material.color.MaterialColors;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import cn.classfun.droidvm.R;
@@ -27,8 +32,24 @@ import cn.classfun.droidvm.ui.main.base.BaseViewHolder;
 public final class VMPkgExportDiskAdapter extends RecyclerView.Adapter<BaseViewHolder> {
     public final List<DiskRef> disks = new ArrayList<>();
     public final Set<Integer> selected = new HashSet<>();
+    // How many backing images each disk brings with it, and the disks whose chain could not be
+    // read at all - both keyed by VM disk slot, both filled in once the background walk lands.
+    private final Map<Integer, Integer> backingCounts = new HashMap<>();
+    private final Map<Integer, String> chainErrors = new HashMap<>();
     private boolean enabled = true;
     private Runnable onSelectionChanged;
+
+    @SuppressLint("NotifyDataSetChanged")
+    public void setChains(
+        @NonNull Map<Integer, Integer> counts,
+        @NonNull Map<Integer, String> errors
+    ) {
+        backingCounts.clear();
+        backingCounts.putAll(counts);
+        chainErrors.clear();
+        chainErrors.putAll(errors);
+        notifyDataSetChanged();
+    }
 
     public void setOnSelectionChanged(@NonNull Runnable onSelectionChanged) {
         this.onSelectionChanged = onSelectionChanged;
@@ -57,7 +78,7 @@ public final class VMPkgExportDiskAdapter extends RecyclerView.Adapter<BaseViewH
         h.itemName.setText(basename(disk.path));
         h.itemInfo.setText(dirname(disk.path));
         h.itemInfo.setVisibility(VISIBLE);
-        h.itemState.setVisibility(GONE);
+        bindChainState(h, disk.index);
         h.itemAction.setVisibility(GONE);
         h.itemIcon.setVisibility(VISIBLE);
         var icon = disk.isCDROM() ? R.drawable.ic_cdrom : R.drawable.ic_nav_disk;
@@ -69,6 +90,30 @@ public final class VMPkgExportDiskAdapter extends RecyclerView.Adapter<BaseViewH
         h.itemCard.setEnabled(enabled);
         h.itemCard.setAlpha(enabled ? 1f : 0.64f);
         h.itemCard.setOnClickListener(enabled ? v -> toggleSelection(disk.index) : null);
+    }
+
+    /** Say what else rides along with this disk: its backing images, or that they are missing. */
+    private void bindChainState(@NonNull BaseViewHolder h, int index) {
+        var ctx = h.itemView.getContext();
+        var broken = chainErrors.get(index);
+        if (broken != null) {
+            h.itemState.setVisibility(VISIBLE);
+            h.itemState.setText(R.string.vmpkg_export_disk_chain_broken);
+            h.itemState.setTextColor(MaterialColors.getColor(
+                h.itemState, androidx.appcompat.R.attr.colorError
+            ));
+            return;
+        }
+        var count = backingCounts.get(index);
+        if (count == null || count <= 0) {
+            h.itemState.setVisibility(GONE);
+            return;
+        }
+        h.itemState.setVisibility(VISIBLE);
+        h.itemState.setText(ctx.getString(R.string.vmpkg_export_disk_backing_count, count));
+        h.itemState.setTextColor(MaterialColors.getColor(
+            h.itemState, android.R.attr.textColorSecondary
+        ));
     }
 
     @SuppressLint("NotifyDataSetChanged")

@@ -56,6 +56,17 @@
     <string name="setup_extract_uptodate">\u2705 Prebuilt files are up to date.</string>
     <string name="setup_extract_fail">\u274C Failed to extract prebuilt files. Please retry.</string>
 
+    <string name="setup_network_title">Create a Network</string>
+    <string name="setup_network_desc">A VM has no connectivity until a network is attached to it. Pick one to create now; you can add or change networks later in the Networks tab.</string>
+    <string name="setup_network_opt_wifi">Wi-Fi pseudo-bridge</string>
+    <string name="setup_network_opt_linux">Linux bridge (IPv4 NAT + DHCP)</string>
+    <string name="setup_network_opt_gvisor">gVisor bridge (IPv4 + IPv6 NAT + DHCP)</string>
+    <string name="setup_network_info_wifi">Name: %1$s\nUplink: Wi-Fi, layer 2 pseudo-bridge\nAddresses: from your Wi-Fi router\nNAT: not used\nDHCP: served by your router</string>
+    <string name="setup_network_info_linux">Name: %1$s\nUplink: routed through the host\nIPv4: %2$s\nIPv6: %3$s (static, host side only)\nNAT: IPv4 enabled\nDHCP: IPv4 enabled</string>
+    <string name="setup_network_info_gvisor">Name: %1$s\nUplink: routed through the host, in userspace\nIPv4: %2$s\nIPv6: %3$s\nNAT: IPv4 and IPv6 enabled\nDHCP: IPv4, IPv6 and SLAAC enabled</string>
+    <string name="setup_network_no_subnet">No free subnet left</string>
+    <string name="setup_network_created">Network %1$s created</string>
+
     <string name="setup_done_title">Setup Complete</string>
     <string name="setup_done_desc">All checks and prepares passed.\nYou are ready to use DroidVM.</string>
 
@@ -104,6 +115,8 @@
     <string name="vm_edit">Edit</string>
     <string name="vm_delete">Delete</string>
     <string name="vm_delete_confirm">Are you sure you want to delete this virtual machine?</string>
+    <string name="vm_delete_writable_disks">Also delete attached writable disk files (%1$d)</string>
+    <string name="vm_delete_disks_result">Deleted %1$d disk file(s); kept %2$d attached by other VMs, %3$d that are bases of overlays, %4$d that could not be deleted.</string>
     <string name="vm_state_stopped">Stopped</string>
     <string name="vm_state_starting">Starting</string>
     <string name="vm_state_running">Running</string>
@@ -139,9 +152,12 @@
     <string name="vm_info_state_active">Process active</string>
     <string name="vm_info_console_not_found">No any console found</string>
     <string name="vm_info_console_text_select">Text Console %1$s</string>
+    <!-- Backend process stdio, not a guest console: "CrosVM stdio" / "QEMU stdio". -->
+    <string name="vm_info_console_stdio_select" translatable="false">%1$s stdio</string>
     <string name="vm_info_console_vnc_select">VNC Console</string>
     <string name="vm_info_console_vnc_ext_select">VNC on external Display</string>
     <string name="vm_info_console_native_select">Native Display</string>
+    <string name="vm_info_console_screen_select">%1$s \u2013 %2$s</string>
 
     <string name="vm_info_logs">Logs</string>
     <string name="vm_info_logs_no_logs">No logs available.</string>
@@ -173,10 +189,13 @@
     <string name="create_vm_error_name_duplicate">A VM with this name already exists</string>
     <string name="create_vm_error_save">Error while saving config</string>
     <string name="create_vm_error_invalid_number">Invalid number</string>
+    <string name="create_vm_error_invalid_environment_variable">Environment variables must use KEY=VALUE format</string>
+    <string name="create_vm_error_gpu_guest_prealloc_exceeds_pool">Guest preallocation cannot exceed the guest pool size</string>
+    <string name="create_vm_error_gpu_guest_dynamic_requires_room">Guest preallocation must be smaller than the guest pool when the step is enabled</string>
+    <string name="create_vm_error_gpu_guest_step_invalid">Guest step must be 0 or a power of two of at least 2 MB</string>
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
-    <string name="create_vm_error_native_display_vnc_cannot_enabled">Native display and VNC cannot be enabled at the same time.</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -196,13 +215,51 @@
     <string name="create_vm_prepare_lend_mthp_disabled">Disabled</string>
     <string name="create_vm_prepare_lend_mthp_single">Single (whole region)</string>
     <string name="create_vm_prepare_lend_mthp_chunked">Chunked (&#8804;256MiB)</string>
-    <string name="create_vm_protected_normal">Normal</string>
+    <string name="create_vm_protected_normal">Unprotected</string>
     <string name="create_vm_protected_protected">Protected</string>
     <string name="create_vm_protected_without_firmware">Protected without firmware</string>
+    <string name="create_vm_protected_pseudo_unprotected">Pseudo Unprotected</string>
     <string name="create_vm_category_extra_options">Extra Options</string>
     <string name="create_vm_extra_option_hint">Extra arguments (one per line)</string>
-    <string name="create_vm_category_gpu">Graphics Accelerator</string>
-    <string name="create_vm_gpu_enabled">Enable GPU</string>
+    <string name="create_vm_environment_variables_hint">Environment variables (KEY=VALUE, one per line)</string>
+
+    <string name="create_vm_category_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_cpu_affinity_title">vCPU Affinity</string>
+    <string name="create_vm_cpu_affinity">Bind vCPUs to host cores</string>
+    <string name="create_vm_cpu_affinity_vcpu_fmt">vCPU %d</string>
+    <string name="create_vm_cpu_affinity_vcpu_range_fmt">vCPU %s</string>
+    <string name="create_vm_cpu_affinity_unbound">Not bound</string>
+    <string name="create_vm_cpu_affinity_cores_fmt">%d cores</string>
+    <string name="create_vm_cpu_affinity_advanced">Advanced mode</string>
+    <string name="create_vm_cpu_affinity_simple_vcpus">vCPU cores</string>
+    <string name="create_vm_cpu_affinity_simple_empty">Check at least one host core.</string>
+    <string name="create_vm_cpu_affinity_discard_title">Leave advanced mode?</string>
+    <string name="create_vm_cpu_affinity_discard_message">Simple mode can only bind one vCPU to one host core of its own. What survives is %1$d vCPU on CPU %2$s; extra cores, unbound vCPUs and manual capacity/cluster values are discarded.</string>
+    <string name="create_vm_cpu_affinity_section_vcpus">vCPU to host cores</string>
+    <string name="create_vm_cpu_affinity_section_topology">Guest topology</string>
+    <string name="create_vm_cpu_topology_auto">Auto-derive Capacity &amp; Cluster</string>
+    <string name="create_vm_cpu_topology_unset">Not passed to the guest</string>
+    <string name="create_vm_cpu_capacity">Capacity</string>
+    <string name="create_vm_cpu_capacity_group_fmt">vCPU %1$s: %2$d</string>
+    <string name="create_vm_cpu_capacity_hint">e.g. 0=792,1=792,6=1024</string>
+    <string name="create_vm_cpu_cluster">Clusters</string>
+    <string name="create_vm_cpu_cluster_count_fmt">%d clusters</string>
+    <string name="create_vm_cpu_cluster_single">Single cluster (crosvm default)</string>
+    <string name="create_vm_cpu_clusters_hint">e.g. 0-5;6  (semicolon-separated)</string>
+    <string name="create_vm_cpu_affinity_big_only">Big cores</string>
+    <string name="create_vm_cpu_affinity_host_overlap">Core %s is shared with the GPU worker cpuset</string>
+    <string name="create_vm_gpu_cgroup">GPU Worker Cpuset</string>
+    <string name="create_vm_gpu_cgroup_path_hint">Cpuset path (e.g. /dev/cpuset/gpuworker)</string>
+    <string name="create_vm_gpu_cgroup_cpus">Cpuset cores</string>
+    <string name="create_vm_gpu_cgroup_cpus_summary_fmt">Cores: %s</string>
+    <string name="create_vm_gpu_cgroup_cpus_none">None selected</string>
+    <string name="create_vm_error_cpu_affinity_vcpu_oob">vCPU index out of range (must be &lt; CPU count)</string>
+    <string name="create_vm_error_cpu_affinity_host_oob">Host core %d not found on this device</string>
+    <string name="create_vm_error_cpu_capacity_invalid">Invalid capacity (expected vcpu=1..1024,&#8230;)</string>
+    <string name="create_vm_error_cpu_clusters_overlap">Cluster overlap at vCPU %s</string>
+    <string name="create_vm_error_gpu_cgroup_path">GPU cgroup path must be absolute</string>
+    <string name="create_vm_error_gpu_cgroup_cpus_empty">Select at least one core for the GPU worker</string>
+    <string name="create_vm_error_gpu_rt_prio_needs_cpuset">Real-time scheduling needs cpuset cores: unconfined, it can starve the phone.</string>
     <string name="create_vm_gpu_backend">Renderer</string>
     <string name="create_vm_gpu_backend_2d">2D (Software)</string>
     <string name="create_vm_gpu_backend_virglrenderer">VirGL</string>
@@ -212,20 +269,71 @@
     <string name="create_vm_gpu_api_egl">EGL</string>
     <string name="create_vm_gpu_api_opengles">OpenGL ES</string>
     <string name="create_vm_gpu_api_angle">ANGLE</string>
-    <string name="create_vm_category_display">Display</string>
-    <string name="create_vm_display_enabled">Enable Display</string>
-    <string name="create_vm_display_backend">Display Backend</string>
-    <string name="create_vm_display_backend_simplefb">SimpleFB</string>
-    <string name="create_vm_display_backend_virtio_gpu">Virtio-GPU</string>
+    <string name="create_vm_gpu_api_vulkan_system">Vulkan (System)</string>
+    <string name="create_vm_gpu_api_vulkan_turnip">Vulkan (Turnip)</string>
+    <string name="create_vm_gpu_api_drm2kgsl">DRM to KGSL</string>
+    <string name="create_vm_gpu_mode_opengl">OpenGL</string>
+    <string name="create_vm_gpu_mode_vulkan">Vulkan</string>
+    <string name="create_vm_gpu_mode_native">Native Context</string>
+    <string name="create_vm_gpu_provider_drm2kgsl">DRM to KGSL</string>
+    <string name="create_vm_gpu_mode">Graphics API</string>
+    <string name="create_vm_gpu_provider">Host driver</string>
+    <string name="create_vm_gpu_api_vulkan_panvk">Vulkan (PanVK)</string>
+    <string name="create_vm_display_blit_provider">GPU-blit provider</string>
+    <string name="create_vm_display_blit_off">Off (CPU copy)</string>
+    <string name="display_blit_system_missing_ext">The system Vulkan driver lacks extensions the GPU blit needs:\n  %1$s\nThe native display will fall back to a CPU copy.</string>
+    <string name="create_vm_gpu_udmabuf">udmabuf (guest-alloc)</string>
+    <string name="create_vm_gpu_rt_prio">Real-time scheduling</string>
+    <string name="create_vm_gpu_host_pool_mb">Command buffer pool size (MB)</string>
+    <string name="create_vm_gpu_drm2kgsl_pool_mb">Command buffer pool size (MB)</string>
+    <string name="create_vm_gpu_venus_pool_mb">Command buffer pool size (MB)</string>
+    <string name="create_vm_gpu_dynamic_vram">Dynamic vram</string>
+    <string name="create_vm_gpu_vram_quota_mb">Dynamic VRAM quota (MB)</string>
+    <string name="create_vm_gpu_vram_folio_threshold_kb">Host allocation hugepage threshold (KB)</string>
+    <string name="create_vm_gpu_pool_blob_max_kb">Blob routing threshold (KB)</string>
+    <string name="create_vm_gpu_guest_pool_mb">VRAM size (MB)</string>
+    <string name="create_vm_gpu_guest_prealloc_mb">Guest preallocation (MB)</string>
+    <string name="create_vm_gpu_guest_step_mb">Guest allocation step (MB)</string>
+    <string name="create_vm_gpu_guest_max_grants">Guest max grants (0 = unlimited)</string>
+    <string name="create_vm_category_vram">VRAM</string>
+    <string name="create_vm_category_screen_gpu0">Virtio-GPU</string>
+    <string name="create_vm_category_screen_simplefb">SimpleFB</string>
+    <string name="create_vm_category_renderer">Renderer</string>
+    <string name="create_vm_category_screen_display">Display settings</string>
+    <string name="create_vm_category_screen_export">Export settings</string>
+    <string name="create_vm_screen_gpu0">Virtio-GPU screen</string>
+    <string name="create_vm_screen_simplefb">SimpleFB screen</string>
+    <string name="create_vm_screen_enabled">Enable display device</string>
     <string name="create_vm_display_width">Width</string>
     <string name="create_vm_display_height">Height</string>
     <string name="create_vm_display_refresh_rate">Rate (Hz)</string>
+    <string name="create_vm_display_poll_hz">Poll (Hz)</string>
+    <string name="create_vm_display_resolution">Resolution</string>
+    <string name="create_vm_display_size_fmt">%1$d x %2$d</string>
+    <string name="create_vm_display_rate_fmt">%1$d Hz</string>
+    <string name="create_vm_display_custom">Custom...</string>
+    <string name="create_vm_display_custom_size_title">Custom resolution</string>
     <string name="create_vm_display_dpi_h">DPI Horizontal</string>
     <string name="create_vm_display_dpi_v">DPI Vertical</string>
-    <string name="create_vm_category_vnc">VNC Server</string>
-    <string name="create_vm_vnc_enabled">Enable VNC</string>
-    <string name="create_vm_native_display_enabled">Enable native display (virtio-gpu)</string>
+    <string name="create_vm_screen_exporter">Exporter</string>
+    <string name="create_vm_screen_exporter_none">Sink (discard)</string>
+    <string name="create_vm_screen_exporter_native">Native display</string>
+    <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_screen_transport">Transport pipeline</string>
+    <string name="create_vm_screen_transport_cpu">CPU Copy</string>
+    <string name="create_vm_screen_transport_gpu">GPU Copy</string>
+    <string name="create_vm_screen_transport_zero">Zero Copy</string>
+    <string name="create_vm_screen_transport_gpu_hw">GPU Copy (hardware encode)</string>
+    <string name="create_vm_option_not_implemented">not implemented</string>
+    <string name="create_vm_option_unavailable_reset">A stored option is not available in this build; that row was reset to its default.</string>
+    <string name="create_vm_screen_width_cpu_fallback">Transport pipeline will use CPU Copy at this width</string>
+    <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy imports the framebuffer as a linear dma-buf, and the driver takes one only when its row pitch is 64-byte aligned. SimpleFB\'s pitch is exactly width x 4 with nothing padding it, so GPU Copy needs a width that is a multiple of 16 -- 1408 rather than 1400. This width is fine; its frames just take the CPU copy.</string>
+    <string name="create_vm_screen_input_enabled">Input devices</string>
+    <string name="create_vm_error_vnc_port_conflict">Two listeners cannot share the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
+    <string name="create_vm_vnc_host_iface_fmt">%1$s (%2$s)</string>
+    <string name="create_vm_vnc_host_custom_title">Custom address</string>
+    <string name="create_vm_error_invalid_host">Enter an address with no spaces, commas, quotes or brackets.</string>
     <string name="create_vm_vnc_port">Port</string>
     <string name="create_vm_vnc_password_auth">Password Auth</string>
     <string name="create_vm_vnc_password">Password</string>
@@ -238,6 +346,7 @@
     <string name="create_vm_tab_storage">Storage</string>
     <string name="create_vm_tab_network">Network</string>
     <string name="create_vm_tab_graphics">Graphics</string>
+    <string name="create_vm_tab_peripheral">Peripheral</string>
     <string name="create_vm_network_label">Bridge Network</string>
     <string name="create_vm_network_none">None</string>
     <string name="edit_vm_net_add">Add Network</string>
@@ -267,7 +376,6 @@
     <string name="edit_vm_disk_delete">Remove disk</string>
     <string name="edit_vm_disk_browse">Browse</string>
     <string name="edit_vm_disk_browse_title">Select disk source</string>
-    <string name="edit_vm_disk_browse_file">Select file</string>
     <string name="edit_vm_disk_browse_registered">Select registered disk</string>
     <string name="edit_vm_disk_browse_import_create">Import or create disk</string>
     <string name="edit_vm_disk_no_registered">No registered disks found.</string>
@@ -283,7 +391,12 @@
     <string name="edit_vm_shared_dir_cache">Cache</string>
     <string name="edit_vm_shared_dir_writeback">Writeback</string>
     <string name="edit_vm_shared_dir_dax">DAX</string>
+    <string name="edit_vm_shared_dir_type_unavailable">9P is not implemented. Only virtio-fs is wired up.</string>
+    <string name="edit_vm_shared_dir_dax_unavailable">DAX is not implemented on arm64. The host has no shared-memory window to map files into.</string>
     <string name="edit_vm_shared_dir_posix_acl">POSIX ACL</string>
+    <string name="edit_vm_shared_dir_root_access">Root access</string>
+    <string name="edit_vm_shared_dir_root_access_summary">Off: host files are read and written as the DroidVM app. On: as root.</string>
+    <string name="edit_vm_shared_dir_root_access_no_identity">Cannot determine the app identity. Open DroidVM once, or turn on root access for this directory.</string>
     <string name="edit_vm_shared_dir_delete">Remove shared directory</string>
     <string name="edit_vm_shared_dir_browse">Browse</string>
 
@@ -299,7 +412,7 @@
     <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
-    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2\nBooting Linux via UEFI is still being adapted and is not usable yet -- to boot Linux, choose the Linux kernel boot protocol</string>
+    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI vars (empty = built-in EDK2 vars)</string>
     <string name="edit_vm_uefi_vars_browse_title">Select UEFI vars</string>
     <string name="edit_vm_uefi_vars_too_large">For crosvm, pflash image size must not exceed %1$d MiB</string>
@@ -374,8 +487,10 @@
     <string name="settings_vm_auto_console_summary">Automatically open the console when a VM is started</string>
     <string name="settings_vm_clear_logs_before_start_title">Clear logs before start</string>
     <string name="settings_vm_clear_logs_before_start_summary">Clear all console logs for the VM before it starts</string>
-    <string name="settings_vm_keep_compress_on_optimize_title">Keep compression when optimizing</string>
-    <string name="settings_vm_keep_compress_on_optimize_summary">Preserve a disk\'s existing compression when optimizing instead of decompressing it; off rewrites the disk uncompressed</string>
+    <string name="settings_optimize_compression_title">Optimize compression</string>
+    <string name="settings_optimize_compression_ask">Ask every time</string>
+    <string name="disk_compress_none">Uncompressed</string>
+    <string name="disk_optimize_compress_remember">Remember this choice</string>
     <string name="settings_cpu_affinity_title">CPU affinity</string>
     <string name="settings_cpu_affinity_summary_fmt">Disk ops run on cores %1$s</string>
     <string name="settings_cpu_affinity_all_cores">Disk ops may use all cores</string>
@@ -414,20 +529,23 @@
     <string name="key_up" translatable="false">\u2191</string>
     <string name="key_end" translatable="false">END</string>
     <string name="key_pgup" translatable="false">PGUP</string>
+    <!-- Still a text key on the console screen, which has its own key row. -->
     <string name="key_tab" translatable="false">TAB</string>
+    <string name="key_desc_tab">Tab</string>
     <string name="key_ctrl" translatable="false">CTRL</string>
     <string name="key_alt" translatable="false">ALT</string>
     <string name="key_left" translatable="false">\u2190</string>
     <string name="key_down" translatable="false">\u2193</string>
     <string name="key_right" translatable="false">\u2192</string>
     <string name="key_pgdn" translatable="false">PGDN</string>
-    <string name="key_win" translatable="false">WIN</string>
-    <string name="key_cap" translatable="false">CAPS</string>
+    <string name="key_desc_backspace">Backspace</string>
+    <string name="key_desc_win">Windows key</string>
     <string name="key_del" translatable="false">DEL</string>
     <string name="key_ins" translatable="false">INS</string>
-    <string name="key_shift" translatable="false">SHIFT</string>
-    <string name="key_enter" translatable="false">ENTER</string>
-    <string name="key_fnx" translatable="false">FNx</string>
+    <string name="key_desc_shift">Shift</string>
+    <string name="key_desc_enter">Enter</string>
+    <string name="key_desc_ime">Show keyboard</string>
+    <string name="key_fnx" translatable="false">Fn</string>
     <string name="key_f1" translatable="false">F1</string>
     <string name="key_f2" translatable="false">F2</string>
     <string name="key_f3" translatable="false">F3</string>
@@ -440,11 +558,89 @@
     <string name="key_f10" translatable="false">F10</string>
     <string name="key_f11" translatable="false">F11</string>
     <string name="key_f12" translatable="false">F12</string>
+    <string name="key_prtsc" translatable="false">PRTSC</string>
+    <string name="key_pause" translatable="false">PAUSE</string>
 
     <string name="vm_daemon_error">Failed to communicate with daemon.</string>
     <string name="vm_compressed_disk_title">Compressed disk image</string>
     <string name="vm_compressed_disk_message">crosvm can\'t read compressed qcow2 images -- the VM would boot to disk I/O errors with no partition table. Convert it to uncompressed and start?\n%1$s</string>
     <string name="vm_compressed_disk_convert">Convert &amp; start</string>
+    <string name="vm_snapshot_disk_title">Disk has internal snapshots</string>
+    <string name="vm_snapshot_disk_message">crosvm has no qcow2 snapshot support and won\'t open a snapshotted disk for writing, so the VM can\'t start. Flattening keeps the current disk state and permanently deletes the snapshots. To keep them, attach the disk read-only or start this VM with the QEMU backend instead.\n%1$s</string>
+    <string name="vm_snapshot_disk_flatten">Delete snapshots &amp; start</string>
+    <string name="disk_snapshot_crosvm_warning_title">crosvm can\'t use snapshots</string>
+    <string name="disk_snapshot_crosvm_warning_message">This disk is attached writable to a crosvm VM (%1$s), which won\'t start while the disk has snapshots -- it has no qcow2 snapshot support. For crosvm, use a backing-file overlay instead. Create the snapshot anyway?</string>
+    <string name="disk_snapshot_crosvm_warning_create">Create anyway</string>
+    <string name="disk_tree_collapse">Collapse</string>
+    <string name="disk_tree_broken_parent">Parent image missing</string>
+    <string name="disk_tree_current_attached">Attached</string>
+    <string name="disk_locked_title">Disk is a base image</string>
+    <string name="disk_locked_message">%1$s is the base of %2$d overlay image(s), so operations that change it are locked. Merge, flatten or delete its overlays first.</string>
+    <string name="edit_vm_disk_locked_readonly">This disk has overlays; attached read-only</string>
+    <string name="vm_locked_disk_title">Base image attached writable</string>
+    <string name="vm_locked_disk_message">These disks are bases of overlay images; writing to them would corrupt the overlays. Attach them read-only and start?\n%1$s</string>
+    <string name="vm_locked_disk_readonly_start">Read-only &amp; start</string>
+    <string name="disk_overlay_create_message">Create an overlay image based on %1$s. The base becomes locked (read-only) while overlays exist.</string>
+    <string name="disk_overlay_name_hint">File name</string>
+    <string name="disk_overlay_advanced">Advanced&#8230;</string>
+    <string name="disk_overlay_depth_error">Overlay chain depth limit reached (%1$d)</string>
+    <string name="disk_overlay_vm_running">These VMs are using the base disk; shut them down first:%1$s</string>
+    <string name="disk_overlay_vm_choice_title">Base disk is in use</string>
+    <string name="disk_overlay_vm_choice_message">These VM disks attach %1$s writable:%2$s\n\nThe base locks once the overlay exists. Switch them to the new overlay (continue where they left off), or keep the base attached read-only?</string>
+    <string name="disk_overlay_vm_switch">Switch to overlay</string>
+    <string name="disk_overlay_vm_readonly">Make read-only</string>
+    <string name="disk_overlay_created">Overlay image created: %1$s</string>
+    <string name="disk_chain_missing_parent">This image\'s backing file is missing; it can\'t be used until the file is restored:\n%1$s</string>
+    <string name="disk_chain_import_title">Backing images detected</string>
+    <string name="disk_chain_import_message">This image builds on backing images that aren\'t registered yet. Register them too?%1$s</string>
+    <string name="disk_chain_import_confirm">Register all</string>
+    <string name="disk_merge">Merge into base</string>
+    <string name="disk_flatten">Flatten to standalone</string>
+    <string name="disk_reset">Reset overlay</string>
+    <string name="disk_reset_confirm">Every change written to %1$s since it was created is discarded: it becomes a fresh, empty overlay of %2$s again. The file keeps its path and size. This cannot be undone.</string>
+    <string name="disk_reset_has_children">%1$s has overlays of its own; merge, flatten or delete them first.</string>
+    <string name="disk_reset_encrypted">%1$s is encrypted; it can\'t be recreated without its key.</string>
+    <string name="disk_reset_done">Overlay reset: %1$s</string>
+    <string name="disk_reset_failed">Failed to reset the overlay; the original file was kept.</string>
+    <string name="disk_merge_not_overlay">This disk has no registered base image.</string>
+    <string name="disk_merge_siblings">%1$s has other overlays; merging would corrupt them. Merge or flatten the siblings first.</string>
+    <string name="disk_family_vm_running">VMs in this disk\'s tree are running; shut them down first:%1$s</string>
+    <string name="disk_merge_confirm">%1$s\'s changes will be written into %2$s; afterwards %1$s is deleted. This cannot be undone.</string>
+    <string name="disk_merge_confirm_children">\n\nIts %1$d overlay(s) will be re-based onto %2$s.</string>
+    <string name="disk_merge_confirm_vms">\n\nThese VMs will attach %2$s instead:%1$s</string>
+    <string name="disk_flatten_confirm">The base\'s data will be copied into %1$s so it stands alone (the file grows). The base %2$s is not affected.</string>
+    <string name="disk_manage_branches">Manage overlays</string>
+    <string name="disk_branches_button">Disk branches</string>
+    <string name="disk_delete_tree_title">Delete entire tree</string>
+    <string name="disk_delete_tree_message">An overlay only holds differences against its base, so the whole tree goes together. These disks will be removed:%1$s</string>
+    <string name="disk_delete_subtree_message">An overlay only holds differences against its base, so this disk\'s overlays go with it. These disks will be removed:%1$s</string>
+    <string name="disk_manage_branches_close">Close</string>
+    <string name="disk_manage_branches_back">Back</string>
+    <string name="disk_tree_empty">This disk tree no longer exists.</string>
+    <string name="disk_tree_attached_by">Attached: %1$s</string>
+    <string name="disk_tree_in_use">%1$s (in use)</string>
+    <string name="disk_tree_changes_header">\n\nOther VMs\' attachments change with it:%1$s</string>
+    <string name="disk_tree_change_move">VM %1$s, disk #%2$d: %3$s \u2192 %4$s</string>
+    <string name="disk_tree_change_move_readonly">VM %1$s, disk #%2$d: %3$s \u2192 %4$s (becomes read-only)</string>
+    <string name="disk_tree_change_clear">VM %1$s, disk #%2$d: %3$s is removed from the VM</string>
+    <string name="disk_tree_change_readonly">VM %1$s, disk #%2$d: %3$s becomes read-only</string>
+    <string name="disk_tree_change_rewritten">VM %1$s, disk #%2$d: %3$s\'s content is replaced by %4$s\'s state</string>
+    <string name="disk_tree_pinned">VMs that are not stopped hold disks this would change; shut them down first:%1$s</string>
+    <string name="edit_vm_disk_shared_readonly">Another slot of this VM attaches this disk too; attached read-only</string>
+    <string name="vm_shared_disk_title">Disk held by a running VM</string>
+    <string name="vm_shared_disk_message">These disks are attached by VMs that are not stopped; writing to them now would corrupt the images. This start can attach them read-only - for this boot only, leaving the saved configuration writable.\n%1$s</string>
+    <string name="vm_shared_disk_readonly_start">Start read-only</string>
+    <string name="vm_shared_disk_readonly_countdown">Start read-only (%1$d)</string>
+    <string name="disk_tree_not_registered">This disk isn\'t registered; branches unavailable</string>
+    <string name="vm_kernel_module_title">Kernel module not loaded</string>
+    <string name="vm_kernel_module_message">This VM\'s configuration needs host kernel modules that are not loaded. Starting anyway costs the feature that wanted them:\n%1$s</string>
+    <string name="vm_kernel_module_reason_pseudo_unprotected">the pseudo-unprotected mode hands the guest its RAM through it</string>
+    <string name="vm_kernel_module_reason_gpu">needed by GPU acceleration</string>
+    <string name="vm_kernel_module_reason_memory">needed by a VM with more than 2 GB of RAM</string>
+    <string name="vm_kernel_module_start_anyway">Start anyway</string>
+    <string name="vm_kernel_module_start_countdown">Start anyway (%1$d)</string>
+    <string name="vm_kernel_module_manage">Manage modules</string>
+    <string name="vm_kernel_module_manage_unavailable">Open Settings \u2192 Kernel Modules to load it</string>
     <string name="vm_compressed_disk_start_anyway">Start anyway</string>
     <string name="vm_compressed_disk_start_countdown">Start anyway (%1$d)</string>
     <string name="field_copy">Copy</string>
@@ -544,7 +740,27 @@
     <string name="disk_create_preview">Preview: %1$s</string>
     <string name="disk_create_preview_desc">Disk file path preview</string>
 
-    <string name="lxc_title">Import LXC Image</string>
+    <string name="vm_create_mode_title">Create virtual machine</string>
+    <string name="vm_create_linux">Linux VM</string>
+    <string name="vm_create_windows">Windows VM</string>
+    <string name="vm_create_import">Import from .vmpkg</string>
+    <string name="vm_create_customize">Customize</string>
+    <string name="windows_vm_unavailable_title">Windows VM is not available yet</string>
+    <string name="windows_vm_unavailable_message">This feature is still being implemented and is currently unavailable. For now, build a Windows image with the windows_build.ps1 script.</string>
+    <string name="windows_vm_open_script">Open build script</string>
+    <string name="linux_vm_create_title">Create Linux Virtual Machine</string>
+    <string name="linux_vm_category_settings">Settings</string>
+    <string name="linux_vm_disk_size_hint">Disk size</string>
+    <string name="linux_vm_root_password_hint">Root password</string>
+    <string name="linux_vm_root_password_toggle">Show or hide the root password</string>
+    <string name="linux_vm_network_hint">Network</string>
+    <string name="linux_vm_network_none">No network</string>
+    <string name="linux_vm_network_unavailable">The selected network is no longer available.</string>
+    <string name="linux_vm_create_action">Create</string>
+    <string name="linux_vm_create_success">Virtual machine "%1$s" created.</string>
+    <string name="linux_vm_create_failed">Linux virtual machine creation did not complete.</string>
+
+    <string name="lxc_title">Download LXC Distro Image</string>
     <string name="lxc_category_source">Source</string>
     <string name="lxc_meta_source_hint">Metadata source</string>
     <string name="lxc_download_source_hint">Download source</string>
@@ -568,6 +784,7 @@
     <string name="lxc_variant_hint">Variant</string>
     <string name="lxc_build_hint">Build</string>
     <string name="lxc_category_output">Output</string>
+    <string name="lxc_reset_password_hint">Reset root password (optional)</string>
     <string name="lxc_info_size">Download size: %1$s</string>
     <string name="lxc_info_path">Remote path: %1$s</string>
     <string name="lxc_fab_import">Import</string>
@@ -577,9 +794,9 @@
     <string name="lxc_error_name_empty">File name is required.</string>
     <string name="lxc_error_folder_empty">Save folder is required.</string>
     <string name="lxc_error_custom_url">Please enter a valid mirror URL.</string>
+    <string name="lxc_error_source_unavailable">The selected metadata source is unavailable.</string>
     <string name="lxc_no_images">No disk-kvm images found.</string>
-    <string name="lxc_default_download_source">official</string>
-    <string name="disk_add_lxc">Import LXC image</string>
+    <string name="disk_add_lxc">Download LXC distro image</string>
     <string name="disk_add_url">Download from URL</string>
     <string name="disk_add_images">Download distro image</string>
 
@@ -631,11 +848,13 @@
     <string name="disk_operation_running">Running\u2026</string>
     <string name="disk_operation_success">Completed successfully.</string>
     <string name="disk_operation_failed">Failed (exit code %1$d).</string>
+    <string name="disk_operation_finalizing">Saving disk dependencies...</string>
+    <string name="disk_operation_dependency_failed">The disk data operation finished, but its VM/disk dependencies could not be saved. The source image was kept when possible.</string>
     <string name="disk_operation_bad_task">Invalid task parameters.</string>
     <string name="disk_operation_cancel_title">Cancel operation?</string>
     <string name="disk_operation_cancel_message">The disk operation is still in progress. Are you sure you want to cancel?</string>
 
-    <string name="disk_change_password">Change Password</string>
+    <string name="disk_change_password">Change Guest Linux Password</string>
     <string name="change_password_title">Change Password</string>
     <string name="change_password_disk_label">Disk: %1$s</string>
     <string name="change_password_hint">New password</string>
@@ -644,6 +863,7 @@
     <string name="change_password_confirm">Confirm</string>
     <string name="change_password_error_empty">Password cannot be empty</string>
     <string name="change_password_error_mismatch">Passwords do not match</string>
+    <string name="change_password_error_unsafe">Only letters, digits and these symbols are supported: %1$s</string>
 
     <string name="agent_operation_title">Agent Operation</string>
     <string name="agent_operation_preparing">Preparing\u2026</string>
@@ -651,6 +871,7 @@
     <string name="agent_operation_starting_vm">Starting temporary VM\u2026</string>
     <string name="agent_operation_running">Running\u2026</string>
     <string name="agent_operation_success">Operation completed successfully.</string>
+    <string name="agent_operation_success_skipped">Operation completed; an action was not applicable.</string>
     <string name="agent_operation_failed">Operation failed (exit code %1$d).</string>
     <string name="agent_operation_failed_detail">Operation failed: %1$s</string>
     <string name="agent_operation_prepare_failed">Failed to prepare agent VM.</string>
@@ -663,8 +884,26 @@
     <string name="agent_operation_log_creating_vm">Creating temporary VM on daemon\u2026\n</string>
     <string name="agent_operation_log_starting_vm">Starting temporary VM\u2026\n</string>
     <string name="agent_operation_log_running">Temporary VM is running\u2026\n</string>
-    <string name="agent_operation_log_success">\nPassword changed successfully.\n</string>
+    <string name="agent_operation_log_success">\nAll requested operations completed.\n</string>
+    <string name="agent_operation_log_skipped">\nCompleted without error; at least one action made no changes.\n</string>
     <string name="agent_operation_log_failed">\nOperation failed. Please check the logs above.\n</string>
+    <string name="agent_operation_logs">Logs</string>
+    <string name="agent_operation_stopping">Stopping rescue VM...</string>
+    <string name="agent_operation_vm_stopped">The rescue VM has stopped.</string>
+    <string name="agent_operation_control_failed">Lost the rescue VM control channel.</string>
+    <string name="agent_operation_error_root_not_found">No supported Linux root partition was found.</string>
+    <string name="agent_operation_error_password">Failed to update the password database.</string>
+    <string name="agent_operation_error_unmount">The password was updated, but the target filesystem could not be unmounted safely.</string>
+    <string name="agent_operation_error_script">The rescue script failed unexpectedly.</string>
+    <string name="agent_operation_error_autogrow_disk">The target disk could not be inspected.</string>
+    <string name="agent_operation_error_autogrow_in_use">The last partition is still mounted or in use.</string>
+    <string name="agent_operation_error_partition_grow">Failed to grow the last partition.</string>
+    <string name="agent_operation_error_partition_reread">The partition table changed, but the kernel could not reload it.</string>
+    <string name="agent_operation_error_filesystem_check">The filesystem check failed; the filesystem was not grown.</string>
+    <string name="agent_operation_error_filesystem_mount">The filesystem could not be mounted for resizing.</string>
+    <string name="agent_operation_error_filesystem_grow">The partition was enlarged, but growing its filesystem failed.</string>
+    <string name="agent_operation_error_filesystem_unmount">The filesystem was grown, but it could not be unmounted safely.</string>
+    <string name="agent_operation_error_unknown">Rescue error: %1$s</string>
 
     <string name="disk_resize">Resize</string>
     <string name="disk_resize_title">Resize Disk</string>
@@ -677,6 +916,11 @@
     <string name="disk_resize_shrink_message">The new size is smaller than the current size. Shrinking the disk may cause data loss. Are you sure you want to continue?</string>
     <string name="disk_resize_error_invalid">Please enter a valid size</string>
     <string name="disk_resize_error_info">Failed to get disk info</string>
+    <string name="disk_resize_autogrow">Grow partition and filesystem</string>
+    <string name="disk_resize_autogrow_description">Supports ext2/3/4, Btrfs, F2FS</string>
+    <string name="disk_resize_error_no_action">Choose a different size or enable filesystem growth</string>
+    <string name="disk_resize_error_autogrow_shrink">Filesystem growth cannot be combined with shrinking the virtual disk</string>
+    <string name="disk_dependency_update_failed">Failed to update VM disk dependencies; no disk was deleted.</string>
 
     <string name="disk_set_format">Convert Format</string>
     <string name="disk_set_format_title">Convert Disk Format</string>
@@ -768,6 +1012,7 @@
     <string name="network_edit_error_bridge_duplicate">A network with this bridge name already exists</string>
     <string name="network_edit_error_ipv4_overlap">IPv4 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
     <string name="network_edit_error_ipv6_overlap">IPv6 subnet %1$s overlaps with network \"%2$s\" (%3$s)</string>
+    <string name="network_edit_error_uplink_taken">Uplink %1$s is already bridged by network \"%2$s\"</string>
     <string name="network_edit_save">Save network</string>
     <string name="network_edit_running_banner">This network is running. Stop it before editing.</string>
     <string name="network_edit_bridge_type">Bridge type</string>
@@ -863,6 +1108,9 @@
     <string name="vnc_display_reconnecting">Reconnecting (%1$d/%2$d)\u2026</string>
     <string name="vnc_display_reconnect_failed">Reconnect failed after %1$d attempts</string>
     <string name="vnc_display_connect_failed">Failed to connect to VNC server</string>
+    <string name="vnc_display_h264_active">H.264 stream</string>
+    <string name="vnc_display_h264_fallback">fell back to RFB</string>
+    <string name="vnc_display_h264_unavailable">H.264 unavailable (this device has no encoder)</string>
     <string name="vnc_display_fullscreen">Fullscreen</string>
 
     <string name="native_display_title">Native Display</string>
@@ -873,9 +1121,14 @@
 
     <string name="vnc_menu_keyboard">Soft Keyboard</string>
     <string name="vnc_menu_extra_keys">Extra Keys</string>
+    <string name="keyboard_mode_none">No keyboard</string>
+    <string name="keyboard_mode_system">System keyboard</string>
+    <string name="keyboard_mode_laptop">Laptop keyboard</string>
     <string name="vnc_menu_fullscreen">Fullscreen</string>
     <string name="vnc_menu_input_mode_touch">Touch Mode</string>
     <string name="vnc_menu_input_mode_mouse">Mouse Mode</string>
+    <string name="vnc_menu_input_mode_tablet">Tablet Mode</string>
+    <string name="display_input_disabled_hint">Input devices are off for this screen. Turn them on in the graphics settings, then start the VM again.</string>
     <string name="usb_input_no_device">No USB keyboard or mouse found</string>
     <string name="usb_input_status">USB input: %1$d keyboard(s), %2$d mouse(es)</string>
     <string name="vnc_menu_rotate">Rotate Screen</string>
@@ -891,15 +1144,15 @@
     <string name="vnc_op_scroll_down">Scroll Down</string>
     <string name="vnc_menu_reconnect">Reconnect</string>
     <string name="vnc_menu_external_app">Open with External App</string>
-    <string name="vnc_menu_view_url">View Connection URL</string>
+    <string name="vnc_menu_project_external">Project to external display</string>
     <string name="vnc_menu_no_vnc_app">No app found to handle VNC connections</string>
-    <string name="vnc_menu_url_copied">Copied to clipboard</string>
     <string name="vnc_presentation_title">Touchpad</string>
     <string name="vnc_presentation_title_with_name">%1$s - Touchpad</string>
 
     <string name="vnc_external_title">Open with External App</string>
     <string name="vnc_external_message">About to open with an external app</string>
-    <string name="vnc_external_hint_target">Target</string>
+    <string name="vnc_external_hint_local">URL (this device)</string>
+    <string name="vnc_external_hint_remote">URL (other devices)</string>
     <string name="vnc_external_hint_password">Password</string>
     <string name="vnc_external_cancel">Cancel</string>
     <string name="vnc_external_connect">Connect</string>
@@ -932,6 +1185,12 @@
     <string name="logs_share">Share</string>
     <string name="logs_share_title">Share logs</string>
     <string name="logs_share_failed">Failed to share logs: %1$s</string>
+    <string name="logs_filter">Filter</string>
+    <string name="logs_filter_title">Filter the log</string>
+    <string name="logs_filter_message">Only lines containing this text are shown. Leave it empty to show everything.</string>
+    <string name="logs_filter_hint">Text to match</string>
+    <string name="logs_filter_show_all">Show all</string>
+    <string name="logs_title_filtered">%1$s - %2$s (filter: %3$s)</string>
     <string name="logs_not_found_title">Daemon log unavailable</string>
     <string name="logs_not_found_message">No daemon log file found, is daemon running?</string>
 
@@ -978,6 +1237,14 @@
     <string name="hugepage_stat_pool_size">Pool size: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_size_cma">Pool size: %1$d/%2$d (%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">Module not loaded</string>
+    <string name="hugepage_advanced">Advanced</string>
+    <string name="hugepage_adv_hint">The value on the right is what the module is running; tap a row to edit what settings.prop asks for.</string>
+    <string name="hugepage_adv_unavailable">Unavailable</string>
+    <string name="hugepage_adv_unset">(default)</string>
+    <string name="hugepage_adv_warn_below_default">Below this device\'s default (%1$d); the system may become unstable</string>
+    <string name="hugepage_adv_invalid">Invalid value</string>
+    <string name="hugepage_adv_saved">Saved</string>
+    <string name="hugepage_adv_save_failed">Save failed</string>
     <string name="hugepage_manual_refill">Acquire Pages</string>
     <string name="hugepage_refill_triggered">Acquire triggered</string>
     <string name="hugepage_refill_failed">Failed to trigger acquire</string>
@@ -1100,7 +1367,9 @@
     <string name="log_helper_huge_page_fault_message">Virtual machine %s ran into insufficient huge page memory.\nTry changing the memory size, or use the pre-allocation module.\nOpen the browser for more information.</string>
     <string name="log_helper_no_restrict_pool_url" formatted="false">https://github.com/Droid-VM/DroidVM/wiki/Problem%3A-The-virtual-machine%27s-system-does-not-support-SWIOTLB-Restrict-DMA-Pool%2e</string>
     <string name="log_helper_no_restrict_pool_title">Missing virtual machine kernel functionality</string>
-    <string name="log_helper_no_restrict_pool_message">The kernel of virtual machine %s does not support Restricted DMA Pool.\nPlease replace the kernel or use the built-in DroidVM kernel.\nOpen the browser for more information.</string>
+    <string name="log_helper_no_restrict_pool_devices">The following devices of virtual machine %1$s accessed the protected memory region:</string>
+    <string name="log_helper_no_restrict_pool_message"><![CDATA[The guest kernel may not support the Restricted DMA Pool &#8212; replace the kernel or use the built-in DroidVM kernel.<br><br>Or the guest drivers for those devices are not ported yet &#8212; install the <a href="https://github.com/Droid-VM/gunyah-guest-drivers-windows">Windows drivers</a> or <a href="https://github.com/Droid-VM/droidvm-guest-additions">Linux drivers</a>.]]></string>
+    <string name="log_helper_open_log">Open log</string>
     <string name="log_helper_unsupported_gunyah_title">Unsupported Gunyah version</string>
     <string name="log_helper_unsupported_gunyah_message">The Gunyah version on your device is too old (for example, Snapdragon 8 Gen 2). Try updating the system or switching to a newer device.</string>
     <string name="log_helper_unsupported_sandbox_title">Sandbox is not supported</string>
@@ -1140,7 +1409,19 @@
     <string name="vmpkg_package_version">Package version</string>
     <string name="vmpkg_package_comment">Comment</string>
     <string name="vmpkg_export_vm_must_stop">The VM must be stopped before export</string>
+    <string name="vmpkg_export_disk_backing_count">+%1$d backing</string>
+    <string name="vmpkg_export_disk_chain_broken">chain broken</string>
+    <string name="vmpkg_export_disk_chain_missing">Cannot read this disk\'s backing chain: %1$s</string>
     <string name="vmpkg_export_disk_missing">Selected disk does not exist: %1$s</string>
+    <string name="vm_notes_title">Notes</string>
+    <string name="vm_notes_edit">Edit</string>
+    <string name="vm_notes_empty">No notes yet</string>
+    <string name="vm_notes_hint">Markdown\u2026</string>
+    <string name="vm_notes_save">Save notes</string>
+    <string name="vm_notes_preview_empty">Nothing to preview yet.</string>
+    <string name="vm_notes_mode_code">Source</string>
+    <string name="vm_notes_mode_preview">Preview</string>
+    <string name="vm_notes_mode_split">Side by side</string>
     <string name="vmpkg_import_title">Import VM package</string>
     <string name="vmpkg_import_pick">Pick .vmpkg file</string>
     <string name="vmpkg_import_do">Import</string>
@@ -1152,18 +1433,183 @@
     <string name="vmpkg_import_no_disks">No disks in this package.</string>
     <string name="vmpkg_import_meta">%1$s | %2$s | manifest v%3$d</string>
     <string name="vmpkg_import_disk_line">%1$s (%2$s)</string>
+    <string name="vmpkg_import_disk_backing">Backing image \u00b7 %1$s</string>
     <string name="vmpkg_import_disk_summary">%1$d disks, %2$s</string>
     <string name="vmpkg_import_network_line">Network: %1$s</string>
     <string name="vmpkg_import_no_networks">No bound networks in this package.</string>
-    <string name="vmpkg_import_network_mode">Network import</string>
-    <string name="vmpkg_import_network_skip">Skip networks</string>
-    <string name="vmpkg_import_network_existing">Use existing networks by name</string>
-    <string name="vmpkg_import_network_auto">Create networks automatically</string>
+    <string name="vmpkg_import_network_mode">Import as</string>
+    <string name="vmpkg_import_network_skip">Skip</string>
+    <string name="vmpkg_import_network_join">Join an existing network</string>
+    <string name="vmpkg_import_network_create">Create a new network</string>
+    <string name="vmpkg_import_network_target">Target network</string>
+    <string name="vmpkg_import_network_nothing_to_join">nothing of this kind here</string>
+    <string name="vmpkg_import_network_conflicts">conflicts</string>
+    <string name="vmpkg_import_network_will_create">Will create \"%1$s\" on bridge %2$s</string>
+    <string name="vmpkg_import_network_skipped">Adapters on this network stay unattached.</string>
     <string name="vmpkg_import_no_space">Not enough target space. Required %1$s, available %2$s.</string>
     <string name="vmpkg_import_target_folder">Import folder</string>
+    <string name="vmpkg_import_target_folder_desc">Each import gets its own subfolder here, named after the VM.</string>
     <string name="vmpkg_import_target">Disks will be imported to:\n%1$s</string>
     <string name="vmpkg_import_success">Imported VM: %1$s</string>
     <string name="vmpkg_import_done">Import complete</string>
     <string name="vmpkg_import_failed">Import failed: %1$s</string>
     <string name="vmpkg_import_invalid">Not a valid vmpkg: %1$s</string>
+    <string name="kernel_module_title">Kernel Modules</string>
+    <string name="kernel_module_subtitle">Load host kernel modules, and load them with the daemon</string>
+    <string name="kernel_module_loading">Loading&#8230;</string>
+    <string name="kernel_module_none">No modules available</string>
+    <string name="kernel_module_loaded">Loaded</string>
+    <string name="kernel_module_unloaded">Not loaded</string>
+    <string name="kernel_module_load">Load</string>
+    <string name="kernel_module_unload">Unload</string>
+    <string name="kernel_module_autostart">Auto-load</string>
+    <string name="kernel_module_autostart_needs_load">Load it once first &#8212; auto-load is only offered for a module that has loaded on this device</string>
+    <string name="kernel_module_working">Working&#8230;</string>
+    <string name="kernel_module_ok">Done</string>
+    <string name="kernel_module_fail">Failed</string>
+    <string name="kernel_module_kmi">KMI: %1$s</string>
+    <string name="kernel_module_why">Why needed?</string>
+    <string name="kernel_module_manage">Manage</string>
+    <string name="kernel_module_hugepage_name" translatable="false">GH-Hugepage-Reserve</string>
+    <string name="setup_kmod_desc"><![CDATA[DroidVM needs these host kernel modules; without them VMs may fail to boot or lose GPU acceleration. The modules are still under development &#8212; stability is not guaranteed, and they may cause the phone to reboot: try loading them first, and enable load-with-daemon only after they prove stable. If you hit any problem, please <a href="https://github.com/Droid-VM/DroidVM/issues">file an issue</a>. Each card explains why its module is needed.]]></string>
+    <string name="vm_hugepage_short_title">Huge-page reserve is short</string>
+    <string name="vm_hugepage_short_message">The huge-page reserve has %1$d MB free, but this VM needs about %2$d MB &#8212; %3$d MB short.\n\nThe reserve normally refills a couple of seconds after another VM exits. Starting now makes the hypervisor take ordinary memory instead, which it has to migrate out of CMA first; on a phone with nothing spare that has stalled the whole system for minutes, or rebooted it.\n\nWaiting a moment and starting again usually clears it.</string>
+    <string name="vm_hugepage_short_settings">Huge-page settings</string>
+    <string name="vm_hugepage_short_start_anyway">Start anyway</string>
+    <string name="vm_lend_mthp_refused_title">This kernel cannot lend in 256 MB parcels</string>
+    <string name="vm_lend_mthp_refused_message">This VM hands its guest RAM to the hypervisor in 256 MB parcels, and the resource manager on a 6.1 kernel commits every parcel as it arrives instead of paging it in on demand. It runs out a few parcels in, and the VM stops at GH_VM_START with \"failed to initialize virtual machine\" \u2014 a message that points at nothing.\n\nSingle-parcel preallocation hands the whole region over at once, which is what this kernel wants. A VM usually arrives set the other way by being imported from a package exported on a 6.6 phone, where parcels are paged in on demand and 256 MB ones are the better choice.</string>
+    <string name="vm_lend_mthp_refused_fix">Use single parcel and save</string>
+    <string name="vm_lend_mthp_refused_start_anyway">Start anyway</string>
+
+    <string name="create_vm_category_peripheral">Peripherals</string>
+    <string name="edit_vm_peripheral_empty">No peripherals</string>
+    <string name="edit_vm_peripheral_add">Add peripheral</string>
+    <string name="edit_vm_peripheral_add_title">Peripheral type</string>
+    <string name="edit_vm_peripheral_type">Peripheral type</string>
+    <string name="edit_vm_peripheral_delete">Remove peripheral</string>
+    <string name="edit_vm_peripheral_host_device">Host device</string>
+    <string name="edit_vm_peripheral_host_default">Follow system</string>
+    <string name="edit_vm_peripheral_host_missing">Not connected right now; the VM will follow the system routing.</string>
+    <string name="edit_vm_peripheral_host_missing_item">%1$s (not connected)</string>
+    <string name="edit_vm_peripheral_pick_output">Play through</string>
+    <string name="edit_vm_peripheral_pick_input">Record from</string>
+    <string name="edit_vm_peripheral_duplicate_host">Two peripherals of the same type point at one host device.</string>
+    <string name="audio_device_builtin_speaker">Speaker</string>
+    <string name="audio_device_builtin_earpiece">Earpiece</string>
+    <string name="audio_device_builtin_mic">Built-in microphone</string>
+    <string name="audio_device_wired_headset">Wired headset</string>
+    <string name="audio_device_wired_headphones">Wired headphones</string>
+    <string name="audio_device_bluetooth">Bluetooth audio</string>
+    <string name="audio_device_bluetooth_sco">Bluetooth call audio</string>
+    <string name="audio_device_usb">USB audio</string>
+    <string name="audio_device_hdmi">HDMI</string>
+    <string name="audio_device_line">Line out</string>
+    <!-- Camera peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media camera</string>
+    <string name="camera_permission_title">Allow camera access?</string>
+    <string name="camera_permission_message">A camera peripheral hands one of this phone\'s cameras to the guest. Android only lets the camera open while this app holds the permission, so without it the device would be listed but could never start.</string>
+    <string name="camera_permission_allow">Allow</string>
+    <string name="camera_permission_cancel">Cancel</string>
+    <string name="camera_permission_declined">Camera not allowed, so no camera device was added.</string>
+    <string name="host_camera_default">Host default</string>
+    <string name="host_camera_front">Front camera (%1$s)</string>
+    <string name="host_camera_back">Back camera (%1$s)</string>
+    <string name="host_camera_external">External camera (%1$s)</string>
+    <string name="host_camera_unknown">Camera %1$s</string>
+    <string name="host_camera_none">No camera on this host</string>
+    <string name="create_vm_category_vpu">Video acceleration (VPU)</string>
+    <string name="create_vm_vpu_enabled">Attach a hardware video encoder and decoder</string>
+    <string name="create_vm_vpu_host_pool_mb">Host pool size (MB)</string>
+    <string name="create_vm_vpu_guest_pool_mb">Guest pool size (MB)</string>
+    <string name="create_vm_vpu_note">Not implemented yet: these settings are saved with the VM, but no video device is attached until the feature lands.</string>
+    <string name="edit_vm_peripheral_camera_missing">This phone has no such camera; the device will not start.</string>
+    <string name="edit_vm_peripheral_host_camera">Host camera</string>
+    <string name="peripheral_fgs_title">Peripheral in use</string>
+    <string name="peripheral_fgs_text">A running VM is using a device that needs DroidVM in the foreground.</string>
+    <string name="notif_channel_peripheral_foreground">VM peripherals</string>
+    <string name="notif_channel_peripheral_foreground_desc">Shown while a VM uses a camera or another device that Android only allows in the foreground.</string>
+
+    <string name="record_audio_permission_title">Allow microphone access?</string>
+    <string name="record_audio_permission_message">This VM is being given a microphone, which records from the phone\'s mic while the VM runs. Allow microphone access so the guest can hear it.</string>
+    <string name="record_audio_permission_allow">Continue</string>
+    <string name="record_audio_permission_skip">Not now</string>
+
+    <string name="edit_vm_peripheral_type_virtio_sound">VirtIO Sound</string>
+    <string name="edit_vm_peripheral_type_intel_hda">Intel HDA</string>
+    <string name="edit_vm_peripheral_unavailable">Not implemented yet; the device is skipped when the VM starts.</string>
+    <string name="edit_vm_sound_endpoint_add">Add device</string>
+    <string name="edit_vm_sound_endpoint_remove">Remove endpoint</string>
+    <string name="edit_vm_sound_purpose_usage">Purpose</string>
+    <string name="edit_vm_sound_purpose_content">Content</string>
+    <string name="edit_vm_sound_purpose_preset">Microphone use</string>
+    <string name="edit_vm_sound_purpose_unset">Follow default</string>
+    <string name="edit_vm_sound_usage_media">Media</string>
+    <string name="edit_vm_sound_usage_voice_communication">Call</string>
+    <string name="edit_vm_sound_usage_voice_communication_signalling">Signalling</string>
+    <string name="edit_vm_sound_usage_game">Game</string>
+    <string name="edit_vm_sound_usage_alarm">Alarm</string>
+    <string name="edit_vm_sound_usage_notification">Notify</string>
+    <string name="edit_vm_sound_usage_notification_ringtone">Ringtone</string>
+    <string name="edit_vm_sound_usage_notification_event">Event</string>
+    <string name="edit_vm_sound_usage_assistant">Assistant</string>
+    <string name="edit_vm_sound_usage_assistance_accessibility">A11y</string>
+    <string name="edit_vm_sound_usage_assistance_navigation_guidance">Navigation</string>
+    <string name="edit_vm_sound_usage_assistance_sonification">UI</string>
+    <string name="edit_vm_sound_content_speech">Speech</string>
+    <string name="edit_vm_sound_content_music">Music</string>
+    <string name="edit_vm_sound_content_movie">Movie</string>
+    <string name="edit_vm_sound_content_sonification">Effects</string>
+    <string name="edit_vm_sound_preset_generic">General</string>
+    <string name="edit_vm_sound_preset_camcorder">Camcorder</string>
+    <string name="edit_vm_sound_preset_voice_recognition">Recognition</string>
+    <string name="edit_vm_sound_preset_voice_communication">Call</string>
+    <string name="edit_vm_sound_preset_unprocessed">Raw</string>
+    <string name="edit_vm_sound_preset_voice_performance">Performance</string>
+    <string name="edit_vm_sound_mode_speaker">Speaker</string>
+    <string name="edit_vm_sound_mode_microphone">Microphone</string>
+    <string name="edit_vm_sound_buffer">Buffer</string>
+    <string name="edit_vm_sound_buffer_low">Low latency (2 buffers)</string>
+    <string name="edit_vm_sound_buffer_normal">Balanced (6 buffers)</string>
+    <string name="edit_vm_sound_buffer_safe">High quality (12 buffers)</string>
+    <string name="edit_vm_sound_underrun">Buffer underrun</string>
+    <string name="edit_vm_sound_underrun_silence">Silence</string>
+    <string name="edit_vm_sound_underrun_repeat">Repeat</string>
+    <string name="edit_vm_sound_underrun_wsola">WSOLA</string>
+    <string name="edit_vm_sound_underrun_lpc">LPC</string>
+    <string name="edit_vm_peripheral_host_output">Output</string>
+    <string name="edit_vm_peripheral_host_input">Input</string>
+    <string name="vm_info_console_stdout_short">stdout</string>
+    <string name="vm_info_console_stderr_short">stderr</string>
+    <string name="create_vm_category_serial">Serial ports</string>
+    <string name="edit_vm_serial_empty">No serial ports</string>
+    <string name="edit_vm_serial_add">Add serial port</string>
+    <string name="edit_vm_serial_add_title">Serial port hardware</string>
+    <string name="edit_vm_serial_delete">Remove serial port</string>
+    <string name="edit_vm_serial_hw_serial">Serial</string>
+    <string name="edit_vm_serial_hw_sbsa">SBSA</string>
+    <string name="edit_vm_serial_hw_virtio_console">Virtio Console</string>
+    <string name="edit_vm_serial_backend">Backend</string>
+    <string name="edit_vm_serial_backend_sink">Sink (discard)</string>
+    <string name="edit_vm_serial_backend_app_console">App console</string>
+    <string name="edit_vm_serial_backend_file">File</string>
+    <string name="edit_vm_serial_backend_unix">Unix socket (datagram)</string>
+    <string name="edit_vm_serial_backend_unix_stream">Unix socket (stream)</string>
+    <string name="edit_vm_serial_backend_pty">PTY</string>
+    <string name="edit_vm_serial_backend_stdout">Standard output</string>
+    <string name="edit_vm_serial_backend_syslog">Syslog</string>
+    <string name="edit_vm_serial_backend_usb_acm">USB gadget ACM</string>
+    <string name="edit_vm_serial_path">Path</string>
+    <string name="edit_vm_serial_path_pty_hint">Optional symlink to the pty</string>
+    <string name="edit_vm_serial_path_required">A path is required for this serial port backend.</string>
+    <string name="edit_vm_serial_console">Guest console (SPCR)</string>
+    <string name="edit_vm_serial_slot_duplicate">Two serial ports point at one USB slot.</string>
+    <string name="edit_vm_serial_usb_slot">USB slot</string>
+    <string name="edit_vm_serial_usb_slot_item">Slot %1$d</string>
+    <string name="settings_usb_acm_ports_title">USB serial ports (ACM)</string>
+    <string name="settings_usb_acm_ports_summary">%1$d slots</string>
+    <string name="settings_usb_acm_enable">Enable USB serial</string>
+    <string name="settings_usb_acm_reenum_note">Turning this on or off re-enumerates the phone\'s USB connection for a moment.</string>
+    <string name="settings_usb_acm_disabled">Disabled</string>
+    <string name="edit_vm_serial_usb_disabled_hint">USB serial (ACM) is disabled; enable it in settings or this VM will not boot.</string>
+    <string name="edit_vm_serial_full">All ports of this hardware are already added.</string>
 </resources>

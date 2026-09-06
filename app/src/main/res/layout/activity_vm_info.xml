@@ -230,6 +230,24 @@
                 android:layout_marginEnd="16dp" />
 
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:id="@+id/cc_notes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/vm_notes_title"
+                android:visibility="gone"
+                app:cc_collapsible="false">
+
+                <androidx.compose.ui.platform.ComposeView
+                    android:id="@+id/notes_preview"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="8dp" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:title="@string/create_vm_category_basic"

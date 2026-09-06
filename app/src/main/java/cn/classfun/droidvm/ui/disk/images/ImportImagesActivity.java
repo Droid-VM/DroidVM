@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.images;
 
 import static android.view.View.GONE;
@@ -9,7 +12,7 @@ import static cn.classfun.droidvm.lib.utils.NetUtils.DL_USER_AGENT;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.StringUtils.resolveUriPath;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
-import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimize;
+import static cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity.startOptimizeAfterImport;
 
 import android.content.Intent;
 import android.net.Uri;
@@ -42,6 +45,7 @@ import cn.classfun.droidvm.lib.download.DiskDownloadManager;
 import cn.classfun.droidvm.lib.download.DiskDownloadService;
 import cn.classfun.droidvm.lib.ui.IconItemAdapter;
 import cn.classfun.droidvm.lib.ui.NotificationPermission;
+import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -394,8 +398,15 @@ public final class ImportImagesActivity extends AppCompatActivity {
         var resultData = new Intent();
         resultData.putExtra("result_disk_path", pathJoin(result.folder, result.name));
         setResult(RESULT_OK, resultData);
-        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2)
-            startOptimize(this, result.diskId);
+        if (result.diskId != null && DiskFormat.fromFilename(result.name) == DiskFormat.QCOW2) {
+            // Resolve the backing chain first (may prompt once), then rewrite only when the
+            // compression can't boot on crosvm; finish once everything is decided.
+            var diskId = result.diskId;
+            var diskPath = pathJoin(result.folder, result.name);
+            BackingChainLinker.link(this, diskId, () ->
+                startOptimizeAfterImport(this, diskId, diskPath, this::finish));
+            return;
+        }
         finish();
     }
 

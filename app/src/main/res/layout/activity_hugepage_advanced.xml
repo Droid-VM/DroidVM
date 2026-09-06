@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  The advanced knobs, one row per settings.prop key. Rows carry no android:text:
+  the label IS the raw parameter name and is set in code, so no translation can
+  ever come between these rows and the module documentation they belong to.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
+    tools:context=".ui.hugepage.HugePageAdvancedActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:navigationIcon="?attr/homeAsUpIndicator" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingBottom="16dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:text="@string/hugepage_adv_hint"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="13sp" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_adv_system_reserve"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_adv_cma_floor"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_adv_boot_acquire"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_adv_boot_acquire_runs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info" />
+
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                android:id="@+id/row_adv_boot_acquire_wait"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_info" />
+
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

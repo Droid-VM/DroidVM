@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     Everything one screen has once the VM has the display device: how big it is and how often it
+     produces a picture, and who is watching it. Included once per screen, so the ids here appear
+     twice at runtime and are only ever looked up scoped to one include's root (see
+     ScreenBindingRow).
+
+     What is NOT here is the switch that says the device exists, nor the virtio-gpu screen's
+     renderer section. Both sit in the parent block, because the renderer goes between them and an
+     included layout has no slot to put another block in the middle of itself.
+
+     The two screens differ only in which rows of "display settings" apply: a mode has a rate the
+     guest is told about and a DPI, a watched framebuffer has a poll rate and no DPI. The rate is
+     one row either way, hinted per screen; the DPI row is here and ScreenBindingRow hides it on
+     the framebuffer, so the wiring stays written once.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:visibility="gone"
+    tools:visibility="visible">
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_screen_display"
+        app:cc_expanded="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <!-- Size and rate are picked, not typed: every value either list offers is one the
+                 geometry validator accepts, and the two sizes that depend on the device are ones
+                 nobody could type without going to look them up. Anything else is still reachable
+                 through the last entry of either list, which opens a dialog that validates what it
+                 is given, so the only numbers that reach the config are checked ones. What is
+                 stored is unchanged: two sizes and a rate, as before. -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_screen_resolution"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="2"
+                android:hint="@string/create_vm_display_resolution">
+
+                <AutoCompleteTextView
+                    android:id="@+id/dd_screen_resolution"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="false"
+                    android:inputType="none"
+                    tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- One field for both screens, hinted by ScreenBindingRow: the mode's refresh rate on
+                 virtio-gpu, the poll rate on the framebuffer. They are different numbers about
+                 different things, but a screen has exactly one of them, so there is one field. -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_screen_rate"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_refresh_rate">
+
+                <AutoCompleteTextView
+                    android:id="@+id/dd_screen_rate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:focusable="false"
+                    android:inputType="none"
+                    tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+        <!-- Not an error and not a refusal: the width above is a legal one, it just costs the GPU
+             copy. simplefb's stride is width*4 with nothing to pad it, and the blit's dma-buf
+             import wants a 64-byte pitch, so the transport quietly settles one rung lower for a
+             width that is not a multiple of 16. Shown in place rather than as a dialog, and the
+             value is never snapped for the user: moving somebody's resolution behind their back is
+             worse than the fallback it would avoid. ScreenBindingRow decides when it applies; only
+             the simplefb include ever shows it. -->
+        <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+            android:id="@+id/row_screen_width_cpu_fallback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_info"
+            android:subtitle="@string/create_vm_screen_width_cpu_fallback_desc"
+            android:text="@string/create_vm_screen_width_cpu_fallback"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <LinearLayout
+            android:id="@+id/screen_dpi_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_marginEnd="16dp"
+            android:layout_marginBottom="8dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_screen_dpi_h"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_dpi_h">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_screen_dpi_h"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:text="160"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:id="@+id/til_screen_dpi_v"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:hint="@string/create_vm_display_dpi_v">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/et_screen_dpi_v"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="number"
+                    android:text="160"
+                    tools:ignore="HardcodedText,VisualLintTextFieldSize" />
+
+            </com.google.android.material.textfield.TextInputLayout>
+
+        </LinearLayout>
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:title="@string/create_vm_category_screen_export"
+        app:cc_expanded="true">
+
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_screen_exporter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_export_to"
+            android:text="@string/create_vm_screen_exporter" />
+
+        <!-- A ceiling, never a request: the transport is negotiated on the edge between this
+             screen and its exporter, so the only setting that is always honourable is one that
+             restricts downward. The subtitle has to say so, because "choose GPU copy" is a promise
+             the source may be unable to keep and the failure would be a silent downgrade.
+             The rungs themselves depend on both ends, so ScreenBindingRow rebuilds the menu when
+             the exporter above changes. -->
+        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
+            android:id="@+id/choose_screen_transport"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_connection"
+            android:text="@string/create_vm_screen_transport" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_screen_input_enabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_touchscreen"
+            android:text="@string/create_vm_screen_input_enabled" />
+
+        <LinearLayout
+            android:id="@+id/screen_vnc_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:baselineAligned="false"
+                android:orientation="horizontal">
+
+                <!-- Picked like the resolution above, and for the same reason: the addresses
+                     worth offering are the phone's own, and those are ones nobody could type
+                     without going to look them up. The two fixed entries are the ends of the range
+                     (this device only / everything the phone is on); the scanned ones come from
+                     the daemon, because the one address that must not be offered, a pseudo-bridged
+                     guest's IP parked on the uplink, is only distinguishable over netlink. The
+                     last entry still opens a dialog, so anything remains reachable. What is stored
+                     is unchanged: one address string, as before. -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_host"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:layout_weight="2"
+                    android:hint="@string/create_vm_vnc_host">
+
+                    <AutoCompleteTextView
+                        android:id="@+id/dd_screen_vnc_host"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:inputType="none"
+                        tools:ignore="LabelFor,SpeakableTextPresentCheck,VisualLintTextFieldSize" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_port"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:hint="@string/create_vm_vnc_port">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_vnc_port"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        tools:ignore="TextContrastCheck,VisualLintTextFieldSize" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_screen_vnc_password_auth"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_lock"
+                android:text="@string/create_vm_vnc_password_auth" />
+
+            <LinearLayout
+                android:id="@+id/screen_vnc_password_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginEnd="16dp"
+                android:layout_marginBottom="8dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:visibility="gone">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_vnc_password"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/create_vm_vnc_password"
+                    app:endIconMode="password_toggle">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_vnc_password"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textPassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_screen_vnc_password_clear"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:contentDescription="@string/create_vm_vnc_password_clear"
+                    app:icon="@drawable/ic_close" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_screen_vnc_password_generate"
+                    style="@style/Widget.Material3.Button.IconButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:contentDescription="@string/create_vm_vnc_password_generate"
+                    app:icon="@drawable/ic_refresh" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+</LinearLayout>

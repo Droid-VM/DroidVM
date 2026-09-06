@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.disk.action;
 
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
@@ -5,6 +8,7 @@ import static cn.classfun.droidvm.lib.size.SizeUtils.formatSize;
 
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -13,14 +17,20 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
+import com.google.android.material.checkbox.MaterialCheckBox;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONObject;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
+import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.size.SizeUnit;
+import cn.classfun.droidvm.ui.agent.AgentOperationActivity;
+import cn.classfun.droidvm.ui.agent.autogrow.AutoGrowAction;
+import cn.classfun.droidvm.ui.agent.base.AgentVM;
 import cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
@@ -34,6 +44,7 @@ public final class DiskResizeDialog {
     private final Handler handler;
     private final TextView tvFilename;
     private final TextView tvFolder;
+    private final MaterialCheckBox cbAutoGrow;
 
     public DiskResizeDialog(@NonNull Context context, @NonNull DiskConfig config) {
         this.context = context;
@@ -43,6 +54,7 @@ public final class DiskResizeDialog {
         tvCurrent = view.findViewById(R.id.tv_current_size);
         tvFilename = view.findViewById(R.id.tv_filename);
         tvFolder = view.findViewById(R.id.tv_folder);
+        cbAutoGrow = view.findViewById(R.id.cb_autogrow);
         currentVirtualSize = -1;
         inputSize.setValue(1, SizeUnit.GB);
         tvCurrent.setText(R.string.disk_resize_loading);
@@ -52,10 +64,13 @@ public final class DiskResizeDialog {
         var dialog = new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.disk_resize_title)
             .setView(view)
-            .setPositiveButton(android.R.string.ok, this::dialogOkOnClick)
+            .setPositiveButton(android.R.string.ok, null)
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.show();
+        // Override the positive listener so validation can keep the resize dialog open.
+        dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v ->
+            dialogOkOnClick(dialog, DialogInterface.BUTTON_POSITIVE));
         runOnPool(this::asyncOperation);
     }
 
@@ -100,36 +115,65 @@ public final class DiskResizeDialog {
             }
             long newBytes = inputSize.getValue();
             inputSize.setError(null);
-            boolean isShrink = currentVirtualSize > 0 && newBytes <= currentVirtualSize;
+            cbAutoGrow.setError(null);
+            boolean isShrink = currentVirtualSize > 0 && newBytes < currentVirtualSize;
+            boolean isSameSize = currentVirtualSize > 0 && newBytes == currentVirtualSize;
+            boolean autoGrow = cbAutoGrow.isChecked();
+            if (isShrink && autoGrow) {
+                cbAutoGrow.setError(context.getString(
+                    R.string.disk_resize_error_autogrow_shrink));
+                return;
+            }
+            if (isSameSize) {
+                if (!autoGrow) {
+                    inputSize.setError(context.getString(R.string.disk_resize_error_no_action));
+                    return;
+                }
+                dialog.dismiss();
+                context.startActivity(createAutoGrowIntent());
+                return;
+            }
             if (isShrink) {
                 new MaterialAlertDialogBuilder(context)
                     .setTitle(R.string.disk_resize_shrink_title)
                     .setMessage(R.string.disk_resize_shrink_message)
                     .setPositiveButton(android.R.string.ok, (d, w) -> {
                         dialog.dismiss();
-                        doResize(newBytes, true);
+                        doResize(newBytes, true, false);
                     })
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
             } else {
                 dialog.dismiss();
-                doResize(newBytes, false);
+                doResize(newBytes, false, autoGrow);
             }
         } catch (Exception e) {
             inputSize.setError(context.getString(R.string.disk_resize_error_invalid));
         }
     }
 
-    private void doResize(long bytes, boolean shrink) {
+    private void doResize(long bytes, boolean shrink, boolean autoGrow) {
         try {
             var obj = new JSONObject();
             obj.put("action", "resize");
             obj.put("size", String.valueOf(bytes));
             if (shrink) obj.put("shrink", true);
             var intent = DiskOperationActivity.createIntent(context, config.getId(), obj);
+            if (autoGrow)
+                intent.putExtra(DiskOperationActivity.EXTRA_SUCCESS_INTENT,
+                    createAutoGrowIntent());
             context.startActivity(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start resize activity", e);
         }
+    }
+
+    @NonNull
+    private Intent createAutoGrowIntent() {
+        var agentVM = new AgentVM(VMBackend.QEMU, VMHypervisor.SOFT);
+        agentVM.setOperationConsole("uart", "/dev/ttyAMA0");
+        new AutoGrowAction(agentVM);
+        agentVM.addDisk(config);
+        return AgentOperationActivity.createIntent(context, agentVM);
     }
 }

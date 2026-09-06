@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.utils;
 
 import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
@@ -325,6 +328,20 @@ public final class FileUtils {
     @NonNull
     public static String externalPath() {
         return Environment.getExternalStorageDirectory().getPath();
+    }
+
+    /**
+     * {@code path} with {@code //}, {@code ..} and symlinks resolved, so two spellings of the
+     * same file compare equal; the original string when the filesystem will not say (an
+     * unreadable parent directory, say), which is no worse than not having asked.
+     */
+    @NonNull
+    public static String canonicalPath(@NonNull String path) {
+        try {
+            return new File(path).getCanonicalPath();
+        } catch (Exception e) {
+            return path;
+        }
     }
 
     public static boolean deleteFile(@NonNull String path) {

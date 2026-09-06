@@ -16,20 +16,33 @@
         android:textSize="14sp" />
 
     <com.google.android.material.textfield.TextInputLayout
-        android:id="@+id/til_target"
+        android:id="@+id/til_local"
         style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="@string/vnc_external_hint_target">
+        android:hint="@string/vnc_external_hint_local">
 
         <com.google.android.material.textfield.TextInputEditText
-            android:id="@+id/et_target"
+            android:id="@+id/et_local"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:clickable="false"
-            android:cursorVisible="false"
-            android:focusable="false"
-            tools:ignore="VisualLintTextFieldSize,TextContrastCheck" />
+            tools:ignore="SpeakableTextPresentCheck,VisualLintTextFieldSize,TextContrastCheck" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_remote"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:hint="@string/vnc_external_hint_remote">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_remote"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            tools:ignore="SpeakableTextPresentCheck,VisualLintTextFieldSize,TextContrastCheck" />
 
     </com.google.android.material.textfield.TextInputLayout>
 
@@ -55,4 +68,3 @@
     </com.google.android.material.textfield.TextInputLayout>
 
 </LinearLayout>
-

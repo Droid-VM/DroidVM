@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "modules": {
+    "gh_hugepage_reserve": { "soc_vendor": ["qualcomm"] },
+    "gunyah_host_share": { "soc_vendor": ["qualcomm"] },
+    "gunyah_kvcalloc": { "soc_vendor": ["qualcomm"] },
+    "gh_unmovable": { "soc_vendor": ["qualcomm"] },
+    "udmabuf": { "comment": "generic dma-buf provider/repair, nothing Gunyah about it: any SoC" },
+    "nproc_guard": { "comment": "no-reboot rescue for the per-uid RLIMIT_NPROC ucounts desync that wedges the app; loaded by the daemon with uid=<app uid>. Any SoC." }
+  },
+  "names": {
+    "gunyah_host_share": "Gunyah Host Share",
+    "gunyah_kvcalloc": "Gunyah kvcalloc Fix",
+    "gh_unmovable": "GH Unmovable",
+    "udmabuf": "Udmabuf Fix",
+    "nproc_guard": "NPROC Guard"
+  }
+}

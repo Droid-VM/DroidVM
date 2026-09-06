@@ -6,7 +6,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/vnc_background"
-    android:fitsSystemWindows="true"
     android:orientation="vertical"
     tools:context=".ui.vm.display.nativedisplay.display.VMNativeDisplayActivity">
 
@@ -68,6 +67,30 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:layout_gravity="center" />
+
+        <!-- The guest's HARDWARE cursor, composited by Android on top of the scanout.
+             virtio-gpu delivers the pointer on a separate cursor plane and crosvm hands it to us
+             as a second Surface; without this view those pixels go to a sink buffer that is never
+             displayed and the guest has no visible pointer.
+
+             Not optional dressing: a Linux compositor can be told to draw the pointer into the
+             framebuffer instead (KWIN_FORCE_SW_CURSOR and friends), but Windows' virtio-gpu driver
+             and UEFI have no such knob, and only ever use the cursor plane.
+
+             64x64 is virtio-gpu's cursor plane size; a smaller cursor image arrives in the
+             top-left with the rest transparent. Positioned from the guest's own cursor stream, so
+             layout_gravity is only the origin that the translation is applied from.
+
+             Laid out GONE only so nothing flashes at the top-left corner before the first
+             position: bindViews() makes it VISIBLE and parks it off-screen immediately, and it
+             stays visible from then on. Hiding the pointer is a park, never a GONE; see
+             CURSOR_PARKED_PX in VMNativeDisplayActivity for why the Surface must not die. -->
+        <SurfaceView
+            android:id="@+id/cursor_view"
+            android:layout_width="64px"
+            android:layout_height="64px"
+            android:layout_gravity="top|start"
+            android:visibility="gone" />
 
         <!-- Editor that hosts the IME; SurfaceView is an unreliable keyboard target. Kept visually
              imperceptible (1px, transparent text/background, no cursor) rather than alpha=0, because
@@ -140,5 +163,12 @@
         android:layout_height="wrap_content"
         android:gravity="bottom"
         android:orientation="vertical" />
+
+    <cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView
+        android:id="@+id/phy_keyboard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:visibility="gone" />
 
 </LinearLayout>

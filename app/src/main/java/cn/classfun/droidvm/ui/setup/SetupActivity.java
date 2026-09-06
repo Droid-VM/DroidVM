@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.setup;
 
 import static android.view.View.GONE;
@@ -26,6 +29,8 @@ import cn.classfun.droidvm.ui.main.MainActivity;
 import cn.classfun.droidvm.ui.setup.base.BaseStepFragment;
 import cn.classfun.droidvm.ui.setup.step.DoneStepFragment;
 import cn.classfun.droidvm.ui.setup.step.ExtractStepFragment;
+import cn.classfun.droidvm.ui.setup.step.KernelModuleStepFragment;
+import cn.classfun.droidvm.ui.setup.step.NetworkStepFragment;
 import cn.classfun.droidvm.ui.setup.step.PrivacyStepFragment;
 import cn.classfun.droidvm.ui.setup.step.RootStepFragment;
 import cn.classfun.droidvm.ui.setup.step.SocStepFragment;
@@ -79,6 +84,10 @@ public final class SetupActivity extends AppCompatActivity {
             new StorageStepFragment(this),
             new PrivacyStepFragment(this),
             new ExtractStepFragment(this),
+            // After extract: the module list reads the .ko files extract just put in place.
+            new KernelModuleStepFragment(this),
+            // Before Done, so the user leaves the wizard with a network to attach a VM to.
+            new NetworkStepFragment(this),
             new DoneStepFragment(this),
         };
         var targetStep = getIntent().getStringExtra(EXTRA_TARGET_STEP);
@@ -114,24 +123,36 @@ public final class SetupActivity extends AppCompatActivity {
         return null;
     }
 
+    /**
+     * Advance to the next step that wants to be shown, or leave the wizard when none does.
+     *
+     * <p>The bounds check has to come before the {@code get}, and "everything after this is
+     * hidden" has to end the wizard rather than fall off the end: a step can hide itself for
+     * reasons that hold on a whole class of devices (the kernel-module page does, on a phone
+     * none of the modules were written for), so a run of hidden steps at the tail is a normal
+     * outcome, not an impossible one.
+     */
     public void onStepCompleted() {
-        if (currentStep < steps.size() - 1) {
-            do currentStep++;
-            while (steps.get(currentStep).isHiddenStep() && currentStep < steps.size());
-            hideFab();
-            showStep(true, true);
-        } else {
+        int next = currentStep + 1;
+        while (next < steps.size() && steps.get(next).isHiddenStep()) next++;
+        if (next >= steps.size()) {
             startActivity(new Intent(this, MainActivity.class));
             finish();
+            return;
         }
+        currentStep = next;
+        hideFab();
+        showStep(true, true);
     }
 
+    /** Back to the previous shown step; a hidden one is skipped here too, not landed on. */
     public void onStepBack() {
-        if (currentStep > 0) {
-            currentStep--;
-            hideFab();
-            showStep(true, false);
-        }
+        int prev = currentStep - 1;
+        while (prev >= 0 && steps.get(prev).isHiddenStep()) prev--;
+        if (prev < 0) return;
+        currentStep = prev;
+        hideFab();
+        showStep(true, false);
     }
 
     public void showFab(int iconRes, Runnable action) {

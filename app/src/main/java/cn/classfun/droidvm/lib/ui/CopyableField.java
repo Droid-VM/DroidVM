@@ -1,8 +1,13 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.ui;
 
 import android.content.ClipData;
+import android.content.ClipDescription;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.os.PersistableBundle;
 import android.view.View;
 import android.view.ViewParent;
 import android.widget.EditText;
@@ -66,6 +71,19 @@ public final class CopyableField {
         var cm = ctx.getSystemService(ClipboardManager.class);
         if (cm == null) return;
         cm.setPrimaryClip(ClipData.newPlainText(label, text));
+        Toast.makeText(ctx, R.string.field_copied, Toast.LENGTH_SHORT).show();
+    }
+
+    /** Like {@link #copy}, but flags the clip sensitive so previews stay masked. */
+    public static void copySensitive(
+        @NonNull Context ctx, @NonNull CharSequence text, @NonNull CharSequence label) {
+        var cm = ctx.getSystemService(ClipboardManager.class);
+        if (cm == null) return;
+        var clip = ClipData.newPlainText(label, text);
+        var extras = new PersistableBundle();
+        extras.putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true);
+        clip.getDescription().setExtras(extras);
+        cm.setPrimaryClip(clip);
         Toast.makeText(ctx, R.string.field_copied, Toast.LENGTH_SHORT).show();
     }
 

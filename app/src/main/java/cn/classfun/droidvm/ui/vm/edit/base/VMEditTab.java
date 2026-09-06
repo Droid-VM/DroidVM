@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.base;
 
 import static java.util.Objects.requireNonNull;
@@ -17,6 +20,7 @@ import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
 import cn.classfun.droidvm.ui.vm.edit.boot.VMEditBootTab;
 import cn.classfun.droidvm.ui.vm.edit.graphics.VMEditGraphicsTab;
 import cn.classfun.droidvm.ui.vm.edit.network.VMEditNetworkTab;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 import cn.classfun.droidvm.ui.vm.edit.storage.VMEditStorageTab;
 
 public enum VMEditTab implements StringEnum {
@@ -44,6 +48,11 @@ public enum VMEditTab implements StringEnum {
         R.string.create_vm_tab_graphics,
         R.id.tab_content_graphics,
         VMEditGraphicsTab.class
+    ),
+    TAB_PERIPHERAL(
+        R.string.create_vm_tab_peripheral,
+        R.id.tab_content_peripheral,
+        VMEditPeripheralTab.class
     );
 
     public static final VMEditTab DEFAULT = TAB_BASIC;

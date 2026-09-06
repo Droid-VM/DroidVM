@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    tools:context=".ui.vm.notes.VMNotesActivity">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:fitsSystemWindows="true">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationIcon="?attr/homeAsUpIndicator"
+            app:title="@string/vm_notes_title">
+
+            <!-- In the title bar rather than under it: the three modes are the one control this
+                 screen has, and a row of its own would cost the editor a line of text. -->
+            <com.google.android.material.button.MaterialButtonToggleGroup
+                android:id="@+id/group_mode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="end|center_vertical"
+                app:selectionRequired="true"
+                app:singleSelection="true">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_mode_code"
+                    style="@style/Widget.DroidVM.Button.ModeToggle"
+                    android:contentDescription="@string/vm_notes_mode_code"
+                    app:icon="@drawable/ic_code" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_mode_preview"
+                    style="@style/Widget.DroidVM.Button.ModeToggle"
+                    android:contentDescription="@string/vm_notes_mode_preview"
+                    app:icon="@drawable/ic_eye" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_mode_split"
+                    style="@style/Widget.DroidVM.Button.ModeToggle"
+                    android:contentDescription="@string/vm_notes_mode_split"
+                    app:icon="@drawable/ic_split_pane" />
+
+            </com.google.android.material.button.MaterialButtonToggleGroup>
+
+        </com.google.android.material.appbar.MaterialToolbar>
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior">
+
+        <!-- Orientation and the panes' layout params are set at run time: the split always
+             follows the short axis, so it is top/bottom upright and side by side on its side. -->
+        <LinearLayout
+            android:id="@+id/split_container"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <com.google.android.material.card.MaterialCardView
+                android:id="@+id/pane_code"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_margin="4dp"
+                android:layout_weight="1"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="0dp"
+                app:strokeColor="?attr/colorOutlineVariant"
+                app:strokeWidth="1dp">
+
+                <EditText
+                    android:id="@+id/et_markdown"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:autofillHints="@null"
+                    android:background="@null"
+                    android:gravity="top|start"
+                    android:hint="@string/vm_notes_hint"
+                    android:inputType="textMultiLine|textNoSuggestions|textCapSentences"
+                    android:padding="12dp"
+                    android:scrollbars="vertical"
+                    android:textSize="14sp"
+                    android:typeface="monospace" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+            <androidx.core.widget.NestedScrollView
+                android:id="@+id/pane_preview"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_margin="4dp"
+                android:layout_weight="1"
+                android:fillViewport="true">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:paddingHorizontal="4dp">
+
+                    <androidx.compose.ui.platform.ComposeView
+                        android:id="@+id/preview"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content" />
+
+                    <TextView
+                        android:id="@+id/tv_preview_empty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:padding="12dp"
+                        android:text="@string/vm_notes_preview_empty"
+                        android:textAppearance="?attr/textAppearanceBodyMedium"
+                        android:textColor="?android:attr/textColorSecondary"
+                        android:visibility="gone" />
+
+                </LinearLayout>
+
+            </androidx.core.widget.NestedScrollView>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <com.google.android.material.floatingactionbutton.FloatingActionButton
+        android:id="@+id/fab_save"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end"
+        android:layout_margin="16dp"
+        android:contentDescription="@string/vm_notes_save"
+        android:src="@drawable/ic_check" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

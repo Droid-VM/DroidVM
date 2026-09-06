@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.store.vm;
 
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
@@ -32,6 +35,12 @@ public enum VMHypervisor implements StringEnum {
     @StringRes
     public int getStringId() {
         return stringId;
+    }
+
+    /** AUTO remains readable for old configs, but is no longer offered for new edits. */
+    @Override
+    public boolean isDisplay() {
+        return this != AUTO;
     }
 
     @Nullable
@@ -81,5 +90,26 @@ public enum VMHypervisor implements StringEnum {
     @Nullable
     public static VMHypervisor findPreferredHypervisor(@Nullable VMBackend backend) {
         return findPreferredHypervisor(backend, List.of(values()));
+    }
+
+    /** Resolves the legacy AUTO value at the one shared backend/device decision point. */
+    @Nullable
+    public static VMHypervisor resolveConfigured(
+        @Nullable VMBackend backend, @Nullable VMHypervisor configured
+    ) {
+        return configured == null || configured == AUTO
+            ? findPreferredHypervisor(backend) : configured;
+    }
+
+    /**
+     * Concrete value written for a new VM. The fallback preserves the old failure mode on a
+     * device with no usable hardware node (crosvm has no software accelerator), while avoiding
+     * an AUTO value that can silently change meaning after the config is created.
+     */
+    @NonNull
+    public static VMHypervisor defaultForNewVm(@NonNull VMBackend backend) {
+        var resolved = findPreferredHypervisor(backend);
+        if (resolved != null) return resolved;
+        return backend == VMBackend.QEMU ? SOFT : KVM;
     }
 }

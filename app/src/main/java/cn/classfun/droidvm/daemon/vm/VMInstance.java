@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm;
 
 import static java.util.Objects.requireNonNull;
@@ -17,6 +20,8 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -24,10 +29,13 @@ import java.util.UUID;
 import cn.classfun.droidvm.daemon.console.ConsoleStream;
 import cn.classfun.droidvm.daemon.vm.backend.BackendBase;
 import cn.classfun.droidvm.lib.data.CrosvmExit;
+import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
 import cn.classfun.droidvm.lib.natives.NativeProcess;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
+import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
+import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
@@ -36,7 +44,14 @@ import cn.classfun.droidvm.lib.utils.JsonUtils;
 
 public final class VMInstance extends VMConfig {
     private static final String TAG = "VMInstance";
-    private VMState state = VMState.STOPPED;
+    /**
+     * Read from every thread that asks what this VM is doing -- IPC handlers, the auto-start
+     * sweep, stopAll, the worker itself -- and written by the worker and by start(). Volatile so
+     * that a reader outside {@link #startLock} sees the current answer rather than a cached one.
+     */
+    private volatile VMState state = VMState.STOPPED;
+    /** Serialises the run-up to STARTING against a second caller; see {@link #start}. */
+    private final Object startLock = new Object();
     private NativeProcess process;
     private boolean stoppedByUser = false;
     private int exitCode = -1;
@@ -47,6 +62,10 @@ public final class VMInstance extends VMConfig {
     private BootPlan bootPlan;
     private String bootEntryOverride;
     private volatile boolean rebootRequested = false;
+    /** Set while a start that failed on unpinnable memory is being tried a second time. */
+    private volatile boolean pinRetryUsed = false;
+    /** A run this long counts as "the VM started", re-arming the one-shot pin retry. */
+    private static final long PIN_RETRY_RESET_MS = 60_000;
 
     // Delay before relaunching on reboot: lets the kernel settle same-name TAP
     // teardown/recreate and throttles a guest reboot-loop (no restart cap).
@@ -88,12 +107,16 @@ public final class VMInstance extends VMConfig {
         return this.backendInstance;
     }
 
-    /** Forwards UI-sent evdev bytes to the running backend's native-display input channel. */
-    public boolean writeNativeInput(int channel, @NonNull byte[] data) {
+    /**
+     * Forwards UI-sent evdev bytes to the running backend's native-display input channel for
+     * [screenId] -- the screen the console that sent them is showing, which is what picks between
+     * two screens' absolute devices.
+     */
+    public boolean writeNativeInput(@NonNull String screenId, int channel, @NonNull byte[] data) {
         // Only a running VM has a backend with bound input sockets; skip otherwise so a stale or
         // spoofed input call can't lazily create an idle backend instance.
         if (state != VMState.RUNNING) return false;
-        return getBackendInstance().writeNativeInput(channel, data);
+        return getBackendInstance().writeNativeInput(screenId, channel, data);
     }
 
     @NonNull
@@ -110,10 +133,13 @@ public final class VMInstance extends VMConfig {
         this.state = newState;
         Log.i(TAG, fmt("VM %s [%s] -> %s", getName(), getId().toString(), newState.name()));
         fireEvent("state", null);
+        // The one place every transition passes through, so the foreground service a peripheral
+        // may need is raised and dropped from the same edge the guest device appears on.
+        PeripheralForegroundControl.refresh(store);
     }
 
     private void fireEvent(@NonNull String event, @Nullable JSONObject extra) {
-        var cb = store.eventCallback;
+        var cb = store.context.vmEventCallback;
         if (cb == null) return;
         try {
             var data = new JSONObject();
@@ -152,29 +178,43 @@ public final class VMInstance extends VMConfig {
         bootEntryOverride = entryId;
     }
 
+    /**
+     * Takes this VM from STOPPED to STARTING and hands it to a worker thread.
+     *
+     * <p>Held under {@link #startLock} from the state test to the worker being handed the VM,
+     * because two callers reaching here at once is no longer hypothetical: the auto-start sweep
+     * runs behind the daemon's socket now, so a client's {@code vm_start} can arrive while the
+     * sweep is looking at the same VM. Unlocked, both read STOPPED, both pass the test, and the
+     * VM gets two worker threads and two crosvm processes against one set of taps and sockets.
+     * The test alone cannot be made atomic -- it is the whole run-up to {@code setState} that has
+     * to be, since that is what publishes the claim.</p>
+     */
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean start() {
-        // REBOOTING is accepted too: the reboot relaunch calls start() from that
-        // transient state (process already gone) and goes straight to STARTING.
-        if (state != VMState.STOPPED && state != VMState.REBOOTING) {
-            Log.w(TAG, fmt("VM %s is not stopped (state=%s), cannot start", getId(), state.name()));
-            return false;
+        synchronized (startLock) {
+            // REBOOTING is accepted too: the reboot relaunch calls start() from that
+            // transient state (process already gone) and goes straight to STARTING.
+            if (state != VMState.STOPPED && state != VMState.REBOOTING) {
+                Log.w(TAG, fmt("VM %s is not stopped (state=%s), cannot start",
+                    getId(), state.name()));
+                return false;
+            }
+            joinThreads(1000);
+            if (!setupTaps()) return false;
+            resolveVncConfig();
+            stoppedByUser = false;
+            exitCode = -1;
+            setState(VMState.STARTING);
+            var vmIdStr = getId().toString();
+            workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
+            workerThread.setDaemon(true);
+            workerThread.start();
+            Log.i(TAG, fmt(
+                "Start requested for VM: %s [%s] via %s",
+                getName(), vmIdStr, getBackend().name()
+            ));
+            return true;
         }
-        joinThreads(1000);
-        if (!setupTaps()) return false;
-        if (item.optBoolean("vnc_enabled", false)) resolveVncConfig();
-        stoppedByUser = false;
-        exitCode = -1;
-        setState(VMState.STARTING);
-        var vmIdStr = getId().toString();
-        workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
-        workerThread.setDaemon(true);
-        workerThread.start();
-        Log.i(TAG, fmt(
-            "Start requested for VM: %s [%s] via %s",
-            getName(), vmIdStr, getBackend().name()
-        ));
-        return true;
     }
 
     private void setupTap(int index, List<DataItem> createdNics, @NonNull DataItem netCfg, String vmId) throws Exception {
@@ -248,20 +288,39 @@ public final class VMInstance extends VMConfig {
         }
     }
 
+    /**
+     * Fills in whatever each VNC-bound screen left unset before the VM starts.
+     *
+     * <p>Per screen, not per VM: two screens exporting over VNC are two servers, and crosvm
+     * refuses to start when they land on the same port -- so an unset port is resolved once for
+     * each of them, and the one just handed out is held against the next lookup because it is not
+     * bound yet and would otherwise still look free.</p>
+     */
     private void resolveVncConfig() {
-        if (item.optLong("vnc_port", -1) <= 0) {
-            int port = generateRandomAvailablePort();
-            if (port > 0) {
-                item.set("vnc_port", port);
-                Log.i(TAG, fmt("VM %s: auto-assigned VNC port %d", getName(), port));
-            } else {
-                Log.e(TAG, fmt("VM %s: failed to find available VNC port", getName()));
+        var taken = new ArrayList<Long>();
+        for (var screen : VMScreenConfig.listOf(item)) {
+            if (!screen.isEnabled() || screen.getExporter() != DisplayExporter.VNC) continue;
+            var port = screen.getVncPort();
+            if (port <= 0 || taken.contains(port)) {
+                int fresh = generateRandomAvailablePort();
+                while (fresh > 0 && taken.contains((long) fresh))
+                    fresh = generateRandomAvailablePort();
+                if (fresh > 0) {
+                    screen.setVncPort(fresh);
+                    port = fresh;
+                    Log.i(TAG, fmt("VM %s: auto-assigned VNC port %d for screen %s",
+                        getName(), fresh, screen.id));
+                } else {
+                    Log.e(TAG, fmt("VM %s: failed to find available VNC port for screen %s",
+                        getName(), screen.id));
+                }
             }
-        }
-        if (item.optBoolean("vnc_password_auth", false) && item.optString("vnc_password", "").isEmpty()) {
-            var password = generateRandomPassword(8);
-            item.set("vnc_password", password);
-            Log.i(TAG, fmt("VM %s: auto-generated VNC password", getName()));
+            if (port > 0) taken.add(port);
+            if (screen.isVncPasswordAuth() && screen.getVncPassword().isEmpty()) {
+                screen.setVncPassword(generateRandomPassword(8));
+                Log.i(TAG, fmt("VM %s: auto-generated VNC password for screen %s",
+                    getName(), screen.id));
+            }
         }
     }
 
@@ -409,7 +468,9 @@ public final class VMInstance extends VMConfig {
                 startReaderThread(vmId, stream);
         }
         setState(VMState.RUNNING);
+        long ranFrom = System.currentTimeMillis();
         int code = process.waitFor();
+        long ranForMs = System.currentTimeMillis() - ranFrom;
         for (var stream : inst.streams.values()) {
             var reader = stream.getReaderThread();
             if (reader != null && reader.isAlive()) {
@@ -430,6 +491,24 @@ public final class VMInstance extends VMConfig {
         // A guest-requested reset (crosvm exit 32) or a host-issued reboot both
         // relaunch the VM; an explicit user stop never does and wins over both.
         boolean wantRestart = !stoppedByUser && (code == CrosvmExit.RESET.getCode() || rebootRequested);
+        // ... and so does a start that died because the memory it was given could not be pinned.
+        // That is the VMM refusing to hand the hypervisor pages the host may still move, and it
+        // is worth exactly one more attempt: the condition is a moment in time (the reserve had
+        // not finished taking the previous VM's pages back, or the allocation drew from CMA), and
+        // measured on device the identical configuration started cleanly on the retry. Beyond one
+        // attempt it is not a moment, it is a shortage, and repeating would only hide it.
+        // RUNNING is set the moment the process is spawned, so it says nothing about whether the
+        // VM got off the ground: a pin refusal happens inside VM creation, seconds later. A start
+        // that lasted is what clears the one-shot, so a VM that ran for an hour and then died can
+        // still be retried, while a VM failing in three seconds cannot loop.
+        if (code == 0 || ranForMs > PIN_RETRY_RESET_MS) pinRetryUsed = false;
+        boolean pinFailure = !stoppedByUser && !wantRestart && code != 0 && !pinRetryUsed
+            && exitLogSuggestsPinFailure();
+        if (pinFailure) {
+            pinRetryUsed = true;
+            wantRestart = true;
+            Log.w(TAG, fmt("VM %s exited on unpinnable memory; retrying once", getName()));
+        }
         if (stoppedByUser && code != 0) {
             Log.i(TAG, fmt("VM %s stopped by user", getName()));
             exitCode = 0;
@@ -450,12 +529,50 @@ public final class VMInstance extends VMConfig {
             scheduleRelaunch();
             return;
         }
+        nprocGuardResetBestEffort();
         setState(VMState.STOPPED);
         fireEvent("exited", null);
     }
 
+    /**
+     * Best-effort, run by the daemon once a VM's process has fully exited: ask nproc_guard to
+     * recompute the app uid's RLIMIT_NPROC ucounts counter back to its true live count. crosvm
+     * drops its real uid to the app's (setresuid, to reach the camera/mic/app-scoped files), and
+     * on some kernels that real-uid switching leaves the per-uid NPROC accounting slightly off;
+     * left to drift across many VM runs it eventually blocks the app from launching until a
+     * reboot. Doing it here -- process gone, uid idle -- is the exact, race-free moment to correct
+     * it. The guard module is loaded with this app's uid, so a bare "1" is enough; if it is not
+     * loaded the sysfs node is absent and this is a no-op.
+     */
+    private static void nprocGuardResetBestEffort() {
+        var reset = new File("/sys/kernel/nproc_guard/reset");
+        if (!reset.exists())
+            return;
+        try (var os = new FileOutputStream(reset)) {
+            os.write('1');
+        } catch (Exception e) {
+            Log.d(TAG, "nproc_guard reset skipped", e);
+        }
+    }
+
     // Relaunch off the worker thread: start() joins workerThread (this thread),
     // and the short sleep settles same-name TAP recreation before re-setup.
+    /**
+     * Whether this exit was the VMM refusing memory it could not pin (see crosvm's pin.rs).
+     *
+     * Read off the console rather than the exit code, because there is no distinct code for it:
+     * crosvm reports a plain failure to create the VM. The two lines below are the ones that
+     * distinguish it from every other start failure -- a bad disk path, a missing kernel -- which
+     * must not be retried.
+     */
+    private boolean exitLogSuggestsPinFailure() {
+        var stream = getStream("stdio");
+        if (stream == null) return false;
+        var log = stream.getBuffer();
+        if (log == null) return false;
+        return log.contains("GH-PIN[") && log.contains("cannot be long-term pinned");
+    }
+
     private void scheduleRelaunch() {
         var t = new Thread(() -> {
             try {
@@ -464,6 +581,17 @@ public final class VMInstance extends VMConfig {
                 return;
             }
             if (state != VMState.REBOOTING) return; // user changed state meanwhile
+            // The VM we are relaunching has only just let go of its memory, and the huge-page
+            // reserve takes a few seconds to get it back. Relaunching into that gap is the one
+            // way a reboot turns into a dead VM: the pages come from ordinary movable memory
+            // instead, the VMM refuses to hand memory it cannot pin to the hypervisor, and the
+            // relaunch exits with ENOMEM (measured: reserve at 526 of 2542 pages when the
+            // relaunch started, full again nine seconds later). Nobody is watching a reboot, so
+            // it waits like any other background start -- see PoolPreflight.waitForPool.
+            if (!PoolPreflight.waitForPool(item, PoolPreflight.RELAUNCH_ATTEMPTS,
+                PoolPreflight.BACKGROUND_INTERVAL_MS, PoolPreflight.BACKGROUND_ACQUIRE_AT))
+                Log.w(TAG, fmt("VM %s relaunching with the reserve still short", getName()));
+            if (state != VMState.REBOOTING) return; // stopped while we waited
             if (!start()) {
                 Log.w(TAG, fmt("VM %s relaunch failed", getName()));
                 // Surface the failure as a real exit so attached consoles / UI stop

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm;
 
 import android.app.Application;
@@ -13,6 +16,7 @@ import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.ImeInsetsApplier;
 import cn.classfun.droidvm.lib.utils.ThreadUtils;
+import cn.classfun.droidvm.ui.main.settings.KernelModuleManager;
 
 public final class DroidVMApp extends Application {
     private static final String TAG = "DroidVMApp";
@@ -30,6 +34,11 @@ public final class DroidVMApp extends Application {
             initializeStore(new VMStore());
             initializeStore(new DiskStore());
             initializeStore(new NetworkStore());
+            try {
+                KernelModuleManager.applyAutostart(this);
+            } catch (Exception e) {
+                Log.w(TAG, "kernel module autostart failed", e);
+            }
         });
     }
 

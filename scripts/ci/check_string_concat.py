@@ -5,6 +5,9 @@ Reports every `+` where exactly one operand is a string literal and the other is
 a runtime expression (`"x=" + v`, `v + " done"`), which reads better as
 `fmt("x=%s", v)`. Deliberately NOT flagged:
   - `+` inside a string literal ("wlan+", "%s+", "\\s+") -- masked out first;
+  - char literals: `(char) ('a' + i)` is integer arithmetic, not string building,
+    so a char literal is masked to its own sentinel and never counts as "the
+    string side" of a `+`;
   - literal + literal ("a" + "b") -- a compile-time constant, fmt adds nothing;
   - `++` and numeric `+` with no string operand;
   - a `+=` append with a SINGLE `+` (`s += "x" + y`) -- appending one piece to
@@ -32,11 +35,14 @@ SUPPRESS = "concat-ok"
 
 
 def mask(src):
-    """Replace comments with spaces and each string/char literal with one STR
-    sentinel (\x01), preserving newlines so line numbers stay accurate."""
+    """Replace comments with spaces, each string literal with one STR sentinel
+    (\x01) and each char literal with a CHR sentinel (\x02), preserving newlines
+    so line numbers stay accurate. The two differ because only a string literal
+    makes a `+` string building: `'a' + i` is arithmetic on code points."""
     out = []
     i, n = 0, len(src)
     STR = "\x01"
+    CHR = "\x02"
     while i < n:
         c = src[i]
         two = src[i:i + 2]
@@ -60,7 +66,7 @@ def mask(src):
                     j += 1
                     break
                 j += 1
-            out.append(STR)
+            out.append(STR if c == '"' else CHR)
             i = j
         else:
             out.append(c)
@@ -68,11 +74,12 @@ def mask(src):
     return "".join(out)
 
 
-# Significant tokens: a string literal (\x01), '+=' (marks an append statement),
-# a value (identifier / number / closing bracket = end of a sub-expression), a
-# '+', or a statement boundary (; { }) that scopes the '+=' exemption.
+# Significant tokens: a string literal (\x01), a char literal (\x02, a value like
+# any other), '+=' (marks an append statement), a value (identifier / number /
+# closing bracket = end of a sub-expression), a '+', or a statement boundary
+# (; { }) that scopes the '+=' exemption.
 TOKEN = re.compile(r"""
-      \x01                                   # string literal
+      \x01 | \x02                            # string literal / char literal
     | \+\+ | \+=                             # compound operators (+= = append)
     | \+                                     # the concatenation operator
     | [A-Za-z_$][A-Za-z0-9_$]* | [0-9][\w.]* # identifier / number

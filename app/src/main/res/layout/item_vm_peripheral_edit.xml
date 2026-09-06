@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="16dp"
+    android:layout_marginEnd="16dp"
+    android:layout_marginBottom="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="1dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- header: device type + delete -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/iv_peripheral_icon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@string/edit_vm_peripheral_type"
+                android:src="@drawable/ic_speaker"
+                app:tint="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/tv_peripheral_type"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:textSize="14sp"
+                tools:text="VirtIO Sound" />
+
+            <ImageButton
+                android:id="@+id/btn_peripheral_delete"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/edit_vm_peripheral_delete"
+                android:src="@drawable/ic_delete"
+                app:tint="?attr/colorError"
+                tools:ignore="TouchTargetSizeCheck" />
+
+        </LinearLayout>
+
+        <!-- unavailable notice (Intel HDA today) -->
+        <TextView
+            android:id="@+id/tv_peripheral_unavailable"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="@string/edit_vm_peripheral_unavailable"
+            android:textColor="?attr/colorError"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:visibility="visible" />
+
+        <!-- ===== VirtIO Sound: one card, endpoints grouped by direction ===== -->
+        <LinearLayout
+            android:id="@+id/group_virtio_sound"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!--
+              Playback endpoints above the rule, capture ones below it. A row carries no direction
+              of its own: which side of the rule it is on is its direction, and its label states
+              which. The rule stays put when a group is empty, so an empty half still reads as a
+              half rather than as a missing one.
+            -->
+            <LinearLayout
+                android:id="@+id/sound_out_endpoints"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="4dp"
+                android:background="?attr/colorOutlineVariant" />
+
+            <LinearLayout
+                android:id="@+id/sound_in_endpoints"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+            <!-- Adding an endpoint and the two card-wide settings: one row, because none of the
+                 three belongs to any endpoint above. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_sound_endpoint_add"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="@string/edit_vm_sound_endpoint_add"
+                    android:textSize="12sp"
+                    app:icon="@drawable/ic_add"
+                    app:iconSize="18dp"
+                    tools:ignore="TouchTargetSizeCheck" />
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_sound_buffer"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:title="@string/edit_vm_sound_buffer"
+                    app:pb_mode="dialog" />
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_sound_underrun"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:layout_marginStart="8dp"
+                    android:title="@string/edit_vm_sound_underrun"
+                    app:pb_mode="dialog" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- ===== Intel HDA: one card, both directions ===== -->
+        <LinearLayout
+            android:id="@+id/group_intel_hda"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/edit_vm_peripheral_host_output"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_hda_out"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:text="@string/edit_vm_peripheral_host_default"
+                    android:textSize="12sp"
+                    tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:text="@string/edit_vm_peripheral_host_input"
+                    android:textSize="12sp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_hda_in"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="0dp"
+                    android:layout_height="36dp"
+                    android:layout_weight="1"
+                    android:text="@string/edit_vm_peripheral_host_default"
+                    android:textSize="12sp"
+                    tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+            </LinearLayout>
+
+        </LinearLayout>
+
+        <!-- One camera device, one host camera: a virtio-media device registers exactly one
+             /dev/videoX, so there is nothing here to add rows to. -->
+        <LinearLayout
+            android:id="@+id/group_virtio_camera"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <TextView
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_vm_peripheral_host_camera"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_camera_device"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:text="@string/host_camera_default"
+                android:textSize="12sp"
+                tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_peripheral_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?attr/colorError"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:text="Not connected right now"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>
