@@ -215,7 +215,7 @@ public final class CrosvmUsbControl {
     @NonNull
     static String attachFailureMessage(@NonNull String token, @NonNull String cliStderr,
                                        @NonNull String vmmLog) {
-        var cause = firstErrorLine(cliStderr + "\n" + vmmLog);
+        var cause = firstErrorLine(fmt("%s\n%s", cliStderr, vmmLog));
         if (cause == null) return fmt("crosvm usb attach failed: %s", token);
         return fmt("crosvm usb attach failed: %s (%s)", token, cause);
     }

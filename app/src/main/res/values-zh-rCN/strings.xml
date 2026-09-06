@@ -1622,10 +1622,7 @@
     <string name="usb_rules_field_port">端口</string>
     <string name="usb_rules_field_target">目标</string>
     <string name="usb_rules_any_taken">任意层只能有一条规则</string>
-    <string name="usb_rules_desc_exact">%1$s，port %2$s</string>
     <string name="usb_rules_port_label">Port %1$s</string>
-    <string name="usb_rules_port_current">目前插着：%1$s</string>
-    <string name="usb_rules_port_empty">目前没有设备插在这个 port</string>
     <string name="usb_rules_move_up">上移</string>
     <string name="usb_rules_move_down">下移</string>
     <string name="usb_rules_delete">删除规则</string>
@@ -1635,7 +1632,6 @@
     <string name="usb_rules_request_failed">daemon 拒绝了这个请求</string>
     <string name="usb_rules_daemon_unavailable">尚未连上 daemon</string>
     <string name="usb_rules_state_attached">已接入 %1$s</string>
-    <string name="usb_rules_state_held">held（手动拔除，拔掉重插前不再自动接入）</string>
     <string name="usb_rules_state_host">在 host</string>
     <string name="usb_rules_pick_device_port_fmt">Port %1$s：%2$s</string>
     <string name="usb_rules_discard_title">放弃更改？</string>
@@ -1651,6 +1647,7 @@
     <string name="usb_devices_apply_failed_title">有设备没有应用</string>
     <string name="usb_devices_target_host">不挂载（留在主机）</string>
     <string name="usb_devices_state_sinked">已从 Android 和所有虚拟机隐藏</string>
+    <string name="usb_devices_same_vm">设备已经在那台虚拟机上，crosvm 没有另一个控制器可以移过去</string>
     <string name="usb_devices_state_sinked_rule">已按规则 %1$s[%2$d] 隐藏</string>
     <string name="usb_devices_state_pinned">手动指定，拔除后才恢复规则</string>
     <string name="usb_devices_discard_message">选好的去向还没应用，要不应用就离开吗？</string>

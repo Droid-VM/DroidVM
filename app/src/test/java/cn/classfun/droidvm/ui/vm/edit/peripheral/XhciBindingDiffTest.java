@@ -210,6 +210,39 @@ public final class XhciBindingDiffTest {
     }
 
     @Test
+    public void aSinkRuleGoesThroughUntouched() {
+        // The card speaks for VM bindings only, but a save rebuilds every layer, so a rule that
+        // hides a device has to come out of the merge exactly as it went in: dropped, it would
+        // go back as a host rule and the device would reappear -- and in the catch-all layer,
+        // where a host rule is refused, it would take the whole save down with it.
+        var hidden = new Row("0bda:8153", null, null, null, "sink");
+        var binding = mine("090c:1000");
+        var merged = XhciBindingDiff.merge(list(binding, hidden), list(binding), list(binding),
+            ownedByThisPage());
+        assertEquals(2, merged.size());
+        assertSame(hidden, merged.get(1));
+        assertEquals("sink", merged.get(1).target);
+    }
+
+    @Test
+    public void aRowTheCardMadeIsAVmBinding() {
+        assertEquals("vm", new Row("0bda:8153", null, null, "xhci-0").target);
+        // And the target survives every way a row is rebuilt.
+        var edited = new Row(null, null, null, null, "sink").edited("2109:0813", null, "xhci-1");
+        assertEquals("sink", edited.target);
+        assertEquals("sink", new Row("0bda:8153", null, null, null, "sink").withVm(VM).target);
+    }
+
+    @Test
+    public void twoRowsThatDoDifferentThingsAreNotTheSameRow() {
+        // Same subject, different outcome: a deletion of one must not eat the other.
+        var host = new Row("0bda:8153", null, null, null, "host");
+        var hidden = new Row("0bda:8153", null, null, null, "sink");
+        assertFalse(host.sameAs(hidden));
+        assertFalse(XhciBindingDiff.sameRows(list(host), list(hidden)));
+    }
+
+    @Test
     public void sameRowsComparesMultisetsRatherThanOrder() {
         var a = mine("0bda:8153");
         var b = mine("090c:1000");

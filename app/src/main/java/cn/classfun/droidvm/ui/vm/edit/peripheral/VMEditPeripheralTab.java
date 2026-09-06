@@ -387,11 +387,23 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
                 // An entry that is not an object is one the daemon would refuse anyway; keeping
                 // it would only put the refusal on this page's save.
                 if (obj != null) rows.add(new Row(text(obj, "id"), text(obj, "port"),
-                    text(obj, "vm"), text(obj, "controller")));
+                    text(obj, "vm"), text(obj, "controller"), targetOf(obj)));
             }
             out.put(layer, rows);
         }
         return out;
+    }
+
+    /**
+     * What a rule does with what it matches. A row carrying no target is one written before
+     * there was a target to write -- the dev phone's own file -- and its vm is the whole of what
+     * it said, which is how the daemon reads it too.
+     */
+    @NonNull
+    private static String targetOf(@NonNull JSONObject obj) {
+        var target = text(obj, "target");
+        if (target != null) return target;
+        return text(obj, "vm") == null ? "host" : XhciBindingDiff.TARGET_VM;
     }
 
     /** A string field, where an absent key, a JSON null and "" all read as null. */
@@ -412,6 +424,10 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             if (row.port != null) obj.put("port", row.port);
             if (row.vm != null) obj.put("vm", row.vm);
             if (row.controller != null) obj.put("controller", row.controller);
+            // Always written, the way the daemon writes it: a row this page is only passing
+            // through says what it always said, and a reader that had to infer the outcome from
+            // the other fields would be a second answer to a question this key answers.
+            obj.put("target", row.target);
             arr.put(obj);
         }
         return arr;

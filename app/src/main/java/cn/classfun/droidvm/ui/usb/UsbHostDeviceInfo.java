@@ -37,7 +37,10 @@ public final class UsbHostDeviceInfo {
         public final int index;
 
         private Sink(@NonNull JSONObject obj) {
-            layer = UsbRuleLayer.fromValue(obj.opt("layer"));
+            // The null is checked rather than parsed: opt() hands back org.json's own NULL
+            // sentinel, which reaches the same answer only by failing to be a layer key and
+            // then failing to be a number.
+            layer = obj.isNull("layer") ? null : UsbRuleLayer.fromValue(obj.opt("layer"));
             index = obj.optInt("index", -1);
         }
     }
@@ -64,7 +67,13 @@ public final class UsbHostDeviceInfo {
      * Android, a host driver or a VM to bind to.
      */
     public final boolean authorized;
-    /** Pinned by hand: the daemon skips it until it is unplugged. */
+    /**
+     * Pinned by hand: the daemon skips it until it is unplugged.
+     *
+     * <p>The daemon also sends {@code pin}, which says to what -- the host or the sink. It is
+     * deliberately not read: the pages say where the device is from the device itself, and what
+     * the pin adds is only that the rules will not move it, which is this boolean.</p>
+     */
     public final boolean held;
     public final boolean hostInUse;
     @Nullable

@@ -79,7 +79,8 @@ public final class UsbRulePassTimingTest {
         var then = new Counter();
         var abandoned = new Counter();
         var gaveUp = new Counter();
-        UsbRulePassTiming.whenReady(scheduler, wanted, ready, then, abandoned, gaveUp, 1000, 60);
+        UsbRulePassTiming.whenReady(scheduler,
+            new UsbRulePassTiming.Wait(wanted, ready, then, abandoned, gaveUp), 1000, 60);
         // Nothing has happened yet: the first probe is itself a scheduled task, on the worker.
         assertEquals(0, ready.asked);
         scheduler.runAll();
@@ -94,8 +95,8 @@ public final class UsbRulePassTimingTest {
     public void aVmThatIsReadyAtOnceWaitsForNothing() {
         var scheduler = new FakeScheduler();
         var then = new Counter();
-        UsbRulePassTiming.whenReady(scheduler, new Script(true), new Script(true), then,
-            new Counter(), new Counter(), 1000, 60);
+        UsbRulePassTiming.whenReady(scheduler, new UsbRulePassTiming.Wait(new Script(true),
+            new Script(true), then, new Counter(), new Counter()), 1000, 60);
         scheduler.runAll();
         assertEquals(1, then.runs);
         assertEquals(List.of(0L), scheduler.delays);
@@ -108,8 +109,8 @@ public final class UsbRulePassTimingTest {
         var then = new Counter();
         var abandoned = new Counter();
         var gaveUp = new Counter();
-        UsbRulePassTiming.whenReady(scheduler, new Script(true), ready, then, abandoned, gaveUp,
-            1000, 3);
+        UsbRulePassTiming.whenReady(scheduler, new UsbRulePassTiming.Wait(new Script(true),
+            ready, then, abandoned, gaveUp), 1000, 3);
         scheduler.runAll();
         assertEquals(3, ready.asked);
         assertEquals(0, then.runs);
@@ -128,7 +129,8 @@ public final class UsbRulePassTimingTest {
         var then = new Counter();
         var abandoned = new Counter();
         var gaveUp = new Counter();
-        UsbRulePassTiming.whenReady(scheduler, wanted, ready, then, abandoned, gaveUp, 1000, 60);
+        UsbRulePassTiming.whenReady(scheduler,
+            new UsbRulePassTiming.Wait(wanted, ready, then, abandoned, gaveUp), 1000, 60);
         scheduler.runAll();
         // Wanted is asked before the probe each time, and the probe is not asked once it is not.
         assertEquals(3, wanted.asked);

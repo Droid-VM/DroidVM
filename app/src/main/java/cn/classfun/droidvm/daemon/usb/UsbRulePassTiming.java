@@ -28,40 +28,58 @@ final class UsbRulePassTiming {
         void schedule(@NonNull Runnable task, long delayMs);
     }
 
+    /**
+     * One wait, as its five answers: whether it is still wanted, whether what it waits for has
+     * happened, and what to do in each of the three ways it can end. Together because they are
+     * one wait -- passed one by one they are five same-shaped arguments in a row, which is a
+     * call site that goes wrong silently.
+     */
+    static final class Wait {
+        private final BooleanSupplier wanted;
+        private final BooleanSupplier ready;
+        private final Runnable then;
+        private final Runnable abandoned;
+        private final Runnable gaveUp;
+
+        Wait(@NonNull BooleanSupplier wanted, @NonNull BooleanSupplier ready,
+             @NonNull Runnable then, @NonNull Runnable abandoned, @NonNull Runnable gaveUp) {
+            this.wanted = wanted;
+            this.ready = ready;
+            this.then = then;
+            this.abandoned = abandoned;
+            this.gaveUp = gaveUp;
+        }
+    }
+
     private UsbRulePassTiming() {
     }
 
     /**
-     * Probes [ready] on the scheduler, now and then once per [pollMs], and runs [then] on the
-     * first yes. The wait ends without it when [wanted] turns false -- [abandoned] runs, and the
-     * probe is not asked -- or once [maxPolls] probes have said no -- [gaveUp] runs.
+     * Probes [wait] on the scheduler, now and then once per [pollMs], and runs its {@code then}
+     * on the first yes. The wait ends without it when it stops being wanted -- {@code abandoned}
+     * runs, and the probe is not asked -- or once [maxPolls] probes have said no, which is
+     * {@code gaveUp}.
      */
-    static void whenReady(@NonNull Scheduler scheduler, @NonNull BooleanSupplier wanted,
-                          @NonNull BooleanSupplier ready, @NonNull Runnable then,
-                          @NonNull Runnable abandoned, @NonNull Runnable gaveUp,
-                          long pollMs, int maxPolls) {
-        scheduler.schedule(() -> probe(scheduler, wanted, ready, then, abandoned, gaveUp,
-            pollMs, maxPolls, 1), 0);
+    static void whenReady(@NonNull Scheduler scheduler, @NonNull Wait wait, long pollMs,
+                          int maxPolls) {
+        scheduler.schedule(() -> probe(scheduler, wait, pollMs, maxPolls, 1), 0);
     }
 
-    private static void probe(@NonNull Scheduler scheduler, @NonNull BooleanSupplier wanted,
-                              @NonNull BooleanSupplier ready, @NonNull Runnable then,
-                              @NonNull Runnable abandoned, @NonNull Runnable gaveUp,
-                              long pollMs, int maxPolls, int attempt) {
-        if (!wanted.getAsBoolean()) {
-            abandoned.run();
+    private static void probe(@NonNull Scheduler scheduler, @NonNull Wait wait, long pollMs,
+                              int maxPolls, int attempt) {
+        if (!wait.wanted.getAsBoolean()) {
+            wait.abandoned.run();
             return;
         }
-        if (ready.getAsBoolean()) {
-            then.run();
+        if (wait.ready.getAsBoolean()) {
+            wait.then.run();
             return;
         }
         if (attempt >= maxPolls) {
-            gaveUp.run();
+            wait.gaveUp.run();
             return;
         }
-        scheduler.schedule(() -> probe(scheduler, wanted, ready, then, abandoned, gaveUp,
-            pollMs, maxPolls, attempt + 1), pollMs);
+        scheduler.schedule(() -> probe(scheduler, wait, pollMs, maxPolls, attempt + 1), pollMs);
     }
 
     /**

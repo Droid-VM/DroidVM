@@ -19,9 +19,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 /**
- * {@code usb_rules.json} in the app's files directory. The UI writes this file too and pushes
- * the same content through {@code usb_rules_set}; the daemon reads it once at start-up and
- * rewrites it on every set, so both sides see the same rules after either one changes them.
+ * {@code usb_rules.json} in the app's files directory. The daemon is the only writer: it reads
+ * the file once at start-up and rewrites it on every {@code usb_rules_set}, which is the whole
+ * of how the two editing pages change it. Neither of them opens the file.
  */
 public final class UsbRulesFile {
     private static final String TAG = "UsbRulesFile";

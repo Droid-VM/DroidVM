@@ -26,6 +26,11 @@ public final class UsbDeviceRow {
     /** Where the daemon says the device is, in the words a target speaks. */
     public final UsbDeviceTarget current;
     private UsbDeviceTarget wanted;
+    /**
+     * Whether the user has answered for this row. Where the device already is is not an answer:
+     * every row would otherwise be a request the moment the page opened.
+     */
+    private boolean picked = false;
 
     public UsbDeviceRow(@NonNull UsbHostDeviceInfo device) {
         this.device = device;
@@ -44,22 +49,35 @@ public final class UsbDeviceRow {
         return wanted;
     }
 
-    public void want(@NonNull UsbDeviceTarget target) {
+    /**
+     * Records where the user asked for the device to go, and says whether that was an answer
+     * this page can give.
+     *
+     * <p>Moving a device between two controllers of the VM that already holds it is not one:
+     * crosvm emulates the controller and takes no argument for it, so the daemon leaves the
+     * device exactly where it is, and a button that kept the pick would promise a move that
+     * never happens and never clears.</p>
+     */
+    public boolean want(@NonNull UsbDeviceTarget target) {
+        if (target.kind == UsbRules.Target.VM && current.kind == UsbRules.Target.VM
+            && Objects.equals(target.vmId, current.vmId)) return false;
         wanted = target;
+        picked = true;
+        return true;
     }
 
     /**
      * Whether the apply has anything to do about this row.
      *
-     * <p>Moving a device between two controllers of the same VM is not one of those things:
-     * crosvm emulates the controller and takes no argument for it, so the daemon answers such a
-     * request by leaving the device exactly where it is, and a row that kept asking for it would
-     * stay pending for ever.</p>
+     * <p>Asking for the target the device already has is one of those things, as long as nothing
+     * pins it there yet: that request is how a state the rules made becomes the user's own, and
+     * the pin it leaves behind is the whole of what keeps the next rules pass from undoing it.
+     * A device that is already pinned has nothing more to gain from being asked again.</p>
      */
     public boolean isChanged() {
-        if (wanted.kind == UsbRules.Target.VM && current.kind == UsbRules.Target.VM
-            && Objects.equals(wanted.vmId, current.vmId)) return false;
-        return !wanted.sameAs(current);
+        if (!picked) return false;
+        if (wanted.sameAs(current)) return !device.held;
+        return true;
     }
 
     /**

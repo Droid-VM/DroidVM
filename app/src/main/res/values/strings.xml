@@ -1666,10 +1666,7 @@
     <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_rules_card_title_fmt" translatable="false">USB %1$s %2$s</string>
     <string name="usb_rules_card_title_plain_fmt" translatable="false">USB %1$s</string>
-    <string name="usb_rules_desc_exact">%1$s at port %2$s</string>
     <string name="usb_rules_port_label">Port %1$s</string>
-    <string name="usb_rules_port_current">Now there: %1$s</string>
-    <string name="usb_rules_port_empty">Nothing plugged in there right now</string>
     <string name="usb_rules_move_up">Move up</string>
     <string name="usb_rules_move_down">Move down</string>
     <string name="usb_rules_delete">Delete rule</string>
@@ -1679,7 +1676,6 @@
     <string name="usb_rules_request_failed">The daemon refused the request</string>
     <string name="usb_rules_daemon_unavailable">The daemon is not connected</string>
     <string name="usb_rules_state_attached">Attached to %1$s</string>
-    <string name="usb_rules_state_held">Held on host (detached by hand; skipped until unplugged)</string>
     <string name="usb_rules_state_host">On host</string>
     <string name="usb_rules_pick_device_exact_fmt" translatable="false">%1$s (%2$s, port %3$s)</string>
     <string name="usb_rules_pick_device_port_fmt">Port %1$s: %2$s</string>
@@ -1700,6 +1696,7 @@
     <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_devices_target_host">Do not attach (leave on host)</string>
     <string name="usb_devices_state_sinked">Hidden from Android and every VM</string>
+    <string name="usb_devices_same_vm">The device is already on that VM; crosvm gives it no other controller to move to</string>
     <string name="usb_devices_state_sinked_rule">Hidden by rule %1$s[%2$d]</string>
     <string name="usb_devices_state_pinned">Set by hand; the rules take it back after a replug</string>
     <string name="usb_devices_discard_message">The devices you picked have not been applied. Leave without applying them?</string>

@@ -66,13 +66,15 @@ public final class XhciBindingStoreTest {
         var store = new XhciBindingStore();
         var elsewhere = new Row("0bda:8153", null, OTHER_VM, "xhci-0");
         var dangling = new Row("090c:1000", null, VM, "xhci-7");
-        var host = new Row("2109:0813", null, null, null);
-        store.load(rules(elsewhere, dangling, host), List.of("xhci-0"), VM);
+        var host = new Row("2109:0813", null, null, null, "host");
+        var hidden = new Row("1a86:7523", null, null, null, "sink");
+        store.load(rules(elsewhere, dangling, host, hidden), List.of("xhci-0"), VM);
         assertTrue(store.rows("xhci-0", UsbRuleLayer.DEVICE).isEmpty());
-        // Not shown, and not this page's either: the merge must leave all three alone.
+        // Not shown, and not this page's either: the merge must leave all four alone.
         assertFalse(store.owns(elsewhere, VM));
         assertFalse(store.owns(dangling, VM));
         assertFalse(store.owns(host, VM));
+        assertFalse(store.owns(hidden, VM));
         assertFalse(store.isDirty());
     }
 

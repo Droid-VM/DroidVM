@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -89,6 +90,12 @@ public final class CrosvmUsbControlParseTest {
             + "cannot add event: event ring is uninitialized\n";
     private static final String HUB_DIED_CAUSE = "failed to connect device to hub: "
         + "failed to attach device to port 1: cannot add event: event ring is uninitialized";
+    /** An ERROR from another subsystem entirely, which the same log carries first. */
+    private static final String GPU_ERROR_LINE =
+        "[2026-09-05T12:28:12.1+00:00 ERROR rutabaga_gfx::virgl_renderer] "
+            + "kgsl_ccmd_gem_set_iova:1412: Could not lookup obj: res_id=2\n";
+    private static final String GPU_ERROR_CAUSE =
+        "kgsl_ccmd_gem_set_iova:1412: Could not lookup obj: res_id=2";
 
     @Test
     public void theFirstErrorLineIsTheCauseWithoutItsPrefix() {
@@ -109,14 +116,10 @@ public final class CrosvmUsbControlParseTest {
 
     @Test
     public void aUsbErrorWinsOverAnEarlierUnrelatedOne() {
-        var gpuFirst = "[2026-09-05T12:28:12.1+00:00 ERROR rutabaga_gfx::virgl_renderer] "
-            + "kgsl_ccmd_gem_set_iova:1412: Could not lookup obj: res_id=2\n" + HUB_DIED;
+        var gpuFirst = fmt("%s%s", GPU_ERROR_LINE, HUB_DIED);
         assertEquals(HUB_DIED_CAUSE, CrosvmUsbControl.firstErrorLine(gpuFirst));
         // With no USB line at all, the first ERROR is still better than nothing.
-        assertEquals("kgsl_ccmd_gem_set_iova:1412: Could not lookup obj: res_id=2",
-            CrosvmUsbControl.firstErrorLine(
-                "[2026-09-05T12:28:12.1+00:00 ERROR rutabaga_gfx::virgl_renderer] "
-                    + "kgsl_ccmd_gem_set_iova:1412: Could not lookup obj: res_id=2\n"));
+        assertEquals(GPU_ERROR_CAUSE, CrosvmUsbControl.firstErrorLine(GPU_ERROR_LINE));
         // A build whose logger prints no time is read the same way.
         assertEquals("boom", CrosvmUsbControl.firstErrorLine("[ERROR devices::usb::xhci] boom"));
     }
@@ -133,7 +136,7 @@ public final class CrosvmUsbControlParseTest {
     @Test
     public void aRefusalCarriesTheCauseTheVmmLogged() {
         // The on-device case: the CLI's stderr says success, the VMM's says why.
-        assertEquals("crosvm usb attach failed: no_available_port (" + HUB_DIED_CAUSE + ")",
+        assertEquals(fmt("crosvm usb attach failed: no_available_port (%s)", HUB_DIED_CAUSE),
             CrosvmUsbControl.attachFailureMessage("no_available_port",
                 "[2026-09-05T12:28:12.899414830+00:00 INFO  crosvm] exiting with success",
                 HUB_DIED));

@@ -44,8 +44,12 @@ public final class UsbHostInventory {
     private static final int ROOT_MASK = FileObserver.CREATE | FileObserver.DELETE
         | FileObserver.MOVED_TO | FileObserver.MOVED_FROM;
     private static final int BUS_MASK = FileObserver.CREATE | FileObserver.DELETE;
-    /** The bus events that mean "there is a device node here now". */
-    private static final int NODE_ADDED = FileObserver.CREATE | FileObserver.MOVED_TO;
+    /**
+     * The bus event that means "there is a device node here now". Only CREATE: a device node is
+     * mknod'd where it belongs, never moved into place, and {@link #BUS_MASK} does not ask for
+     * MOVED_TO -- naming it here would read as a case that is handled.
+     */
+    private static final int NODE_ADDED = FileObserver.CREATE;
     /**
      * IN_Q_OVERFLOW and IN_UNMOUNT, which FileObserver has no constants for: the kernel sends both
      * unasked, and both mean events were lost, so they stand for "whatever you missed".

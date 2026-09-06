@@ -33,12 +33,21 @@ import java.util.function.Predicate;
  * stubbed android.jar of a unit test, and this is the part worth testing.</p>
  */
 public final class XhciBindingDiff {
+    /** The target every row a card mints has; see {@link Row#target}. */
+    public static final String TARGET_VM = "vm";
+
     /**
      * One rule in one layer, in the wire shape.
      *
      * <p>{@code controller} is kept verbatim, null included: null means the target VM's first
      * controller, which is what every rule written before controllers existed says, and rewriting
      * it on the way through would change what an untouched rule means.</p>
+     *
+     * <p>{@code target} is kept verbatim for the same reason and a stronger one: a save rebuilds
+     * every layer, rows this page never spoke for included, so a target it dropped on the way in
+     * would be a target it rewrote on the way out -- a sink rule quietly turned into a host rule,
+     * and the device it was hiding handed back to Android. A token this build has no word for
+     * goes back out as it came in.</p>
      */
     public static final class Row {
         @Nullable
@@ -49,6 +58,9 @@ public final class XhciBindingDiff {
         public final String vm;
         @Nullable
         public final String controller;
+        /** What the rule does with what it matches: {@code host}, {@code vm} or {@code sink}. */
+        @NonNull
+        public final String target;
         /**
          * What makes this row the same rule as the one it was edited from.
          *
@@ -59,17 +71,29 @@ public final class XhciBindingDiff {
          */
         private final Object identity;
 
+        /**
+         * A row this page made, which is by definition a binding to one of its own controllers:
+         * a card says "this device goes to this VM's xHCI" and has no way of saying anything
+         * else. Rows read from the wire keep whatever target they carried.
+         */
         public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
                    @Nullable String controller) {
-            this(id, port, vm, controller, new Object());
+            this(id, port, vm, controller, TARGET_VM, new Object());
+        }
+
+        public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
+                   @Nullable String controller, @NonNull String target) {
+            this(id, port, vm, controller, target, new Object());
         }
 
         private Row(@Nullable String id, @Nullable String port, @Nullable String vm,
-                    @Nullable String controller, @NonNull Object identity) {
+                    @Nullable String controller, @NonNull String target,
+                    @NonNull Object identity) {
             this.id = id;
             this.port = port;
             this.vm = vm;
             this.controller = controller;
+            this.target = target;
             this.identity = identity;
         }
 
@@ -81,7 +105,7 @@ public final class XhciBindingDiff {
          */
         @NonNull
         public Row withVm(@NonNull String vmId) {
-            return vm != null ? this : new Row(id, port, vmId, controller, identity);
+            return vm != null ? this : new Row(id, port, vmId, controller, target, identity);
         }
 
         /**
@@ -95,7 +119,7 @@ public final class XhciBindingDiff {
         @NonNull
         public Row edited(@Nullable String newId, @Nullable String newPort,
                           @Nullable String newController) {
-            return new Row(newId, newPort, vm, newController, identity);
+            return new Row(newId, newPort, vm, newController, target, identity);
         }
 
         /** Whether [other] is this same row before it was edited; see {@link #identity}. */
@@ -109,7 +133,8 @@ public final class XhciBindingDiff {
             return Objects.equals(id, other.id)
                 && Objects.equals(port, other.port)
                 && Objects.equals(vm, other.vm)
-                && Objects.equals(controller, other.controller);
+                && Objects.equals(controller, other.controller)
+                && target.equals(other.target);
         }
     }
 

@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -24,7 +25,7 @@ public final class UsbLeftoversTest {
     /** The audio device of the on-device run, left whole by VM A. */
     private static UsbLeftovers audioLeftByA() {
         var leftovers = new UsbLeftovers();
-        for (var i = 0; i < 4; i++) leftovers.leave("1-1.2.2:1." + i, VM_A);
+        for (var i = 0; i < 4; i++) leftovers.leave(fmt("1-1.2.2:1.%d", i), VM_A);
         return leftovers;
     }
 

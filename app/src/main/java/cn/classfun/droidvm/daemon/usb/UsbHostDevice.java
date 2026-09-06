@@ -84,11 +84,21 @@ public final class UsbHostDevice {
     public final boolean authorized;
     public final List<Interface> interfaces;
 
-    private UsbHostDevice(@NonNull String sysfs, int busnum, int devnum, @NonNull String node,
-                          @NonNull String vid, @NonNull String pid, @NonNull String manufacturer,
-                          @NonNull String product, @NonNull String serial, @NonNull String speed,
-                          @NonNull String deviceClass, boolean authorized,
-                          @NonNull List<Interface> interfaces) {
+    private UsbHostDevice( // arity-ok: a value object; these parameters are its fields
+        @NonNull String sysfs,
+        int busnum,
+        int devnum,
+        @NonNull String node,
+        @NonNull String vid,
+        @NonNull String pid,
+        @NonNull String manufacturer,
+        @NonNull String product,
+        @NonNull String serial,
+        @NonNull String speed,
+        @NonNull String deviceClass,
+        boolean authorized,
+        @NonNull List<Interface> interfaces
+    ) {
         this.sysfs = sysfs;
         this.id = deriveId(vid, pid, serial);
         this.port = derivePort(sysfs);
@@ -212,7 +222,10 @@ public final class UsbHostDevice {
 
     /** Whether a {@code bDeviceClass} value is the hub class, for a reader that has only that. */
     public static boolean isHubClass(@NonNull String deviceClass) {
-        return CLASS_HUB.equals(deviceClass);
+        // Normalised here rather than by the caller: the kernel prints the class %02x, but this
+        // is the one guard between an any-layer sink rule and a hub taking its whole subtree
+        // down with it, and the fast lane reads the attribute raw.
+        return CLASS_HUB.equals(deviceClass.trim().toLowerCase(Locale.ROOT));
     }
 
     /** A hub carries the rest of the tree; handing one to a VM would take its own children away. */

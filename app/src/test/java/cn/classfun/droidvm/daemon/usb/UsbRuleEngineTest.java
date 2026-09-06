@@ -239,7 +239,7 @@ public final class UsbRuleEngineTest {
     @Test
     public void aHeldDeviceIsNotACandidate() {
         var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        engine.hold(STICK.sysfs);
+        engine.pin(STICK.sysfs, Pin.HOST);
         var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
         assertEquals(1, plan.size());
         assertDecision(plan.get(0), MOUSE, Layer.ANY, 0, VM_A);
@@ -289,7 +289,7 @@ public final class UsbRuleEngineTest {
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_B))));
         assertNull(engine.decide(MOUSE, allRunning(), anyController()));
         // A hold is the user's and outlives any VM start.
-        engine.hold(STICK.sysfs);
+        engine.pin(STICK.sysfs, Pin.HOST);
         engine.forgetFailuresFor(VM_A);
         assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController()).isEmpty());
     }
@@ -454,7 +454,7 @@ public final class UsbRuleEngineTest {
         assertFalse(engine.isHeld(STICK.sysfs));
         assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
 
-        engine.hold(STICK.sysfs);
+        engine.pin(STICK.sysfs, Pin.HOST);
         assertEquals(Pin.HOST, engine.pinOf(STICK.sysfs));
         assertTrue(engine.isHeld(STICK.sysfs));
         assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())

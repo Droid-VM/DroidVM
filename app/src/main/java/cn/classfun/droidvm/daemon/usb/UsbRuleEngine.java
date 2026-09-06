@@ -132,14 +132,20 @@ public final class UsbRuleEngine {
         return f == null ? Pin.NONE : f.pin;
     }
 
-    /** The user's answer for the device; it stands until the device is unplugged. */
+    /**
+     * The user's answer for the device; it stands until the device is unplugged. Taking one back
+     * leaves nothing behind, the way {@link #forgetFailuresFor} does: a device nothing is known
+     * about is a device with no entry, and a map of all-default entries would be a slow leak.
+     */
     public void pin(@NonNull String sysfs, @NonNull Pin pin) {
+        if (pin == Pin.NONE) {
+            var f = flags.get(sysfs);
+            if (f == null) return;
+            f.pin = Pin.NONE;
+            if (f.failedFor == null) flags.remove(sysfs);
+            return;
+        }
         flags.computeIfAbsent(sysfs, k -> new Flags()).pin = pin;
-    }
-
-    /** The user took the device back by hand; leave it alone until it is unplugged. */
-    public void hold(@NonNull String sysfs) {
-        pin(sysfs, Pin.HOST);
     }
 
     /**

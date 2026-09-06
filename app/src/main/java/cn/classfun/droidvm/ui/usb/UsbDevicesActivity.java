@@ -66,6 +66,12 @@ public final class UsbDevicesActivity extends AppCompatActivity
     private LinearLayout deviceRows;
     /** Choices the daemon has not been told about yet; guards the back key. */
     private boolean dirty = false;
+    /**
+     * Whether a run of the apply is still going. One request is out at a time and each can spend
+     * seconds inside crosvm's CLI, so a second tap would otherwise start a second chain over the
+     * same rows and report the first one's work as a conflict.
+     */
+    private boolean applying = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -148,6 +154,9 @@ public final class UsbDevicesActivity extends AppCompatActivity
         for (var device : UsbHostDeviceInfo.fromArray(arr)) rows.add(new UsbDeviceRow(device));
         for (var row : rows) {
             var previous = pending.remove(row.key());
+            // A choice the new row refuses is one the device has meanwhile answered for itself
+            // -- it landed on that VM -- so it is dropped, and only a device that is gone is
+            // worth saying anything about.
             if (previous != null) row.want(previous.wanted());
         }
         for (var gone : pending.values())
@@ -202,8 +211,13 @@ public final class UsbDevicesActivity extends AppCompatActivity
         target.setText(targetLabel(row.wanted()));
         target.setOnClickListener(v -> UsbTargetPickerDialog.pickForDevice(this, vms,
             vmControllers, picked -> {
-                row.want(picked);
-                target.setText(targetLabel(picked));
+                // Painted from the row, not from the pick: one pick the row refuses, and a
+                // button showing a move nothing will make is worse than no move at all.
+                if (!row.want(picked)) {
+                    toast(getString(R.string.usb_devices_same_vm), LENGTH_SHORT);
+                    return;
+                }
+                target.setText(targetLabel(row.wanted()));
                 refreshDirty();
             }));
     }
@@ -253,9 +267,18 @@ public final class UsbDevicesActivity extends AppCompatActivity
     // Applying
 
     private void apply() {
+        if (applying) return;
         var queue = new ArrayList<UsbDeviceRow>();
         for (var row : rows) if (row.isChanged()) queue.add(row);
+        applying = true;
+        setApplyEnabled(false);
         applyNext(queue, 0, new ArrayList<>());
+    }
+
+    /** The tick, while a run is out: the page has no other way of saying one is. */
+    private void setApplyEnabled(boolean enabled) {
+        var item = toolbar.getMenu().findItem(R.id.menu_apply);
+        if (item != null) item.setEnabled(enabled);
     }
 
     /**
@@ -298,6 +321,8 @@ public final class UsbDevicesActivity extends AppCompatActivity
     }
 
     private void finishApply(int applied, @NonNull List<String> failures) {
+        applying = false;
+        setApplyEnabled(true);
         if (failures.isEmpty())
             toast(getString(R.string.usb_devices_applied, applied), LENGTH_SHORT);
         else
