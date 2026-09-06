@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.Map;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -50,9 +51,9 @@ import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
  * <p>The daemon owns the rules. The page reads them with {@code usb_rules_get}, edits a copy
  * held in four adapters and pushes the whole object back with {@code usb_rules_set}; it never
  * touches the rules file itself. {@code usb_host_list} and {@code vm_list} only give the rows
- * and the pickers something readable to show; {@code usb_rules_test} is the dry run behind the
- * preview button. While the page is open it listens on the daemon event stream, so a plug, an
- * unplug or an automatic attach shows up without a reload.</p>
+ * and the pickers something readable to show. While the page is open it listens on the daemon
+ * event stream, so a plug, an unplug, an automatic attach or an automatic sink shows up without
+ * a reload.</p>
  */
 public final class UsbRulesActivity extends AppCompatActivity
     implements DaemonConnection.EventListener, UsbRuleAdapter.Listener {
@@ -62,7 +63,6 @@ public final class UsbRulesActivity extends AppCompatActivity
         new EnumMap<>(UsbRuleLayer.class);
     private final List<UsbHostDeviceInfo> devices = new ArrayList<>();
     private final List<VmEntry> vms = new ArrayList<>();
-    private final Map<String, String> vmNames = new HashMap<>();
     /** Each VM's xHCI controller ids, read from vms.json; see {@link #loadControllers}. */
     private final Map<String, List<String>> vmControllers = new HashMap<>();
     private View root;
@@ -91,7 +91,6 @@ public final class UsbRulesActivity extends AppCompatActivity
         bindList(R.id.list_port, UsbRuleLayer.PORT);
         bindList(R.id.list_device, UsbRuleLayer.DEVICE);
         bindList(R.id.list_any, UsbRuleLayer.ANY);
-        findViewById(R.id.btn_preview).setOnClickListener(v -> preview());
     }
 
     private void bindList(int viewId, @NonNull UsbRuleLayer layer) {
@@ -112,10 +111,6 @@ public final class UsbRulesActivity extends AppCompatActivity
         int id = item.getItemId();
         if (id == R.id.menu_save) {
             save();
-            return true;
-        }
-        if (id == R.id.menu_preview) {
-            preview();
             return true;
         }
         return false;
@@ -237,17 +232,6 @@ public final class UsbRulesActivity extends AppCompatActivity
             .show();
     }
 
-    /** Dry run of the rules the daemon holds now -- the saved ones, not the unsaved edits. */
-    private void preview() {
-        DaemonConnection.getInstance().buildRequest("usb_rules_test")
-            .onResponse(resp -> post(() ->
-                UsbRulesPreviewDialog.show(this, resp.optJSONArray("devices"), devices, vmNames)))
-            .onUnsuccessful(resp -> post(() -> toast(message(resp), LENGTH_LONG)))
-            .onError(e -> post(() ->
-                toast(getString(R.string.usb_rules_daemon_unavailable), LENGTH_LONG)))
-            .invoke();
-    }
-
     private void loadDevices() {
         DaemonConnection.getInstance().buildRequest("usb_host_list")
             .onResponse(resp -> post(() -> applyDevices(resp.optJSONArray("devices"))))
@@ -273,8 +257,6 @@ public final class UsbRulesActivity extends AppCompatActivity
     private void applyVms(@Nullable JSONArray arr) {
         vms.clear();
         vms.addAll(VmEntry.fromArray(arr));
-        vmNames.clear();
-        for (var vm : vms) vmNames.put(vm.id, vm.name);
         pushLookups();
     }
 
@@ -284,9 +266,39 @@ public final class UsbRulesActivity extends AppCompatActivity
 
     // UsbRuleAdapter.Listener
 
+    /**
+     * Two questions rather than one dialog: what the rule is about, then where the device goes.
+     *
+     * <p>A rule with no target is not a legal catch-all rule, and defaulting the other layers to
+     * "keep it on the host" would quietly add a row that does nothing. Cancelling either step
+     * adds nothing.</p>
+     */
     @Override
     public void onAddRule(@NonNull UsbRuleLayer layer) {
-        UsbRuleAddDialog.show(this, layer, devices, vms, rule -> adapterOf(layer).addRule(rule));
+        // A second row in the last layer can never be reached, whatever it targets, so the
+        // zone is full rather than the row being added and refused by the save.
+        if (layer == UsbRuleLayer.ANY && adapterOf(layer).getItemCount() > 0) {
+            toast(getString(R.string.usb_rules_any_taken), LENGTH_SHORT);
+            return;
+        }
+        if (layer.needsSubject())
+            UsbSubjectPickerDialog.pick(this, layer, devices, this::askTarget);
+        else askTarget(layer, null, null);
+    }
+
+    private void askTarget(@NonNull UsbRuleLayer layer, @Nullable String id,
+                           @Nullable String port) {
+        UsbTargetPickerDialog.pick(this, layer, vms, vmControllers, target -> {
+            var rule = DataItem.newObject();
+            if (layer.hasId) rule.set("id", id);
+            if (layer.hasPort) rule.set("port", port);
+            rule.set("target", target.toRuleTarget());
+            if (target.kind == UsbRules.Target.VM) {
+                rule.set("vm", target.vmId);
+                if (target.controller != null) rule.set("controller", target.controller);
+            }
+            adapterOf(layer).addRule(rule);
+        });
     }
 
     @Override
@@ -327,10 +339,14 @@ public final class UsbRulesActivity extends AppCompatActivity
                     loadDevices();
                 });
                 break;
+            case "usb_auto_sinked":
+                post(() -> {
+                    snackbar(getString(R.string.usb_rules_event_sinked, deviceLabel(data)));
+                    loadDevices();
+                });
+                break;
             case "usb_auto_failed":
-                post(() -> snackbar(getString(R.string.usb_rules_event_failed,
-                    deviceLabel(data), data.optString("vm_name", ""),
-                    data.optString("error", ""))));
+                post(() -> snackbar(failureText(data)));
                 break;
             case "output":
                 break;
@@ -339,6 +355,19 @@ public final class UsbRulesActivity extends AppCompatActivity
                 if (data.has("state")) post(this::loadVms);
                 break;
         }
+    }
+
+    /**
+     * What went wrong. A failed sink names no VM -- it is a sysfs write, not a VM's business --
+     * so it gets its own sentence rather than one with an empty name in it.
+     */
+    @NonNull
+    private String failureText(@NonNull JSONObject data) {
+        var error = data.optString("error", "");
+        if (UsbRules.Target.SINK.key.equals(data.optString("target", "")))
+            return getString(R.string.usb_rules_event_sink_failed, deviceLabel(data), error);
+        return getString(R.string.usb_rules_event_failed,
+            deviceLabel(data), data.optString("vm_name", ""), error);
     }
 
     /** The plugged-in device an auto event names: by sysfs, else by id, else the id itself. */
@@ -378,7 +407,7 @@ public final class UsbRulesActivity extends AppCompatActivity
             .show();
     }
 
-    /** A line under the intro for what stops the page working; hidden when nothing does. */
+    /** A line at the top for what stops the page working; hidden when nothing does. */
     private void showStatus(@Nullable String message) {
         if (message == null || message.isEmpty()) {
             tvStatus.setVisibility(GONE);

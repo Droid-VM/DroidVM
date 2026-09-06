@@ -1,4 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?><!--
+     One rule, in the shape a peripheral has in the VM editor: a header naming what the rule is
+     about, then one labelled value button per field the rule's layer carries. Which of the three
+     rows is shown is the layer's business, not the row's: an exact rule names a device on a
+     port, a catch-all rule names neither.
+
+     The arrows stay beside the long-press drag the list already provides: the card's body is
+     three buttons, so a drag has to start on the background or the title, which is discoverable
+     only once someone has been told. Order inside a layer is priority, so it has to be movable
+     without a gesture nobody finds.
+-->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
@@ -15,88 +25,160 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="12dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="4dp"
-        android:paddingBottom="8dp">
-
-        <TextView
-            android:id="@+id/tv_rule_index"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:minWidth="24dp"
-            android:textAppearance="?attr/textAppearanceTitleMedium"
-            android:textColor="?attr/colorPrimary"
-            tools:text="1." />
+        android:orientation="vertical"
+        android:padding="12dp">
 
         <LinearLayout
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/iv_rule_icon"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:contentDescription="@null"
+                android:src="@drawable/ic_usb"
+                app:tint="?attr/colorOnSurfaceVariant" />
 
             <TextView
                 android:id="@+id/tv_rule_title"
-                android:layout_width="match_parent"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
                 android:ellipsize="end"
                 android:maxLines="2"
-                android:textAppearance="?attr/textAppearanceTitleSmall"
-                android:textColor="?attr/colorOnSurface"
-                tools:text="USB DISK (Silicon Motion)" />
+                android:textSize="14sp"
+                tools:text="USB 3.0 Realtek USB LAN" />
 
-            <TextView
-                android:id="@+id/tv_rule_subtitle"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                tools:text="090c:1000:0123456789ABCDEF at port 1.2.2" />
+            <ImageButton
+                android:id="@+id/btn_rule_up"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/usb_rules_move_up"
+                android:src="@drawable/ic_arrow_up"
+                app:tint="?attr/colorOnSurfaceVariant"
+                tools:ignore="TouchTargetSizeCheck" />
 
-            <TextView
-                android:id="@+id/tv_rule_target"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorPrimary"
-                tools:text="Attach to Debian" />
+            <ImageButton
+                android:id="@+id/btn_rule_down"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/usb_rules_move_down"
+                android:src="@drawable/ic_arrow_down"
+                app:tint="?attr/colorOnSurfaceVariant"
+                tools:ignore="TouchTargetSizeCheck" />
+
+            <ImageButton
+                android:id="@+id/btn_rule_delete"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/usb_rules_delete"
+                android:src="@drawable/ic_delete"
+                app:tint="?attr/colorError"
+                tools:ignore="TouchTargetSizeCheck" />
 
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/btn_rule_up"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/usb_rules_move_up"
-            android:src="@drawable/ic_arrow_up"
-            app:tint="?attr/colorOnSurfaceVariant"
-            tools:ignore="TouchTargetSizeCheck" />
+        <LinearLayout
+            android:id="@+id/row_rule_id"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <ImageButton
-            android:id="@+id/btn_rule_down"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/usb_rules_move_down"
-            android:src="@drawable/ic_arrow_down"
-            app:tint="?attr/colorOnSurfaceVariant"
-            tools:ignore="TouchTargetSizeCheck" />
+            <TextView
+                android:id="@+id/tv_rule_id_label"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_field_id"
+                android:textSize="12sp" />
 
-        <ImageButton
-            android:id="@+id/btn_rule_delete"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/usb_rules_delete"
-            android:src="@drawable/ic_delete"
-            app:tint="?attr/colorError"
-            tools:ignore="TouchTargetSizeCheck" />
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_rule_id"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:minWidth="72dp"
+                android:textSize="12sp"
+                tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize"
+                tools:text="0bda:8153" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/row_rule_port"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tv_rule_port_label"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_field_port"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_rule_port"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:minWidth="72dp"
+                android:textSize="12sp"
+                tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize"
+                tools:text="1.2.2" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/row_rule_target"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tv_rule_target_label"
+                android:layout_width="56dp"
+                android:layout_height="wrap_content"
+                android:text="@string/usb_rules_field_target"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_rule_target"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:minWidth="72dp"
+                android:textSize="12sp"
+                tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize"
+                tools:text="Attach to Debian (xhci-0)" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_rule_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?attr/colorError"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:text="Unknown VM (2f0a...)"
+            tools:visibility="visible" />
 
     </LinearLayout>
 

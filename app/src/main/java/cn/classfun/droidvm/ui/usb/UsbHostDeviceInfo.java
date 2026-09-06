@@ -32,6 +32,8 @@ public final class UsbHostDeviceInfo {
     public final String manufacturer;
     public final String product;
     public final String serial;
+    /** Megabits per second, as sysfs reports them; see {@link UsbSpeed}. */
+    public final String speed;
     /** {@code vid:pid:serial}, or {@code vid:pid} for a device without a serial. */
     public final String id;
     /** Port chain without the bus: sysfs {@code 1-1.2.2} is port {@code 1.2.2}. */
@@ -56,6 +58,7 @@ public final class UsbHostDeviceInfo {
         manufacturer = optText(obj, "manufacturer");
         product = optText(obj, "product");
         serial = optText(obj, "serial");
+        speed = optText(obj, "speed");
         var wireId = optText(obj, "id");
         id = wireId.isEmpty() ? deriveId(vid, pid, serial) : wireId;
         var wirePort = optText(obj, "port");

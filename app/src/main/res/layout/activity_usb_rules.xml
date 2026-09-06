@@ -29,22 +29,11 @@
             android:orientation="vertical">
 
             <TextView
-                android:id="@+id/tv_intro"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="16dp"
-                android:text="@string/usb_rules_intro"
-                android:textAppearance="?attr/textAppearanceBodyMedium"
-                android:textColor="?attr/colorOnSurfaceVariant" />
-
-            <TextView
                 android:id="@+id/tv_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="16dp"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="12dp"
                 android:layout_marginEnd="16dp"
                 android:textAppearance="?attr/textAppearanceBodyMedium"
                 android:textColor="?attr/colorError"
@@ -52,22 +41,10 @@
                 tools:text="Daemon is not connected"
                 tools:visibility="visible" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_preview"
-                style="@style/Widget.Material3.Button.TonalButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="16dp"
-                android:layout_marginTop="12dp"
-                android:layout_marginEnd="16dp"
-                android:text="@string/usb_rules_preview"
-                app:icon="@drawable/ic_eye" />
-
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/usb_rules_layer_exact"
-                app:cc_collapsible="false">
+                android:title="@string/usb_rules_layer_exact">
 
                 <cn.classfun.droidvm.ui.widgets.container.CardItemListView
                     android:id="@+id/list_exact"
@@ -83,8 +60,7 @@
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/usb_rules_layer_port"
-                app:cc_collapsible="false">
+                android:title="@string/usb_rules_layer_port">
 
                 <cn.classfun.droidvm.ui.widgets.container.CardItemListView
                     android:id="@+id/list_port"
@@ -100,8 +76,7 @@
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/usb_rules_layer_device"
-                app:cc_collapsible="false">
+                android:title="@string/usb_rules_layer_device">
 
                 <cn.classfun.droidvm.ui.widgets.container.CardItemListView
                     android:id="@+id/list_device"
@@ -117,8 +92,7 @@
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:title="@string/usb_rules_layer_any"
-                app:cc_collapsible="false">
+                android:title="@string/usb_rules_layer_any">
 
                 <cn.classfun.droidvm.ui.widgets.container.CardItemListView
                     android:id="@+id/list_any"

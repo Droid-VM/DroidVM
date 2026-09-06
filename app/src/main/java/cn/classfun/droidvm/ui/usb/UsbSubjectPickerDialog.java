@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright DroidVM contributors
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
-package cn.classfun.droidvm.ui.vm.edit.peripheral;
+package cn.classfun.droidvm.ui.usb;
 
 import static android.content.DialogInterface.BUTTON_POSITIVE;
 import static android.view.View.GONE;
@@ -25,26 +25,24 @@ import java.util.List;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
-import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
-import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
-import cn.classfun.droidvm.ui.usb.UsbRuleSubjects;
 
 /**
- * Adding a binding to an xHCI card: which layer, then what in that layer.
+ * What a rule is about: which layer, then what in that layer.
  *
  * <p>The layer is asked first because it decides what the answer even is -- an exact rule is
  * about a device on a port, a port rule about the port alone -- and only the part its layer
- * stores is taken from the device that was picked. That is the same folding the global rules
- * page does, through the same {@link UsbRuleSubjects} list, so a device reads the same in both.
- * The catch-all layer has nothing to ask about and is added straight away.</p>
+ * stores is taken from the device that was picked. Both surfaces that write rules use this one
+ * dialog, through the same {@link UsbRuleSubjects} list, so a device reads the same on the
+ * global rules page as it does on a VM's xHCI card. The catch-all layer has nothing to ask
+ * about and is added straight away.</p>
  */
-final class XhciAddBindingDialog {
+public final class UsbSubjectPickerDialog {
     /** Called with the layer to add to and the fields that layer stores; the rest stay null. */
-    interface OnPicked {
+    public interface OnPicked {
         void onPicked(@NonNull UsbRuleLayer layer, @Nullable String id, @Nullable String port);
     }
 
-    private XhciAddBindingDialog() {
+    private UsbSubjectPickerDialog() {
     }
 
     /**
@@ -54,8 +52,8 @@ final class XhciAddBindingDialog {
      *                 rule nothing can ever reach, so the entry is left out rather than shown
      *                 and refused -- the same answer the sound card gives a full direction.
      */
-    static void show(@NonNull Context context, @NonNull List<UsbHostDeviceInfo> devices,
-                     boolean anyTaken, @NonNull OnPicked onPicked) {
+    public static void show(@NonNull Context context, @NonNull List<UsbHostDeviceInfo> devices,
+                            boolean anyTaken, @NonNull OnPicked onPicked) {
         var menu = new PopupMenu(context, null).getMenu();
         for (var layer : UsbRuleLayer.values()) {
             if (layer == UsbRuleLayer.ANY && anyTaken) continue;
@@ -82,8 +80,9 @@ final class XhciAddBindingDialog {
      * already chosen -- the resolution dropdown's precedent. Also the picker a row's value
      * button reopens: replacing what a rule points at is the same question as choosing it.</p>
      */
-    static void pick(@NonNull Context context, @NonNull UsbRuleLayer layer,
-                     @NonNull List<UsbHostDeviceInfo> devices, @NonNull OnPicked onPicked) {
+    public static void pick(@NonNull Context context, @NonNull UsbRuleLayer layer,
+                            @NonNull List<UsbHostDeviceInfo> devices,
+                            @NonNull OnPicked onPicked) {
         var subjects = UsbRuleSubjects.of(context, layer, devices);
         var labels = new ArrayList<String>(subjects.size() + 1);
         for (var subject : subjects) labels.add(subject.label);
@@ -147,7 +146,7 @@ final class XhciAddBindingDialog {
         });
     }
 
-    /** The same icons the global page's add dialog puts on the same three questions. */
+    /** One icon per question: a socket for a port rule, a VM for the catch-all, else a device. */
     @DrawableRes
     private static int iconOf(@NonNull UsbRuleLayer layer) {
         if (layer == UsbRuleLayer.PORT) return R.drawable.ic_connection;

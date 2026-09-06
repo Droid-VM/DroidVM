@@ -13,9 +13,10 @@ import cn.classfun.droidvm.R;
 
 /**
  * The four layers of the automatic attach rules, in the order the daemon tries them (plan
- * section 2.4). Each knows its wire key and which fields a rule in it carries. "Keep on host"
- * (a null vm) is a legal target everywhere but the last layer: that one catches whatever the
- * others left, so a null there would be a rule that matches every device and does nothing.
+ * section 2.4). Each knows its wire key and which fields a rule in it carries. Keeping the
+ * device on the host is a legal target everywhere but the last layer: that one catches whatever
+ * the others left, and keeping it where it already is would be a rule that matches every device
+ * and does nothing. Hiding it, or handing it to a VM, still says something there.
  */
 public enum UsbRuleLayer {
     EXACT("exact", R.string.usb_rules_layer_exact, true, true),
@@ -44,7 +45,7 @@ public enum UsbRuleLayer {
         return ordinal() + 1;
     }
 
-    /** Whether a rule may name no VM at all and keep the device on the host. */
+    /** Whether a rule here may leave the device on the host. */
     public boolean allowsHost() {
         return this != ANY;
     }

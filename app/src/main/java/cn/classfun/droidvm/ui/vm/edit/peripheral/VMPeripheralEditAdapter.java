@@ -43,6 +43,7 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
 import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
+import cn.classfun.droidvm.ui.usb.UsbSubjectPickerDialog;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
@@ -466,7 +467,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             if (id.isEmpty()) return;
             var store = xhciHost.bindings();
             boolean anyTaken = !store.rows(id, UsbRuleLayer.ANY).isEmpty();
-            XhciAddBindingDialog.show(context, xhciHost.hostDevices(), anyTaken,
+            UsbSubjectPickerDialog.show(context, xhciHost.hostDevices(), anyTaken,
                 (layer, deviceId, port) -> {
                     store.add(id, layer, new Row(deviceId, port, null, id));
                     notifyItemChangedSafe(holder.getBindingAdapterPosition());
@@ -502,7 +503,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             // pick, so the value is text on a button rather than a picker.
             value.setClickable(layer.needsSubject());
             if (layer.needsSubject())
-                value.setOnClickListener(v -> XhciAddBindingDialog.pick(context, layer,
+                value.setOnClickListener(v -> UsbSubjectPickerDialog.pick(context, layer,
                     xhciHost.hostDevices(), (picked, id, port) -> {
                         // An edit of the rule, not a new one: it keeps the place it had, which
                         // inside a layer is its priority.
@@ -533,7 +534,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 return context.getString(R.string.usb_rules_pick_device_device_fmt,
                     deviceName(id), id);
             default:
-                return context.getString(R.string.edit_vm_xhci_any_device);
+                return context.getString(R.string.usb_rules_any_device);
         }
     }
 
