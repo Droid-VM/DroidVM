@@ -1588,6 +1588,8 @@
     <string name="edit_vm_serial_full">這種硬體的埠都已新增。</string>
     <string name="settings_usb_passthrough_title">USB直通規則</string>
     <string name="settings_usb_passthrough_summary">插入的 USB 裝置自動接到哪台虛擬機器</string>
+    <string name="settings_usb_devices_title">USB直通管理</string>
+    <string name="settings_usb_devices_summary">直接指定單一裝置的去向，不改規則</string>
     <string name="usb_rules_title">USB直通規則</string>
     <string name="usb_rules_unsaved">尚未儲存的變更</string>
     <string name="usb_rules_layer_exact">1. 精確（裝置＋port）</string>
@@ -1642,4 +1644,15 @@
     <string name="usb_rules_event_failed">%1$s 自動接入 %2$s 失敗：%3$s</string>
     <string name="usb_rules_event_sinked">%1$s 已從 Android 隱藏</string>
     <string name="usb_rules_event_sink_failed">無法隱藏 %1$s：%2$s</string>
+    <string name="usb_devices_title">USB直通管理</string>
+    <string name="usb_devices_empty">沒有插入的 USB 裝置</string>
+    <string name="usb_devices_apply">套用</string>
+    <string name="usb_devices_applied">已套用 %1$d 台</string>
+    <string name="usb_devices_apply_failed_title">有裝置沒有套用</string>
+    <string name="usb_devices_target_host">不掛載（留在主機）</string>
+    <string name="usb_devices_state_sinked">已從 Android 和所有虛擬機器隱藏</string>
+    <string name="usb_devices_state_sinked_rule">已依規則 %1$s[%2$d] 隱藏</string>
+    <string name="usb_devices_state_pinned">手動指定，拔除後才恢復規則</string>
+    <string name="usb_devices_discard_message">選好的去向還沒套用，要不套用就離開嗎？</string>
+    <string name="usb_devices_gone">%1$s 已拔除，暫存的選擇已取消</string>
 </resources>

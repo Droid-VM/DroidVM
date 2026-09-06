@@ -20,12 +20,28 @@ import java.util.Locale;
 import cn.classfun.droidvm.R;
 
 /**
- * One entry of {@code usb_host_list} as the rules page needs it: what the device is, where it
+ * One entry of {@code usb_host_list} as the two USB pages need it: what the device is, where it
  * is plugged in and who holds it. The rule id and port path come from the daemon; should a
  * daemon that predates them answer, both are derived here the way plan section 2.4 defines
  * them, so the rows still describe their rules sensibly.
  */
 public final class UsbHostDeviceInfo {
+    /**
+     * Why a device is deauthorized, when this daemon is the one that did it. A record naming no
+     * layer is one the user asked for directly, which the page says with the pin instead.
+     */
+    public static final class Sink {
+        @Nullable
+        public final UsbRuleLayer layer;
+        /** Its index inside that layer; meaningless when {@link #layer} is null. */
+        public final int index;
+
+        private Sink(@NonNull JSONObject obj) {
+            layer = UsbRuleLayer.fromValue(obj.opt("layer"));
+            index = obj.optInt("index", -1);
+        }
+    }
+
     public final String sysfs;
     public final String vid;
     public final String pid;
@@ -38,13 +54,29 @@ public final class UsbHostDeviceInfo {
     public final String id;
     /** Port chain without the bus: sysfs {@code 1-1.2.2} is port {@code 1.2.2}. */
     public final String port;
-    /** Manually detached: the daemon skips it until it is unplugged. */
+    /**
+     * The instance behind the sysfs name: it changes on every re-enumeration, so a device
+     * replugged into the same socket is a different one to anybody holding on to a choice.
+     */
+    public final int devnum;
+    /**
+     * Whether the kernel lets the device be configured at all. False is the sink: nothing for
+     * Android, a host driver or a VM to bind to.
+     */
+    public final boolean authorized;
+    /** Pinned by hand: the daemon skips it until it is unplugged. */
     public final boolean held;
     public final boolean hostInUse;
     @Nullable
     public final String attachedVm;
     @Nullable
     public final String attachedVmName;
+    /** Which xHCI controller of that VM it landed on, when the daemon recorded one. */
+    @Nullable
+    public final String attachedController;
+    /** Why it is hidden, when this daemon hid it. */
+    @Nullable
+    public final Sink sink;
     /** The rule that attached it, when a rule did. */
     @Nullable
     public final UsbRuleLayer autoRuleLayer;
@@ -63,10 +95,15 @@ public final class UsbHostDeviceInfo {
         id = wireId.isEmpty() ? deriveId(vid, pid, serial) : wireId;
         var wirePort = optText(obj, "port");
         port = wirePort.isEmpty() ? derivePort(sysfs) : wirePort;
+        devnum = obj.optInt("devnum", -1);
+        authorized = obj.optBoolean("authorized", true);
         held = obj.optBoolean("held", false);
         hostInUse = obj.optBoolean("host_in_use", false);
         attachedVm = optNullable(obj, "attached_vm");
         attachedVmName = optNullable(obj, "attached_vm_name");
+        attachedController = optNullable(obj, "attached_controller");
+        var hidden = obj.optJSONObject("sink");
+        sink = hidden == null ? null : new Sink(hidden);
         var rule = obj.optJSONObject("auto_rule");
         autoRuleLayer = rule == null ? null : UsbRuleLayer.fromValue(rule.opt("layer"));
         autoRuleIndex = rule == null ? -1 : rule.optInt("index", -1);

@@ -22,7 +22,8 @@ import java.util.Map;
 import cn.classfun.droidvm.R;
 
 /**
- * Where a rule sends the device it matches: the host, the sink, or one VM's controller.
+ * Where a device goes: the host, the sink, or one VM's controller. A rule says it about whatever
+ * it matches, and the management page says it about one device in hand.
  *
  * <p>One row per VM and controller rather than a VM row with a controller question after it: the
  * two together are the target, and a VM with two controllers is two different answers. The sink
@@ -58,11 +59,47 @@ public final class UsbTargetPickerDialog {
         labels.add(context.getString(R.string.usb_rules_target_sink_pick));
         for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels);
         labels.add(context.getString(R.string.usb_rules_target_custom));
+        show(context, targets, labels, () -> askCustom(context, onPicked), onPicked);
+    }
+
+    /**
+     * Where one device the management page lists should go now.
+     *
+     * <p>Nothing is typed in here: the page lists what is plugged in, and a VM with no controller
+     * has nothing to attach to, so it is left out rather than offered and refused. A VM that is
+     * not running is offered, with its state in the label -- the daemon answers that it is not
+     * running and the page says so, which is truer than hiding the option.</p>
+     */
+    public static void pickForDevice(@NonNull Context context, @NonNull List<VmEntry> vms,
+                                     @NonNull Map<String, List<String>> controllers,
+                                     @NonNull OnPicked onPicked) {
+        var targets = new ArrayList<UsbDeviceTarget>();
+        var labels = new ArrayList<String>();
+        targets.add(UsbDeviceTarget.host());
+        labels.add(context.getString(R.string.usb_devices_target_host));
+        for (var vm : vms) {
+            var ids = controllers.get(vm.id);
+            if (ids == null) continue;
+            for (var controller : ids) {
+                targets.add(UsbDeviceTarget.vm(vm.id, controller));
+                labels.add(context.getString(R.string.usb_rules_vm_label_fmt,
+                    vm.label(context), controller));
+            }
+        }
+        targets.add(UsbDeviceTarget.sink());
+        labels.add(context.getString(R.string.usb_rules_target_sink_pick));
+        show(context, targets, labels, null, onPicked);
+    }
+
+    /** The list itself; [onCustom] runs for the one row that stands for no target. */
+    private static void show(@NonNull Context context, @NonNull List<UsbDeviceTarget> targets,
+                             @NonNull List<String> labels, @Nullable Runnable onCustom,
+                             @NonNull OnPicked onPicked) {
         new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.usb_rules_field_target)
             .setItems(labels.toArray(new String[0]), (dialog, which) -> {
-                if (which >= targets.size()) askCustom(context, onPicked);
-                else onPicked.onPicked(targets.get(which));
+                if (which < targets.size()) onPicked.onPicked(targets.get(which));
+                else if (onCustom != null) onCustom.run();
             })
             .show();
     }

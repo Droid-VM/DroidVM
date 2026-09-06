@@ -107,7 +107,10 @@ final class XhciBindingStore {
 
     void add(@NonNull String controllerId, @NonNull UsbRuleLayer layer, @NonNull Row row) {
         addController(controllerId);
-        working.get(controllerId).get(layer).add(row);
+        // At the head, which is where the merge will put it in the file: a layer usually ends in
+        // the rule that takes everything left, a sink most of all, and a row shown behind one of
+        // those would read as a binding that never fires.
+        working.get(controllerId).get(layer).add(0, row);
     }
 
     void replace(@NonNull String controllerId, @NonNull UsbRuleLayer layer, int index,

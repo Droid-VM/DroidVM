@@ -100,12 +100,24 @@ public final class XhciBindingStoreTest {
         assertEquals(List.of(loaded), store.snapshot(UsbRuleLayer.DEVICE));
 
         var replaced = new Row("2109:0813", null, VM, "xhci-0");
-        store.replace("xhci-0", UsbRuleLayer.DEVICE, 1, replaced);
-        assertEquals(List.of(loaded, replaced), store.rows("xhci-0", UsbRuleLayer.DEVICE));
+        store.replace("xhci-0", UsbRuleLayer.DEVICE, 0, replaced);
+        assertEquals(List.of(replaced, loaded), store.rows("xhci-0", UsbRuleLayer.DEVICE));
 
-        store.remove("xhci-0", UsbRuleLayer.DEVICE, 1);
+        store.remove("xhci-0", UsbRuleLayer.DEVICE, 0);
         assertEquals(List.of(loaded), store.rows("xhci-0", UsbRuleLayer.DEVICE));
         assertFalse(store.isDirty());
+    }
+
+    @Test
+    public void aRowAddedGoesToTheHeadOfItsZone() {
+        // What the merge does to the file, so the zone shows the priority the save will write.
+        var store = new XhciBindingStore();
+        var existing = new Row("0bda:8153", null, VM, "xhci-0");
+        store.load(rules(existing), List.of("xhci-0"), VM);
+        var added = new Row("090c:1000", null, VM, "xhci-0");
+        store.add("xhci-0", UsbRuleLayer.DEVICE, added);
+        assertEquals(List.of(added, existing), store.rows("xhci-0", UsbRuleLayer.DEVICE));
+        assertEquals(List.of(added, existing), store.desired(UsbRuleLayer.DEVICE));
     }
 
     @Test

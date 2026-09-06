@@ -1629,6 +1629,8 @@
     <string name="edit_vm_serial_full">All ports of this hardware are already added.</string>
     <string name="settings_usb_passthrough_title">USB passthrough rules</string>
     <string name="settings_usb_passthrough_summary">Which VM a plugged-in USB device goes to automatically</string>
+    <string name="settings_usb_devices_title">USB passthrough manager</string>
+    <string name="settings_usb_devices_summary">Send one device somewhere now, without changing the rules</string>
     <string name="usb_rules_title">USB passthrough rules</string>
     <string name="usb_rules_unsaved">Unsaved changes</string>
     <string name="usb_rules_layer_exact">1. Exact (device + port)</string>
@@ -1689,4 +1691,17 @@
     <string name="usb_rules_event_failed">Could not attach %1$s to %2$s: %3$s</string>
     <string name="usb_rules_event_sinked">%1$s was hidden from Android</string>
     <string name="usb_rules_event_sink_failed">Could not hide %1$s: %2$s</string>
+    <string name="usb_devices_title">USB passthrough manager</string>
+    <string name="usb_devices_empty">No USB devices are plugged in</string>
+    <string name="usb_devices_apply">Apply</string>
+    <string name="usb_devices_applied">Applied to %1$d device(s)</string>
+    <string name="usb_devices_apply_failed_title">Some devices did not move</string>
+    <string name="usb_devices_apply_failed_fmt" translatable="false">%1$s: %2$s</string>
+    <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_devices_target_host">Do not attach (leave on host)</string>
+    <string name="usb_devices_state_sinked">Hidden from Android and every VM</string>
+    <string name="usb_devices_state_sinked_rule">Hidden by rule %1$s[%2$d]</string>
+    <string name="usb_devices_state_pinned">Set by hand; the rules take it back after a replug</string>
+    <string name="usb_devices_discard_message">The devices you picked have not been applied. Leave without applying them?</string>
+    <string name="usb_devices_gone">%1$s was unplugged; the choice made for it is gone</string>
 </resources>

@@ -41,8 +41,6 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
-import cn.classfun.droidvm.lib.store.vm.VMStore;
-import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
 
 /**
@@ -63,7 +61,7 @@ public final class UsbRulesActivity extends AppCompatActivity
         new EnumMap<>(UsbRuleLayer.class);
     private final List<UsbHostDeviceInfo> devices = new ArrayList<>();
     private final List<VmEntry> vms = new ArrayList<>();
-    /** Each VM's xHCI controller ids, read from vms.json; see {@link #loadControllers}. */
+    /** Each VM's xHCI controller ids, read from vms.json; see {@link VmEntry#controllersOf}. */
     private final Map<String, List<String>> vmControllers = new HashMap<>();
     private View root;
     private MaterialToolbar toolbar;
@@ -142,27 +140,9 @@ public final class UsbRulesActivity extends AppCompatActivity
         if (!dirty) loadRules();
     }
 
-    /**
-     * Which xHCI controllers each VM has, from vms.json rather than from {@code vm_list}.
-     *
-     * <p>This is what decides whether a rule's target still exists, and only the config file can
-     * say: the daemon's copy of a VM is loaded once at daemon start and replaced only when a VM
-     * is created or started, so a controller added in the editor would read as missing here and
-     * one deleted there would go on reading as a healthy target until the VM was next started --
-     * wrong in both directions, on the one surface that reports a dangling rule.</p>
-     */
     private void loadControllers() {
-        var store = new VMStore();
-        store.load(this);
         vmControllers.clear();
-        store.forEach((id, config) -> {
-            if (id == null) return;
-            var ids = new ArrayList<String>();
-            for (var controller : VMXhciConfig.listControllers(config.item))
-                if (!controller.getControllerId().isEmpty())
-                    ids.add(controller.getControllerId());
-            vmControllers.put(id.toString(), ids);
-        });
+        vmControllers.putAll(VmEntry.controllersOf(this));
         pushLookups();
     }
 

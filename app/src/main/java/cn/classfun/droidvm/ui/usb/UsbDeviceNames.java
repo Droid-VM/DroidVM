@@ -31,12 +31,15 @@ public final class UsbDeviceNames {
     public static String cardTitle(@NonNull Context context, @NonNull UsbRuleLayer layer,
                                    @Nullable String id, @Nullable String port,
                                    @NonNull List<UsbHostDeviceInfo> devices) {
-        var name = forRule(context, layer, id, port, devices);
         var device = deviceFor(layer, id, port, devices);
-        var generation = device == null ? "" : UsbSpeed.generationOf(device.speed);
-        return generation.isEmpty()
-            ? context.getString(R.string.usb_rules_card_title_plain_fmt, name)
-            : context.getString(R.string.usb_rules_card_title_fmt, generation, name);
+        return titled(context, device == null ? "" : device.speed,
+            forRule(context, layer, id, port, devices));
+    }
+
+    /** The same title for a device in hand rather than for a rule about one. */
+    @NonNull
+    public static String cardTitle(@NonNull Context context, @NonNull UsbHostDeviceInfo device) {
+        return titled(context, device.speed, nameOf(context, device));
     }
 
     /** The name to show for a rule about [id] / at [port]. */
@@ -47,9 +50,25 @@ public final class UsbDeviceNames {
         if (layer == UsbRuleLayer.ANY) return context.getString(R.string.usb_rules_any_device);
         var device = deviceFor(layer, id, port, devices);
         if (device == null) return context.getString(R.string.usb_rules_device_absent);
+        return nameOf(context, device);
+    }
+
+    /** What a plugged-in device is called, said as "unknown" rather than as its id. */
+    @NonNull
+    private static String nameOf(@NonNull Context context, @NonNull UsbHostDeviceInfo device) {
         if (device.product.isEmpty() && device.manufacturer.isEmpty())
             return context.getString(R.string.usb_rules_device_unnamed);
         return device.displayName(context);
+    }
+
+    /** "USB 3.0 <name>", or the name alone at a rate this build has no generation for. */
+    @NonNull
+    private static String titled(@NonNull Context context, @NonNull String speed,
+                                 @NonNull String name) {
+        var generation = UsbSpeed.generationOf(speed);
+        return generation.isEmpty()
+            ? context.getString(R.string.usb_rules_card_title_plain_fmt, name)
+            : context.getString(R.string.usb_rules_card_title_fmt, generation, name);
     }
 
     /**
