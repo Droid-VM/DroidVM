@@ -869,7 +869,11 @@ public final class UsbPassthroughManager {
         // And deliberately no restoreHostDrivers on the way through, though the VMM has just
         // let go: probing would bind the host drivers this is about to take away again, and
         // Android's dialog rides on precisely that.
-        if (!sinkDevice(sysfs, device.devnum, null, true) && !isSinked(sysfs)) {
+        //
+        // Only the write that did not land is a failure: "already hidden" is what this request
+        // asked for, and it is sinkDevice that asked the host which of the two happened. Asking
+        // the records instead is how this used to report success for a device left authorized.
+        if (sinkDevice(sysfs, device.devnum, null, true) == Sunk.FAILED) {
             synchronized (lock) {
                 // Back to what the request found, not to nothing: a device the user had already
                 // pinned by hand is still pinned, whatever this request could not do.
@@ -1335,7 +1339,8 @@ public final class UsbPassthroughManager {
      * matches is decided under the lock against the inventory's snapshot -- a question the
      * snapshot answers as well as a scan does -- while a sink re-reads the device it is about,
      * because {@code authorized} is the one thing that snapshot cannot be trusted on (see
-     * {@link #freshDeviceAt}). The attaches themselves run outside the lock, one after another,
+     * {@link #freshDeviceAt}), and acts only when that read is still the device the rule
+     * matched. The attaches themselves run outside the lock, one after another,
      * through the same path a manual attach takes. A device whose attach
      * fails is marked for the VM it failed for, so the next pass passes that rule over instead
      * of failing the same way again -- until the device is replugged or that VM next comes up.
@@ -1373,10 +1378,16 @@ public final class UsbPassthroughManager {
         }
         var attached = 0;
         var sinked = 0;
-        // Sink decisions this pass took no action on. Counted for the summary line alone: the
-        // reason is logged where it is known, and a pass that decides to hide a device and then
-        // does not must never read as one that had nothing to do.
+        // The three ways a sink decision ends without this pass hiding anything, kept apart
+        // because they mean different things to whoever reads the line: the device was hidden
+        // already (the steady state of every rule that hides one), the pass decided to hide it
+        // and then did not, or it tried and the write failed. Counted for the summary line
+        // alone -- the reason is logged where it is known -- and no sink decision may be missing
+        // from all three, because a pass that decides to hide a device and then does not must
+        // never read as one that had nothing to do.
+        var alreadyHidden = 0;
         var skipped = 0;
+        var failed = 0;
         var unreachable = new HashSet<String>();
         for (var decision : plan) {
             var device = decision.device;
@@ -1394,9 +1405,23 @@ public final class UsbPassthroughManager {
                     Log.i(TAG, fmt("USB %s is gone; rule %s hides nothing", device.sysfs, where));
                     continue;
                 }
+                if (!host.id.equals(device.id)) {
+                    // The socket has a different unit in it than the plan was made about -- a
+                    // replug inside the quiet period, and the two reads share nothing but the
+                    // sysfs name. What the rule matched is the id, and it never saw this one, so
+                    // hiding it would be this pass acting on an identity nobody decided about.
+                    // The arrival diff is on its way and the next pass decides the new occupant
+                    // on its own terms. Only the identity has to agree: the devnum is expected
+                    // to differ for the same unit replugged, and the record is minted from this
+                    // read rather than from the plan for exactly that reason.
+                    skipped++;
+                    Log.w(TAG, fmt("USB %s is %s now and not the %s rule %s matched; hiding "
+                        + "nothing", device.sysfs, host.id, device.id, where));
+                    continue;
+                }
                 UsbSinks.Owed owed;
                 synchronized (lock) {
-                    owed = sinks.owedBySink(device.sysfs, host.authorized);
+                    owed = sinks.owedBySink(device.sysfs, host.devnum, host.authorized);
                 }
                 if (owed == UsbSinks.Owed.ADOPT) {
                     // Already hidden and not this run's doing -- the previous daemon run's
@@ -1409,14 +1434,25 @@ public final class UsbPassthroughManager {
                         + "leaves it to the reconcile", device.sysfs, where));
                     continue;
                 }
-                if (sinkDevice(device.sysfs, host.devnum, decision, false)) {
-                    sinked++;
-                    broadcastAuto("usb_auto_sinked", null, decision, null);
-                } else if (!isSinked(device.sysfs)) {
-                    // The write failed; setAuthorized said which file, this says whose rule.
-                    skipped++;
-                    broadcastAuto("usb_auto_failed", null, decision,
-                        fmt("could not deauthorize %s", device.sysfs));
+                switch (sinkDevice(device.sysfs, host.devnum, decision, false)) {
+                    case WROTE:
+                        sinked++;
+                        broadcastAuto("usb_auto_sinked", null, decision, null);
+                        break;
+                    case ALREADY:
+                        // The fast lane hid it as it was plugged in, or an earlier pass did, and
+                        // the host still has it hidden: this pass has arrived to find its work
+                        // done. Counted and not logged, unlike every other way a sink decision
+                        // writes nothing -- a rule that hides a device makes this the normal
+                        // outcome of every pass for the rest of that device's life.
+                        alreadyHidden++;
+                        break;
+                    default:
+                        // The write failed; setAuthorized said which file, this says whose rule.
+                        failed++;
+                        broadcastAuto("usb_auto_failed", null, decision,
+                            fmt("could not deauthorize %s", device.sysfs));
+                        break;
                 }
                 continue;
             }
@@ -1446,8 +1482,10 @@ public final class UsbPassthroughManager {
         // An attach broadcasts for itself; these two are the pass's own doing.
         if (sinked > 0 || restored > 0) broadcastHost();
         Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached, %d sinked, "
-                + "%d given back%s%s", reason, plan.size(), attached, sinked, restored,
+                + "%d given back%s%s%s%s", reason, plan.size(), attached, sinked, restored,
+            alreadyHidden == 0 ? "" : fmt(", %d already hidden", alreadyHidden),
             skipped == 0 ? "" : fmt(", %d sink decision(s) not acted on", skipped),
+            failed == 0 ? "" : fmt(", %d sink write(s) failed", failed),
             unreachable.isEmpty() ? "" : ", VMM unreachable"));
         return new PassResult(attached + sinked + restored, !unreachable.isEmpty());
     }
@@ -1521,6 +1559,16 @@ public final class UsbPassthroughManager {
         }
     }
 
+    /** What a call to {@link #sinkDevice} did, which is not always what it was asked to do. */
+    private enum Sunk {
+        /** This call wrote {@code authorized=0} and filed the record. */
+        WROTE,
+        /** Nothing to write: the host has it hidden already, as the instance this run recorded. */
+        ALREADY,
+        /** The write did not land, and the host still has the device. */
+        FAILED,
+    }
+
     /**
      * Hides [sysfs] from everything: no configuration, no interfaces, nothing for Android or a
      * host driver to bind to. [by] is the rule that asked, null when the user did, and [manual]
@@ -1528,22 +1576,43 @@ public final class UsbPassthroughManager {
      *
      * <p>Idempotent for a device already sinked as the same instance, which is what lets the
      * debounced pass walk over what {@link #onNodeAppearedFast} did without writing again.
-     * Returns whether this call is what sank it.</p>
+     * "Already sinked" is asked of the device and not only of the record, because a record says
+     * who hid a device and only the host says whether it is still hidden: deauthorize a device
+     * by rule and authorize it back from a shell, which is no unplug and so leaves the devnum
+     * alone, and the record still names this very instance while the device sits on the host
+     * with its drivers bound. Every no-op this returns is one the host was asked about.</p>
+     *
+     * <p>The three outcomes are the caller's to tell apart, and none of them may be read off the
+     * records again: which one this was is precisely what the map cannot say.</p>
      */
-    private boolean sinkDevice(@NonNull String sysfs, int devnum,
-                               @Nullable UsbRuleEngine.Decision by, boolean manual) {
+    @NonNull
+    private Sunk sinkDevice(@NonNull String sysfs, int devnum,
+                            @Nullable UsbRuleEngine.Decision by, boolean manual) {
+        // One small read, here rather than in each caller: this is the last gate in front of the
+        // write, and a flag carried in from a scan is exactly what used to be wrong. See
+        // UsbHostDevice.authorizedAt for why no cached copy of it can be trusted.
+        var authorized = UsbHostDevice.authorizedAt(new File(SYSFS_ROOT, sysfs));
+        UsbSinks.Owed owed;
+        boolean recorded;
         synchronized (lock) {
-            var record = sinks.get(sysfs);
-            if (record != null && record.devnum == devnum) {
-                // Already ours. A manual ask over a rule-made sink still upgrades the record,
-                // which is the half that keeps the reconcile from giving the device back.
-                if (manual && !record.manual) sinks.put(sysfs, by, true, devnum);
-                return false;
-            }
+            owed = sinks.owedBySink(sysfs, devnum, authorized);
+            recorded = sinks.has(sysfs);
+            // DONE is the one answer that means a record for this very instance. A manual ask
+            // over a rule-made sink still upgrades it, which is the half that keeps the
+            // reconcile from giving the device back.
+            var record = owed == UsbSinks.Owed.DONE ? sinks.get(sysfs) : null;
+            if (record != null && manual && !record.manual) sinks.put(sysfs, by, true, devnum);
         }
+        if (owed == UsbSinks.Owed.DONE) return Sunk.ALREADY;
+        // A record for a device the host still has: authorized back from outside, or a write
+        // that never landed. Said out loud because this is the state that used to pass for
+        // "already hidden" -- silently, with the device on the host and its drivers bound.
+        if (recorded && authorized)
+            Log.i(TAG, fmt("USB %s is recorded as hidden and the host has it; hiding it again",
+                sysfs));
         if (!setAuthorized(sysfs, false)) {
             Log.w(TAG, fmt("Failed to deauthorize USB %s", sysfs));
-            return false;
+            return Sunk.FAILED;
         }
         synchronized (lock) {
             sinks.put(sysfs, by, manual, devnum);
@@ -1556,7 +1625,7 @@ public final class UsbPassthroughManager {
         else if (manual) why = "manual";
         else why = "put back after a failed attach";
         Log.i(TAG, fmt("Sinked USB %s (%s)", sysfs, why));
-        return true;
+        return Sunk.WROTE;
     }
 
     /** Gives a sinked device back. False when the write failed and it is still hidden. */
@@ -1569,12 +1638,6 @@ public final class UsbPassthroughManager {
             sinks.remove(sysfs);
         }
         return true;
-    }
-
-    private boolean isSinked(@NonNull String sysfs) {
-        synchronized (lock) {
-            return sinks.has(sysfs);
-        }
     }
 
     /**
@@ -1598,7 +1661,9 @@ public final class UsbPassthroughManager {
                 this::vmHasController);
         }
         if (decision == null || decision.target != UsbRules.Target.SINK) return false;
-        if (sinkDevice(sysfs, device.devnum, decision, false) || isSinked(sysfs)) return true;
+        // Hidden already counts as done here too: the caller's question is whether the device
+        // is the rules' to hide, not whose write hid it.
+        if (sinkDevice(sysfs, device.devnum, decision, false) != Sunk.FAILED) return true;
         broadcastAuto("usb_auto_failed", null, decision,
             fmt("could not deauthorize %s", sysfs));
         return false;
@@ -1651,8 +1716,10 @@ public final class UsbPassthroughManager {
      * whatever the worker is doing. Attaching, un-sinking, the leftovers and the authoritative
      * broadcast all stay on that pass, which arrives to find this work done and does nothing.
      *
-     * <p>Bounded, as {@link UsbHostInventory.FastListener} requires: a readlink, four small
-     * reads and one write, with the decision taken under the lock and the write outside it.</p>
+     * <p>Bounded, as {@link UsbHostInventory.FastListener} requires: a readlink, five small
+     * reads and one write, with the decision taken under the lock and the write outside it. The
+     * fifth read is the sink's own look at {@code authorized}, which no lane may take on
+     * trust.</p>
      */
     private void onNodeAppearedFast(int busnum, int devnum) {
         try {
@@ -1688,7 +1755,9 @@ public final class UsbPassthroughManager {
                 decision = engine.decide(device, this::stateOf, this::vmHasController);
             }
             if (decision == null || decision.target != UsbRules.Target.SINK) return;
-            if (!sinkDevice(sysfs, devnum, decision, false)) return;
+            // Only this thread's own write is announced below; a device already hidden was
+            // announced when it was hidden, and a failed one said so where it failed.
+            if (sinkDevice(sysfs, devnum, decision, false) != Sunk.WROTE) return;
             // Asked again after the write, not only before it: this lane runs on the observer's
             // thread while the falling edge runs on the worker, so the switch can have gone off
             // in between -- and that release may have scanned this device while it was still
@@ -1767,7 +1836,11 @@ public final class UsbPassthroughManager {
         }
     }
 
-    /** The device at [sysfs] as the last scan saw it, read from sysfs when the scan has not. */
+    /**
+     * The device at [sysfs] as the last scan saw it, read from sysfs when the scan has not. Its
+     * {@code authorized} is therefore as old as the last plug event on that bus, and its
+     * {@code devnum} with it: use {@link #freshDeviceAt} wherever either decides anything.
+     */
     @Nullable
     private UsbHostDevice deviceAt(@NonNull String sysfs) {
         for (var device : inventory.snapshot())

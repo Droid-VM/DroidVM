@@ -49,12 +49,17 @@ public final class UsbSinks {
         }
     }
 
-    /** What a rule pass owes a device its rules have just decided to sink. */
+    /** What is still owed to a device something has just decided to sink. */
     public enum Owed {
         /** Hide it: the host still has the device, whatever this map remembers. */
         HIDE,
         /** Hidden already and by nothing this run recorded, so {@link #reconcile} adopts it. */
         ADOPT,
+        /**
+         * Hidden already, by this run, as this very instance: the sink is done and writes
+         * nothing.
+         */
+        DONE,
     }
 
     /** What is owed to a device the host shows deauthorized. */
@@ -101,9 +106,10 @@ public final class UsbSinks {
     }
 
     /**
-     * What is owed to [sysfs], which the rules have just decided to sink. [authorized] is what
+     * What is owed to [sysfs], which something has just decided to sink. [authorized] is what
      * the host says about the device this moment, and it has to be exactly that: read now, from
-     * the device, never carried in from a scan.
+     * the device, never carried in from a scan. [devnum] names the instance being sunk, from
+     * that same read.
      *
      * <p>Writing {@code authorized} creates and removes no {@code /dev/bus/usb} node, so nothing
      * tells an inotify watch on that tree to look again and a cached flag stays whatever the
@@ -114,12 +120,19 @@ public final class UsbSinks {
      * hid a device; only the host says whether it is hidden.</p>
      */
     @NonNull
-    public Owed owedBySink(@NonNull String sysfs, boolean authorized) {
+    public Owed owedBySink(@NonNull String sysfs, int devnum, boolean authorized) {
         // Authorized and recorded at once means the record is about an instance that is gone, or
         // about a write that never landed. Either way the host still has a device to hide.
         if (authorized) return Owed.HIDE;
-        // Hidden and already ours: the sink is idempotent per instance and writes nothing.
-        return records.containsKey(sysfs) ? Owed.HIDE : Owed.ADOPT;
+        var record = records.get(sysfs);
+        // Hidden by nobody this run recorded: the reconcile adopts it, and announces nothing
+        // about something that happened before this daemon was there to announce it.
+        if (record == null) return Owed.ADOPT;
+        // Hidden and ours, as this very instance: the sink is idempotent per instance and writes
+        // nothing -- which is what lets a pass walk over what the fast lane already did. A record
+        // about another devnum is the provenance of a unit that has left the socket, so it says
+        // nothing about the device hidden there now; that one this run claims.
+        return record.devnum == devnum ? Owed.DONE : Owed.HIDE;
     }
 
     /**

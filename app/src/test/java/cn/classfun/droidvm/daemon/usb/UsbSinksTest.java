@@ -81,12 +81,40 @@ public final class UsbSinksTest {
         sinks.put(STICK, sinkDecision(), false, 7);
         assertEquals(Reconcile.RESTORE, sinks.reconcile(STICK, false, Pin.NONE, false));
         sinks.remove(STICK);
-        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, true));
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, 7, true));
 
         // And the other way round: a record left over from an instance that is gone, or from a
         // write that never landed, is no reason to leave an authorized device on the host.
         sinks.put(STICK, sinkDecision(), false, 7);
-        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, true));
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, 7, true));
+    }
+
+    @Test
+    public void theSinkIsANoOpOnlyWhereTheHostSaysTheDeviceIsHidden() {
+        // The same rule one level below the pass, where the sink itself decides whether it has
+        // anything to write. Everything that hides a device comes through there -- the rules
+        // pass, the fast lane, the management page's own Sink -- and a record answering
+        // "already hidden" on its own is how a request could report success over a device
+        // sitting authorized on the host with its drivers bound. Deauthorizing and authorizing
+        // again is no unplug, so the devnum does not change and the record still names this
+        // very instance; it is still saying nothing about whether the device is hidden.
+        var sinks = new UsbSinks();
+        sinks.put(STICK, sinkDecision(), false, 7);
+        assertEquals(Owed.DONE, sinks.owedBySink(STICK, 7, false));
+        // echo 1 > /sys/bus/usb/devices/1-1.2.2/authorized, or a write that never landed:
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, 7, true));
+    }
+
+    @Test
+    public void aRecordAboutAnotherInstanceDecidesNothingAboutThisOne() {
+        // A different unit in the socket, hidden: the record is the provenance of the one that
+        // left. It neither makes this one ours -- there is nothing of this device's to give
+        // back under it -- nor leaves it to the reconcile as a stranger's, because the run that
+        // has a rule for it claims it, with a record minted for the instance actually there.
+        var sinks = new UsbSinks();
+        sinks.put(STICK, sinkDecision(), false, 7);
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, 9, false));
+        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, 9, true));
     }
 
     @Test
@@ -95,11 +123,11 @@ public final class UsbSinksTest {
         // pass writes nothing and the reconcile adopts it, so that nothing is announced about
         // something that happened before the daemon was there to announce it.
         var sinks = new UsbSinks();
-        assertEquals(Owed.ADOPT, sinks.owedBySink(STICK, false));
+        assertEquals(Owed.ADOPT, sinks.owedBySink(STICK, 7, false));
         assertEquals(Reconcile.ADOPT, sinks.reconcile(STICK, false, Pin.NONE, true));
         sinks.put(STICK, sinkDecision(), false, 7);
         // Ours now: hiding it again is the sink's own no-op, and it is adopted no second time.
-        assertEquals(Owed.HIDE, sinks.owedBySink(STICK, false));
+        assertEquals(Owed.DONE, sinks.owedBySink(STICK, 7, false));
         assertEquals(Reconcile.LEAVE, sinks.reconcile(STICK, false, Pin.NONE, true));
     }
 

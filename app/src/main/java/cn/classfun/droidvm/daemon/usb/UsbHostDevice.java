@@ -140,10 +140,23 @@ public final class UsbHostDevice {
             readOptional(devDir, "product"),
             readOptional(devDir, "serial"),
             readOptional(devDir, "speed"),
-            // Absent reads as authorized: a kernel or a device without the attribute is not a
-            // device somebody deauthorized.
-            deviceClass, !"0".equals(readOptional(devDir, "authorized")), interfaces
+            deviceClass, authorizedAt(devDir), interfaces
         );
+    }
+
+    /**
+     * Whether the device directory shows the device authorized, read this moment. Absent reads
+     * as authorized: a kernel or a device without the attribute is not a device somebody
+     * deauthorized.
+     *
+     * <p>Split out of {@link #fromSysfs} and public because this one flag is what a reader who
+     * already has a device cannot take from it: writing {@code authorized} creates and removes
+     * no {@code /dev/bus/usb} node, so nothing tells an inotify watch to look again and a
+     * cached copy stays whatever the last plug event left there. One small read, against a
+     * whole device, and the rule for reading it lives in exactly one place.</p>
+     */
+    public static boolean authorizedAt(@NonNull File devDir) {
+        return !"0".equals(readOptional(devDir, "authorized"));
     }
 
     @NonNull

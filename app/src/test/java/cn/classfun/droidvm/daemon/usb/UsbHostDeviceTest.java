@@ -162,6 +162,28 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
+    public void theFlagOnItsOwnReadsExactlyAsTheWholeDeviceDoes() throws Exception {
+        // What a caller holding a device already reads again before it writes: the flag is the
+        // one field a scan goes stale on, so the rule for reading it has to be the same one --
+        // one function, asserted here against the device the scan builds from it.
+        var root = folder.newFolder("sysfs");
+        var dev = writeFlashDrive(root);
+        write(dev, "authorized", "1\n");
+        assertEquals(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized,
+            UsbHostDevice.authorizedAt(dev));
+        assertTrue(UsbHostDevice.authorizedAt(dev));
+        write(dev, "authorized", "0\n");
+        assertEquals(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized,
+            UsbHostDevice.authorizedAt(dev));
+        assertFalse(UsbHostDevice.authorizedAt(dev));
+        assertTrue(new File(dev, "authorized").delete());
+        assertTrue(UsbHostDevice.authorizedAt(dev));
+        // And a device that is not there at all reads as authorized, which is what makes the
+        // sink's no-op impossible to reach for one: the write is attempted, fails, and says so.
+        assertTrue(UsbHostDevice.authorizedAt(new File(root, "1-9")));
+    }
+
+    @Test
     public void anInterfaceWithNoDriverIsNotInUse() throws Exception {
         var root = folder.newFolder("sysfs");
         var dev = writeFlashDrive(root);
