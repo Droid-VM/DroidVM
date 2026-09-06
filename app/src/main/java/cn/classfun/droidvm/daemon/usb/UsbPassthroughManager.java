@@ -61,8 +61,9 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
  * <p>Devices also get lent out without being asked for: the rules (section 2.4 of the plan) are
  * run over everything plugged in and unclaimed whenever the daemon starts, a device appears, a
  * VM reaches RUNNING, or the rules change -- and never when a VM goes down, so a stop releases
- * devices but takes nothing. All five of those triggers do nothing at all while the rules carry
- * their master switch off; only the direct actions -- attach, detach and the management page --
+ * devices but takes nothing. All five of those triggers take nothing at all while the rules carry
+ * their master switch off; what a pass still does then is give back, which is the half of it that
+ * is not the rules acting. Only the direct actions -- attach, detach and the management page --
  * still work, because those are how a user takes a device by hand. Turning that switch off is
  * itself the one trigger that only gives: it hands back everything this daemon had taken.
  * The deciding is the {@link UsbRuleEngine}'s and happens under the same lock as the manual
@@ -1267,8 +1268,9 @@ public final class UsbPassthroughManager {
         }
         for (var device : scanHost()) {
             if (device.authorized) continue;
-            // unsink says what it could not write; a device whose write fails stays hidden until
-            // it is unplugged, and the pass that runs when the switch comes back on picks it up.
+            // unsink says what it could not write; a device whose write fails is left hidden
+            // for now, and the reconcile of the next pass -- which runs whether the switch is
+            // on or off -- is what tries again rather than the user having to unplug it.
             if (unsink(device.sysfs)) given++;
         }
         synchronized (lock) {
@@ -1341,25 +1343,30 @@ public final class UsbPassthroughManager {
      * <p>Every pass also reconciles the sinks, whatever the plan held and even when there are no
      * rules at all -- an empty rule set is exactly when every hidden device has to come back.</p>
      *
-     * <p>And no pass at all while the master switch is off, which is what makes each of the five
-     * triggers a no-op: not even the reconcile, because giving a device back is the rules acting
-     * on it as much as taking one is, and the falling edge of that switch already gave back
-     * everything this daemon had taken.</p>
+     * <p>The master switch gates the plan and only the plan: off, no rule takes anything, so
+     * every trigger is the no-op it promises to be. The reconcile is deliberately outside that
+     * gate, because it is the sink design's own housekeeping rather than a rule acting -- it is
+     * the only thing that ever writes authorized=1 for a device nobody claims, so gating it too
+     * would leave a device the falling edge could not reach, or one whose manual record died
+     * with the daemon, hidden from Android and from every VM until it was unplugged. With the
+     * rules answering nothing it reads as "no rule hides this device, give it back", and a
+     * device the user hid by hand is still left alone.</p>
      */
     @NonNull
     private PassResult runAutoAttach(@NonNull String reason) {
-        synchronized (lock) {
-            if (!engine.rulesEnabled()) {
-                Log.i(TAG, fmt("USB rules pass (%s) skipped: passthrough is off", reason));
-                return new PassResult(0, false);
-            }
-        }
         List<UsbRuleEngine.Decision> plan;
         synchronized (lock) {
-            var plugged = new ArrayList<UsbRuleEngine.Device>();
-            for (var device : inventory.snapshot()) plugged.add(UsbRuleEngine.Device.of(device));
-            plan = engine.plan(plugged, attachments::containsKey, this::stateOf,
-                this::vmHasController);
+            if (!engine.rulesEnabled()) {
+                Log.i(TAG, fmt("USB rules pass (%s): passthrough is off, reconciling only",
+                    reason));
+                plan = Collections.emptyList();
+            } else {
+                var plugged = new ArrayList<UsbRuleEngine.Device>();
+                for (var device : inventory.snapshot())
+                    plugged.add(UsbRuleEngine.Device.of(device));
+                plan = engine.plan(plugged, attachments::containsKey, this::stateOf,
+                    this::vmHasController);
+            }
         }
         var attached = 0;
         var sinked = 0;
@@ -1655,6 +1662,27 @@ public final class UsbPassthroughManager {
             }
             if (decision == null || decision.target != UsbRules.Target.SINK) return;
             if (!sinkDevice(sysfs, devnum, decision, false)) return;
+            // Asked again after the write, not only before it: this lane runs on the observer's
+            // thread while the falling edge runs on the worker, so the switch can have gone off
+            // in between -- and that release may have scanned this device while it was still
+            // authorized and walked past it. Reading the switch still on here proves the release
+            // has not scanned yet (it installs the rules first), so its own scan will find this
+            // device and hand it back; reading it off means that scan may be past, so this
+            // thread undoes its own write rather than leave the device hidden until a later
+            // pass reconciles it.
+            boolean off;
+            synchronized (lock) {
+                off = !engine.rulesEnabled();
+            }
+            if (off) {
+                Log.i(TAG, fmt("USB %s was hidden as passthrough went off; giving it back",
+                    sysfs));
+                unsink(sysfs);
+                // The release's own broadcast may have gone out while this device was hidden,
+                // so the host list is worth one more scan -- off this thread, like the one below.
+                schedule(this::broadcastHost, 0);
+                return;
+            }
             // Off the hot path: a broadcast takes a full scan, and every further inotify event
             // for this bus is waiting behind this thread.
             schedule(() -> {

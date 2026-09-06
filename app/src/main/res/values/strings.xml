@@ -1674,6 +1674,7 @@
     <string name="usb_rules_delete">Delete rule</string>
     <string name="usb_rules_save">Save and apply</string>
     <string name="usb_rules_saved">Applied to %1$d device(s)</string>
+    <string name="usb_rules_released">Returned %1$d device(s) to Android</string>
     <string name="usb_rules_save_failed_title">Rules not saved</string>
     <string name="usb_rules_request_failed">The daemon refused the request</string>
     <string name="usb_rules_daemon_unavailable">The daemon is not connected</string>

@@ -1630,6 +1630,7 @@
     <string name="usb_rules_delete">删除规则</string>
     <string name="usb_rules_save">保存并应用</string>
     <string name="usb_rules_saved">已应用 %1$d 台</string>
+    <string name="usb_rules_released">已交还 %1$d 台给 Android</string>
     <string name="usb_rules_save_failed_title">规则未保存</string>
     <string name="usb_rules_request_failed">daemon 拒绝了这个请求</string>
     <string name="usb_rules_daemon_unavailable">尚未连上 daemon</string>

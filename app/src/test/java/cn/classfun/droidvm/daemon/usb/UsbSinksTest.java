@@ -116,6 +116,29 @@ public final class UsbSinksTest {
     }
 
     @Test
+    public void withTheSwitchOffTheReconcileStillGivesEveryHiddenDeviceBack() {
+        // The pass gates its plan on the master switch and deliberately not this: the rules
+        // answer nothing while it is off, which reads here as "no rule hides this device, give
+        // it back" -- and that is the only thing that ever authorizes one again. Gated too, a
+        // device the falling edge could not reach, or one hidden by hand whose record died with
+        // the daemon, would stay invisible to Android and to every VM until it was unplugged.
+        var map = new EnumMap<Layer, List<Rule>>(Layer.class);
+        map.put(Layer.DEVICE, List.of(new Rule("090c:1000", null, null, null, Target.SINK)));
+        var engine = new UsbRuleEngine();
+        engine.setRules(UsbRules.build(false, map, null));
+        var rulesSink = engine.decide(new Device(STICK, "090c:1000", "1.2.2"),
+            vm -> VMState.STOPPED, (vm, controller) -> true) != null;
+        assertFalse(rulesSink);
+
+        var sinks = new UsbSinks();
+        assertEquals(Reconcile.RESTORE, sinks.reconcile(STICK, false, Pin.NONE, rulesSink));
+        // Except what the user hid by hand: the management page is a direct action and goes on
+        // working while the switch is off, so its record and its pin outrank the reconcile.
+        sinks.put(STICK, null, true, 7);
+        assertEquals(Reconcile.LEAVE, sinks.reconcile(STICK, false, Pin.SINK, rulesSink));
+    }
+
+    @Test
     public void theSwitchGoingOffLeavesNoRecordBehind() {
         // Everything hidden is authorized again on that edge, so a record would be provenance
         // for a device nothing is hiding any more -- and the next pass reads the host's own

@@ -306,6 +306,11 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         try {
             payload = new JSONObject();
             payload.put("version", UsbRules.VERSION);
+            // The master switch belongs to the rules page; this card only edits rows, so it hands
+            // back whatever the daemon just said. Dropping the key is not neutral -- an absent
+            // "enabled" reads as on -- so a binding saved while passthrough was off would turn it
+            // on and run a full pass, taking back the devices the user had just given to Android.
+            payload.put("enabled", current == null || current.optBoolean("enabled", true));
             var live = rowsOf(current);
             // The rows added this session only learn their VM here -- a new VM's id is minted by
             // the save itself -- and they learn it in place, so the snapshot a landed push

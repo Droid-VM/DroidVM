@@ -210,12 +210,18 @@ public final class UsbRulesActivity extends AppCompatActivity
             toast(e.getMessage(), LENGTH_LONG);
             return;
         }
+        // Read before the request rather than in the callback: the count that comes back is
+        // about the save that was sent, and the save that turns the switch off counts devices
+        // given back rather than taken. "Applied to 3" after turning passthrough off would read
+        // as three devices taken, which is the opposite of what just happened.
+        var enabled = swEnabled.isChecked();
         DaemonConnection.getInstance().buildRequest("usb_rules_set")
             .put("rules", rules)
             .onResponse(resp -> post(() -> {
                 setDirty(false);
                 showStatus(null);
-                toast(getString(R.string.usb_rules_saved, resp.optInt("applied", 0)), LENGTH_SHORT);
+                toast(getString(enabled ? R.string.usb_rules_saved : R.string.usb_rules_released,
+                    resp.optInt("applied", 0)), LENGTH_SHORT);
                 loadDevices();
             }))
             .onUnsuccessful(resp -> post(() -> showSaveError(message(resp))))

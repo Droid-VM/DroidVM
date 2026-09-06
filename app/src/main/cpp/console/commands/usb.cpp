@@ -167,8 +167,11 @@ int UsbRulesCommand::show() {
     auto resp = ipc->send_request(req);
     // The master switch on its own line first: it makes every rule below it inert, and a reader
     // scanning a long rule set should not have to find that out from one key inside the JSON.
+    // On stderr, because it is a header for a person: stdout stays the file `set` reads back, so
+    // `usb-rules > rules.json && usb-rules set rules.json` goes on working.
     auto rules = resp["rules"];
-    printf("passthrough: %s\n", rules.get("enabled", true).asBool() ? "enabled" : "disabled");
+    fprintf(stderr, "passthrough: %s\n",
+            rules.get("enabled", true).asBool() ? "enabled" : "disabled");
     // The rules alone: this is the file the UI writes, so what prints is what `set` reads back.
     printf("%s\n", IPCClient::json_to_string(rules, true).c_str());
     return 0;
@@ -198,6 +201,10 @@ int UsbRulesCommand::test() {
     Json::Value req;
     req["command"] = "usb_rules_test";
     auto resp = ipc->send_request(req);
+    // The switch first: off, every row below reads "none" for the same reason, and this is the
+    // command a person runs to ask why a rule did not fire.
+    printf("passthrough: %s\n",
+           resp.get("enabled", true).asBool() ? "enabled" : "disabled");
     // AUTH beside HELD, because the dry run is where a person checks that a sink took effect.
     printf("%-10s %-30s %-8s %-5s %-5s %-36s %s\n",
            "SYSFS", "ID", "PORT", "HELD", "AUTH", "ATTACHED_VM", "RESULT");

@@ -43,11 +43,14 @@
 
             <!-- The master switch, above the zones and saved by the same button: toggling it
                  alone changes nothing, and the four zones stay editable while it is off so
-                 rules can be prepared before they are allowed to run. -->
+                 rules can be prepared before they are allowed to run. Checked in the layout
+                 because that is what an absent "enabled" means to the daemon: a page waiting
+                 for its answer, or one that never got it, must not show passthrough as off. -->
             <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                 android:id="@+id/sw_usb_enabled"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:checked="true"
                 android:icon="@drawable/ic_usb"
                 android:subtitle="@string/usb_rules_enabled_note"
                 android:text="@string/usb_rules_enabled" />

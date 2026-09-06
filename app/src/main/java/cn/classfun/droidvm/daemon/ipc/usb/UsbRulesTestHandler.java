@@ -22,6 +22,10 @@ public final class UsbRulesTestHandler extends RequestHandler {
     @Override
     public void handle(@NonNull ClientRequest request) throws Exception {
         var res = request.res();
-        res.put("devices", request.getContext().getUsb().testRules());
+        var usb = request.getContext().getUsb();
+        // The switch beside the dry run, because off it is the answer to every row: a rule set
+        // that matches nothing and one that is not allowed to run read the same in the table.
+        res.put("enabled", usb.getRules().isEnabled());
+        res.put("devices", usb.testRules());
     }
 }
