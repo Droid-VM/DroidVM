@@ -22,6 +22,11 @@ public final class VMCreationDefaultsTest {
         assertEquals(5900, VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
         assertEquals(5909, VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
 
+        var xhci = VMPeripheralConfig.createDefaultXhci("xhci-0");
+        assertEquals(PeripheralType.XHCI_USB, xhci.getType());
+        assertEquals(VMXhciConfig.DEFAULT_PORTS, xhci.getUsb2Ports());
+        assertEquals(VMXhciConfig.DEFAULT_PORTS, xhci.getUsb3Ports());
+
         var sound = VMPeripheralConfig.createDefaultVirtioSound();
         assertEquals(PeripheralType.VIRTIO_SOUND, sound.getType());
         var endpoints = sound.getEndpoints();
@@ -53,6 +58,14 @@ public final class VMCreationDefaultsTest {
     public void customizeDefaultsAgreeWithTheEditorsOwn() {
         // Only LendMthpMode.defaultForDevice reads it, inside its own try/catch.
         var item = VMConfig.createWithCustomizeDefaults(null).item;
+
+        // One xHCI controller, minted through the counter so a new VM and a converted old one
+        // both carry "xhci-0" -- the id every USB rule for this VM will name.
+        var controllers = VMXhciConfig.listControllers(item);
+        assertEquals(1, controllers.size());
+        assertEquals("xhci-0", controllers.get(0).getControllerId());
+        assertEquals(VMConfig.NEW_VM_DEFAULT_USB, VMXhciConfig.isEnabled(item));
+        assertEquals(VMConfig.NEW_VM_DEFAULT_USB, item.optBoolean(VMXhciConfig.KEY_USB, false));
 
         var gpu = VMScreenConfig.find(item, VMScreenConfig.ID_GPU0);
         assertNotNull(gpu);

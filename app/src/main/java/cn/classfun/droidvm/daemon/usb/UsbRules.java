@@ -18,7 +18,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.daemon.server.RequestException;
@@ -34,11 +34,24 @@ import cn.classfun.droidvm.daemon.server.RequestException;
  * so the model and its validation run under the stubbed android.jar of a unit test.</p>
  */
 public final class UsbRules {
+    /**
+     * The container's shape, not the rules'. It stayed at 1 when {@code controller} was added:
+     * the key is optional and an absent one means what it always meant, so a file written before
+     * it existed is still exactly what it says, and a bump would only have made a new daemon
+     * refuse one.
+     */
     public static final int VERSION = 1;
-    /** {@code vid:pid}, lowercase hex, then optionally {@code :serial}; a serial may hold anything. */
-    private static final Pattern ID = Pattern.compile("^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}(:.+)?$");
+    /**
+     * {@code vid:pid}, lowercase hex, then optionally {@code :serial}; a serial may hold anything.
+     *
+     * <p>Public because the editor checks what the user typed against it before pushing: being
+     * told about a typo by the daemon, after a save that also wrote the VM config, is later than
+     * it needs to be, and a second copy of the pattern is a second answer.</p>
+     */
+    public static final Pattern ID_PATTERN =
+        Pattern.compile("^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}(:.+)?$");
     /** A port chain: {@code 1.2.2}, {@code 1.4}, or a root port {@code 3}. */
-    private static final Pattern PORT = Pattern.compile("^\\d+(\\.\\d+)*$");
+    public static final Pattern PORT_PATTERN = Pattern.compile("^\\d+(\\.\\d+)*$");
 
     /** The four layers, in the order they are consulted. */
     public enum Layer {
@@ -65,6 +78,12 @@ public final class UsbRules {
     /**
      * One entry. Which fields are set is decided by the layer it sits in; {@code vm} is a VM id,
      * or null for "leave it with the host", which the {@link Layer#ANY} layer does not allow.
+     *
+     * <p>{@code controller} names one xHCI controller inside that VM. Null means the VM's first
+     * one, which is what every rule written before controllers existed meant and still means --
+     * so an old file needs no rewriting. The editor writes the id out, because deleting a
+     * controller should leave its rules visibly dangling rather than silently re-point them at
+     * whichever controller became the first.</p>
      */
     public static final class Rule {
         @Nullable
@@ -73,11 +92,15 @@ public final class UsbRules {
         public final String port;
         @Nullable
         public final String vm;
+        @Nullable
+        public final String controller;
 
-        public Rule(@Nullable String id, @Nullable String port, @Nullable String vm) {
+        public Rule(@Nullable String id, @Nullable String port, @Nullable String vm,
+                    @Nullable String controller) {
             this.id = id;
             this.port = port;
             this.vm = vm;
+            this.controller = controller;
         }
 
         /** Whether the device with [deviceId] at [devicePort] is one this rule speaks about. */
@@ -101,21 +124,23 @@ public final class UsbRules {
     /**
      * Builds a rule set, refusing anything the engine could not act on.
      *
-     * @param vmExists says whether a VM id names a VM; null skips that check, for a file read
-     *                 back at start-up, where a rule for a VM deleted since is kept -- it can
-     *                 never match, and dropping the user's entry silently would be worse.
+     * @param targetExists says whether a rule's target -- a VM id and, when it names one, a
+     *                     controller inside it -- is one the daemon can act on; null skips that
+     *                     check, for a file read back at start-up, where a rule for a VM or a
+     *                     controller deleted since is kept -- it can never match, and dropping
+     *                     the user's entry silently would be worse.
      * @throws RequestException naming the layer, the index and what is wrong.
      */
     @NonNull
     public static UsbRules build(@NonNull Map<Layer, List<Rule>> layers,
-                                 @Nullable Predicate<String> vmExists) {
+                                 @Nullable BiPredicate<String, String> targetExists) {
         var result = new EnumMap<Layer, List<Rule>>(Layer.class);
         for (var layer : Layer.values()) {
             var rules = layers.get(layer);
             if (rules == null) rules = Collections.emptyList();
             var checked = new ArrayList<Rule>(rules.size());
             for (var i = 0; i < rules.size(); i++)
-                checked.add(validate(layer, i, rules.get(i), vmExists));
+                checked.add(validate(layer, i, rules.get(i), targetExists));
             result.put(layer, Collections.unmodifiableList(checked));
         }
         return new UsbRules(result);
@@ -123,7 +148,7 @@ public final class UsbRules {
 
     @NonNull
     private static Rule validate(@NonNull Layer layer, int index, @NonNull Rule rule,
-                                 @Nullable Predicate<String> vmExists) {
+                                 @Nullable BiPredicate<String, String> targetExists) {
         var where = fmt("%s[%d]", layer.key, index);
         var wantsId = layer == Layer.EXACT || layer == Layer.DEVICE;
         var wantsPort = layer == Layer.EXACT || layer == Layer.PORT;
@@ -137,25 +162,35 @@ public final class UsbRules {
             throw new RequestException(fmt("%s: a %s rule takes no port", where, layer.key));
         if (layer == Layer.ANY && rule.vm == null)
             throw new RequestException(fmt("%s: vm must not be null in the any layer", where));
+        if (rule.controller != null) {
+            // A host rule keeps the device on the host; there is no controller for it to name.
+            if (rule.vm == null)
+                throw new RequestException(fmt("%s: controller needs a vm", where));
+            if (rule.controller.isEmpty())
+                throw new RequestException(fmt(
+                    "%s: controller must be a controller id or null", where));
+        }
         String id = null;
         if (rule.id != null) {
-            if (!ID.matcher(rule.id).matches())
+            if (!ID_PATTERN.matcher(rule.id).matches())
                 throw new RequestException(fmt(
                     "%s: bad id %s (want vid:pid or vid:pid:serial)", where, rule.id));
             // vid:pid is hex and the device side lowercases it; the serial is a string and is
             // compared as the device reports it.
             id = rule.id.substring(0, 9).toLowerCase(Locale.ROOT) + rule.id.substring(9);
         }
-        if (rule.port != null && !PORT.matcher(rule.port).matches())
+        if (rule.port != null && !PORT_PATTERN.matcher(rule.port).matches())
             throw new RequestException(fmt(
                 "%s: bad port %s (want a port chain such as 1.2.2)", where, rule.port));
         if (rule.vm != null) {
             if (rule.vm.isEmpty())
                 throw new RequestException(fmt("%s: vm must be a VM id or null", where));
-            if (vmExists != null && !vmExists.test(rule.vm))
-                throw new RequestException(fmt("%s: VM not found: %s", where, rule.vm));
+            if (targetExists != null && !targetExists.test(rule.vm, rule.controller))
+                throw new RequestException(rule.controller == null
+                    ? fmt("%s: VM not found: %s", where, rule.vm)
+                    : fmt("%s: VM %s has no USB controller %s", where, rule.vm, rule.controller));
         }
-        return new Rule(id, rule.port, rule.vm);
+        return new Rule(id, rule.port, rule.vm, rule.controller);
     }
 
     /** The rules of [layer], in priority order; never null. */
@@ -176,7 +211,8 @@ public final class UsbRules {
      * would otherwise be a rule set that silently does nothing.
      */
     @NonNull
-    public static UsbRules fromJson(@NonNull JSONObject obj, @Nullable Predicate<String> vmExists) {
+    public static UsbRules fromJson(@NonNull JSONObject obj,
+                                    @Nullable BiPredicate<String, String> targetExists) {
         var layers = new EnumMap<Layer, List<Rule>>(Layer.class);
         var keys = obj.keys();
         while (keys.hasNext()) {
@@ -204,7 +240,7 @@ public final class UsbRules {
             }
             layers.put(layer, rules);
         }
-        return build(layers, vmExists);
+        return build(layers, targetExists);
     }
 
     @NonNull
@@ -212,10 +248,12 @@ public final class UsbRules {
         var keys = item.keys();
         while (keys.hasNext()) {
             var key = keys.next();
-            if ("id".equals(key) || "port".equals(key) || "vm".equals(key)) continue;
+            if ("id".equals(key) || "port".equals(key) || "vm".equals(key)
+                || "controller".equals(key)) continue;
             throw new RequestException(fmt("%s[%d]: unknown field %s", layer, index, key));
         }
-        return new Rule(optString(item, "id"), optString(item, "port"), optString(item, "vm"));
+        return new Rule(optString(item, "id"), optString(item, "port"), optString(item, "vm"),
+            optString(item, "controller"));
     }
 
     /** A string field, where an absent key and a JSON null both read as null. */
@@ -240,6 +278,9 @@ public final class UsbRules {
                 if (rule.id != null) item.put("id", rule.id);
                 if (rule.port != null) item.put("port", rule.port);
                 item.put("vm", rule.vm == null ? JSONObject.NULL : rule.vm);
+                // Left out when there is none, so a host rule and a rule from before controllers
+                // existed come back out byte for byte as they went in.
+                if (rule.controller != null) item.put("controller", rule.controller);
                 array.put(item);
             }
             obj.put(layer.key, array);

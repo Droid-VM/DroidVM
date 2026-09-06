@@ -1537,6 +1537,7 @@
     <string name="edit_vm_sound_underrun_lpc">LPC</string>
     <string name="edit_vm_peripheral_host_output">輸出</string>
     <string name="edit_vm_peripheral_host_input">輸入</string>
+    <string name="edit_vm_peripheral_type_xhci">xHCI USB控制器</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">序列埠</string>

@@ -1578,6 +1578,7 @@
     <string name="edit_vm_sound_underrun_lpc">LPC</string>
     <string name="edit_vm_peripheral_host_output">Output</string>
     <string name="edit_vm_peripheral_host_input">Input</string>
+    <string name="edit_vm_peripheral_type_xhci">xHCI USB controller</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>

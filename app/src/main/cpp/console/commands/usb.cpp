@@ -170,13 +170,19 @@ int UsbRulesCommand::show() {
     return 0;
 }
 
-// What a rule pass would do with a device, in one word or one address.
+// What a rule pass would do with a device, in one word or one address. A rule that names a
+// controller inside its VM says so after a slash; one that names none means the VM's first.
 static std::string describe_result(const Json::Value &result) {
     if (result.isNull()) return "none";
     auto layer = result.get("layer", "?").asString();
     auto index = result.get("index", 0).asInt();
     auto vm = result.get("vm", Json::Value::null);
-    return std::format("{}[{}] -> {}", layer, index, vm.isNull() ? "host" : vm.asString());
+    if (vm.isNull()) return std::format("{}[{}] -> host", layer, index);
+    auto controller = result.get("controller", Json::Value::null);
+    auto target = controller.isNull()
+                      ? vm.asString()
+                      : std::format("{}/{}", vm.asString(), controller.asString());
+    return std::format("{}[{}] -> {}", layer, index, target);
 }
 
 int UsbRulesCommand::test() {

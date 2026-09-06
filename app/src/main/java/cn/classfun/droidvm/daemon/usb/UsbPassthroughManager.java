@@ -44,6 +44,7 @@ import cn.classfun.droidvm.daemon.server.RequestException;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.VMInstance;
 import cn.classfun.droidvm.lib.store.vm.VMState;
+import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 
 /**
  * The daemon's single authority over host USB devices: what the host has, who has it, and what
@@ -257,7 +258,7 @@ public final class UsbPassthroughManager {
      * are not candidates -- and does not clear a hold either.
      */
     public int setRules(@NonNull JSONObject json) {
-        var rules = UsbRules.fromJson(json, id -> context.getVMs().findById(id) != null);
+        var rules = UsbRules.fromJson(json, this::targetExists);
         synchronized (lock) {
             engine.setRules(rules);
         }
@@ -274,6 +275,36 @@ public final class UsbPassthroughManager {
     }
 
     /**
+     * Whether a rule's target is one the daemon can act on.
+     *
+     * <p>A controller is only refused when the daemon's copy of that VM lists controllers and none
+     * of them is the named one. That copy is read once at daemon start and only refreshed by the
+     * vm_create/vm_modify a VM start sends, so a VM whose controller was added since would
+     * otherwise have the save that just added it rejected. The strict half still catches what
+     * matters: a controller the daemon knows is gone.</p>
+     */
+    private boolean targetExists(@NonNull String vmId, @Nullable String controllerId) {
+        var inst = context.getVMs().findById(vmId);
+        if (inst == null) return false;
+        if (controllerId == null) return true;
+        var controllers = VMXhciConfig.listControllers(inst.item);
+        if (controllers.isEmpty()) return true;
+        for (var controller : controllers)
+            if (controllerId.equals(controller.getControllerId())) return true;
+        return false;
+    }
+
+    /**
+     * Whether the VM a rule points at still has the controller it names, asked of the config that
+     * VM is running with -- the controllers a running VM has are the ones it booted with. A rule
+     * naming none asks whether it has any.
+     */
+    private boolean vmHasController(@NonNull String vmId, @Nullable String controllerId) {
+        var inst = context.getVMs().findById(vmId);
+        return inst != null && VMXhciConfig.findController(inst.item, controllerId) != null;
+    }
+
+    /**
      * What the rules say about every plugged device, without acting on it. The match is reported
      * for held and attached devices too -- the row says so, and "where would this go" is the
      * question a user editing the rules is asking.
@@ -286,7 +317,8 @@ public final class UsbPassthroughManager {
         synchronized (lock) {
             for (var device : devices) {
                 var attachment = attachments.get(device.sysfs);
-                var decision = engine.decide(UsbRuleEngine.Device.of(device), this::stateOf);
+                var decision = engine.decide(UsbRuleEngine.Device.of(device), this::stateOf,
+                    this::vmHasController);
                 var obj = new JSONObject();
                 obj.put("sysfs", device.sysfs);
                 obj.put("id", device.id);
@@ -306,6 +338,9 @@ public final class UsbPassthroughManager {
         var obj = new JSONObject();
         obj.put("layer", decision.layer.key);
         obj.put("index", decision.index);
+        // Null for a rule that names no controller, which means the target VM's first one.
+        obj.put("controller", decision.controller == null
+            ? JSONObject.NULL : decision.controller);
         return obj;
     }
 
@@ -346,8 +381,15 @@ public final class UsbPassthroughManager {
                        @Nullable UsbRuleEngine.Decision rule) throws UsbVmmUnreachableException {
         if (vm.getState() != VMState.RUNNING)
             throw new RequestException("VM is not running");
-        if (!vm.item.optBoolean("usb", false))
-            throw new RequestException("USB is disabled for this VM (usb=false)");
+        // What the rule asked for, or the VM's first controller when it asked for no particular
+        // one. crosvm's `usb attach` takes no controller argument -- it emulates one -- so this is
+        // the whole of resolving it today; what it buys is that a rule naming a controller the VM
+        // does not have is refused rather than quietly landing on another one.
+        var wanted = rule == null ? null : rule.controller;
+        if (VMXhciConfig.findController(vm.item, wanted) == null)
+            throw new RequestException(wanted == null
+                ? "VM has no USB controller"
+                : fmt("VM has no USB controller %s", wanted));
         var socket = vm.getControlSocketPath();
         if (socket == null)
             throw new RequestException("VM has no control socket");
@@ -840,7 +882,8 @@ public final class UsbPassthroughManager {
             if (engine.getRules().isEmpty()) return new PassResult(0, false);
             var plugged = new ArrayList<UsbRuleEngine.Device>();
             for (var device : inventory.snapshot()) plugged.add(UsbRuleEngine.Device.of(device));
-            plan = engine.plan(plugged, attachments::containsKey, this::stateOf);
+            plan = engine.plan(plugged, attachments::containsKey, this::stateOf,
+                this::vmHasController);
         }
         var applied = 0;
         var unreachable = new HashSet<String>();
@@ -885,6 +928,8 @@ public final class UsbPassthroughManager {
             data.put("port", decision.device.port);
             data.put("layer", decision.layer.key);
             data.put("index", decision.index);
+            data.put("controller", decision.controller == null
+                ? JSONObject.NULL : decision.controller);
             if (error != null) data.put("error", error);
             broadcast(event, data);
         } catch (Exception e) {

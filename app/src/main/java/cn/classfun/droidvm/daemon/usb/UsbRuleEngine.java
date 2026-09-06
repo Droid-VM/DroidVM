@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -55,13 +56,21 @@ public final class UsbRuleEngine {
         public final int index;
         @Nullable
         public final String vm;
+        /**
+         * The controller the rule named, verbatim -- null stays null rather than becoming the
+         * VM's first controller here. What "the first one" is depends on the config the VM was
+         * started with, so it is resolved once, where the attach happens.
+         */
+        @Nullable
+        public final String controller;
 
         Decision(@NonNull Device device, @NonNull UsbRules.Layer layer, int index,
-                 @Nullable String vm) {
+                 @Nullable String vm, @Nullable String controller) {
             this.device = device;
             this.layer = layer;
             this.index = index;
             this.vm = vm;
+            this.controller = controller;
         }
     }
 
@@ -124,14 +133,17 @@ public final class UsbRuleEngine {
      *
      * @param attached says whether a device is already some VM's.
      * @param stateOf  the state of a VM by id, null when there is no such VM.
+     * @param hasController whether a VM still has the controller a rule names; a null controller
+     *                      asks whether it has any.
      */
     @NonNull
     public List<Decision> plan(@NonNull List<Device> plugged, @NonNull Predicate<String> attached,
-                               @NonNull Function<String, VMState> stateOf) {
+                               @NonNull Function<String, VMState> stateOf,
+                               @NonNull BiPredicate<String, String> hasController) {
         var decisions = new ArrayList<Decision>();
         for (var device : plugged) {
             if (attached.test(device.sysfs) || isHeld(device.sysfs)) continue;
-            var decision = decide(device, stateOf);
+            var decision = decide(device, stateOf, hasController);
             if (decision != null) decisions.add(decision);
         }
         return decisions;
@@ -140,11 +152,19 @@ public final class UsbRuleEngine {
     /**
      * The rule that takes [device], regardless of whether anything is stopping it from being
      * acted on: layers in order, list order within a layer. A null-VM hit stops the search with
-     * "host"; a rule whose VM is not running, or that already failed for this device, is passed
-     * over and the search goes on. Null when nothing matches.
+     * "host"; a rule whose VM is not running, whose VM no longer has the controller it names, or
+     * that already failed for this device, is passed over and the search goes on. Null when
+     * nothing matches.
+     *
+     * <p>A missing controller is a skip and not an attach that fails: it is a configuration fact
+     * rather than something that might work next time, so remembering it against the VM would
+     * block that VM from every other rule for this device and would never be cleared by the VM
+     * coming back. Falling through also lets a lower-priority rule have its turn, which is what
+     * the dry run should be reporting.</p>
      */
     @Nullable
-    public Decision decide(@NonNull Device device, @NonNull Function<String, VMState> stateOf) {
+    public Decision decide(@NonNull Device device, @NonNull Function<String, VMState> stateOf,
+                           @NonNull BiPredicate<String, String> hasController) {
         var f = flags.get(device.sysfs);
         var failedFor = f == null ? null : f.failedFor;
         for (var layer : UsbRules.Layer.values()) {
@@ -152,10 +172,11 @@ public final class UsbRuleEngine {
             for (var index = 0; index < list.size(); index++) {
                 var rule = list.get(index);
                 if (!rule.matches(device.id, device.port)) continue;
-                if (rule.vm == null) return new Decision(device, layer, index, null);
+                if (rule.vm == null) return new Decision(device, layer, index, null, null);
                 if (stateOf.apply(rule.vm) != VMState.RUNNING) continue;
+                if (!hasController.test(rule.vm, rule.controller)) continue;
                 if (rule.vm.equals(failedFor)) continue;
-                return new Decision(device, layer, index, rule.vm);
+                return new Decision(device, layer, index, rule.vm, rule.controller);
             }
         }
         return null;
