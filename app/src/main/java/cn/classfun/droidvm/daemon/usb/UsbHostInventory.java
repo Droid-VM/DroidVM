@@ -8,6 +8,8 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.os.FileObserver;
 import android.util.Log;
 
+import cn.classfun.droidvm.lib.natives.UnixHelper;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -57,6 +59,8 @@ public final class UsbHostInventory {
     private static final Pattern BUS_NAME = Pattern.compile("^\\d+$");
     /** One plug event is several inotify events; rescan once they have stopped arriving. */
     private static final long QUIET_PERIOD_MS = 300;
+    /** A uevent datagram; the kernel's own limit is well under this. */
+    private static final int UEVENT_BUFFER = 8192;
     private static final int ROOT_MASK = FileObserver.CREATE | FileObserver.DELETE
         | FileObserver.MOVED_TO | FileObserver.MOVED_FROM;
     private static final int BUS_MASK = FileObserver.CREATE | FileObserver.DELETE;
@@ -186,6 +190,11 @@ public final class UsbHostInventory {
     private FileObserver rootObserver = null;
     private ScheduledExecutorService scheduler = null;
     private ScheduledFuture<?> pending = null;
+    /** The kernel's uevent socket and the pipe that ends its reader; -1 when it is not running. */
+    private int ueventFd = -1;
+    private int wakeReadFd = -1;
+    private int wakeWriteFd = -1;
+    private Thread ueventThread = null;
 
     public UsbHostInventory(@NonNull String sysfsRoot, @NonNull String devRoot) {
         this.sysfsRoot = sysfsRoot;
@@ -253,11 +262,117 @@ public final class UsbHostInventory {
                 rootObserver.startWatching();
             }
             refreshBusObservers();
+            startUevents();
         }
         Log.i(TAG, fmt("Watching %s (%d device(s) present)", devRoot, snapshot.size()));
     }
 
+    /**
+     * Starts the reader on the kernel's uevent socket, which is the second source and the only
+     * one that reports a driver bind or unbind: those move no node, so nothing under
+     * {@code /dev/bus/usb} changes and the watch above hears nothing at all.
+     *
+     * <p>It feeds the same debounce as the watch and decides nothing of its own. The two sources
+     * overlap on plugs -- a node appears and an {@code add} uevent is sent for the same device --
+     * and that is deliberate: a duplicate costs one scan that finds no difference, and the
+     * alternative is deciding which source owns which kind of change and being wrong about one.
+     *
+     * <p>Best effort. If the socket cannot be opened the daemon runs on the watch alone, which is
+     * what it did before this existed: every change that moves a node is still seen, and only a
+     * driver somebody unbound by hand goes unnoticed.</p>
+     */
+    private void startUevents() {
+        if (ueventThread != null) return;
+        int fd;
+        int[] wake;
+        try {
+            fd = UnixHelper.nativeUeventOpen();
+            if (fd < 0) {
+                Log.w(TAG, "No uevent socket; a driver unbound by hand will not be noticed");
+                return;
+            }
+            wake = UnixHelper.nativePipe();
+        } catch (Throwable e) {
+            Log.w(TAG, "No uevent socket; a driver unbound by hand will not be noticed", e);
+            return;
+        }
+        if (wake == null || wake.length != 2) {
+            UnixHelper.nativeCloseFd(fd);
+            Log.w(TAG, "No pipe for the uevent reader; running on the node watch alone");
+            return;
+        }
+        ueventFd = fd;
+        wakeReadFd = wake[0];
+        wakeWriteFd = wake[1];
+        var thread = new Thread(this::readUevents, "usb-uevent");
+        thread.setDaemon(true);
+        ueventThread = thread;
+        thread.start();
+        Log.i(TAG, "Watching the kernel uevent socket for USB driver binds and unbinds");
+    }
+
+    /**
+     * Reads until the pipe says stop. Every USB message schedules a rescan and nothing more: what
+     * changed is the scan's answer, not this thread's, which is what keeps one event source from
+     * having an opinion the other does not.
+     */
+    private void readUevents() {
+        var buffer = new byte[UEVENT_BUFFER];
+        while (true) {
+            int ready;
+            try {
+                ready = UnixHelper.nativePollIn2(ueventFd, wakeReadFd, -1);
+            } catch (Throwable e) {
+                Log.w(TAG, "USB uevent poll failed; the node watch carries on alone", e);
+                return;
+            }
+            // The pipe, or a hangup on either: both mean this reader is over. A poll error is
+            // not retried in a tight loop -- a socket that cannot be polled will not recover.
+            if (ready < 0 || (ready & 2) != 0) return;
+            if ((ready & 1) == 0) continue;
+            var n = UnixHelper.nativeRead(ueventFd, buffer, buffer.length);
+            if (n <= 0) {
+                if (n == 0) return;
+                continue;
+            }
+            var event = UsbUevent.parse(buffer, n);
+            if (event == null) continue;
+            if (event.isDriverChange())
+                Log.d(TAG, fmt("uevent %s", event));
+            scheduleRescan();
+        }
+    }
+
+    /** Ends the reader at once: the pipe wakes the poll, and the thread is a daemon anyway. */
+    private void stopUevents() {
+        var thread = ueventThread;
+        ueventThread = null;
+        if (wakeWriteFd >= 0) {
+            UnixHelper.nativeWrite(wakeWriteFd, new byte[]{1}, 1);
+            UnixHelper.nativeCloseFd(wakeWriteFd);
+            wakeWriteFd = -1;
+        }
+        if (thread != null) {
+            try {
+                thread.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (ueventFd >= 0) {
+            UnixHelper.nativeCloseFd(ueventFd);
+            ueventFd = -1;
+        }
+        if (wakeReadFd >= 0) {
+            UnixHelper.nativeCloseFd(wakeReadFd);
+            wakeReadFd = -1;
+        }
+    }
+
     public void stop() {
+        // Outside the lock on purpose: the reader takes watchLock to arm a rescan, so joining it
+        // while holding that lock is the two of them waiting on each other.
+        stopUevents();
         synchronized (watchLock) {
             if (pending != null) {
                 pending.cancel(false);
