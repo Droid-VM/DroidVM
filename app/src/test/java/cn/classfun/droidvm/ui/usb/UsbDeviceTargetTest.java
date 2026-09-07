@@ -79,10 +79,12 @@ public final class UsbDeviceTargetTest {
     }
 
     @Test
-    public void aClaimNobodyOwnsReadsAsTheHosts() {
-        // A usbfs claim with no attachment behind it is a VMM still holding the device, or one
-        // dying with it: not an answer the menu offers, and never "nobody has it".
-        assertEquals(UsbRules.Target.HOST, UsbDeviceTarget.current(State.VMUSE, null, null).kind);
+    public void aClaimNobodyOwnsIsNoneOfTheThree() {
+        // A usbfs claim with no attachment behind it is a VMM still dying with the device, or an
+        // Android app that opened it. Saying "the host" for that -- the one place it certainly
+        // is not -- is what the page used to show; there is no target for it, and the page has
+        // a word of its own instead.
+        assertNull(UsbDeviceTarget.current(State.VMUSE, null, null));
     }
 
     @Test

@@ -70,18 +70,21 @@ public final class UsbDeviceTarget {
 
     /**
      * Where a device is right now, said in the words the menu speaks: the VM that holds it, the
-     * host, or nobody.
+     * host, or nobody -- and null when it is in none of the three.
      *
      * <p>Read off the device's state rather than remembered, because the state is the only copy
      * of it there is. A device claimed through usbfs that this daemon has no attachment for is
-     * one a VMM is still holding or dying with -- nobody's option, and reported as the host's,
-     * which is the answer that offers the user nothing that is not there.</p>
+     * held by somebody these three words cannot name: a VMM still dying with it, or an ordinary
+     * Android app that opened the device. Answering "the host" for that would be the one thing
+     * such a device certainly is not, so the answer is nothing at all, and a caller that has to
+     * show something is left to find a word of its own for it.</p>
      */
-    @NonNull
+    @Nullable
     public static UsbDeviceTarget current(@NonNull UsbHostDevice.State state,
                                           @Nullable String attachedVm,
                                           @Nullable String attachedController) {
         if (attachedVm != null) return vm(attachedVm, attachedController);
+        if (state == UsbHostDevice.State.VMUSE) return null;
         return state == UsbHostDevice.State.IDLE ? sink() : host();
     }
 

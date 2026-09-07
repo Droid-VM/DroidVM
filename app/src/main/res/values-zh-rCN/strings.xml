@@ -1636,8 +1636,6 @@
     <string name="usb_rules_save_failed_title">规则未保存</string>
     <string name="usb_rules_request_failed">daemon 拒绝了这个请求</string>
     <string name="usb_rules_daemon_unavailable">尚未连上 daemon</string>
-    <string name="usb_rules_state_attached">已接入 %1$s</string>
-    <string name="usb_rules_state_host">在 host</string>
     <string name="usb_rules_pick_device_port_fmt">Port %1$s：%2$s</string>
     <string name="usb_rules_discard_title">放弃更改？</string>
     <string name="usb_rules_discard_message">规则尚未保存，要不应用就离开吗？</string>
@@ -1648,8 +1646,6 @@
     <string name="usb_devices_action_failed_title">设备没有移动</string>
     <string name="usb_devices_target_host">主机</string>
     <string name="usb_devices_target_sink">Sink</string>
-    <string name="usb_devices_state_locked">手动指定，拔除后才恢复规则</string>
-    <string name="usb_devices_state_idle">闲置：没有挂上任何驱动</string>
-    <string name="usb_devices_state_vmuse">被虚拟机占用中</string>
+    <string name="usb_devices_target_claimed">被其他程序占用</string>
     <string name="usb_devices_sink_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到谁都不给</string>
 </resources>

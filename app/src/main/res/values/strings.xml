@@ -1680,8 +1680,6 @@
     <string name="usb_rules_save_failed_title">Rules not saved</string>
     <string name="usb_rules_request_failed">The daemon refused the request</string>
     <string name="usb_rules_daemon_unavailable">The daemon is not connected</string>
-    <string name="usb_rules_state_attached">Attached to %1$s</string>
-    <string name="usb_rules_state_host">On host</string>
     <string name="usb_rules_pick_device_exact_fmt" translatable="false">%1$s (%2$s, port %3$s)</string>
     <string name="usb_rules_pick_device_port_fmt">Port %1$s: %2$s</string>
     <string name="usb_rules_pick_device_device_fmt" translatable="false">%1$s (%2$s)</string>
@@ -1696,10 +1694,9 @@
     <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_devices_target_host">Host</string>
     <string name="usb_devices_target_sink">Sink</string>
+    <!-- Neither the host nor one of our VMs: something opened the device through usbfs. -->
+    <string name="usb_devices_target_claimed">In use elsewhere</string>
     <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
     <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
-    <string name="usb_devices_state_locked">Set by hand; the rules leave it alone until it is replugged</string>
-    <string name="usb_devices_state_idle">Idle: no driver is bound to it</string>
-    <string name="usb_devices_state_vmuse">Claimed by a virtual machine</string>
     <string name="usb_devices_sink_kept">%1$s stays with the host: a driver of its would not let go, so it reaches nobody only when it is unplugged</string>
 </resources>

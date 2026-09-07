@@ -31,9 +31,18 @@ import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
  * absent.
  *
  * <p>List order is priority, so besides the long-press drag the list widget already provides,
- * every row carries explicit up/down buttons.</p>
+ * every row carries explicit up/down buttons. A row that the order has left with nothing to
+ * decide is dimmed rather than hidden or refused; see {@link UsbRuleShadow}.</p>
  */
 public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
+    /**
+     * What a rule that can never be reached is drawn at: a fifth of the contrast taken off the
+     * card's contents. Enough to read as "this one is not in play", little enough that the row
+     * is still a row -- it is still stored, still editable and still draggable, and dimming is
+     * the only thing about it that changes.
+     */
+    private static final float UNREACHABLE_ALPHA = 0.8f;
+
     public interface Listener {
         /** The layer's add button was pressed; the listener runs the picker, then {@link #addRule}. */
         void onAddRule(@NonNull UsbRuleLayer layer);
@@ -120,6 +129,11 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         holder.btnId.setText(id);
         holder.btnPort.setText(port);
         bindTarget(holder, rule);
+        // Recomputed here rather than kept: every edit rebinds the rows it can have changed --
+        // an add and a drop rebind the lot, a delete and a target change everything below them
+        // -- so the one array nobody can leave stale is the one nobody stores.
+        var unreachable = UsbRuleShadow.unreachable(layer, items.asArray())[position];
+        holder.content.setAlpha(unreachable ? UNREACHABLE_ALPHA : 1f);
         boolean canUp = position > 0;
         boolean canDown = position < getItemCount() - 1;
         holder.btnUp.setEnabled(canUp);
@@ -162,7 +176,9 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             var rule = items.get(pos);
             if (wantsId) rule.set("id", id);
             else rule.set("port", port);
-            notifyItemChanged(pos);
+            // Down to the end of the list: the row now matches something else, so which of the
+            // rows below it a host or sink rule shadows has moved with it.
+            notifyItemRangeChanged(pos, getItemCount() - pos);
             listener.onRulesChanged();
         });
     }
@@ -173,7 +189,9 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             applyTarget(items.get(pos), target);
-            notifyItemChanged(pos);
+            // A row that becomes a host or a sink shadows the rows below it with its matcher,
+            // and one that stops being either hands them back; both are a rebind of the rest.
+            notifyItemRangeChanged(pos, getItemCount() - pos);
             listener.onRulesChanged();
         });
     }

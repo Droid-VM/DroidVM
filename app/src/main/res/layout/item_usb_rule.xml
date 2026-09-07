@@ -22,7 +22,11 @@
     app:strokeColor="?attr/colorOutlineVariant"
     app:strokeWidth="1dp">
 
+    <!-- Everything the card says lives in here, so a rule that can never be reached fades as
+         one thing while the card's own stroke stays where it is: the row is still a row, still
+         draggable and still editable, it just no longer claims to decide anything. -->
     <LinearLayout
+        android:id="@+id/rule_content"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"

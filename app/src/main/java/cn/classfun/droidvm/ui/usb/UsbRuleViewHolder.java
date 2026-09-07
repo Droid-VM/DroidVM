@@ -16,6 +16,8 @@ import com.google.android.material.button.MaterialButton;
 import cn.classfun.droidvm.R;
 
 public final class UsbRuleViewHolder extends RecyclerView.ViewHolder {
+    /** Everything the card says, which is what fades when the rule cannot be reached. */
+    final View content;
     final TextView tvTitle;
     final ImageButton btnUp;
     final ImageButton btnDown;
@@ -30,6 +32,7 @@ public final class UsbRuleViewHolder extends RecyclerView.ViewHolder {
 
     UsbRuleViewHolder(@NonNull View itemView) {
         super(itemView);
+        content = itemView.findViewById(R.id.rule_content);
         tvTitle = itemView.findViewById(R.id.tv_rule_title);
         btnUp = itemView.findViewById(R.id.btn_rule_up);
         btnDown = itemView.findViewById(R.id.btn_rule_down);

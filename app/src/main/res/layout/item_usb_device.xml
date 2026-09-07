@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?><!--
-     One host USB device: what it is and who has it on the left, where it should go on the
-     right. The card is the one the rules page uses, so the two pages read as one feature.
+     One host USB device: what it is on the left, where it is on the right. The card is the one
+     the rules page uses, so the two pages read as one feature.
+
+     Nothing on the left says what the device is doing. The menu's current value says it: the
+     VM holding it, or Host, or Sink, with a lock on the two of those the user chose. One answer
+     in one place cannot come apart from itself the way two of them can.
 -->
 <com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -56,37 +60,25 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 tools:text="1.2.2 (2-1.2.2)" />
 
-            <TextView
-                android:id="@+id/tv_device_state"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                tools:text="Attached to Debian (xhci-0)" />
-
-            <TextView
-                android:id="@+id/tv_device_note"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/usb_devices_state_locked"
-                android:textAppearance="?attr/textAppearanceBodySmall"
-                android:textColor="?attr/colorOnSurfaceVariant"
-                android:visibility="gone"
-                tools:visibility="visible" />
-
         </LinearLayout>
 
+        <!-- The whole of the state display, so it is sized like a control and not like a
+             caption: 48dp tall and shaped as the xHCI card's PickerButtonWidget is, whose
+             tighter padding is also what leaves room for a name here. Wide enough for a VM and
+             its controller, and past that the value ellipsises instead of being cut off by a
+             button that will not grow. -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_device_target"
-            style="@style/Widget.Material3.Button.TonalButton"
+            style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
+            android:layout_height="48dp"
             android:layout_marginStart="12dp"
-            android:maxWidth="160dp"
-            android:minWidth="96dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:maxWidth="200dp"
+            android:minWidth="120dp"
             android:textSize="12sp"
-            tools:ignore="TouchTargetSizeCheck"
-            tools:text="Attach to Debian (xhci-0)" />
+            tools:text="Debian testing (xhci-0)" />
 
     </LinearLayout>
 

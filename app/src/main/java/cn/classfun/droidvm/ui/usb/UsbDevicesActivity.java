@@ -48,6 +48,11 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
  * there is no pending state to keep, nothing to discard on the way out, and no way for the page
  * to disagree with the daemon about where a device is.</p>
  *
+ * <p>The menu's current value is the whole of that display. The left column of a row names the
+ * device and says nothing about what it is doing, because a second wording of the same answer
+ * is a second thing to keep true -- and the one place a user changes the answer is the better
+ * place to read it.</p>
+ *
  * <p>The two rows that are not a VM carry a lock, because that is what choosing them adds: the
  * host and "nobody" are states a device can already be in by itself, and asking for one is how
  * a user says the rules may not decide it again until it is unplugged.</p>
@@ -163,63 +168,48 @@ public final class UsbDevicesActivity extends AppCompatActivity
         tvEmpty.setVisibility(devices.isEmpty() ? VISIBLE : GONE);
     }
 
+    /**
+     * The left column is what the device IS -- its name, its id and where it is plugged in --
+     * and not a word about what it is doing: that is the menu's value, on the right, in one
+     * place.
+     */
     private void bindRow(@NonNull View view, @NonNull UsbHostDeviceInfo device) {
         TextView name = view.findViewById(R.id.tv_device_name);
         TextView id = view.findViewById(R.id.tv_device_id);
         TextView path = view.findViewById(R.id.tv_device_path);
-        TextView state = view.findViewById(R.id.tv_device_state);
         MaterialButton target = view.findViewById(R.id.btn_device_target);
         name.setText(UsbDeviceNames.cardTitle(this, device));
         id.setText(device.id);
         path.setText(getString(R.string.usb_devices_path_fmt, device.port, device.sysfs));
-        state.setText(stateOf(device));
-        // A locked device is one the rules will not touch again until it is unplugged, and
-        // nothing else on the page could tell the user that.
-        view.findViewById(R.id.tv_device_note).setVisibility(device.locked ? VISIBLE : GONE);
         target.setText(valueOf(device));
         target.setEnabled(!acting);
         target.setOnClickListener(v -> UsbTargetPickerDialog.pickForDevice(this, vms,
             vmControllers, picked -> setTarget(device, picked)));
     }
 
-    /** Where the device is right now, in the daemon's own words. */
-    @NonNull
-    private String stateOf(@NonNull UsbHostDeviceInfo device) {
-        if (device.attachedVm != null)
-            return getString(R.string.usb_rules_state_attached, holderOf(device));
-        switch (device.state) {
-            // A usbfs claim this daemon has no attachment for: a VMM still holds it, or one
-            // died holding it and the leftovers have not taken it back yet.
-            case VMUSE:
-                return getString(R.string.usb_devices_state_vmuse);
-            case IDLE:
-                return getString(R.string.usb_devices_state_idle);
-            default:
-                return getString(R.string.usb_rules_state_host);
-        }
-    }
-
-    /** The VM holding the device, named with the controller it landed on when there is one. */
-    @NonNull
-    private String holderOf(@NonNull UsbHostDeviceInfo device) {
-        var name = device.attachedVmName == null ? device.attachedVm : device.attachedVmName;
-        if (name == null) name = "";
-        return device.attachedController == null ? name
-            : getString(R.string.usb_rules_vm_label_fmt, name, device.attachedController);
-    }
-
     /**
-     * What the menu shows as this row's value, read from the device the moment the row is drawn.
+     * What the menu shows as this row's value, read from the device the moment the row is drawn
+     * -- and the whole of what the page says about where the device is.
      *
      * <p>A host or idle device the user never asked for is a value the menu does not offer: it
      * is where the rules, or the gate, happen to have left the device, and showing it as the
      * locked option would claim a decision nobody made. So it shows as the plain word, and only
-     * a locked device reads back as one of the two rows that lock.</p>
+     * a locked device reads back as one of the two rows that lock -- which is also the only
+     * place the lock is said, now that the row carries no note under it.</p>
+     *
+     * <p>A device somebody else claimed through usbfs gets a sixth value of its own, for the
+     * same reason: it is on no VM of ours, and it is not on the host either, so every word the
+     * menu speaks would be a lie about it.</p>
      */
     @NonNull
     private String valueOf(@NonNull UsbHostDeviceInfo device) {
         var current = UsbDeviceTarget.current(device.state, device.attachedVm,
             device.attachedController);
+        // A usbfs claim with no attachment of ours behind it: an Android app that opened the
+        // device, or a VMM still dying with it before the leftovers take the claim off. No lock
+        // marker on it whatever the lock says -- the marker names one of the two rows the menu
+        // offers, and this is a state nobody could have picked.
+        if (current == null) return getString(R.string.usb_devices_target_claimed);
         if (current.kind == UsbRules.Target.VM) {
             var name = vmName(current.vmId);
             // The same shape the menu's own VM rows carry, so the value the button shows is

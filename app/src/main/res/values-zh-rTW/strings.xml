@@ -1636,8 +1636,6 @@
     <string name="usb_rules_save_failed_title">規則未儲存</string>
     <string name="usb_rules_request_failed">daemon 拒絕了這個請求</string>
     <string name="usb_rules_daemon_unavailable">尚未連上 daemon</string>
-    <string name="usb_rules_state_attached">已接入 %1$s</string>
-    <string name="usb_rules_state_host">在 host</string>
     <string name="usb_rules_pick_device_port_fmt">Port %1$s：%2$s</string>
     <string name="usb_rules_discard_title">捨棄變更？</string>
     <string name="usb_rules_discard_message">規則尚未儲存，要不套用就離開嗎？</string>
@@ -1648,8 +1646,6 @@
     <string name="usb_devices_action_failed_title">裝置沒有移動</string>
     <string name="usb_devices_target_host">主機</string>
     <string name="usb_devices_target_sink">Sink</string>
-    <string name="usb_devices_state_locked">手動指定，拔除後才恢復規則</string>
-    <string name="usb_devices_state_idle">閒置：沒有掛上任何驅動</string>
-    <string name="usb_devices_state_vmuse">被虛擬機器占用中</string>
+    <string name="usb_devices_target_claimed">被其他程式占用</string>
     <string name="usb_devices_sink_kept">%1$s 留在主機：有驅動不肯卸載，要拔掉重插才會回到誰都不給</string>
 </resources>
