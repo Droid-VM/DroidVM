@@ -6,8 +6,9 @@ package cn.classfun.droidvm.ui.widgets.row;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
-import android.widget.AdapterView;
+import android.view.accessibility.AccessibilityEvent;
 import android.widget.AutoCompleteTextView;
+import android.widget.AdapterView;
 import android.widget.Filterable;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -58,26 +59,8 @@ public final class DropdownRowWidget extends FrameLayout {
         textInputLayout = findViewById(R.id.dd_layout);
         dropdownView = findViewById(R.id.dd_dropdown);
         initAttrs(attrs);
-        refuseFiltering();
     }
 
-    /**
-     * Takes the popup off the filter. Material's exposed-dropdown delegate calls
-     * {@code setThreshold(0)}, so {@code enoughToFilter()} is true for every value including
-     * none, and {@code AutoCompleteTextView.updateDropDownForFilter} then shows the popup on any
-     * completed filter. These rows are menus and their adapter returns every entry whatever the
-     * constraint, so a threshold nothing reaches loses nothing: the delegate's own show is a
-     * plain {@code showDropDown()} that no threshold gates.
-     */
-    private void refuseFiltering() {
-        dropdownView.setThreshold(Integer.MAX_VALUE);
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        refuseFiltering();
-    }
 
     private void initAttrs(@Nullable AttributeSet attrs) {
         if (attrs == null) return;
@@ -103,24 +86,29 @@ public final class DropdownRowWidget extends FrameLayout {
         }
     }
 
-    /**
-     * Closes the popup now, for an owner that knows its window is about to go.
-     *
-     * <p>A popup is a window of its own and does not leave with the one that anchors it. A
-     * dialog cancelled by a touch outside starts leaving on the DOWN -- {@code shouldCloseOnTouch}
-     * is true for a touch past its bounds -- one event earlier than a button's UP, and a popup
-     * still open at that point is drawn for a frame or two over a window that is already fading.
-     * The owner calls this before the window animates away; {@link #onDetachedFromWindow} is the
-     * same close for an owner that does not.</p>
-     */
-    public void dismissPopup() {
-        dropdownView.dismissDropDown();
-    }
 
+    /**
+     * Keeps an accessibility event that belongs to somebody else from opening this menu.
+     *
+     * <p>Material's exposed-dropdown delegate implements "a screen reader clicked the field" by
+     * watching for a {@code TYPE_VIEW_CLICKED} in {@code onPopulateAccessibilityEvent} and
+     * calling {@code showHideDropdown()} when it sees one. But populating is a walk DOWN from
+     * whichever view sent the event, through every child it has, so an event sent by an
+     * ancestor is offered to every dropdown beneath it. A dialog cancelled by a touch outside
+     * sends one from its root, and every row in that dialog opens at once -- two popups, for a
+     * click on neither of them, on the frame the dialog is already fading out.
+     *
+     * <p>Only the walk from above is refused. An event this row sends for itself starts at the
+     * field, or at the layout the delegate is attached to, and never passes through here, so a
+     * screen reader clicking the field still opens the menu. The cost is that the row's text is
+     * not gathered into an event somebody else sent, which is what was going wrong.</p>
+     *
+     * <p>Only reachable with an accessibility service running, which is why it looks like a race
+     * on one phone and never happens on another.</p>
+     */
     @Override
-    protected void onDetachedFromWindow() {
-        dismissPopup();
-        super.onDetachedFromWindow();
+    public boolean dispatchPopulateAccessibilityEvent(@NonNull AccessibilityEvent event) {
+        return false;
     }
 
     public <T extends ListAdapter & Filterable> void setAdapter(@Nullable T adapter) {
