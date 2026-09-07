@@ -187,9 +187,13 @@ public final class UsbHostDevice {
 
     @NonNull
     private static List<Interface> readInterfaces(@NonNull File devDir, @NonNull String sysfs) {
-        // The kernel names an interface directory <device>:<config>.<interface>, inside the
+        // The kernel names an interface directory <prefix><config>.<interface>, inside the
         // device's own directory; anything else under it is an attribute or a child device.
-        var pattern = Pattern.compile(fmt("^%s:\\d+\\.\\d+$", Pattern.quote(sysfs)));
+        // The prefix is the device's name and a colon for everything but a root hub, whose
+        // interface is 1-0:1.0 under usb1 -- read that wrong and every root hub reads as having
+        // no interface, which is the reading that says "this bus has no driver".
+        var pattern = Pattern.compile(
+            fmt("^%s\\d+\\.\\d+$", Pattern.quote(interfacePrefix(sysfs))));
         var entries = devDir.listFiles();
         var result = new ArrayList<Interface>();
         if (entries == null) return result;

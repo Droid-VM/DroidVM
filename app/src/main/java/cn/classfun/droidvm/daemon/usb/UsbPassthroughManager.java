@@ -1690,6 +1690,11 @@ public final class UsbPassthroughManager {
     /** Whether anything of [sysfs] -- the device itself, or one of its interfaces -- is unbound. */
     private boolean needsHostDrivers(@NonNull String sysfs) {
         if (probe.driverOf(sysfs).isEmpty()) return true;
+        // A configuration is what publishes the interfaces, so a device without one has no
+        // interface for the loop below to find anything wrong with and would answer "nothing
+        // owed" while being the most broken thing on the bus. For a root hub that reading is a
+        // bus with no hub driver: no port is ever scanned and nothing below it enumerates.
+        if (!probe.isConfigured(sysfs)) return true;
         for (var name : probe.interfacesOf(sysfs))
             if (probe.driverOf(name).isEmpty()) return true;
         return false;

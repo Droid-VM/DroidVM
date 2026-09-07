@@ -50,6 +50,29 @@ public final class UsbHostInventoryTest {
         return dev;
     }
 
+    /**
+     * A root hub directory. The kernel names it {@code usbN} and its interface {@code N-0:1.0},
+     * which is the one place the interface's name is not the device's name and a colon.
+     */
+    private File rootHub(String sysfs, int devnum) throws IOException {
+        var dev = new File(folder.getRoot(), sysfs);
+        assertTrue(dev.isDirectory() || dev.mkdirs());
+        write(dev, "idVendor", "1d6b\n");
+        write(dev, "idProduct", "0002\n");
+        write(dev, "busnum", fmt("%s\n", sysfs.substring("usb".length())));
+        write(dev, "devnum", fmt("%d\n", devnum));
+        write(dev, "bDeviceClass", fmt("%s\n", CLASS_HUB));
+        return dev;
+    }
+
+    /** A root hub's own interface, which lives inside it under the bus's number and port zero. */
+    private File addRootHubInterface(File dev) throws IOException {
+        var iface = new File(dev, fmt("%s-0:1.0", dev.getName().substring("usb".length())));
+        assertTrue(iface.isDirectory() || iface.mkdirs());
+        write(iface, "bInterfaceClass", fmt("%s\n", CLASS_HUB));
+        return iface;
+    }
+
     /** An interface directory, inside its device's, which is where a scan reads it. */
     private File addInterface(File dev, int index, String cls) throws IOException {
         var iface = new File(dev, fmt("%s:1.%d", dev.getName(), index));
@@ -173,5 +196,72 @@ public final class UsbHostInventoryTest {
         assertTrue(diff.changed.isEmpty());
         assertEquals(90, diff.added.get(0).devnum);
         assertEquals("plug", diff.reason());
+    }
+
+    /**
+     * The regression the dead bus was: a root hub is in the scan, so its arrival is a difference
+     * and a pass follows it.
+     *
+     * <p>A dual-role port switching back to host re-registers the controller and the kernel
+     * deletes and creates the root hub's node inside a bus directory that never went away, so
+     * {@code onBusesChanged} is not raised and this diff is the only news there is. On the phone
+     * it was not raised: both root hubs came back unconfigured under the shut gate, no
+     * {@code 1-0:1.0} existed, every device below them was gone from sysfs, and the daemon
+     * logged nothing at all for the six minutes until the hubs were probed by hand.</p>
+     */
+    @Test
+    public void aRootHubThatArrivedIsAnAddition() throws IOException {
+        var before = scan();
+        rootHub("usb1", 1);
+        var diff = UsbHostInventory.Diff.between(before, scan());
+        assertEquals(List.of("usb1"), names(diff.added));
+        assertEquals("plug", diff.reason());
+        assertFalse(diff.isEmpty());
+    }
+
+    /**
+     * And it reads as the thing a pass has to act on: no interface at all is no driver bound,
+     * which is idle, which is what sends it down the "no rule speaks for it, the host gets it"
+     * path the external hubs already take.
+     */
+    @Test
+    public void aRootHubWithNoConfigurationReadsIdle() throws IOException {
+        rootHub("usb2", 1);
+        var devices = scan();
+        assertEquals(List.of("usb2"), names(devices));
+        var hub = devices.get(0);
+        assertTrue(hub.interfaces.isEmpty());
+        assertTrue(hub.isHub());
+        assertEquals(UsbHostDevice.State.IDLE, hub.state());
+    }
+
+    /**
+     * Its interface is read under the name the kernel gives it, not under the device's own name
+     * and a colon. Read that wrong and a healthy bus reads idle forever: every pass would probe
+     * it again, and a driver it lost would never register as a difference.
+     */
+    @Test
+    public void aRootHubsInterfaceIsReadUnderTheBusName() throws IOException {
+        var hub = rootHub("usb1", 1);
+        bindDriver(addRootHubInterface(hub), "hub");
+        var devices = scan();
+        assertEquals(1, devices.size());
+        var device = devices.get(0);
+        assertEquals(List.of("1-0:1.0"), List.of(device.interfaces.get(0).name));
+        assertEquals("hub", device.interfaces.get(0).driver);
+        assertEquals(UsbHostDevice.State.HOSTUSE, device.state());
+    }
+
+    /** A root hub losing its driver is a difference, so the sweep that gives it back is reached. */
+    @Test
+    public void aRootHubThatLostItsDriverIsAChange() throws IOException {
+        var hub = rootHub("usb1", 1);
+        var iface = addRootHubInterface(hub);
+        bindDriver(iface, "hub");
+        var before = scan();
+        assertTrue(Files.deleteIfExists(iface.toPath().resolve("driver")));
+        var diff = UsbHostInventory.Diff.between(before, scan());
+        assertEquals(List.of("usb1"), names(diff.changed));
+        assertEquals("drivers", diff.reason());
     }
 }

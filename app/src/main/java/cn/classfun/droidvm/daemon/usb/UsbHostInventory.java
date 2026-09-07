@@ -36,8 +36,23 @@ import java.util.regex.Pattern;
  */
 public final class UsbHostInventory {
     private static final String TAG = "UsbHostInventory";
-    /** A device directory: {@code 1-1}, {@code 1-1.4.2}. Excludes usbN root hubs and interfaces. */
-    private static final Pattern DEVICE_NAME = Pattern.compile("^\\d+-[\\d.]+$");
+    /**
+     * A device directory: {@code 1-1}, {@code 1-1.4.2}, and the root hubs {@code usb1}. Excludes
+     * the interface directories, which carry a colon.
+     *
+     * <p>The root hubs are in it for one reason: they are the only thing on the bus whose arrival
+     * nothing else reports. A dual-role port switching back to host re-registers the host
+     * controller, and the kernel deletes and creates the root hub's node inside the bus directory
+     * it already had -- so the set of bus directories does not change, {@code onBusesChanged} is
+     * never raised, and a scan that skipped root hubs would find the same nothing before and
+     * after and call it no news. Measured on the phone: the dock was pulled and put back at
+     * 16:11:53 and the daemon logged not one line for the six minutes that followed, with both
+     * root hubs unconfigured, no {@code 1-0:1.0} at all and every device below them gone from
+     * sysfs. In the scan a root hub is a device that arrived, the diff is not empty, and the pass
+     * that follows hands it its driver back. Nothing downstream has to care: a root hub is a hub,
+     * and {@link UsbHostDevice#isHub} keeps hubs out of every list and every rule already.</p>
+     */
+    private static final Pattern DEVICE_NAME = Pattern.compile("^(\\d+-[\\d.]+|usb\\d+)$");
     /** A bus directory under devRoot: {@code 001}. */
     private static final Pattern BUS_NAME = Pattern.compile("^\\d+$");
     /** One plug event is several inotify events; rescan once they have stopped arriving. */
