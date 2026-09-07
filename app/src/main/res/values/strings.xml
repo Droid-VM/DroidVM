@@ -1663,16 +1663,23 @@
     <string name="usb_rules_any_device">Any USB device</string>
     <string name="usb_rules_device_absent">Not plugged in</string>
     <string name="usb_rules_device_unnamed">Unknown device</string>
-    <string name="usb_rules_field_id">Device</string>
-    <string name="usb_rules_field_port">Port</string>
     <string name="usb_rules_field_target">Target</string>
     <string name="usb_rules_any_taken">The catch-all layer takes one rule</string>
     <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_rules_card_title_fmt" translatable="false">USB %1$s %2$s</string>
     <string name="usb_rules_card_title_plain_fmt" translatable="false">USB %1$s</string>
     <string name="usb_rules_port_label">Port %1$s</string>
-    <string name="usb_rules_move_up">Move up</string>
-    <string name="usb_rules_move_down">Move down</string>
+    <!-- The bold lines of a rule card: what the rule matches on, which is all of it that is
+         stored. The plain ones below describe the device that matcher resolves to right now. -->
+    <string name="usb_rules_match_id_fmt">Match device: %1$s</string>
+    <string name="usb_rules_match_port_fmt">Match port: %1$s</string>
+    <string name="usb_rules_match_any">Match any USB device</string>
+    <string name="usb_rules_info_id_fmt">Device: %1$s</string>
+    <string name="usb_rules_info_port_fmt">Port: %1$s</string>
+    <string name="usb_rules_value_absent" translatable="false">\u2014</string>
+    <string name="usb_rules_edit">Edit</string>
+    <string name="usb_rules_edit_done">Done</string>
+    <string name="usb_rules_reorder">Reorder</string>
     <string name="usb_rules_delete">Delete rule</string>
     <string name="usb_rules_save">Save and apply</string>
     <string name="usb_rules_saved">Applied to %1$d device(s)</string>

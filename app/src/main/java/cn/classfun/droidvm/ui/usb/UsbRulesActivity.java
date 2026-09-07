@@ -84,6 +84,12 @@ public final class UsbRulesActivity extends AppCompatActivity
      * OK they then tap would mark a page whose switch had been turned back off underneath it.
      */
     private boolean confirming = false;
+    /**
+     * Whether the cards show their drag handle and delete button. Off by default: a page that is
+     * mostly read -- "which rule takes this device" -- should not open with a delete button on
+     * every row, and the long-press drag works in either mode for whoever already knows it.
+     */
+    private boolean editing = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -149,7 +155,26 @@ public final class UsbRulesActivity extends AppCompatActivity
         CardItemListView list = findViewById(viewId);
         var adapter = new UsbRuleAdapter(this, layer, this);
         list.setAdapter(adapter);
+        // The handle can only ask; the list is what holds the ItemTouchHelper that can lift a
+        // row, and a card has no way to reach it otherwise.
+        adapter.setDragStarter(list::startDrag);
         adapters.put(layer, adapter);
+    }
+
+    /**
+     * Turns edit mode on or off across all four zones at once. The zones are one list broken
+     * into four by priority, and a mode that was on in one of them and off in the next would be
+     * four modes.
+     */
+    private void setEditing(boolean value) {
+        editing = value;
+        for (var adapter : adapters.values()) adapter.setEditing(value);
+        var item = toolbar.getMenu().findItem(R.id.menu_edit);
+        if (item == null) return;
+        // Not a tick: the save button beside it is one, and two ticks in a row is a toolbar
+        // where the destructive-looking one and the one that writes the file look the same.
+        item.setIcon(value ? R.drawable.ic_close : R.drawable.ic_edit);
+        item.setTitle(value ? R.string.usb_rules_edit_done : R.string.usb_rules_edit);
     }
 
     @NonNull
@@ -161,6 +186,10 @@ public final class UsbRulesActivity extends AppCompatActivity
 
     private boolean onMenuItem(@NonNull MenuItem item) {
         int id = item.getItemId();
+        if (id == R.id.menu_edit) {
+            setEditing(!editing);
+            return true;
+        }
         if (id == R.id.menu_save) {
             save();
             return true;

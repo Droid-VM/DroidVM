@@ -8,11 +8,17 @@ import static android.view.View.VISIBLE;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Typeface;
+import android.util.TypedValue;
+import android.view.MotionEvent;
 import android.view.View;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.google.android.material.color.MaterialColors;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,14 +31,17 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
 /**
- * The ordered rules of one layer, one card each. Each row is kept in the wire shape ({@code id},
- * {@code port}, {@code target} and, for a VM target, {@code vm} and {@code controller}), so
- * saving is a straight copy into the rules object and a field the layer does not carry is simply
- * absent.
+ * The ordered rules of one zone, one card each, in the shape the management page uses: what the
+ * rule is about on the left, where the device goes on the right.
  *
- * <p>List order is priority, so besides the long-press drag the list widget already provides,
- * every row carries explicit up/down buttons. A row that the order has left with nothing to
- * decide is dimmed rather than hidden or refused; see {@link UsbRuleShadow}.</p>
+ * <p>Each row is kept in the wire shape ({@code id}, {@code port}, {@code target} and, for a VM
+ * target, {@code vm} and {@code controller}), so saving is a straight copy into the rules object
+ * and a field the zone does not carry is simply absent.</p>
+ *
+ * <p>List order is priority. It is changed by dragging -- by long press at any time, and in edit
+ * mode by the handle, which is the same drag without the press nobody discovers. A row that the
+ * order has left with nothing to decide is dimmed rather than hidden or refused; see
+ * {@link UsbRuleShadow}.</p>
  */
 public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     /**
@@ -44,25 +53,58 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     private static final float UNREACHABLE_ALPHA = 0.8f;
 
     public interface Listener {
-        /** The layer's add button was pressed; the listener runs the picker, then {@link #addRule}. */
+        /** The zone's add button was pressed; the listener runs the picker, then {@link #addRule}. */
         void onAddRule(@NonNull UsbRuleLayer layer);
 
         /** A rule was added, removed, moved or edited: the page now has unsaved changes. */
         void onRulesChanged();
     }
 
+    /** How a card asks the list it lives in to lift it, which only the list can do. */
+    public interface DragStarter {
+        void startDrag(@NonNull RecyclerView.ViewHolder holder);
+    }
+
     private final UsbRuleLayer layer;
     private final Listener listener;
+    private final UsbRuleLines.Slot[] slots;
+    /** Resolved once: a card is rebound on every edit and these do not change under it. */
+    private final int strongAppearance;
+    private final int weakAppearance;
+    private final int strongColor;
+    private final int weakColor;
+    private final int rippleBackground;
+    private final int linePadding;
     private List<UsbHostDeviceInfo> devices = new ArrayList<>();
     private List<VmEntry> vms = new ArrayList<>();
     private final Map<String, String> vmNames = new HashMap<>();
     private final Map<String, List<String>> vmControllers = new HashMap<>();
+    private DragStarter dragStarter = null;
+    private boolean editing = false;
 
     public UsbRuleAdapter(@NonNull Context context, @NonNull UsbRuleLayer layer,
                           @NonNull Listener listener) {
         super(context);
         this.layer = layer;
         this.listener = listener;
+        this.slots = UsbRuleLines.of(layer);
+        this.strongAppearance = styleAttr(context,
+            com.google.android.material.R.attr.textAppearanceTitleSmall);
+        this.weakAppearance = styleAttr(context,
+            com.google.android.material.R.attr.textAppearanceBodySmall);
+        this.strongColor = MaterialColors.getColor(context,
+            com.google.android.material.R.attr.colorOnSurface, 0);
+        this.weakColor = MaterialColors.getColor(context,
+            com.google.android.material.R.attr.colorOnSurfaceVariant, 0);
+        this.rippleBackground = styleAttr(context, android.R.attr.selectableItemBackground);
+        this.linePadding = Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1,
+            context.getResources().getDisplayMetrics()));
+    }
+
+    /** The resource a theme attribute points at, 0 when the theme does not define it. */
+    private static int styleAttr(@NonNull Context context, int attr) {
+        var value = new TypedValue();
+        return context.getTheme().resolveAttribute(attr, value, true) ? value.resourceId : 0;
     }
 
     /**
@@ -78,6 +120,19 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         vmControllers.clear();
         vmControllers.putAll(controllers);
         for (var vm : vms) vmNames.put(vm.id, vm.name);
+        notifyDataSetChanged();
+    }
+
+    /** How this adapter's cards lift themselves; set by the page that owns the list widget. */
+    public void setDragStarter(@Nullable DragStarter starter) {
+        this.dragStarter = starter;
+    }
+
+    /** Shows or hides the handle and the delete button on every card of this zone. */
+    @SuppressLint("NotifyDataSetChanged")
+    public void setEditing(boolean editing) {
+        if (this.editing == editing) return;
+        this.editing = editing;
         notifyDataSetChanged();
     }
 
@@ -97,16 +152,6 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         listener.onRulesChanged();
     }
 
-    /** Moves the row one step; a full rebind follows because every arrow's enablement shifts. */
-    private void nudge(@NonNull UsbRuleViewHolder holder, int delta) {
-        int from = holder.getBindingAdapterPosition();
-        if (from == RecyclerView.NO_POSITION) return;
-        int to = from + delta;
-        if (to < 0 || to >= getItemCount()) return;
-        moveItem(from, to);
-        onReorderFinished();
-    }
-
     @NonNull
     @Override
     protected UsbRuleViewHolder createViewHolderInstance(@NonNull View view) {
@@ -118,32 +163,32 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         return R.layout.item_usb_rule;
     }
 
+    @SuppressLint("ClickableViewAccessibility")
     @Override
     public void onBindViewHolder(@NonNull UsbRuleViewHolder holder, int position) {
         var rule = items.get(position);
         var id = rule.optString("id", "");
         var port = rule.optString("port", "");
-        holder.tvTitle.setText(UsbDeviceNames.cardTitle(context, layer, id, port, devices));
-        holder.rowId.setVisibility(layer.hasId ? VISIBLE : GONE);
-        holder.rowPort.setVisibility(layer.hasPort ? VISIBLE : GONE);
-        holder.btnId.setText(id);
-        holder.btnPort.setText(port);
+        // One lookup for the whole card: the name and the context line are two things said
+        // about the same device, and resolving it twice is how they come to disagree.
+        var device = UsbDeviceNames.deviceFor(layer, id, port, devices);
+        for (var i = 0; i < UsbRuleLines.LINES; i++)
+            bindLine(holder, i, slots[i], id, port, device);
         bindTarget(holder, rule);
         // Recomputed here rather than kept: every edit rebinds the rows it can have changed --
         // an add and a drop rebind the lot, a delete and a target change everything below them
         // -- so the one array nobody can leave stale is the one nobody stores.
         var unreachable = UsbRuleShadow.unreachable(layer, items.asArray())[position];
         holder.content.setAlpha(unreachable ? UNREACHABLE_ALPHA : 1f);
-        boolean canUp = position > 0;
-        boolean canDown = position < getItemCount() - 1;
-        holder.btnUp.setEnabled(canUp);
-        holder.btnUp.setAlpha(canUp ? 1f : 0.3f);
-        holder.btnDown.setEnabled(canDown);
-        holder.btnDown.setAlpha(canDown ? 1f : 0.3f);
-        holder.btnUp.setOnClickListener(v -> nudge(holder, -1));
-        holder.btnDown.setOnClickListener(v -> nudge(holder, 1));
-        holder.btnId.setOnClickListener(v -> pickSubject(holder, true));
-        holder.btnPort.setOnClickListener(v -> pickSubject(holder, false));
+        holder.ivDrag.setVisibility(editing ? VISIBLE : GONE);
+        holder.btnDelete.setVisibility(editing ? VISIBLE : GONE);
+        // The touch and not a click: a drag has to begin while the finger is still down, and a
+        // click arrives when it comes back up, by which time there is nothing left to drag.
+        holder.ivDrag.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() != MotionEvent.ACTION_DOWN) return false;
+            if (dragStarter != null) dragStarter.startDrag(holder);
+            return false;
+        });
         holder.btnTarget.setOnClickListener(v -> pickTarget(holder));
         holder.btnDelete.setOnClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
@@ -151,6 +196,75 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             removeItem(pos);
             listener.onRulesChanged();
         });
+    }
+
+    /** One line of the left column: what it says, how it is drawn, and what a tap on it opens. */
+    private void bindLine(@NonNull UsbRuleViewHolder holder, int index,
+                          @NonNull UsbRuleLines.Slot slot, @NonNull String id,
+                          @NonNull String port, @Nullable UsbHostDeviceInfo device) {
+        var view = holder.lines[index];
+        if (slot == UsbRuleLines.Slot.NONE) {
+            view.setVisibility(GONE);
+            view.setOnClickListener(null);
+            view.setClickable(false);
+            return;
+        }
+        view.setVisibility(VISIBLE);
+        view.setText(lineText(slot, id, port, device));
+        view.setTextAppearance(slot.strong ? strongAppearance : weakAppearance);
+        view.setTextColor(slot.strong ? strongColor : weakColor);
+        // Monospace for the two lines that are a value read off the device, as the management
+        // page prints the same two; a name and a matcher sentence are prose and are not.
+        view.setTypeface(slot == UsbRuleLines.Slot.INFO_ID || slot == UsbRuleLines.Slot.INFO_PORT
+            ? Typeface.MONOSPACE : Typeface.DEFAULT);
+        if (slot.edits == null) {
+            view.setOnClickListener(null);
+            view.setClickable(false);
+            view.setBackground(null);
+        } else {
+            var wantsId = slot.edits == UsbRuleLines.Field.ID;
+            view.setBackgroundResource(rippleBackground);
+            view.setOnClickListener(v -> pickSubject(holder, wantsId));
+        }
+        // After the background either way: setting one takes the drawable's padding, which for
+        // a ripple is none, and a line that lost its padding sits a pixel off the ones beside it.
+        applyLinePadding(view);
+    }
+
+    private void applyLinePadding(@NonNull TextView view) {
+        view.setPadding(0, linePadding, 0, linePadding);
+    }
+
+    @NonNull
+    private String lineText(@NonNull UsbRuleLines.Slot slot, @NonNull String id,
+                            @NonNull String port, @Nullable UsbHostDeviceInfo device) {
+        switch (slot) {
+            case MATCH_ID:
+                return context.getString(R.string.usb_rules_match_id_fmt, orAbsent(id));
+            case MATCH_PORT:
+                return context.getString(R.string.usb_rules_match_port_fmt, orAbsent(port));
+            case MATCH_ANY:
+                return context.getString(R.string.usb_rules_match_any);
+            case INFO_ID:
+                return context.getString(R.string.usb_rules_info_id_fmt,
+                    orAbsent(device == null ? "" : device.id));
+            case INFO_PORT:
+                return context.getString(R.string.usb_rules_info_port_fmt,
+                    orAbsent(device == null ? "" : device.port));
+            case NAME:
+            default:
+                return UsbDeviceNames.cardTitle(context, layer, id, port, devices);
+        }
+    }
+
+    /**
+     * A dash for a value there is none of, which on a context line means the rule's device is
+     * not plugged in and on a matcher means a rule saved without one. Never an empty line: a
+     * card that silently loses a row is a card whose shape says something it does not mean.
+     */
+    @NonNull
+    private String orAbsent(@NonNull String value) {
+        return value.isEmpty() ? context.getString(R.string.usb_rules_value_absent) : value;
     }
 
     private void bindTarget(@NonNull UsbRuleViewHolder holder, @NonNull DataItem rule) {

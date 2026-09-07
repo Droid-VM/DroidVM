@@ -3,6 +3,12 @@
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/menu_edit"
+        android:icon="@drawable/ic_edit"
+        android:title="@string/usb_rules_edit"
+        app:showAsAction="always" />
+
+    <item
         android:id="@+id/menu_save"
         android:icon="@drawable/ic_check"
         android:title="@string/usb_rules_save"

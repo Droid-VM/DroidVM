@@ -52,13 +52,18 @@ public final class UsbTargetPickerDialog {
                             @NonNull OnPicked onPicked) {
         var targets = new ArrayList<UsbDeviceTarget>();
         var labels = new ArrayList<String>();
+        // The controllers first: sending a device somewhere is the reason a rule is written at
+        // all, and the two answers that send it nowhere read as the end of the list rather than
+        // as the head of it. Sink before host, because they are ordered by how much the rule
+        // takes away -- and in the catch-all zone, where host is refused, that leaves the list
+        // ending on the only answer it has.
+        for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels);
+        targets.add(UsbDeviceTarget.sink());
+        labels.add(context.getString(R.string.usb_rules_target_sink_pick));
         if (layer.allowsHost()) {
             targets.add(UsbDeviceTarget.host());
             labels.add(context.getString(R.string.usb_rules_keep_host));
         }
-        targets.add(UsbDeviceTarget.sink());
-        labels.add(context.getString(R.string.usb_rules_target_sink_pick));
-        for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels);
         labels.add(context.getString(R.string.usb_rules_target_custom));
         show(context, targets, labels, () -> askCustom(context, onPicked), onPicked);
     }
