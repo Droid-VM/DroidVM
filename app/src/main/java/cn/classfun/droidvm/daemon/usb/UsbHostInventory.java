@@ -52,8 +52,107 @@ public final class UsbHostInventory {
     private static final int LOST_EVENTS = 0x4000 | 0x2000;
 
     public interface Listener {
-        void onChanged(@NonNull List<UsbHostDevice> all, @NonNull List<UsbHostDevice> added,
-                       @NonNull List<UsbHostDevice> removed);
+        void onChanged(@NonNull Diff diff);
+    }
+
+    /**
+     * What one rescan found different, and the whole of what a trigger is: a device that arrived,
+     * one that went, or one that is doing something else than it was.
+     *
+     * <p>That third list is not a nicety. Losing a driver creates and removes no device node, so
+     * a device that falls to idle raises nothing by itself, and with the gate shut nothing binds
+     * a driver back on its own -- measured on the phone, unbinding and rebinding hub 1-1 left it
+     * driverless with its whole subtree gone and not one line in the daemon log for 78 seconds,
+     * while a forced pass put the tree back in 7. The rules are cheap and idempotent, so every
+     * difference gets one and a pass that owes nothing simply decides nothing.</p>
+     *
+     * <p>Read exactly, then: this is every driver change the NEXT rescan finds, and a rescan is
+     * raised by a node event and by nothing else -- the watch below, or {@code attach}. That is
+     * enough for the measured case and for every case this daemon can create, because a driver
+     * change worth a pass moves nodes: unbinding hub 1-1 unconfigured it and took the whole
+     * subtree's nodes down with it, and it is those deletions that wake this. What it does not
+     * cover is a driver change with nothing under it -- an empty hub's interface unbound by
+     * hand, a leaf whose driver drops itself -- which stays unnoticed until the next plug
+     * anywhere on the machine. Deliberately not answered with a timer: the triggers are the
+     * spec's (plug, VM running, rules saved, VM releasing, daemon start), nothing here or in the
+     * manager can leave a device in that state, and a standing sweep is a wakeup a phone would
+     * pay for every few seconds forever to catch a shell command nobody but a developer runs.</p>
+     */
+    public static final class Diff {
+        /** Every device the scan found, whether it moved or not. */
+        public final List<UsbHostDevice> all;
+        public final List<UsbHostDevice> added;
+        public final List<UsbHostDevice> removed;
+        /**
+         * Devices that were there before and are there now, with a different set of interfaces or
+         * a different driver on one of them. Compared that finely rather than by the derived
+         * state, because the two differ exactly where it matters: a device the generic driver has
+         * just given a configuration to gains its interfaces with no driver on any of them, so it
+         * reads idle before and idle after, and it is precisely the device somebody has to be
+         * told about.
+         */
+        public final List<UsbHostDevice> changed;
+
+        Diff(@NonNull List<UsbHostDevice> all, @NonNull List<UsbHostDevice> added,
+             @NonNull List<UsbHostDevice> removed, @NonNull List<UsbHostDevice> changed) {
+            this.all = all;
+            this.added = added;
+            this.removed = removed;
+            this.changed = changed;
+        }
+
+        /** Nothing moved: no listener is called and no pass is owed. */
+        public boolean isEmpty() {
+            return added.isEmpty() && removed.isEmpty() && changed.isEmpty();
+        }
+
+        /** What to call the pass this diff owes, in the log. */
+        @NonNull
+        public String reason() {
+            if (!added.isEmpty()) return "plug";
+            if (!removed.isEmpty()) return "unplug";
+            return "drivers";
+        }
+
+        /**
+         * The difference between two scans. Keyed by address and device number, not by address
+         * alone: an unplug and replug that both land inside one quiet period put a new device at
+         * the same sysfs name, and by name the two scans would agree that nothing happened. The
+         * kernel hands every enumeration a fresh devnum, so that is what tells the two instances
+         * apart -- and what makes a replug an add and a remove rather than a change.
+         */
+        @NonNull
+        static Diff between(@NonNull List<UsbHostDevice> previous,
+                            @NonNull List<UsbHostDevice> now) {
+            var before = new HashMap<String, UsbHostDevice>();
+            for (var device : previous) before.put(instanceKey(device), device);
+            var after = new HashMap<String, UsbHostDevice>();
+            for (var device : now) after.put(instanceKey(device), device);
+            var added = new ArrayList<UsbHostDevice>();
+            var changed = new ArrayList<UsbHostDevice>();
+            for (var device : now) {
+                var was = before.get(instanceKey(device));
+                if (was == null) added.add(device);
+                else if (!sameDrivers(was, device)) changed.add(device);
+            }
+            var removed = new ArrayList<UsbHostDevice>();
+            for (var device : previous)
+                if (!after.containsKey(instanceKey(device))) removed.add(device);
+            return new Diff(now, added, removed, changed);
+        }
+
+        /** Whether two readings of one device show the same interfaces held by the same drivers. */
+        private static boolean sameDrivers(@NonNull UsbHostDevice was, @NonNull UsbHostDevice now) {
+            if (was.interfaces.size() != now.interfaces.size()) return false;
+            for (var i = 0; i < was.interfaces.size(); i++) {
+                // Both lists are sorted by name, so position is the same interface.
+                var before = was.interfaces.get(i);
+                var after = now.interfaces.get(i);
+                if (!before.name.equals(after.name)) return false;
+                if (!before.driver.equals(after.driver)) return false;
+            }
+            return true;
+        }
     }
 
     private final String sysfsRoot;
@@ -172,26 +271,11 @@ public final class UsbHostInventory {
     /** Scans now, diffs against the snapshot and calls the listener if anything moved. */
     @NonNull
     public List<UsbHostDevice> rescanNow() {
-        List<UsbHostDevice> all;
-        List<UsbHostDevice> added = new ArrayList<>();
-        List<UsbHostDevice> removed = new ArrayList<>();
+        Diff diff;
         var busesChanged = busesMoved.getAndSet(false);
         synchronized (rescanLock) {
-            var previous = snapshot;
-            all = scan();
-            // Keyed by address and device number, not by address alone: an unplug and replug
-            // that both land inside one quiet period put a new device at the same sysfs name,
-            // and by name the two scans would agree that nothing happened. The kernel hands
-            // every enumeration a fresh devnum, so that is what tells the two instances apart.
-            var before = new HashSet<String>();
-            for (var device : previous) before.add(instanceKey(device));
-            var after = new HashSet<String>();
-            for (var device : all) after.add(instanceKey(device));
-            for (var device : all)
-                if (!before.contains(instanceKey(device))) added.add(device);
-            for (var device : previous)
-                if (!after.contains(instanceKey(device))) removed.add(device);
-            snapshot = all;
+            diff = Diff.between(snapshot, scan());
+            snapshot = diff.all;
         }
         if (busesChanged) {
             var buses = busListener;
@@ -203,15 +287,15 @@ public final class UsbHostInventory {
                 }
             }
         }
-        if (added.isEmpty() && removed.isEmpty()) return all;
+        if (diff.isEmpty()) return diff.all;
         var target = listener;
-        if (target == null) return all;
+        if (target == null) return diff.all;
         try {
-            target.onChanged(all, added, removed);
+            target.onChanged(diff);
         } catch (Exception e) {
             Log.w(TAG, "USB inventory listener failed", e);
         }
-        return all;
+        return diff.all;
     }
 
     @NonNull

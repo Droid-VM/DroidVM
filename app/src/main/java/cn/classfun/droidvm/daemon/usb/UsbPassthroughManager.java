@@ -24,7 +24,6 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -59,7 +58,8 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
  * transfer.</p>
  *
  * <p>Devices also get lent out without being asked for: the rules are run over every candidate
- * whenever the daemon starts, a device appears, a VM reaches RUNNING, or the rules change. A VM
+ * whenever the daemon starts, a VM reaches RUNNING, the rules change, or the inventory reads any
+ * difference at all -- a device that arrived, one that went, or one whose drivers moved. A VM
  * letting go of what it held asks the rules one question only -- whether to leave the device
  * idle -- and never whether to hand it to somebody else, so a stop releases devices but takes
  * nothing. All of those triggers take nothing at all while the rules carry their master switch
@@ -79,13 +79,16 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
  * say is whether the user decided about a device by hand, and that is the engine's lock.</p>
  *
  * <p>What makes that work is the gate: {@code /sys/bus/usb/drivers_autoprobe} is set to 0 while
- * the master switch is on, so a device plugged in enumerates fully -- sysfs entry, device node,
- * descriptors, interfaces -- and lands with no driver bound to any of it. Android does not mount
- * it, does not claim it and does not ask the user about it, and the rules decide what happens
- * next: host offers the interfaces to the host drivers, a VM has it handed over, and a sink is
- * the do-nothing that leaves the device exactly where the gate put it. The flag is global and
- * outlives this process, which is why it is written from the switch at every start, restored to
- * 1 the moment the switch goes off, and restored again on shutdown.</p>
+ * the master switch is on, so a device plugged in enumerates -- sysfs entry, device node, every
+ * descriptor read -- and lands with nothing bound to it at all. Not even its configuration is
+ * set: choosing one is {@code usb_generic_driver}'s probe, so a device under the shut gate has no
+ * configuration and therefore no interface directories either ({@link UsbProbe}). Android does
+ * not mount it, does not claim it and does not ask the user about it, and the rules decide what
+ * happens next: host gives it a configuration if it has none and then offers every interface to
+ * the host drivers, a VM has it handed over once it has one, and a sink is the do-nothing that
+ * leaves the device exactly where the gate put it. The flag is global and outlives this process,
+ * which is why it is written from the switch at every start, restored to 1 the moment the switch
+ * goes off, and restored again on shutdown.</p>
  *
  * <p>Giving a device back is not always possible at the moment it is asked for: the VMM's usbfs
  * claim on an interface can outlive the wait -- on device, a VMM whose xHCI had died kept its
@@ -128,15 +131,14 @@ public final class UsbPassthroughManager {
     /** Where a driver is taken off one interface; the mirror of {@link #AUTOPROBE_PATH}'s gate. */
     private static final String DRIVERS_DIR = "/sys/bus/usb/drivers";
     /**
-     * How long the start-up migration's devices are given to publish their interfaces again
-     * before the first pass looks at them. Authorizing a device has the kernel re-read its
-     * configuration and publish its interfaces afresh, which took about a second on the test
-     * phone; a pass that arrived first would find a device with nothing to probe and no later
-     * trigger would ever come, because binding a driver creates no node for the watch to see.
-     * Waited out rather than slept through, and only when there was something to migrate.
+     * How long the start-up migration's devices are given, all of them together, to publish
+     * their interfaces again before the first pass looks at them. Authorizing a device has the
+     * kernel re-read its configuration and publish its interfaces afresh; a pass that arrived
+     * first would find a device with nothing to probe and no later trigger would ever come,
+     * because binding a driver creates no node for the watch to see. The waiting itself is
+     * {@link UsbProbe}'s -- a device probe owes the same wait for the same reason.
      */
-    private static final long MIGRATION_SETTLE_TIMEOUT_MS = 3000;
-    private static final long MIGRATION_POLL_MS = 100;
+    private static final long MIGRATION_SETTLE_TIMEOUT_MS = UsbProbe.INTERFACES_TIMEOUT_MS;
 
     /** One host device lent to one VM, for as long as both are alive. */
     static final class Attachment {
@@ -198,6 +200,13 @@ public final class UsbPassthroughManager {
     private final UsbLeftovers leftovers = new UsbLeftovers();
     private final Object lock = new Object();
     private final UsbHostInventory inventory = new UsbHostInventory(SYSFS_ROOT, DEV_ROOT);
+    /**
+     * The two kinds of drivers_probe write, over the real sysfs and through this class's own
+     * shell. Every bind this daemon asks for goes through it, so "give it to the host" and "give
+     * it to a VM" are one pair of operations rather than a write repeated in five places.
+     */
+    private final UsbProbe probe =
+        new UsbProbe(new File(SYSFS_ROOT), UsbPassthroughManager::driversProbe);
     /** The rules and the per-device flags; every call into it is made under [lock]. */
     private final UsbRuleEngine engine = new UsbRuleEngine();
     private final File rulesFile = new File(pathJoin(DATA_DIR, "files"), UsbRulesFile.NAME);
@@ -296,30 +305,28 @@ public final class UsbPassthroughManager {
      * {@link #MIGRATION_SETTLE_TIMEOUT_MS} for all of them together. A device with no interface
      * is one the first pass can do nothing at all for -- there is nothing to probe and nothing
      * to hand over -- and no second chance is coming: writing {@code authorized} creates and
-     * removes no device node, so the watch never fires and no trigger follows. One that is
-     * unplugged meanwhile, or that never comes back, is left with a line in the log rather than
-     * waited on for good. Runs on the worker, where every other wait here runs.
+     * removes no device node, so the watch never fires and no trigger follows. One that never
+     * comes back is left with a line in the log rather than waited on for good, and one that was
+     * unplugged meanwhile is simply passed over. Runs on the worker, where every other wait here
+     * runs.
      */
-    private static void awaitInterfaces(@NonNull List<String> devices) {
+    private void awaitInterfaces(@NonNull List<String> devices) {
         if (devices.isEmpty()) return;
         var deadline = System.nanoTime()
             + TimeUnit.MILLISECONDS.toNanos(MIGRATION_SETTLE_TIMEOUT_MS);
         for (var sysfs : devices) {
-            while (interfacesOf(sysfs).isEmpty()) {
-                if (!new File(SYSFS_ROOT, sysfs).isDirectory()) break;
-                if (System.nanoTime() - deadline >= 0) {
-                    Log.w(TAG, fmt("USB %s published no interface within %d ms of being "
-                            + "authorized; the rules have nothing to give anybody until it is "
-                            + "replugged", sysfs, MIGRATION_SETTLE_TIMEOUT_MS));
-                    return;
-                }
-                try {
-                    Thread.sleep(MIGRATION_POLL_MS);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    return;
-                }
-            }
+            if (probe.awaitInterfaces(sysfs, deadline)) continue;
+            // Shut down while we waited, which the wait reports the same way it reports a
+            // timeout. Warning about a device that is perfectly well would be the wrong thing to
+            // leave behind in the log of a daemon that was simply told to stop.
+            if (Thread.currentThread().isInterrupted()) return;
+            // Unplugged while we waited: nothing is owed for a device that is not there, and the
+            // devices behind it in the list still are.
+            if (!new File(SYSFS_ROOT, sysfs).isDirectory()) continue;
+            Log.w(TAG, fmt("USB %s published no interface within %d ms of being authorized; the "
+                    + "rules have nothing to give anybody until it is replugged",
+                sysfs, MIGRATION_SETTLE_TIMEOUT_MS));
+            return;
         }
     }
 
@@ -588,6 +595,9 @@ public final class UsbPassthroughManager {
      * goes on the record, so a device attached by rule and one attached by hand are the same
      * thing to every release, conflict and listing.
      *
+     * <p>It is also the one place that makes a device fit to be given away: a device with no
+     * configuration is probed and waited for here, and refused if its interfaces never come.</p>
+     *
      * @throws UsbVmmUnreachableException when the CLI never reached the VMM: nothing is known
      *                                    against the device, and nothing was taken from it.
      */
@@ -630,6 +640,16 @@ public final class UsbPassthroughManager {
                 throw new RequestException(fmt("device already attached to VM %s", existing.vmName));
             epoch = stopEpoch(vmId);
         }
+        // The device half of the gate, and the last moment anyone can put it right: a device that
+        // came up while the gate was shut has no configuration, so it has no interfaces, and a
+        // VMM handed one of those claims a bare device and lets the GUEST choose. On the phone
+        // that gave the camera an interface 0 of class FF instead of 14, so uvcvideo never bound
+        // in the guest and there was no /dev/video0. The DEVICE probe here is what makes the
+        // configuration a VM gets the one the host would have chosen; the gate is still shut, so
+        // no host driver follows it onto the interfaces.
+        if (!probe.configureForVm(sysfs))
+            throw new RequestException(fmt("USB %s has no configuration and published no "
+                + "interface within %d ms of being probed", sysfs, UsbProbe.INTERFACES_TIMEOUT_MS));
         var control = new CrosvmUsbControl(getPrebuiltBinaryPath("crosvm"), socket);
         // Where the VMM says why it refused, if it does: a point taken now, so that a refusal
         // can read what it logged from here on. Taking it is a counter read and costs nothing.
@@ -887,9 +907,9 @@ public final class UsbPassthroughManager {
             broadcastHost();
             return;
         }
-        // The host action, the same write a host rule makes: with the gate shut nothing binds a
-        // driver by itself, so an idle device stays idle until this is written.
-        probeHostDrivers(sysfs);
+        // The host action, the same writes a host rule makes: with the gate shut nothing binds a
+        // driver by itself, so an idle device stays idle until these are written.
+        probe.giveToHost(sysfs);
         broadcastHost();
     }
 
@@ -1089,10 +1109,22 @@ public final class UsbPassthroughManager {
         }
     }
 
-    private void onInventoryChanged(@NonNull List<UsbHostDevice> all,
-                                    @NonNull List<UsbHostDevice> added,
-                                    @NonNull List<UsbHostDevice> removed) {
-        for (var device : removed) {
+    /**
+     * The inventory saw a difference, and every difference owes a pass -- not only the additions.
+     * A device that lost its driver creates and removes no node, so it raises nothing of its own,
+     * and with the gate shut nothing hands it back: on the phone, unbinding and rebinding hub 1-1
+     * left it driverless with camera, audio, mouse, card reader and flash drive all gone from the
+     * tree, and 78 seconds later the daemon had still said nothing, while a pass forced by hand
+     * put the whole tree back in 7. The pass is idempotent and cheap, and a diff that owes it
+     * nothing -- an unplug of a device the rules never spoke for -- decides nothing and says
+     * nothing.
+     *
+     * <p>"Every difference" is every difference a rescan finds, and only a node event raises one
+     * ({@link UsbHostInventory.Diff}): what this reaches is a driver change that moved nodes,
+     * which the measured case did and which is the only kind anything here creates.</p>
+     */
+    private void onInventoryChanged(@NonNull UsbHostInventory.Diff diff) {
+        for (var device : diff.removed) {
             Attachment attachment;
             List<String> dropped;
             synchronized (lock) {
@@ -1110,7 +1142,9 @@ public final class UsbPassthroughManager {
             if (attachment == null) continue;
             worker.execute(() -> releaseUnplugged(attachment));
         }
-        if (!added.isEmpty()) scheduleAutoAttach("plug");
+        // Unconditional: the listener is only called for a difference at all, and which of the
+        // three kinds it was decides only what the pass is called in the log.
+        scheduleAutoAttach(diff.reason());
         // The broadcast lists the host afresh, and that scan is read for leftovers on the way.
         broadcastHost();
     }
@@ -1323,7 +1357,7 @@ public final class UsbPassthroughManager {
         // the next device to enumerate, and none will until the hub has its driver.
         for (var hub : driverlessRootHubs()) {
             try {
-                if (probeHostDrivers(hub) == 0) continue;
+                if (probe.giveToHost(hub) == 0) continue;
                 given++;
                 Log.i(TAG, fmt("USB root hub %s had no driver; the host gets its bus back", hub));
             } catch (Exception e) {
@@ -1336,7 +1370,7 @@ public final class UsbPassthroughManager {
             // hub without its driver is a whole subtree of devices that never enumerate.
             if (device.state() != UsbHostDevice.State.IDLE) continue;
             try {
-                if (probeHostDrivers(device.sysfs) == 0) continue;
+                if (probe.giveToHost(device.sysfs) == 0) continue;
                 given++;
                 Log.i(TAG, fmt("USB %s was idle; the host gets it back", device.sysfs));
             } catch (Exception e) {
@@ -1403,8 +1437,9 @@ public final class UsbPassthroughManager {
     /**
      * One pass of the rules over every candidate. The scan is fresh, the plan is made under the
      * lock, and the actions run outside it, one after another, through the same path a manual
-     * attach takes: host writes drivers_probe, a VM has the device handed over, and a sink does
-     * nothing at all, which is what leaves the device where the gate put it. A device whose
+     * attach takes: host takes both probes ({@link UsbProbe#giveToHost}), a VM has the device
+     * handed over once the device probe has given it a configuration, and a sink does nothing at
+     * all, which is what leaves the device where the gate put it. A device whose
      * attach fails is marked for the VM it failed for, so the next pass passes that rule over
      * instead of failing the same way again -- until the device is replugged or that VM next
      * comes up. The exception is a VMM the CLI could not reach: that says nothing about the
@@ -1464,7 +1499,7 @@ public final class UsbPassthroughManager {
         var unreachable = new HashSet<String>();
         for (var device : probeBack) {
             if (!stillFree(device.sysfs, device.devnum)) continue;
-            if (probeHostDrivers(device.sysfs) == 0) continue;
+            if (probe.giveToHost(device.sysfs) == 0) continue;
             probed++;
             Log.i(TAG, fmt("USB %s was idle and no rule speaks for it; the host gets it",
                 device.sysfs));
@@ -1473,7 +1508,7 @@ public final class UsbPassthroughManager {
         // and a root hub without its driver is every device below it not existing.
         if (recover)
             for (var hub : driverlessRootHubs()) {
-                if (probeHostDrivers(hub) == 0) continue;
+                if (probe.giveToHost(hub) == 0) continue;
                 probed++;
                 Log.i(TAG, fmt("USB root hub %s had no driver; the host gets its bus back", hub));
             }
@@ -1496,7 +1531,7 @@ public final class UsbPassthroughManager {
             if (decision.target == UsbRules.Target.HOST) {
                 // Nothing to do for a device the host already has, which is what makes this the
                 // cheap steady state of every pass for most devices on the phone.
-                if (probeHostDrivers(device.sysfs) == 0) continue;
+                if (probe.giveToHost(device.sysfs) == 0) continue;
                 probed++;
                 Log.i(TAG, fmt("USB %s (%s) goes to the host by %s", device.sysfs, device.id,
                     where));
@@ -1526,9 +1561,21 @@ public final class UsbPassthroughManager {
         }
         // An attach broadcasts for itself; the drivers_probe writes are the pass's own doing.
         if (probed > 0) broadcastHost();
-        Log.i(TAG, fmt("USB rules pass (%s): %d decision(s), %d attached, %d given to the host, "
-                + "%d left idle%s", reason, plan.size(), attached, probed, idle,
-            unreachable.isEmpty() ? "" : ", VMM unreachable"));
+        // A pass that decided nothing says so quietly. Every plug, unplug and driver change
+        // runs one now, and most of them find every device already where the rules want it: a
+        // line per pass would bury the ones that did something under the ones that could not. A
+        // sink is not "something done" -- deciding to leave a device exactly as it is changes
+        // as little as deciding nothing at all -- but the count is still in the line when the
+        // pass has anything else to report.
+        var summary = fmt("USB rules pass (%s): %d decision(s), %d attached, %d given to the "
+                + "host, %d left idle%s", reason, plan.size(), attached, probed, idle,
+            unreachable.isEmpty() ? "" : ", VMM unreachable");
+        if (attached > 0 || probed > 0 || !unreachable.isEmpty()) Log.i(TAG, summary);
+        // Still said, one level down. "A pass ran and decided nothing" is what every device
+        // check of this model leaned on -- a sink that left a device idle and a trigger that
+        // never fired look alike from the outside, and only this line tells them apart -- and
+        // the level is what keeps it from burying the passes that did something.
+        else Log.d(TAG, summary);
         return new PassResult(attached + probed, !unreachable.isEmpty());
     }
 
@@ -1586,39 +1633,7 @@ public final class UsbPassthroughManager {
     }
 
     /**
-     * The host action: offers everything of [sysfs] that nothing holds to the host drivers, and
-     * says how many offers it made. With the gate shut nothing binds by itself, so these writes
-     * are the whole of "the host keeps it".
-     *
-     * <p>The device itself is offered first, and only when no driver holds it. The gate is a bus
-     * flag: it keeps the kernel from binding {@code usb_generic_driver} to the device as much as
-     * it keeps a host driver off an interface, and that generic driver is the one that reads the
-     * configuration and publishes the interfaces. A device that never got it therefore has no
-     * interface for the loop below to walk, and offering the interfaces alone would do nothing
-     * at all. Where the device did get it -- every device this daemon has measured on the phone
-     * -- the read is one symlink and the write never happens.</p>
-     *
-     * <p>An interface something already holds is skipped, which is what makes a pass over a
-     * device the host already has cost nothing and log nothing -- the steady state of most of
-     * the devices on the phone -- and what keeps this from writing at a usbfs claim, where a
-     * probe does nothing anyway.</p>
-     */
-    private static int probeHostDrivers(@NonNull String sysfs) {
-        var probed = 0;
-        if (readDriver(new File(SYSFS_ROOT, sysfs)).isEmpty()) {
-            driversProbe(sysfs);
-            probed++;
-        }
-        for (var name : interfacesOf(sysfs)) {
-            if (!readDriver(new File(SYSFS_ROOT, name)).isEmpty()) continue;
-            driversProbe(name);
-            probed++;
-        }
-        return probed;
-    }
-
-    /**
-     * The mirror of {@link #probeHostDrivers}: every host driver bound to an interface of
+     * The mirror of {@link UsbProbe#giveToHost}: every host driver bound to an interface of
      * [sysfs] is taken off it, leaving the device idle. Returns how many it unbound.
      *
      * <p>This is the whole of "leave it to nobody" for a device the host already has. The gate
@@ -1632,10 +1647,10 @@ public final class UsbPassthroughManager {
      * given, unbinding does not revoke it, and the wait the caller has already done is what it
      * gets instead.</p>
      */
-    private static int unbindHostDrivers(@NonNull String sysfs) {
+    private int unbindHostDrivers(@NonNull String sysfs) {
         var unbound = 0;
-        for (var name : interfacesOf(sysfs)) {
-            var driver = readDriver(new File(SYSFS_ROOT, name));
+        for (var name : probe.interfacesOf(sysfs)) {
+            var driver = probe.driverOf(name);
             if (driver.isEmpty() || DRIVER_USBFS.equals(driver)) continue;
             var result = run("echo %s > %s/%s/unbind", name, DRIVERS_DIR, driver);
             Log.i(TAG, fmt("unbind %s from %s: code=%d %s",
@@ -1658,7 +1673,7 @@ public final class UsbPassthroughManager {
      * for it.</p>
      */
     @NonNull
-    private static List<String> driverlessRootHubs() {
+    private List<String> driverlessRootHubs() {
         var found = new ArrayList<String>();
         var entries = new File(SYSFS_ROOT).listFiles();
         if (entries == null) return found;
@@ -1673,10 +1688,10 @@ public final class UsbPassthroughManager {
     }
 
     /** Whether anything of [sysfs] -- the device itself, or one of its interfaces -- is unbound. */
-    private static boolean needsHostDrivers(@NonNull String sysfs) {
-        if (readDriver(new File(SYSFS_ROOT, sysfs)).isEmpty()) return true;
-        for (var name : interfacesOf(sysfs))
-            if (readDriver(new File(SYSFS_ROOT, name)).isEmpty()) return true;
+    private boolean needsHostDrivers(@NonNull String sysfs) {
+        if (probe.driverOf(sysfs).isEmpty()) return true;
+        for (var name : probe.interfacesOf(sysfs))
+            if (probe.driverOf(name).isEmpty()) return true;
         return false;
     }
 
@@ -1773,7 +1788,7 @@ public final class UsbPassthroughManager {
     void restoreHostDrivers(@NonNull String sysfs, @NonNull String vmId) {
         try {
             var ifaceToVm = new LinkedHashMap<String, String>();
-            for (var name : interfacesOf(sysfs)) ifaceToVm.put(name, vmId);
+            for (var name : probe.interfacesOf(sysfs)) ifaceToVm.put(name, vmId);
             restoreInterfaces(ifaceToVm, false);
         } catch (Exception e) {
             Log.w(TAG, fmt("Failed to hand the interfaces of %s back to the host", sysfs), e);
@@ -1796,13 +1811,12 @@ public final class UsbPassthroughManager {
         var again = new ArrayList<String>();
         for (var entry : ifaceToVm.entrySet()) {
             var name = entry.getKey();
-            var dir = new File(SYSFS_ROOT, name);
             // Unplugged meanwhile: nothing to bind, and nothing to remember.
-            if (!dir.isDirectory()) continue;
-            var claim = awaitReleased(dir);
+            if (!new File(SYSFS_ROOT, name).isDirectory()) continue;
+            var claim = awaitReleased(name);
             if (claim == Claim.HOST) continue;
             if (claim == Claim.NONE) {
-                driversProbe(name);
+                probe.probeInterface(name);
                 probed.add(name);
                 continue;
             }
@@ -1827,24 +1841,9 @@ public final class UsbPassthroughManager {
      * what crosvm made of it, which is a better answer than one invented here.
      */
     private void awaitVmmReleased(@NonNull String sysfs) {
-        for (var name : interfacesOf(sysfs)) {
-            var dir = new File(SYSFS_ROOT, name);
-            if (dir.isDirectory()) awaitReleased(dir);
+        for (var name : probe.interfacesOf(sysfs)) {
+            if (new File(SYSFS_ROOT, name).isDirectory()) awaitReleased(name);
         }
-    }
-
-    /** The interfaces of [sysfs] as sysfs lists them now, sorted; none once the device is gone. */
-    @NonNull
-    private static List<String> interfacesOf(@NonNull String sysfs) {
-        var names = new ArrayList<String>();
-        var entries = new File(SYSFS_ROOT).listFiles();
-        if (entries == null) return names;
-        // Not "<sysfs>:" for every device: a root hub is usb3 and its interface is 3-0:1.0.
-        var prefix = UsbHostDevice.interfacePrefix(sysfs);
-        for (var entry : entries)
-            if (entry.getName().startsWith(prefix)) names.add(entry.getName());
-        Collections.sort(names);
-        return names;
     }
 
     /** What the wait for an interface found holding it. */
@@ -1866,15 +1865,15 @@ public final class UsbPassthroughManager {
      * IPC thread that has already sent the detach).
      */
     @NonNull
-    private Claim awaitReleased(@NonNull File ifaceDir) {
+    private Claim awaitReleased(@NonNull String iface) {
         var deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(USBFS_RELEASE_TIMEOUT_MS);
         while (true) {
-            var driver = readDriver(ifaceDir);
+            var driver = probe.driverOf(iface);
             if (driver.isEmpty()) return Claim.NONE;
             if (!DRIVER_USBFS.equals(driver)) return Claim.HOST;
             if (System.nanoTime() - deadline >= 0) {
                 Log.w(TAG, fmt("%s is still claimed through usbfs after %d ms; leaving it unbound "
-                    + "until the claim is gone", ifaceDir.getName(), USBFS_RELEASE_TIMEOUT_MS));
+                    + "until the claim is gone", iface, USBFS_RELEASE_TIMEOUT_MS));
                 return Claim.VMM;
             }
             try {
@@ -1904,18 +1903,6 @@ public final class UsbPassthroughManager {
             return text;
         }
         return log.since(mark);
-    }
-
-    /** Basename of the interface's {@code driver} symlink, {@code ""} when nothing holds it. */
-    @NonNull
-    private static String readDriver(@NonNull File ifaceDir) {
-        try {
-            var target = Files.readSymbolicLink(ifaceDir.toPath().resolve("driver"));
-            var name = target.getFileName();
-            return name == null ? "" : name.toString();
-        } catch (IOException | UnsupportedOperationException e) {
-            return "";
-        }
     }
 
     private void broadcastHost() {
