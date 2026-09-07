@@ -58,6 +58,25 @@ public final class DropdownRowWidget extends FrameLayout {
         textInputLayout = findViewById(R.id.dd_layout);
         dropdownView = findViewById(R.id.dd_dropdown);
         initAttrs(attrs);
+        refuseFiltering();
+    }
+
+    /**
+     * Takes the popup off the filter. Material's exposed-dropdown delegate calls
+     * {@code setThreshold(0)}, so {@code enoughToFilter()} is true for every value including
+     * none, and {@code AutoCompleteTextView.updateDropDownForFilter} then shows the popup on any
+     * completed filter. These rows are menus and their adapter returns every entry whatever the
+     * constraint, so a threshold nothing reaches loses nothing: the delegate's own show is a
+     * plain {@code showDropDown()} that no threshold gates.
+     */
+    private void refuseFiltering() {
+        dropdownView.setThreshold(Integer.MAX_VALUE);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        refuseFiltering();
     }
 
     private void initAttrs(@Nullable AttributeSet attrs) {
