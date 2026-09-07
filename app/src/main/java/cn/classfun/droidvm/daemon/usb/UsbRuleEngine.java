@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -12,24 +14,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
 /**
- * Decides which plugged device goes to which VM. Pure: it holds the rules and the per-device
- * flags and turns a list of devices into a list of decisions; attaching, broadcasting and
- * persisting are the manager's, which also owns the lock every call here is made under.
+ * Decides what happens to each plugged device: layers in order, then the fifth zone. Pure -- it
+ * holds the rules and the per-device flags and turns a list of devices into a list of decisions
+ * -- while acting on one, broadcasting and persisting are the manager's, which also owns the
+ * lock every call here is made under.
  *
- * <p>The flags are keyed by sysfs name and mean the device instance at that address: {@code pin}
- * is the user's own answer for the device -- a manual detach, or the management page saying
- * where it belongs -- so no trigger touches it again; {@code failedFor} is the VM an attach
- * failed for, so a rule that keeps failing is not retried on every plug. A pin lasts until the
- * inventory sees the node go, and only then -- a rules save does not clear it. A failure is
- * about one run of one VM: it also goes when that VM next reaches RUNNING, because the attach
- * that failed may have failed for that instance alone -- a control socket not yet answering, a
- * VM that went down between the decision and the CLI -- and a reboot would otherwise release
- * the device and never take it back.</p>
+ * <p>What a device is doing is not kept here or anywhere else: it is read off the drivers bound
+ * to its interfaces every time a device is scanned ({@link UsbHostDevice.State}) and arrives on
+ * the {@link Device} the caller builds. What is kept is what the kernel cannot say: {@code lock}
+ * is the user's own answer for a device -- the management page saying where it belongs, or a
+ * manual detach -- so no rule pass touches it again, and {@code failedFor} is the VM an attach
+ * failed for, so a rule that keeps failing is not retried on every plug. A lock is about the
+ * instance it was made for, so a replug drops it whatever else happens; both go when the
+ * inventory sees the node itself go, and neither is cleared by a rules save. A failure is about
+ * one run of one VM: it also goes when that VM next reaches RUNNING, because the attach that
+ * failed may have failed for that instance alone -- a control socket not yet answering, a VM
+ * that went down between the decision and the CLI -- and a reboot would otherwise release the
+ * device and never take it back.</p>
  *
  * <p>The rule set also carries the master switch, and the two answers this class gives -- what
  * takes a device, and what a whole pass would take -- are where it is honoured: a trigger asks
@@ -37,21 +42,28 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * than at each of the five places one is raised.</p>
  */
 public final class UsbRuleEngine {
-    /** As much of a host device as a rule can see. */
+    /** As much of a host device as a rule can see, plus what makes it a candidate. */
     public static final class Device {
         public final String sysfs;
         public final String id;
         public final String port;
+        /** The instance at that address: a lock is about this number and no other. */
+        public final int devnum;
+        /** Read from the bound drivers by whoever scanned the device; never stored anywhere. */
+        public final UsbHostDevice.State state;
 
-        public Device(@NonNull String sysfs, @NonNull String id, @NonNull String port) {
+        public Device(@NonNull String sysfs, @NonNull String id, @NonNull String port, int devnum,
+                      @NonNull UsbHostDevice.State state) {
             this.sysfs = sysfs;
             this.id = id;
             this.port = port;
+            this.devnum = devnum;
+            this.state = state;
         }
 
         @NonNull
         public static Device of(@NonNull UsbHostDevice device) {
-            return new Device(device.sysfs, device.id, device.port);
+            return new Device(device.sysfs, device.id, device.port, device.devnum, device.state());
         }
     }
 
@@ -61,7 +73,10 @@ public final class UsbRuleEngine {
      */
     public static final class Decision {
         public final Device device;
+        /** Null for the fifth zone's rule, which is not in the file; see {@link #where()}. */
+        @Nullable
         public final UsbRules.Layer layer;
+        /** Its index in that layer, or -1 for the fifth zone's one rule. */
         public final int index;
         /** Carried rather than inferred from {@link #vm}, so every reader says the same thing. */
         public final UsbRules.Target target;
@@ -75,7 +90,7 @@ public final class UsbRuleEngine {
         @Nullable
         public final String controller;
 
-        Decision(@NonNull Device device, @NonNull UsbRules.Layer layer, int index,
+        Decision(@NonNull Device device, @Nullable UsbRules.Layer layer, int index,
                  @NonNull UsbRules.Target target, @Nullable String vm,
                  @Nullable String controller) {
             this.device = device;
@@ -85,25 +100,11 @@ public final class UsbRuleEngine {
             this.vm = vm;
             this.controller = controller;
         }
-    }
 
-    /**
-     * What the user said about a device, which outranks every rule until it is unplugged. A
-     * rule-made sink sets none of these: it is the rules' doing, so the rules may undo it.
-     */
-    public enum Pin {
-        /** Nothing was said; the rules decide. */
-        NONE("none"),
-        /** The user took it back by hand, or asked for it to stay on the host. */
-        HOST("host"),
-        /** The user asked for it to be hidden from everything. */
-        SINK("sink");
-
-        /** The key this pin goes under on the wire. */
-        public final String key;
-
-        Pin(@NonNull String key) {
-            this.key = key;
+        /** Which rule this was, for a log line: {@code device[0]}, or the fifth zone by name. */
+        @NonNull
+        public String where() {
+            return layer == null ? "the default rule" : fmt("%s[%d]", layer.key, index);
         }
     }
 
@@ -118,7 +119,9 @@ public final class UsbRuleEngine {
     }
 
     private static final class Flags {
-        Pin pin = Pin.NONE;
+        /** The devnum the user's lock was made for; null when the user has said nothing. */
+        @Nullable
+        Integer lockedFor = null;
         @Nullable
         String failedFor = null;
     }
@@ -154,32 +157,35 @@ public final class UsbRuleEngine {
         return next.isEnabled() ? Save.PASS : Save.NOTHING;
     }
 
-    /** Whether anything the user said about this device stops a trigger from touching it. */
-    public boolean isHeld(@NonNull String sysfs) {
-        return pinOf(sysfs) != Pin.NONE;
-    }
-
-    /** What the user said about this device, {@link Pin#NONE} when nothing. */
-    @NonNull
-    public Pin pinOf(@NonNull String sysfs) {
+    /**
+     * Whether the user has spoken for this very instance of [sysfs]. A replug is a new instance
+     * and answers false without anything having to clear it, which is the whole reason the
+     * devnum is part of the answer rather than only of the bookkeeping.
+     */
+    public boolean isLocked(@NonNull String sysfs, int devnum) {
         var f = flags.get(sysfs);
-        return f == null ? Pin.NONE : f.pin;
+        return f != null && f.lockedFor != null && f.lockedFor == devnum;
     }
 
     /**
-     * The user's answer for the device; it stands until the device is unplugged. Taking one back
-     * leaves nothing behind, the way {@link #forgetFailuresFor} does: a device nothing is known
-     * about is a device with no entry, and a map of all-default entries would be a slow leak.
+     * The user decided about this instance: no pass may touch it until they say otherwise or it
+     * is unplugged. What they decided is not kept -- the device's own state says that -- so this
+     * is a boolean and not a target.
      */
-    public void pin(@NonNull String sysfs, @NonNull Pin pin) {
-        if (pin == Pin.NONE) {
-            var f = flags.get(sysfs);
-            if (f == null) return;
-            f.pin = Pin.NONE;
-            if (f.failedFor == null) flags.remove(sysfs);
-            return;
-        }
-        flags.computeIfAbsent(sysfs, k -> new Flags()).pin = pin;
+    public void lock(@NonNull String sysfs, int devnum) {
+        flags.computeIfAbsent(sysfs, k -> new Flags()).lockedFor = devnum;
+    }
+
+    /**
+     * The user handed the device back to the rules. Taking a lock off leaves nothing behind, the
+     * way {@link #forgetFailuresFor} does: a device nothing is known about is a device with no
+     * entry, and a map of all-default entries would be a slow leak.
+     */
+    public void unlock(@NonNull String sysfs) {
+        var f = flags.get(sysfs);
+        if (f == null) return;
+        f.lockedFor = null;
+        if (f.failedFor == null) flags.remove(sysfs);
     }
 
     /**
@@ -197,7 +203,7 @@ public final class UsbRuleEngine {
             var f = it.next().getValue();
             if (!vm.equals(f.failedFor)) continue;
             f.failedFor = null;
-            if (f.pin == Pin.NONE) it.remove();
+            if (f.lockedFor == null) it.remove();
         }
     }
 
@@ -207,33 +213,41 @@ public final class UsbRuleEngine {
     }
 
     /**
-     * Every pin dropped. The switch going off hands the devices back, and the user's answers
-     * about them go the same way: a pin says which trigger may not touch a device, and there
-     * are no triggers left to keep out. Failures are left where they are -- they are about an
-     * attach that did not work, not about who owns the device.
+     * Every lock dropped. The switch going off hands the devices back, and the user's answers
+     * about them go the same way: a lock says which pass may not touch a device, and there are
+     * no passes left to keep out. Failures are left where they are -- they are about an attach
+     * that did not work, not about who owns the device.
      */
-    public void clearPins() {
+    public void clearLocks() {
         var it = flags.entrySet().iterator();
         while (it.hasNext()) {
             var f = it.next().getValue();
-            f.pin = Pin.NONE;
+            f.lockedFor = null;
             if (f.failedFor == null) it.remove();
         }
     }
 
     /**
-     * What a trigger would do: one decision per device that is not attached and not pinned, and
-     * none for a device no rule takes. A device appears at most once, and a device already lent
-     * out or spoken for by the user is never in the answer, which is what keeps a rules save
-     * from taking devices away.
+     * Whether a pass may decide about [device] at all: its state is hostuse or idle and the user
+     * has not locked it. A vmuse device is in use -- some VMM's fd holds an interface -- and a
+     * locked one is the user's, and neither is any pass's business.
+     */
+    public boolean isCandidate(@NonNull Device device) {
+        return device.state != UsbHostDevice.State.VMUSE
+            && !isLocked(device.sysfs, device.devnum);
+    }
+
+    /**
+     * What a trigger would do: one decision per candidate ({@link #isCandidate}), and none at
+     * all while the switch is off. A device appears at most once. Every candidate gets a
+     * decision, the fifth zone seeing to that, so the answer is as long as the candidate list.
      *
-     * @param attached says whether a device is already some VM's.
      * @param stateOf  the state of a VM by id, null when there is no such VM.
      * @param hasController whether a VM still has the controller a rule names; a null controller
      *                      asks whether it has any.
      */
     @NonNull
-    public List<Decision> plan(@NonNull List<Device> plugged, @NonNull Predicate<String> attached,
+    public List<Decision> plan(@NonNull List<Device> plugged,
                                @NonNull Function<String, VMState> stateOf,
                                @NonNull BiPredicate<String, String> hasController) {
         var decisions = new ArrayList<Decision>();
@@ -241,7 +255,7 @@ public final class UsbRuleEngine {
         // pass that walked an empty plan would still have taken a lock per device to be told so.
         if (!rules.isEnabled()) return decisions;
         for (var device : plugged) {
-            if (attached.test(device.sysfs) || isHeld(device.sysfs)) continue;
+            if (!isCandidate(device)) continue;
             var decision = decide(device, stateOf, hasController);
             if (decision != null) decisions.add(decision);
         }
@@ -249,25 +263,35 @@ public final class UsbRuleEngine {
     }
 
     /**
-     * The rule that takes [device], regardless of whether anything is stopping it from being
-     * acted on: layers in order, list order within a layer. A host or a sink hit stops the
-     * search, both being something that is true here and now -- a sink in particular is never
-     * held back by a failure, which is one VM's business and not a sysfs write's; a rule whose
-     * VM is not running, whose VM no longer has the controller it names, or that already failed
-     * for this device, is passed over and the search goes on. Null when nothing matches.
+     * What takes [device], regardless of whether anything is stopping it from being acted on:
+     * the four layers the file carries in order, list order within a layer, and then the fifth
+     * zone. A host or a sink hit stops the search, both being something that is true here and
+     * now -- a sink in particular is never held back by a failure, which is one VM's business
+     * and not the host's; a rule whose VM is not running, whose VM no longer has the controller
+     * it names, or that already failed for this device, is passed over and the search goes on.
+     *
+     * <p>The fifth zone is one rule, {@code any -> host}, that the user never sees and cannot
+     * edit: it is a constant here rather than a row in the file, so it cannot be deleted, cannot
+     * be reordered, and every rules file ever written has it. What it buys is that "no rule
+     * matched" cannot happen while the switch is on -- and with the autoprobe gate shut, a
+     * device nothing matched would otherwise sit driverless forever, which is a keyboard that
+     * does not type and a hub whose whole subtree is dead.</p>
      *
      * <p>A missing controller is a skip and not an attach that fails: it is a configuration fact
      * rather than something that might work next time, so remembering it against the VM would
      * block that VM from every other rule for this device and would never be cleared by the VM
      * coming back. Falling through also lets a lower-priority rule have its turn, which is what
      * the dry run should be reporting.</p>
+     *
+     * @return null only while the master switch is off, which is the whole of "the rules do not
+     *         run": with it on there is always an answer.
      */
     @Nullable
     public Decision decide(@NonNull Device device, @NonNull Function<String, VMState> stateOf,
                            @NonNull BiPredicate<String, String> hasController) {
         // The master switch, at the one place every trigger passes through: with it off no rule
-        // takes anything, which is the whole of what "the rules do not run" means. The dry run
-        // reads the same answer, and says nothing would happen -- which is the truth.
+        // takes anything, not even the fifth zone's. The dry run reads the same answer, and says
+        // nothing would happen -- which is the truth.
         if (!rules.isEnabled()) return null;
         var f = flags.get(device.sysfs);
         var failedFor = f == null ? null : f.failedFor;
@@ -285,6 +309,6 @@ public final class UsbRuleEngine {
                     rule.controller);
             }
         }
-        return null;
+        return new Decision(device, null, -1, UsbRules.Target.HOST, null, null);
     }
 }

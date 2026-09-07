@@ -55,6 +55,28 @@ public final class UsbHostDevice {
         }
     }
 
+    /**
+     * What a device is doing, in the only terms the kernel keeps: which driver holds each of its
+     * interfaces. Derived on every read and stored nowhere -- a daemon that remembered it would
+     * be remembering something a shell, a VMM's death or a driver's own probe can change without
+     * telling anybody.
+     */
+    public enum State {
+        /** At least one interface bound to a driver that is not usbfs: Android has it. */
+        HOSTUSE("hostuse"),
+        /** At least one interface claimed through usbfs: a VMM's fd owns it. */
+        VMUSE("vmuse"),
+        /** Nothing bound to anything: nobody has it, and it is free to be given away. */
+        IDLE("idle");
+
+        /** The key this state goes under on the wire. */
+        public final String key;
+
+        State(@NonNull String key) {
+            this.key = key;
+        }
+    }
+
     public final String sysfs;
     /**
      * What a rule names the device by: {@code vid:pid:serial}, or {@code vid:pid} when it has no
@@ -78,8 +100,10 @@ public final class UsbHostDevice {
     public final String speed;
     public final String deviceClass;
     /**
-     * Whether the kernel lets this device be configured at all. False is the sink: no
-     * configuration, no interfaces, nothing for Android or a host driver to bind to.
+     * Whether the kernel lets this device be configured at all. Nothing in this daemon writes it
+     * any more -- a device is always authorized, and "nobody may use it" is said by leaving it
+     * idle -- so it is read for one reason only: an older build hid devices this way, and the
+     * daemon's start-up migration has to find the ones it left behind.
      */
     public final boolean authorized;
     public final List<Interface> interfaces;
@@ -140,23 +164,8 @@ public final class UsbHostDevice {
             readOptional(devDir, "product"),
             readOptional(devDir, "serial"),
             readOptional(devDir, "speed"),
-            deviceClass, authorizedAt(devDir), interfaces
+            deviceClass, !"0".equals(readOptional(devDir, "authorized")), interfaces
         );
-    }
-
-    /**
-     * Whether the device directory shows the device authorized, read this moment. Absent reads
-     * as authorized: a kernel or a device without the attribute is not a device somebody
-     * deauthorized.
-     *
-     * <p>Split out of {@link #fromSysfs} and public because this one flag is what a reader who
-     * already has a device cannot take from it: writing {@code authorized} creates and removes
-     * no {@code /dev/bus/usb} node, so nothing tells an inotify watch to look again and a
-     * cached copy stays whatever the last plug event left there. One small read, against a
-     * whole device, and the rule for reading it lives in exactly one place.</p>
-     */
-    public static boolean authorizedAt(@NonNull File devDir) {
-        return !"0".equals(readOptional(devDir, "authorized"));
     }
 
     @NonNull
@@ -249,11 +258,26 @@ public final class UsbHostDevice {
         return false;
     }
 
-    /** True while a host driver still owns an interface, so attaching will take it away. */
-    public boolean hostInUse() {
-        for (var iface : interfaces)
-            if (!iface.driver.isEmpty() && !DRIVER_USBFS.equals(iface.driver)) return true;
-        return false;
+    /**
+     * What the drivers bound to this device's interfaces say it is doing, this moment.
+     *
+     * <p>A usbfs claim outranks a host driver on the rare device that shows both -- crosvm claims
+     * every interface of a device it is handed, so a half-claimed one only appears while a VMM is
+     * dying -- because that claim is a live fd somebody owns, and a device with an owner must
+     * never be a candidate for anything. The leftovers ({@link UsbLeftovers}) are what eventually
+     * take a dead claim off it, and it reads idle or hostuse again the moment they do.</p>
+     */
+    @NonNull
+    public State state() {
+        var claimed = false;
+        var bound = false;
+        for (var iface : interfaces) {
+            if (iface.driver.isEmpty()) continue;
+            if (DRIVER_USBFS.equals(iface.driver)) claimed = true;
+            else bound = true;
+        }
+        if (claimed) return State.VMUSE;
+        return bound ? State.HOSTUSE : State.IDLE;
     }
 
     /**
@@ -277,8 +301,10 @@ public final class UsbHostDevice {
         map.put("serial", serial);
         map.put("speed", speed);
         map.put("device_class", deviceClass);
-        map.put("host_in_use", hostInUse());
-        map.put("authorized", authorized);
+        // The one field that says who has the device, in place of the two booleans that used to
+        // half-say it: authorized is nobody's business now that nothing writes it, and
+        // host_in_use was this same read with the VMM's claim left out.
+        map.put("state", state().key);
         var list = new ArrayList<LinkedHashMap<String, Object>>();
         for (var iface : interfaces) {
             var item = new LinkedHashMap<String, Object>();

@@ -83,8 +83,10 @@ public final class UsbRules {
         /** Hand it to the rule's VM, once that VM is running and has the controller. */
         VM("vm"),
         /**
-         * Deauthorize it: the kernel drops its configuration and every interface, so Android
-         * never binds a driver and never raises its "open this app for the device" dialog.
+         * Leave it to nobody: the search stops and nothing is done, so a device the autoprobe
+         * gate handed over driverless stays driverless. It is not a write -- "hidden" is a state
+         * a device is left in, not one it is put into -- so a device the host already has stays
+         * the host's until it is unplugged and comes back through the gate.
          */
         SINK("sink");
 

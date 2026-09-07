@@ -92,7 +92,7 @@ public final class UsbHostDeviceTest {
         assertEquals("50", iface.proto);
         assertEquals("usb-storage", iface.driver);
         assertFalse(device.isHub());
-        assertTrue(device.hostInUse());
+        assertEquals(UsbHostDevice.State.HOSTUSE, device.state());
         assertNotNull(device.toJson());
     }
 
@@ -148,12 +148,15 @@ public final class UsbHostDeviceTest {
 
     @Test
     public void authorizedIsReadFromSysfsAndAbsentMeansAuthorized() throws Exception {
+        // Nothing writes this any more; it is read so that the daemon's start-up migration can
+        // find a device an older build hid this way and give it back.
         var root = folder.newFolder("sysfs");
         var dev = writeFlashDrive(root);
         // A device nobody deauthorized: the file is there and says 1.
         write(dev, "authorized", "1\n");
         assertTrue(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized);
-        // Sinked: no configuration, no interfaces, nothing for Android to bind.
+        // What the older build's sink left behind: no configuration, no interfaces, and nothing
+        // in the state model able to see it.
         write(dev, "authorized", "0\n");
         assertFalse(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized);
         // A kernel or a device without the attribute is not a deauthorized one.
@@ -162,36 +165,34 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
-    public void theFlagOnItsOwnReadsExactlyAsTheWholeDeviceDoes() throws Exception {
-        // What a caller holding a device already reads again before it writes: the flag is the
-        // one field a scan goes stale on, so the rule for reading it has to be the same one --
-        // one function, asserted here against the device the scan builds from it.
-        var root = folder.newFolder("sysfs");
-        var dev = writeFlashDrive(root);
-        write(dev, "authorized", "1\n");
-        assertEquals(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized,
-            UsbHostDevice.authorizedAt(dev));
-        assertTrue(UsbHostDevice.authorizedAt(dev));
-        write(dev, "authorized", "0\n");
-        assertEquals(UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").authorized,
-            UsbHostDevice.authorizedAt(dev));
-        assertFalse(UsbHostDevice.authorizedAt(dev));
-        assertTrue(new File(dev, "authorized").delete());
-        assertTrue(UsbHostDevice.authorizedAt(dev));
-        // And a device that is not there at all reads as authorized, which is what makes the
-        // sink's no-op impossible to reach for one: the write is attempted, fails, and says so.
-        assertTrue(UsbHostDevice.authorizedAt(new File(root, "1-9")));
-    }
-
-    @Test
-    public void anInterfaceWithNoDriverIsNotInUse() throws Exception {
+    public void aDeviceWithNothingBoundToItIsIdle() throws Exception {
+        // What the autoprobe gate leaves behind: fully enumerated, interfaces and all, and not
+        // one driver bound to any of them.
         var root = folder.newFolder("sysfs");
         var dev = writeFlashDrive(root);
 
         var device = UsbHostDevice.fromSysfs(dev, "/dev/bus/usb");
         assertEquals(1, device.interfaces.size());
         assertEquals("", device.interfaces.get(0).driver);
-        assertFalse(device.hostInUse());
+        assertEquals(UsbHostDevice.State.IDLE, device.state());
+    }
+
+    @Test
+    public void aUsbfsClaimIsAVmUsingTheDeviceAndOutranksAHostDriver() throws Exception {
+        var root = folder.newFolder("sysfs");
+        var dev = writeFlashDrive(root);
+        bindDriver(new File(dev, "1-1.1:1.0"), "usbfs");
+        assertEquals(UsbHostDevice.State.VMUSE,
+            UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").state());
+
+        // Half claimed, which only happens while a VMM is dying: the live fd wins, because a
+        // device with an owner may not be handed to anybody, and the leftovers are what take a
+        // claim nobody owns any more off it.
+        var second = new File(dev, "1-1.1:1.1");
+        assertTrue(second.mkdirs());
+        bindDriver(second, "usb-storage");
+        assertEquals(UsbHostDevice.State.VMUSE,
+            UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").state());
     }
 
     @Test
@@ -202,8 +203,8 @@ public final class UsbHostDeviceTest {
 
         var map = UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").toMap();
         assertEquals(Arrays.asList("sysfs", "id", "port", "busnum", "devnum", "node", "vid", "pid",
-                "manufacturer", "product", "serial", "speed", "device_class", "host_in_use",
-                "authorized", "interfaces"),
+                "manufacturer", "product", "serial", "speed", "device_class", "state",
+                "interfaces"),
             new ArrayList<>(map.keySet()));
         var interfaces = (List<?>) map.get("interfaces");
         assertNotNull(interfaces);
@@ -213,7 +214,7 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
-    public void scanTakesDevicesOnlyAndSkipsHubs() throws Exception {
+    public void scanTakesEveryDeviceAndTheHubsWithThem() throws Exception {
         var root = folder.newFolder("sysfs");
         writeFlashDrive(root);
         // A hub: on the same bus, and the thing the stick hangs off.
@@ -228,8 +229,13 @@ public final class UsbHostDeviceTest {
         assertTrue(new File(root, "usb1").mkdirs());
         assertTrue(new File(root, "1-1.1:1.0").mkdirs());
 
+        // The hub is in: one the gate left driverless is a whole subtree that never enumerates,
+        // so the pass has to be able to see it and give it back. A root hub and an interface
+        // directory are not devices and stay out.
         var devices = new UsbHostInventory(root.getAbsolutePath(), "/dev/bus/usb").scan();
-        assertEquals(1, devices.size());
-        assertEquals("1-1.1", devices.get(0).sysfs);
+        assertEquals(2, devices.size());
+        assertEquals("1-1", devices.get(0).sysfs);
+        assertTrue(devices.get(0).isHub());
+        assertEquals("1-1.1", devices.get(1).sysfs);
     }
 }

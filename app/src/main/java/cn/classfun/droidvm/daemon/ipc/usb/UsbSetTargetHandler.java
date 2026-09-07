@@ -16,8 +16,9 @@ import cn.classfun.droidvm.daemon.usb.UsbRules;
 
 /**
  * Puts one device where the caller says, now: the management page's direct action. It is not a
- * rules edit and does not run the rules -- what it does is attach, detach or deauthorize this
- * one device, and pin it so the next pass leaves it alone.
+ * rules edit and does not run the rules -- what it does is hand this one device to a VM, to the
+ * host drivers, or to nobody, and lock it so the next pass leaves it alone. A move to a VM is
+ * the one that unlocks instead: the attachment is the shield from then on.
  */
 @AutoService(RequestHandler.class)
 public final class UsbSetTargetHandler extends RequestHandler {

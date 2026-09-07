@@ -20,9 +20,9 @@ import java.util.Map;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
+import cn.classfun.droidvm.daemon.usb.UsbHostDevice.State;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Decision;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Device;
-import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Pin;
 import cn.classfun.droidvm.daemon.usb.UsbRuleEngine.Save;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Layer;
 import cn.classfun.droidvm.daemon.usb.UsbRules.Rule;
@@ -31,19 +31,38 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
 
 /**
  * The matching, over hand-built devices and a table of VM states: no sysfs, no crosvm. The
- * manager's part -- taking the lock, attaching, broadcasting -- is not exercised here.
+ * manager's part -- taking the lock, scanning, probing, attaching, broadcasting -- is not
+ * exercised here; what a device's state is comes in on the {@link Device}, the way it comes off
+ * a scan in the daemon.
  */
 public final class UsbRuleEngineTest {
     private static final String VM_A = "0f4c9e2a-0000-4000-8000-00000000000a";
     private static final String VM_B = "0f4c9e2a-0000-4000-8000-00000000000b";
     private static final String VM_C = "0f4c9e2a-0000-4000-8000-00000000000c";
+    /** The instance number a device carries unless a case is about replugging it. */
+    private static final int DEVNUM = 7;
     /** A serialised flash drive on the hub's second downstream port, second hop. */
     private static final Device STICK = device("1-1.2.2", "090c:1000:0123456789ABCDEF");
     /** A serial-less mouse on port 1.6. */
     private static final Device MOUSE = device("1-1.6", "046d:c077");
 
+    /** A device the gate has just handed over: enumerated, and nothing bound to it. */
     private static Device device(String sysfs, String id) {
-        return new Device(sysfs, id, UsbHostDevice.derivePort(sysfs));
+        return device(sysfs, id, DEVNUM, State.IDLE);
+    }
+
+    private static Device device(String sysfs, String id, int devnum, State state) {
+        return new Device(sysfs, id, UsbHostDevice.derivePort(sysfs), devnum, state);
+    }
+
+    /** The same unit, doing something else. */
+    private static Device as(Device device, State state) {
+        return device(device.sysfs, device.id, device.devnum, state);
+    }
+
+    /** The same address with another unit in it: what the kernel makes of a replug. */
+    private static Device replugged(Device device) {
+        return device(device.sysfs, device.id, device.devnum + 1, device.state);
     }
 
     private static Rule rule(String id, String port, String vm) {
@@ -55,7 +74,7 @@ public final class UsbRuleEngineTest {
         return new Rule(id, port, vm, controller);
     }
 
-    /** A rule that hides whatever it matches. */
+    /** A rule that leaves whatever it matches to nobody. */
     private static Rule sink(String id, String port) {
         return new Rule(id, port, null, null, Target.SINK);
     }
@@ -125,6 +144,12 @@ public final class UsbRuleEngineTest {
         assertEquals(vm == null ? Target.HOST : Target.VM, decision.target);
     }
 
+    private static void assertDecision(Decision decision, Device device, Layer layer, int index,
+                                       String vm, String controller) {
+        assertDecision(decision, device, layer, index, vm);
+        assertEquals(controller, decision.controller);
+    }
+
     private static void assertSink(Decision decision, Device device, Layer layer, int index) {
         assertNotNull(decision);
         assertEquals(device.sysfs, decision.device.sysfs);
@@ -136,17 +161,45 @@ public final class UsbRuleEngineTest {
         assertNull(decision.controller);
     }
 
-    private static void assertDecision(Decision decision, Device device, Layer layer, int index,
-                                       String vm, String controller) {
-        assertDecision(decision, device, layer, index, vm);
-        assertEquals(controller, decision.controller);
+    /** The fifth zone's own rule: host, and in no layer of the file at any index. */
+    private static void assertDefaultHost(Decision decision, Device device) {
+        assertNotNull(decision);
+        assertEquals(device.sysfs, decision.device.sysfs);
+        assertEquals(Target.HOST, decision.target);
+        assertNull(decision.layer);
+        assertEquals(-1, decision.index);
+        assertNull(decision.vm);
+        assertNull(decision.controller);
+        // What a log line calls it, which may not read as a row the user could go and edit.
+        assertEquals("the default rule", decision.where());
     }
 
     @Test
-    public void nothingMatchesNothing() {
+    public void withNoRulesAtAllTheFifthZoneStillGivesEveryDeviceToTheHost() {
+        // The keyboard case: with the gate shut a device nothing matched would sit driverless,
+        // so "no rule matched" has to mean the host keeps it rather than nobody does.
         var engine = engine(UsbRules.empty());
-        assertNull(engine.decide(STICK, allRunning(), anyController()));
-        assertTrue(engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController()).isEmpty());
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
+        var plan = engine.plan(List.of(STICK, MOUSE), allRunning(), anyController());
+        assertEquals(2, plan.size());
+        assertDefaultHost(plan.get(0), STICK);
+        assertDefaultHost(plan.get(1), MOUSE);
+    }
+
+    @Test
+    public void theFifthZoneRunsAfterTheFourTheFileCarries() {
+        // Four layers full of rules about other devices, and then the zone the file cannot hold.
+        var engine = engine(rules(
+            Layer.EXACT, List.of(rule(MOUSE.id, MOUSE.port, VM_A)),
+            Layer.PORT, List.of(rule(null, "9.9", VM_A)),
+            Layer.DEVICE, List.of(rule("ffff:ffff", null, VM_A)),
+            Layer.ANY, List.of()
+        ));
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
+        // And any row that does match outranks it, wherever it sits -- including the last layer,
+        // which is the one that looks like it should already be the end of the search.
+        engine.setRules(rules(Layer.ANY, List.of(sink(null, null))));
+        assertSink(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0);
     }
 
     @Test
@@ -185,7 +238,7 @@ public final class UsbRuleEngineTest {
             Layer.PORT, List.of(rule(null, "1.9", VM_A)),
             Layer.DEVICE, List.of(rule("ffff:ffff", null, VM_A))
         ));
-        assertNull(engine.decide(STICK, allRunning(), anyController()));
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
     }
 
     @Test
@@ -202,9 +255,10 @@ public final class UsbRuleEngineTest {
         // A VM the store does not know cannot be running.
         states = states(VM_B, VMState.RUNNING);
         assertDecision(engine.decide(STICK, states, anyController()), STICK, Layer.PORT, 1, VM_B);
-        // And with nobody up, nothing happens.
-        assertNull(engine.decide(STICK, states(VM_A, VMState.STOPPED, VM_B, VMState.STOPPED),
-            anyController()));
+        // And with nobody up, the fifth zone has it: the device belongs to the host until one of
+        // those VMs comes up and the trigger of that edge decides it again.
+        assertDefaultHost(engine.decide(STICK, states(VM_A, VMState.STOPPED, VM_B,
+            VMState.STOPPED), anyController()), STICK);
     }
 
     @Test
@@ -227,8 +281,8 @@ public final class UsbRuleEngineTest {
             Layer.ANY, List.of(rule(null, null, VM_A))
         ));
         assertDecision(engine.decide(MOUSE, allRunning(), anyController()), MOUSE, Layer.PORT, 0, null);
-        // The host reservation shows up in a plan, so a dry run can report it, with no VM.
-        var plan = engine.plan(List.of(MOUSE, STICK), s -> false, allRunning(), anyController());
+        // The host rule shows up in a plan, so a dry run can report it, with no VM.
+        var plan = engine.plan(List.of(MOUSE, STICK), allRunning(), anyController());
         assertEquals(2, plan.size());
         assertDecision(plan.get(0), MOUSE, Layer.PORT, 0, null);
         assertDecision(plan.get(1), STICK, Layer.ANY, 0, VM_A);
@@ -246,21 +300,67 @@ public final class UsbRuleEngineTest {
         assertDecision(engine.decide(MOUSE, states, anyController()), MOUSE, Layer.ANY, 1, VM_B);
     }
 
+    // The candidate filter: the device's own state, and the user's lock. Nothing else -- and in
+    // particular nothing the daemon remembers about who has what.
+
     @Test
-    public void aHeldDeviceIsNotACandidate() {
+    public void aDeviceInUseByAVmIsNeverACandidate() {
+        // What the attachment record used to say, said by the device itself: a usbfs claim is a
+        // live fd somebody owns, so no pass may decide anything about it.
         var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        engine.pin(STICK.sysfs, Pin.HOST);
-        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
+        var lent = as(STICK, State.VMUSE);
+        assertFalse(engine.isCandidate(lent));
+        assertTrue(engine.plan(List.of(lent), allRunning(), anyController()).isEmpty());
+        // A dry run still says where the rules would put it.
+        assertDecision(engine.decide(lent, allRunning(), anyController()), lent, Layer.ANY, 0,
+            VM_A);
+    }
+
+    @Test
+    public void bothHostuseAndIdleAreCandidates() {
+        // Idle is the device the gate just handed over; hostuse is one Android already has, and
+        // a rule that wants it for a VM has to be able to take it away.
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        var idle = as(STICK, State.IDLE);
+        var host = as(MOUSE, State.HOSTUSE);
+        assertTrue(engine.isCandidate(idle));
+        assertTrue(engine.isCandidate(host));
+        assertEquals(2, engine.plan(List.of(idle, host), allRunning(), anyController()).size());
+    }
+
+    @Test
+    public void aLockedDeviceIsNotACandidate() {
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        engine.lock(STICK.sysfs, STICK.devnum);
+        var plan = engine.plan(List.of(STICK, MOUSE), allRunning(), anyController());
         assertEquals(1, plan.size());
         assertDecision(plan.get(0), MOUSE, Layer.ANY, 0, VM_A);
         // A dry run still says what the rules would do with it.
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0, VM_A);
-        // A new rule set does not lift the hold.
+        // A new rule set does not lift the lock.
         engine.setRules(rules(Layer.DEVICE, List.of(rule(STICK.id, null, VM_A))));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController()).isEmpty());
-        // Unplugging does.
+        assertTrue(engine.plan(List.of(STICK), allRunning(), anyController()).isEmpty());
+        // The user handing it back to the rules does.
+        engine.unlock(STICK.sysfs);
+        assertEquals(1, engine.plan(List.of(STICK), allRunning(), anyController()).size());
+    }
+
+    @Test
+    public void aLockIsAboutOneInstanceSoAReplugClearsIt() {
+        // The lock is the user's answer about the unit in the socket. Another unit -- or the same
+        // one after a round trip through the port -- was never asked about, so the rules have it
+        // again without anything having to notice the swap.
+        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
+        engine.lock(STICK.sysfs, STICK.devnum);
+        assertTrue(engine.isLocked(STICK.sysfs, STICK.devnum));
+        assertFalse(engine.isLocked(STICK.sysfs, STICK.devnum + 1));
+        assertFalse(engine.isCandidate(STICK));
+        assertTrue(engine.isCandidate(replugged(STICK)));
+        assertEquals(1, engine.plan(List.of(replugged(STICK)), allRunning(), anyController())
+            .size());
+        // And the inventory noticing the node go clears it outright.
         engine.forget(STICK.sysfs);
-        assertEquals(1, engine.plan(List.of(STICK), s -> false, allRunning(), anyController()).size());
+        assertFalse(engine.isLocked(STICK.sysfs, STICK.devnum));
     }
 
     @Test
@@ -273,9 +373,10 @@ public final class UsbRuleEngineTest {
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 1, VM_B);
         // The failure is the stick's alone.
         assertDecision(engine.decide(MOUSE, allRunning(), anyController()), MOUSE, Layer.ANY, 0, VM_A);
-        // Failing for the only VM leaves the device where it is; a rules save changes nothing.
+        // Failing for the only VM drops through to the fifth zone, so the device is the host's
+        // rather than nobody's while that VM is out of the running.
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        assertNull(engine.decide(STICK, allRunning(), anyController()));
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
         // Unplugging clears it.
         engine.forget(STICK.sysfs);
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0, VM_A);
@@ -295,13 +396,13 @@ public final class UsbRuleEngineTest {
 
         engine.forgetFailuresFor(VM_A);
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0, VM_A);
-        // Only A's failures went; the mouse still remembers B.
+        // Only A's failures went; the mouse still remembers B and drops to the fifth zone.
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_B))));
-        assertNull(engine.decide(MOUSE, allRunning(), anyController()));
-        // A hold is the user's and outlives any VM start.
-        engine.pin(STICK.sysfs, Pin.HOST);
+        assertDefaultHost(engine.decide(MOUSE, allRunning(), anyController()), MOUSE);
+        // A lock is the user's and outlives any VM start.
+        engine.lock(STICK.sysfs, STICK.devnum);
         engine.forgetFailuresFor(VM_A);
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController()).isEmpty());
+        assertTrue(engine.plan(List.of(STICK), allRunning(), anyController()).isEmpty());
     }
 
     @Test
@@ -312,7 +413,7 @@ public final class UsbRuleEngineTest {
             Layer.DEVICE, List.of(rule(STICK.id, null, VM_C)),
             Layer.ANY, List.of(rule(null, null, VM_A), rule(null, null, VM_B))
         ));
-        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
+        var plan = engine.plan(List.of(STICK, MOUSE), allRunning(), anyController());
         assertEquals(2, plan.size());
         assertNotEquals(plan.get(0).device.sysfs, plan.get(1).device.sysfs);
         assertDecision(plan.get(0), STICK, Layer.EXACT, 0, VM_A);
@@ -326,7 +427,8 @@ public final class UsbRuleEngineTest {
             Layer.DEVICE, List.of(rule(STICK.id, null, VM_A)),
             Layer.ANY, List.of(rule(null, null, VM_A))
         ));
-        var plan = engine.plan(List.of(STICK, MOUSE), STICK.sysfs::equals, allRunning(), anyController());
+        var plan = engine.plan(List.of(as(STICK, State.VMUSE), MOUSE), allRunning(),
+            anyController());
         assertEquals(1, plan.size());
         assertDecision(plan.get(0), MOUSE, Layer.ANY, 0, VM_A);
     }
@@ -336,7 +438,7 @@ public final class UsbRuleEngineTest {
         var first = device("1-1.3", "046d:c077");
         var second = device("1-1.4", "046d:c077");
         var engine = engine(rules(Layer.DEVICE, List.of(rule("046d:c077", null, VM_A))));
-        var plan = engine.plan(Arrays.asList(first, second), s -> false, allRunning(), anyController());
+        var plan = engine.plan(Arrays.asList(first, second), allRunning(), anyController());
         assertEquals(2, plan.size());
         assertDecision(plan.get(0), first, Layer.DEVICE, 0, VM_A);
         assertDecision(plan.get(1), second, Layer.DEVICE, 0, VM_A);
@@ -351,7 +453,7 @@ public final class UsbRuleEngineTest {
         var usb3 = device("2-1.2.2", "090c:1000");
         assertDecision(engine.decide(usb3, allRunning(), anyController()), usb3, Layer.EXACT, 0, VM_A);
         // Same model with a serial is a different id and misses the serial-less exact rule.
-        assertNull(engine.decide(STICK, allRunning(), anyController()));
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
     }
 
     @Test
@@ -366,7 +468,7 @@ public final class UsbRuleEngineTest {
         assertDecision(engine.decide(STICK, allRunning(), have), STICK, Layer.DEVICE, 0, VM_B,
             "xhci-0");
         // A dry run reports the rule that would act, not the one that cannot.
-        var plan = engine.plan(List.of(STICK), s -> false, allRunning(), have);
+        var plan = engine.plan(List.of(STICK), allRunning(), have);
         assertEquals(1, plan.size());
         assertDecision(plan.get(0), STICK, Layer.DEVICE, 0, VM_B, "xhci-0");
         // Nothing was dropped: the rule is live again the moment the controller is back.
@@ -421,8 +523,9 @@ public final class UsbRuleEngineTest {
             Layer.ANY, List.of(rule(null, null, VM_A))
         ));
         assertSink(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.PORT, 0);
-        // It is an action, so it shows up in a plan and a dry run like any other decision.
-        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
+        // It is a decision like any other, so it shows up in a plan and a dry run -- what makes
+        // it a sink is that the pass does nothing with it.
+        var plan = engine.plan(List.of(STICK, MOUSE), allRunning(), anyController());
         assertEquals(2, plan.size());
         assertSink(plan.get(0), STICK, Layer.PORT, 0);
         assertDecision(plan.get(1), MOUSE, Layer.ANY, 0, VM_A);
@@ -430,8 +533,8 @@ public final class UsbRuleEngineTest {
 
     @Test
     public void aSinkNeedsNoVmToBeRunningAndNoFailureCanBlockIt() {
-        // Deauthorizing is a one-byte write to sysfs: there is no VM whose state could hold it
-        // back, and a failure remembered against a VM is not the sink's business.
+        // Leaving a device alone is something that is true here and now: there is no VM whose
+        // state could hold it back, and a failure remembered against a VM is not its business.
         var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
         assertSink(engine.decide(STICK, states(), anyController()), STICK, Layer.ANY, 0);
         engine.markFailed(STICK.sysfs, VM_A);
@@ -447,58 +550,12 @@ public final class UsbRuleEngineTest {
     }
 
     @Test
-    public void aSinkNeverTakesADeviceThatIsAttachedOrPinned() {
+    public void aSinkNeverTakesADeviceThatIsInUseOrLocked() {
         var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
-        assertTrue(engine.plan(List.of(STICK), STICK.sysfs::equals, allRunning(), anyController())
+        assertTrue(engine.plan(List.of(as(STICK, State.VMUSE)), allRunning(), anyController())
             .isEmpty());
-        engine.pin(MOUSE.sysfs, Pin.HOST);
-        assertTrue(engine.plan(List.of(MOUSE), s -> false, allRunning(), anyController())
-            .isEmpty());
-    }
-
-    @Test
-    public void bothPinsHoldADeviceAndOnlyAnUnplugClearsThem() {
-        // "Held" is what it always was -- a device no trigger may touch -- and it is now the
-        // answer to two questions: the user took it back, or the user hid it.
-        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        assertFalse(engine.isHeld(STICK.sysfs));
-        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
-
-        engine.pin(STICK.sysfs, Pin.HOST);
-        assertEquals(Pin.HOST, engine.pinOf(STICK.sysfs));
-        assertTrue(engine.isHeld(STICK.sysfs));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .isEmpty());
-
-        engine.pin(STICK.sysfs, Pin.SINK);
-        assertEquals(Pin.SINK, engine.pinOf(STICK.sysfs));
-        assertTrue(engine.isHeld(STICK.sysfs));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .isEmpty());
-        // A rules save does not lift either of them; pulling the cable does.
-        engine.setRules(rules(Layer.DEVICE, List.of(rule(STICK.id, null, VM_A))));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .isEmpty());
-        engine.forget(STICK.sysfs);
-        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
-        assertEquals(1, engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .size());
-    }
-
-    @Test
-    public void aVmComingUpClearsItsFailuresAndLeavesEveryPinWhereItIs() {
-        var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        engine.markFailed(STICK.sysfs, VM_A);
-        engine.pin(STICK.sysfs, Pin.SINK);
-        engine.markFailed(MOUSE.sysfs, VM_A);
-
-        engine.forgetFailuresFor(VM_A);
-        // The mouse's failure went with the VM; the stick's pin is the user's and stays.
-        assertDecision(engine.decide(MOUSE, allRunning(), anyController()), MOUSE, Layer.ANY, 0,
-            VM_A);
-        assertEquals(Pin.SINK, engine.pinOf(STICK.sysfs));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .isEmpty());
+        engine.lock(MOUSE.sysfs, MOUSE.devnum);
+        assertTrue(engine.plan(List.of(MOUSE), allRunning(), anyController()).isEmpty());
     }
 
     // The master switch, trigger by trigger. Each of the five raises one of the two questions
@@ -506,20 +563,19 @@ public final class UsbRuleEngineTest {
 
     @Test
     public void aPlugTakesNothingWhileTheSwitchIsOff() {
-        // The fast lane's whole question, asked on the FileObserver thread before any debounce:
-        // no rule takes the device, so nothing is deauthorized ahead of Android...
+        // Not even the fifth zone's own rule: with the switch off the host has the device
+        // already -- the gate is open, so the kernel bound its drivers as it enumerated -- and
+        // there is nothing for a pass to decide or to write.
         var engine = engine(disabled(Layer.ANY, List.of(sink(null, null))));
         assertNull(engine.decide(STICK, allRunning(), anyController()));
-        // ... and the debounced pass 700 ms behind it plans nothing either.
-        assertTrue(engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController())
-            .isEmpty());
+        assertTrue(engine.plan(List.of(STICK, MOUSE), allRunning(), anyController()).isEmpty());
     }
 
     @Test
     public void aVmReachingRunningTakesNothingWhileTheSwitchIsOff() {
         var engine = engine(disabled(Layer.DEVICE, List.of(rule(STICK.id, null, VM_A))));
         var running = states(VM_A, VMState.RUNNING);
-        assertTrue(engine.plan(List.of(STICK), s -> false, running, anyController()).isEmpty());
+        assertTrue(engine.plan(List.of(STICK), running, anyController()).isEmpty());
         assertNull(engine.decide(STICK, running, anyController()));
     }
 
@@ -528,40 +584,38 @@ public final class UsbRuleEngineTest {
         // The pass a save runs asks the same question, so a save made while the switch is off
         // keeps the rules and applies none of them.
         var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
-        assertEquals(1, engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .size());
+        assertEquals(1, engine.plan(List.of(STICK), allRunning(), anyController()).size());
         engine.setRules(disabled(Layer.ANY, List.of(sink(null, null))));
-        assertTrue(engine.plan(List.of(STICK), s -> false, allRunning(), anyController())
-            .isEmpty());
+        assertTrue(engine.plan(List.of(STICK), allRunning(), anyController()).isEmpty());
     }
 
     @Test
-    public void aVmReleasingItsDevicesHidesNothingWhileTheSwitchIsOff() {
-        // A stop asks whether the rules want the device hidden rather than handed back; off,
-        // they want nothing, and the device goes back to the host like any other.
+    public void aVmReleasingItsDevicesDecidesNothingWhileTheSwitchIsOff() {
+        // A stop asks whether the rules want the device left alone; off, they want nothing, and
+        // the device goes back to the host like any other.
         var engine = engine(disabled(Layer.DEVICE, List.of(sink(STICK.id, null))));
         assertNull(engine.decide(STICK, states(VM_A, VMState.STOPPED), anyController()));
     }
 
     @Test
-    public void theDaemonStartPassSinksWithNoVmRunningAndSkipsTheVmRules() {
+    public void theDaemonStartPassDecidesWithNoVmRunningAndSkipsTheVmRules() {
         // The trigger the switch was added alongside: at start no VM is up, so a VM rule has
-        // nothing to attach to and only the sink acts -- which is the device that must be gone
-        // before Android settles.
+        // nothing to attach to. The sink leaves its device where the gate put it and the fifth
+        // zone gives the other one to the host, which is what a keyboard needs to work.
         var engine = engine(rules(
             Layer.DEVICE, List.of(sink(STICK.id, null)),
             Layer.ANY, List.of(rule(null, null, VM_A))
         ));
-        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, states(), anyController());
-        assertEquals(1, plan.size());
+        var plan = engine.plan(List.of(STICK, MOUSE), states(), anyController());
+        assertEquals(2, plan.size());
         assertSink(plan.get(0), STICK, Layer.DEVICE, 0);
+        assertDefaultHost(plan.get(1), MOUSE);
         // And nothing at all while the switch is off, which is what that pass is skipped for.
         engine.setRules(disabled(
             Layer.DEVICE, List.of(sink(STICK.id, null)),
             Layer.ANY, List.of(rule(null, null, VM_A))
         ));
-        assertTrue(engine.plan(List.of(STICK, MOUSE), s -> false, states(), anyController())
-            .isEmpty());
+        assertTrue(engine.plan(List.of(STICK, MOUSE), states(), anyController()).isEmpty());
     }
 
     @Test
@@ -582,20 +636,20 @@ public final class UsbRuleEngineTest {
     }
 
     @Test
-    public void everyPinGoesBackWithTheDevicesWhenTheSwitchGoesOff() {
+    public void everyLockGoesBackWithTheDevicesWhenTheSwitchGoesOff() {
         var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
-        engine.pin(STICK.sysfs, Pin.SINK);
-        engine.pin(MOUSE.sysfs, Pin.HOST);
+        engine.lock(STICK.sysfs, STICK.devnum);
+        engine.lock(MOUSE.sysfs, MOUSE.devnum);
         engine.markFailed(MOUSE.sysfs, VM_A);
 
-        engine.clearPins();
-        assertEquals(Pin.NONE, engine.pinOf(STICK.sysfs));
-        assertEquals(Pin.NONE, engine.pinOf(MOUSE.sysfs));
-        assertFalse(engine.isHeld(STICK.sysfs));
+        engine.clearLocks();
+        assertFalse(engine.isLocked(STICK.sysfs, STICK.devnum));
+        assertFalse(engine.isLocked(MOUSE.sysfs, MOUSE.devnum));
         // The stick is the rules' again; the mouse's failure is about an attach that did not
-        // work, not about who owns the device, so it outlives the pins.
-        var plan = engine.plan(List.of(STICK, MOUSE), s -> false, allRunning(), anyController());
-        assertEquals(1, plan.size());
+        // work, not about who owns the device, so it outlives the locks.
+        var plan = engine.plan(List.of(STICK, MOUSE), allRunning(), anyController());
+        assertEquals(2, plan.size());
         assertDecision(plan.get(0), STICK, Layer.ANY, 0, VM_A);
+        assertDefaultHost(plan.get(1), MOUSE);
     }
 }

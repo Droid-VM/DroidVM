@@ -45,12 +45,6 @@ public final class UsbHostInventory {
         | FileObserver.MOVED_TO | FileObserver.MOVED_FROM;
     private static final int BUS_MASK = FileObserver.CREATE | FileObserver.DELETE;
     /**
-     * The bus event that means "there is a device node here now". Only CREATE: a device node is
-     * mknod'd where it belongs, never moved into place, and {@link #BUS_MASK} does not ask for
-     * MOVED_TO -- naming it here would read as a case that is handled.
-     */
-    private static final int NODE_ADDED = FileObserver.CREATE;
-    /**
      * IN_Q_OVERFLOW and IN_UNMOUNT, which FileObserver has no constants for: the kernel sends both
      * unasked, and both mean events were lost, so they stand for "whatever you missed".
      */
@@ -59,20 +53,6 @@ public final class UsbHostInventory {
     public interface Listener {
         void onChanged(@NonNull List<UsbHostDevice> all, @NonNull List<UsbHostDevice> added,
                        @NonNull List<UsbHostDevice> removed);
-    }
-
-    /**
-     * A device node appeared, said as early as this class can say it: on the FileObserver's own
-     * thread, before the quiet period, before any scan, and with nothing read but the two
-     * numbers in the path.
-     *
-     * <p>The contract is the point of the second callback: an implementation may do a bounded
-     * amount of work -- a handful of syscalls -- and must not scan, run a CLI or block, because
-     * every further inotify event for this watch waits behind it. Anything that can wait belongs
-     * in {@link Listener}, which the debounced rescan calls.</p>
-     */
-    public interface FastListener {
-        void onNodeAppeared(int busnum, int devnum);
     }
 
     private final String sysfsRoot;
@@ -85,7 +65,6 @@ public final class UsbHostInventory {
     private final Map<String, FileObserver> busObservers = new HashMap<>();
     private volatile List<UsbHostDevice> snapshot = Collections.emptyList();
     private volatile Listener listener = null;
-    private volatile FastListener fastListener = null;
     private FileObserver rootObserver = null;
     private ScheduledExecutorService scheduler = null;
     private ScheduledFuture<?> pending = null;
@@ -95,12 +74,12 @@ public final class UsbHostInventory {
         this.devRoot = devRoot;
     }
 
-    /** Who hears about a node the moment it appears; see {@link FastListener}. */
-    public void setFastListener(@Nullable FastListener listener) {
-        this.fastListener = listener;
-    }
-
-    /** Every non-hub device sysfs currently describes, sorted by its sysfs name. */
+    /**
+     * Every device sysfs currently describes, sorted by its sysfs name. Hubs included: a hub
+     * whose driver is not bound takes its whole subtree down with it, so the rule pass has to
+     * hear about one arriving exactly as it hears about a keyboard. What may not be lent out is
+     * refused where a device is lent out, not here.
+     */
     @NonNull
     public List<UsbHostDevice> scan() {
         var entries = new File(sysfsRoot).listFiles();
@@ -120,8 +99,6 @@ public final class UsbHostInventory {
                 Log.w(TAG, fmt("Skipping USB device %s: %s", name, e.getMessage()));
                 continue;
             }
-            // A hub is the tree, not a device to lend out.
-            if (device.isHub()) continue;
             devices.add(device);
         }
         devices.sort(Comparator.comparing((UsbHostDevice device) -> device.sysfs));
@@ -267,14 +244,11 @@ public final class UsbHostInventory {
     private final class DirObserver extends FileObserver {
         private final int mask;
         private final boolean isRoot;
-        /** The bus this observer watches, {@code 001}; empty for the root. */
-        private final String busName;
 
         DirObserver(@NonNull File dir, int mask, boolean isRoot) {
             super(dir, mask);
             this.mask = mask;
             this.isRoot = isRoot;
-            this.busName = isRoot ? "" : dir.getName();
         }
 
         @Override
@@ -284,31 +258,8 @@ public final class UsbHostInventory {
             // dropped queue or an unmounted devfs is precisely when a rescan is owed, and the
             // bus observers have to be rebuilt first because their watches may be gone with it.
             if ((event & (mask | LOST_EVENTS)) == 0) return;
-            // Before the debounce, and before anything that could block it: this is the whole
-            // of what the fast lane gets, and 300 ms of quiet period is 300 ms too late for it.
-            if (!isRoot && (event & NODE_ADDED) != 0) notifyFast(path);
             if (isRoot || (event & LOST_EVENTS) != 0) refreshBusObservers();
             scheduleRescan();
-        }
-
-        /** Tells the fast listener which node appeared, if the name is one we can read. */
-        private void notifyFast(@Nullable String path) {
-            var target = fastListener;
-            if (target == null || path == null) return;
-            int busnum;
-            int devnum;
-            try {
-                busnum = Integer.parseInt(busName);
-                devnum = Integer.parseInt(path);
-            } catch (NumberFormatException e) {
-                // Not a device node: the rescan reports whatever this was either way.
-                return;
-            }
-            try {
-                target.onNodeAppeared(busnum, devnum);
-            } catch (Exception e) {
-                Log.w(TAG, fmt("USB fast listener failed for %s/%s", busName, path), e);
-            }
         }
     }
 }
