@@ -411,7 +411,6 @@
     <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
-    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI vars (empty = built-in EDK2 vars)</string>
     <string name="edit_vm_uefi_vars_browse_title">Select UEFI vars</string>
     <string name="edit_vm_uefi_vars_too_large">For crosvm, pflash image size must not exceed %1$d MiB</string>
