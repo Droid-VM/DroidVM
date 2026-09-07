@@ -58,6 +58,35 @@ public final class DropdownRowWidget extends FrameLayout {
         textInputLayout = findViewById(R.id.dd_layout);
         dropdownView = findViewById(R.id.dd_dropdown);
         initAttrs(attrs);
+        refuseFiltering();
+    }
+
+    /**
+     * Takes the popup off the filter, which is the only thing that ever opened it by itself.
+     *
+     * <p>Material's exposed-dropdown delegate calls {@code setThreshold(0)}, so
+     * {@code enoughToFilter()} is true for every value including none, and
+     * {@code AutoCompleteTextView.updateDropDownForFilter} then calls {@code showDropDown()}
+     * whenever a filter completes and the field happens to hold focus. That is a text box's
+     * behaviour and this is a menu: it opened itself as its dialog appeared, and once the
+     * dialog's root took the focus away instead, it opened itself again on the way out, as the
+     * focus fell back to it while the window was closing -- the flash on dismiss.</p>
+     *
+     * <p>A threshold nothing can reach ends both. Nothing is lost: the adapter these rows carry
+     * returns every entry whatever the constraint, so filtering never did anything, and the
+     * delegate's own show is a plain {@code showDropDown()} that no threshold gates -- the
+     * touch still opens it.</p>
+     */
+    private void refuseFiltering() {
+        dropdownView.setThreshold(Integer.MAX_VALUE);
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        // Again here: the delegate sets its threshold when the field is attached to the layout,
+        // and which of the two runs last is the library's business rather than ours.
+        refuseFiltering();
     }
 
     private void initAttrs(@Nullable AttributeSet attrs) {

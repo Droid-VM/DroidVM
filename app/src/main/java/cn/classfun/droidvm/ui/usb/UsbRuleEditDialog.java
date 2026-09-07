@@ -101,11 +101,6 @@ public final class UsbRuleEditDialog {
             if (!layer.hasPort) ddPort.setVisibility(GONE);
             if (layer.hasId) fill(ddId, true);
             if (layer.hasPort) fill(ddPort, false);
-            // The dropdown is the only thing in here that can hold focus, so without this the
-            // dialog opens with the first one already unrolled over the second: an exact rule
-            // would ask its two questions on top of each other before either had been read.
-            view.setFocusableInTouchMode(true);
-            view.requestFocus();
             builder.setView(view);
         }
         // The catch-all zone's dialog has nothing to cancel, so it is not offered one: the two
