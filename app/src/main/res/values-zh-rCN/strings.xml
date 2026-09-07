@@ -1605,9 +1605,6 @@
     <string name="usb_rules_empty_device">尚无设备规则</string>
     <string name="usb_rules_empty_any">尚无任意规则</string>
     <string name="usb_rules_add">新增规则</string>
-    <string name="usb_rules_keep_host">留给 host</string>
-    <string name="usb_rules_target_sink">Sink（谁都不给）</string>
-    <string name="usb_rules_target_sink_pick">Sink：谁都不给，留着不用</string>
     <string name="usb_rules_target_custom">自定义…</string>
     <string name="usb_rules_custom_target_title">自定义目标</string>
     <string name="usb_rules_custom_vm">虚拟机 id（UUID）</string>
@@ -1623,7 +1620,6 @@
     <string name="usb_rules_device_absent">未插入</string>
     <string name="usb_rules_device_unnamed">未知设备</string>
     <string name="usb_rules_field_target">目标</string>
-    <string name="usb_rules_any_taken">任意层只能有一条规则</string>
     <string name="usb_rules_port_label">Port %1$s</string>
     <string name="usb_rules_match_id_fmt">匹配 识别: %1$s</string>
     <string name="usb_rules_match_port_fmt">匹配 端口: %1$s</string>
@@ -1633,6 +1629,14 @@
     <string name="usb_rules_edit">编辑</string>
     <string name="usb_rules_edit_done">完成</string>
     <string name="usb_rules_reorder">调整顺序</string>
+    <string name="usb_target_host">主机</string>
+    <string name="usb_target_idle">Idle</string>
+    <string name="usb_rules_edit_title">编辑 匹配规则</string>
+    <string name="usb_rules_add_title">新增 匹配规则</string>
+    <string name="usb_rules_field_id">识别</string>
+    <string name="usb_rules_field_port">端口</string>
+    <string name="usb_rules_delete_action">删除</string>
+    <string name="usb_rules_pick_hint">选择\u2026</string>
     <string name="usb_rules_delete">删除规则</string>
     <string name="usb_rules_save">保存并应用</string>
     <string name="usb_rules_saved">已应用 %1$d 台</string>
@@ -1648,8 +1652,6 @@
     <string name="usb_devices_title">USB直通管理</string>
     <string name="usb_devices_empty">没有插入的 USB 设备</string>
     <string name="usb_devices_action_failed_title">设备没有移动</string>
-    <string name="usb_devices_target_host">主机</string>
-    <string name="usb_devices_target_idle">Idle</string>
     <string name="usb_devices_target_claimed">被其他程序占用</string>
     <string name="usb_devices_idle_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到 Idle</string>
 </resources>

@@ -60,9 +60,11 @@ public final class UsbRuleShadow {
      * zone's rules carry, which is precisely what the daemon compares. A port rule matches on
      * its port whatever else its row happens to hold, so an id beside it is not part of it.
      *
-     * <p>The catch-all zone carries neither, so every rule in it matches every other -- which is
-     * right, and unreachable: the page lets that zone hold one row, and one row shadows nothing.
-     * A file that somehow held two would be told the truth about the second.</p>
+     * <p>The catch-all zone carries neither, so every rule in it matches every other. That is
+     * right and it is the zone where it matters most: several rules there are tried in order
+     * like anywhere else, so a VM rule can be followed by the answer for when that VM is not
+     * running, and everything after the first host or idle rule is dimmed because nothing will
+     * ever reach it.</p>
      */
     @NonNull
     private static List<String> matcherOf(@NonNull UsbRuleLayer zone, @NonNull DataItem rule) {

@@ -45,12 +45,16 @@ public final class UsbRuleLayerTest {
         assertNull(UsbRuleLayer.fromValue(null));
     }
 
+    /**
+     * Only the catch-all layer needs no subject picked before a target: it matches everything,
+     * so there is nothing to ask about. Every layer takes every target, that one included.
+     */
     @Test
-    public void onlyTheCatchAllLayerRefusesKeepOnHost() {
-        assertTrue(UsbRuleLayer.EXACT.allowsHost());
-        assertTrue(UsbRuleLayer.PORT.allowsHost());
-        assertTrue(UsbRuleLayer.DEVICE.allowsHost());
-        assertFalse(UsbRuleLayer.ANY.allowsHost());
+    public void onlyTheCatchAllLayerNeedsNoSubject() {
+        assertTrue(UsbRuleLayer.EXACT.needsSubject());
+        assertTrue(UsbRuleLayer.PORT.needsSubject());
+        assertTrue(UsbRuleLayer.DEVICE.needsSubject());
+        assertFalse(UsbRuleLayer.ANY.needsSubject());
     }
 
     @Test

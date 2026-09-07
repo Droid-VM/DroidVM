@@ -1646,9 +1646,6 @@
     <string name="usb_rules_empty_device">No device rules</string>
     <string name="usb_rules_empty_any">No catch-all rules</string>
     <string name="usb_rules_add">Add rule</string>
-    <string name="usb_rules_keep_host">Keep on host</string>
-    <string name="usb_rules_target_sink">Sink (nobody gets it)</string>
-    <string name="usb_rules_target_sink_pick">Sink: leave the device to nobody</string>
     <string name="usb_rules_target_custom">Custom...</string>
     <string name="usb_rules_custom_target_title">Custom target</string>
     <string name="usb_rules_custom_vm">VM id (UUID)</string>
@@ -1664,7 +1661,6 @@
     <string name="usb_rules_device_absent">Not plugged in</string>
     <string name="usb_rules_device_unnamed">Unknown device</string>
     <string name="usb_rules_field_target">Target</string>
-    <string name="usb_rules_any_taken">The catch-all layer takes one rule</string>
     <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_rules_card_title_fmt" translatable="false">USB %1$s %2$s</string>
     <string name="usb_rules_card_title_plain_fmt" translatable="false">USB %1$s</string>
@@ -1680,6 +1676,16 @@
     <string name="usb_rules_edit">Edit</string>
     <string name="usb_rules_edit_done">Done</string>
     <string name="usb_rules_reorder">Reorder</string>
+    <!-- Where a device goes, in the words both USB pages use. A rule sends it somewhere and
+         the management page says where it is, but the answer is the same answer. -->
+    <string name="usb_target_host">Host</string>
+    <string name="usb_target_idle">Idle</string>
+    <string name="usb_rules_edit_title">Edit match rule</string>
+    <string name="usb_rules_add_title">Add match rule</string>
+    <string name="usb_rules_field_id">Device</string>
+    <string name="usb_rules_field_port">Port</string>
+    <string name="usb_rules_delete_action">Delete</string>
+    <string name="usb_rules_pick_hint">Choose\u2026</string>
     <string name="usb_rules_delete">Delete rule</string>
     <string name="usb_rules_save">Save and apply</string>
     <string name="usb_rules_saved">Applied to %1$d device(s)</string>
@@ -1699,8 +1705,6 @@
     <string name="usb_devices_empty">No USB devices are plugged in</string>
     <string name="usb_devices_action_failed_title">The device did not move</string>
     <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
-    <string name="usb_devices_target_host">Host</string>
-    <string name="usb_devices_target_idle">Idle</string>
     <!-- Neither the host nor one of our VMs: something opened the device through usbfs. -->
     <string name="usb_devices_target_claimed">In use elsewhere</string>
     <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->

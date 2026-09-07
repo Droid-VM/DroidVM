@@ -45,11 +45,6 @@ public enum UsbRuleLayer {
         return ordinal() + 1;
     }
 
-    /** Whether a rule here may leave the device on the host. */
-    public boolean allowsHost() {
-        return this != ANY;
-    }
-
     /** Whether a rule here needs a device or port picked before a target. */
     public boolean needsSubject() {
         return hasId || hasPort;

@@ -222,7 +222,7 @@ public final class UsbDevicesActivity extends AppCompatActivity
         // A rule says where a device is to be sent; this button says where the device is, and a
         // device nobody holds is idle -- the state's own word, the one UsbHostDevice.State uses.
         var label = current.kind == UsbRules.Target.SINK
-            ? R.string.usb_devices_target_idle : R.string.usb_devices_target_host;
+            ? R.string.usb_target_idle : R.string.usb_target_host;
         return device.locked ? UsbTargetPickerDialog.lockedLabel(this, label) : getString(label);
     }
 

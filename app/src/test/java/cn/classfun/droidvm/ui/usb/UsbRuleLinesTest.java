@@ -6,7 +6,6 @@ package cn.classfun.droidvm.ui.usb;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
@@ -57,22 +56,15 @@ public final class UsbRuleLinesTest {
             assertEquals(layer.key, UsbRuleLines.LINES, UsbRuleLines.of(layer).length);
     }
 
-    /**
-     * A line is bold exactly when it is the rule, and editable exactly when it is a field the
-     * rule stores. The catch-all's line is the first without the second: it is the matcher, and
-     * there is nothing about it to pick.
-     */
+    /** A line is bold exactly when it is the rule, and the context lines never are. */
     @Test
-    public void onlyAMatcherIsBoldAndOnlyAStoredFieldOpensAPicker() {
-        for (var layer : UsbRuleLayer.values())
-            for (var slot : UsbRuleLines.of(layer)) {
-                if (slot.edits != null) assertTrue(slot.name(), slot.strong);
-                if (!slot.strong) assertNull(slot.name(), slot.edits);
-            }
+    public void onlyAMatcherIsBold() {
+        assertTrue(UsbRuleLines.Slot.MATCH_ID.strong);
+        assertTrue(UsbRuleLines.Slot.MATCH_PORT.strong);
         assertTrue(UsbRuleLines.Slot.MATCH_ANY.strong);
-        assertNull(UsbRuleLines.Slot.MATCH_ANY.edits);
-        assertEquals(UsbRuleLines.Field.ID, UsbRuleLines.Slot.MATCH_ID.edits);
-        assertEquals(UsbRuleLines.Field.PORT, UsbRuleLines.Slot.MATCH_PORT.edits);
+        assertFalse(UsbRuleLines.Slot.INFO_ID.strong);
+        assertFalse(UsbRuleLines.Slot.INFO_PORT.strong);
+        assertFalse(UsbRuleLines.Slot.NAME.strong);
         assertFalse(UsbRuleLines.Slot.NONE.strong);
     }
 

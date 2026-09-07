@@ -4,7 +4,6 @@
 package cn.classfun.droidvm.ui.usb;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 /**
  * What the three lines of a rule card say, and in which order, which is the zone's business
@@ -26,38 +25,33 @@ final class UsbRuleLines {
     /** How many lines a card has room for; a zone that needs fewer leaves the rest empty. */
     static final int LINES = 3;
 
-    /** What one line of a card carries. */
+    /**
+     * What one line of a card carries. Every line opens the same dialog -- the rule is one
+     * thought and is edited as one -- so a slot says what is written on the line and how, and
+     * nothing about what a tap on it does.
+     */
     enum Slot {
-        /** The identifier the rule matches on: bold, and opens the device picker. */
-        MATCH_ID(true, Field.ID),
-        /** The port the rule matches on: bold, and opens the port picker. */
-        MATCH_PORT(true, Field.PORT),
-        /** "every device": the catch-all zone's whole matcher, which nothing can edit. */
-        MATCH_ANY(true, null),
+        /** The identifier the rule matches on. */
+        MATCH_ID(true),
+        /** The port the rule matches on. */
+        MATCH_PORT(true),
+        /** "every device": the catch-all zone's whole matcher. */
+        MATCH_ANY(true),
         /** The identifier of whatever the matcher resolves to now. Context, not the rule. */
-        INFO_ID(false, null),
+        INFO_ID(false),
         /** The port whatever the matcher resolves to is in now. Context, not the rule. */
-        INFO_PORT(false, null),
+        INFO_PORT(false),
         /** What that device calls itself. Never matched on: a rename is the same device. */
-        NAME(false, null),
+        NAME(false),
         /** No line here. */
-        NONE(false, null);
+        NONE(false);
 
         /** Whether the line is drawn in the management page's title style. */
         final boolean strong;
-        /** The rule field a tap edits, or null when the line is read-only. */
-        @Nullable
-        final Field edits;
 
-        Slot(boolean strong, @Nullable Field edits) {
+        Slot(boolean strong) {
             this.strong = strong;
-            this.edits = edits;
         }
-    }
-
-    /** The two fields a rule can store, which are the two a line can open a picker for. */
-    enum Field {
-        ID, PORT
     }
 
     private UsbRuleLines() {

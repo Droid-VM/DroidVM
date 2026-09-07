@@ -27,10 +27,9 @@ import cn.classfun.droidvm.R;
  * it matches, and the management page says it about one device in hand.
  *
  * <p>One row per VM and controller rather than a VM row with a controller question after it: the
- * two together are the target, and a VM with two controllers is two different answers. The sink
- * is offered in every layer, the catch-all one included -- it is the layer where "anything I have
- * not spoken for disappears" belongs, and the only one where keeping the device on the host is
- * refused, because nothing follows it.</p>
+ * two together are the target, and a VM with two controllers is two different answers. Every
+ * target is offered in every layer, the catch-all one included: it is the layer where "anything
+ * I have not spoken for" belongs, and all three answers to that are worth writing down.</p>
  */
 public final class UsbTargetPickerDialog {
     public interface OnPicked {
@@ -59,11 +58,9 @@ public final class UsbTargetPickerDialog {
         // ending on the only answer it has.
         for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels);
         targets.add(UsbDeviceTarget.sink());
-        labels.add(context.getString(R.string.usb_rules_target_sink_pick));
-        if (layer.allowsHost()) {
-            targets.add(UsbDeviceTarget.host());
-            labels.add(context.getString(R.string.usb_rules_keep_host));
-        }
+        labels.add(context.getString(R.string.usb_target_idle));
+        targets.add(UsbDeviceTarget.host());
+        labels.add(context.getString(R.string.usb_target_host));
         labels.add(context.getString(R.string.usb_rules_target_custom));
         show(context, targets, labels, () -> askCustom(context, onPicked), onPicked);
     }
@@ -94,9 +91,9 @@ public final class UsbTargetPickerDialog {
             }
         }
         targets.add(UsbDeviceTarget.host());
-        labels.add(lockedLabel(context, R.string.usb_devices_target_host));
+        labels.add(lockedLabel(context, R.string.usb_target_host));
         targets.add(UsbDeviceTarget.sink());
-        labels.add(lockedLabel(context, R.string.usb_devices_target_idle));
+        labels.add(lockedLabel(context, R.string.usb_target_idle));
         show(context, targets, labels, null, onPicked);
     }
 

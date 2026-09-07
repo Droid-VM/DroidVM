@@ -217,15 +217,12 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         // page prints the same two; a name and a matcher sentence are prose and are not.
         view.setTypeface(slot == UsbRuleLines.Slot.INFO_ID || slot == UsbRuleLines.Slot.INFO_PORT
             ? Typeface.MONOSPACE : Typeface.DEFAULT);
-        if (slot.edits == null) {
-            view.setOnClickListener(null);
-            view.setClickable(false);
-            view.setBackground(null);
-        } else {
-            var wantsId = slot.edits == UsbRuleLines.Field.ID;
-            view.setBackgroundResource(rippleBackground);
-            view.setOnClickListener(v -> pickSubject(holder, wantsId));
-        }
+        // Every line, not only the matcher: the card is one rule and a tap anywhere on what it
+        // says opens the one dialog that edits it. A reader who wants to know why a device went
+        // where it did taps the line that told them and gets the rule, rather than having to
+        // know which of the three lines is the one the app considers editable.
+        view.setBackgroundResource(rippleBackground);
+        view.setOnClickListener(v -> editRule(holder));
         // After the background either way: setting one takes the drawable's padding, which for
         // a ripple is none, and a line that lost its padding sits a pixel off the ones beside it.
         applyLinePadding(view);
@@ -276,25 +273,34 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         holder.tvWarning.setVisibility(warning == null ? GONE : VISIBLE);
     }
 
-    /**
-     * The picker for one field, writing back only that field.
-     *
-     * <p>An exact rule's subject picker answers with both a device and a port, and taking both
-     * would move a rule to another socket because its device was re-picked.</p>
-     */
-    private void pickSubject(@NonNull UsbRuleViewHolder holder, boolean wantsId) {
-        if (holder.getBindingAdapterPosition() == RecyclerView.NO_POSITION) return;
-        UsbSubjectPickerDialog.pick(context, layer, devices, (picked, id, port) -> {
-            int pos = holder.getBindingAdapterPosition();
-            if (pos == RecyclerView.NO_POSITION) return;
-            var rule = items.get(pos);
-            if (wantsId) rule.set("id", id);
-            else rule.set("port", port);
-            // Down to the end of the list: the row now matches something else, so which of the
-            // rows below it a host or sink rule shadows has moved with it.
-            notifyItemRangeChanged(pos, getItemCount() - pos);
-            listener.onRulesChanged();
-        });
+    /** The rule as one dialog: what it matches on, and the two things one can do to it. */
+    private void editRule(@NonNull UsbRuleViewHolder holder) {
+        int at = holder.getBindingAdapterPosition();
+        if (at == RecyclerView.NO_POSITION) return;
+        var rule = items.get(at);
+        UsbRuleEditDialog.edit(context, layer, devices, rule.optString("id", ""),
+            rule.optString("port", ""), new UsbRuleEditDialog.Listener() {
+                @Override
+                public void onConfirm(@Nullable String id, @Nullable String port) {
+                    int pos = holder.getBindingAdapterPosition();
+                    if (pos == RecyclerView.NO_POSITION) return;
+                    var row = items.get(pos);
+                    if (layer.hasId) row.set("id", id);
+                    if (layer.hasPort) row.set("port", port);
+                    // Down to the end of the list: the row now matches something else, so which
+                    // of the rows below it a host or idle rule shadows has moved with it.
+                    notifyItemRangeChanged(pos, getItemCount() - pos);
+                    listener.onRulesChanged();
+                }
+
+                @Override
+                public void onDelete() {
+                    int pos = holder.getBindingAdapterPosition();
+                    if (pos == RecyclerView.NO_POSITION) return;
+                    removeItem(pos);
+                    listener.onRulesChanged();
+                }
+            });
     }
 
     private void pickTarget(@NonNull UsbRuleViewHolder holder) {
@@ -303,7 +309,7 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             applyTarget(items.get(pos), target);
-            // A row that becomes a host or a sink shadows the rows below it with its matcher,
+            // A row that becomes a host or an idle shadows the rows below it with its matcher,
             // and one that stops being either hands them back; both are a rebind of the rest.
             notifyItemRangeChanged(pos, getItemCount() - pos);
             listener.onRulesChanged();
@@ -327,9 +333,9 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     @NonNull
     private String targetLabel(@NonNull UsbDeviceTarget target) {
         if (target.kind == UsbRules.Target.HOST)
-            return context.getString(R.string.usb_rules_keep_host);
+            return context.getString(R.string.usb_target_host);
         if (target.kind == UsbRules.Target.SINK)
-            return context.getString(R.string.usb_rules_target_sink);
+            return context.getString(R.string.usb_target_idle);
         var name = vmName(target.vmId);
         return target.controller == null
             ? context.getString(R.string.usb_rules_target_vm, name)

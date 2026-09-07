@@ -353,14 +353,21 @@ public final class UsbRulesActivity extends AppCompatActivity
      */
     @Override
     public void onAddRule(@NonNull UsbRuleLayer layer) {
-        // A second row in the last layer can never be reached, whatever it targets, so the
-        // zone is full rather than the row being added and refused by the save.
-        if (layer == UsbRuleLayer.ANY && adapterOf(layer).getItemCount() > 0) {
-            toast(getString(R.string.usb_rules_any_taken), LENGTH_SHORT);
-            return;
-        }
+        // The catch-all zone is a zone like any other: several rules, tried in order, and the
+        // ones an earlier host or idle rule has already answered for are dimmed rather than
+        // refused. A second VM rule there is not pointless -- it is what runs when the first
+        // VM is not.
         if (layer.needsSubject())
-            UsbSubjectPickerDialog.pick(this, layer, devices, this::askTarget);
+            UsbRuleEditDialog.add(this, layer, devices, new UsbRuleEditDialog.Listener() {
+                @Override
+                public void onConfirm(@Nullable String id, @Nullable String port) {
+                    askTarget(layer, id, port);
+                }
+
+                @Override
+                public void onDelete() {
+                }
+            });
         else askTarget(layer, null, null);
     }
 
