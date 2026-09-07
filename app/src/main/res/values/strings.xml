@@ -755,6 +755,9 @@
     <string name="linux_vm_create_action">Create</string>
     <string name="linux_vm_create_success">Virtual machine "%1$s" created.</string>
     <string name="linux_vm_create_failed">Linux virtual machine creation did not complete.</string>
+    <string name="linux_vm_step_resize">Disk resize</string>
+    <string name="linux_vm_create_partial">Virtual machine "%1$s" was created, but these preparation steps did not complete:\n%2$s\n\nYou can run them again from the disk menu.</string>
+    <string name="linux_vm_create_partial_title">Virtual machine created</string>
 
     <string name="lxc_title">Download LXC Distro Image</string>
     <string name="lxc_category_source">Source</string>
@@ -868,6 +871,9 @@
     <string name="agent_operation_running">Running\u2026</string>
     <string name="agent_operation_success">Operation completed successfully.</string>
     <string name="agent_operation_success_skipped">Operation completed; an action was not applicable.</string>
+    <string name="agent_operation_action_autogrow">Filesystem expansion</string>
+    <string name="agent_operation_action_password">Password change</string>
+    <string name="agent_operation_partial">Operation completed, but some steps failed:\n%1$s</string>
     <string name="agent_operation_failed">Operation failed (exit code %1$d).</string>
     <string name="agent_operation_failed_detail">Operation failed: %1$s</string>
     <string name="agent_operation_prepare_failed">Failed to prepare agent VM.</string>
@@ -889,6 +895,7 @@
     <string name="agent_operation_control_failed">Lost the rescue VM control channel.</string>
     <string name="agent_operation_error_root_not_found">No supported Linux root partition was found.</string>
     <string name="agent_operation_error_password">Failed to update the password database.</string>
+    <string name="agent_operation_error_password_missing">No passwd program was found in the target system.</string>
     <string name="agent_operation_error_unmount">The password was updated, but the target filesystem could not be unmounted safely.</string>
     <string name="agent_operation_error_script">The rescue script failed unexpectedly.</string>
     <string name="agent_operation_error_autogrow_disk">The target disk could not be inspected.</string>
