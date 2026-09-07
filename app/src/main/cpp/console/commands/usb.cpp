@@ -181,19 +181,26 @@ int UsbRulesCommand::show() {
 // controller inside its VM says so after a slash; one that names none means the VM's first.
 static std::string describe_result(const Json::Value &result) {
     if (result.isNull()) return "none";
-    auto layer = result.get("layer", "?").asString();
-    auto index = result.get("index", 0).asInt();
-    // The sink writes authorized=0, so it names no VM and is not the host keeping the device.
+    // A sink leaves the device to nobody: it names no VM, and it is not the host keeping it.
     auto outcome = result.get("target", Json::Value::null);
-    if (!outcome.isNull() && outcome.asString() == "sink")
-        return std::format("{}[{}] -> sink", layer, index);
-    auto vm = result.get("vm", Json::Value::null);
-    if (vm.isNull()) return std::format("{}[{}] -> host", layer, index);
-    auto controller = result.get("controller", Json::Value::null);
-    auto target = controller.isNull()
-                      ? vm.asString()
-                      : std::format("{}/{}", vm.asString(), controller.asString());
-    return std::format("{}[{}] -> {}", layer, index, target);
+    std::string where;
+    if (!outcome.isNull() && outcome.asString() == "sink") {
+        where = "sink";
+    } else if (auto vm = result.get("vm", Json::Value::null); vm.isNull()) {
+        where = "host";
+    } else {
+        auto controller = result.get("controller", Json::Value::null);
+        where = controller.isNull()
+                    ? vm.asString()
+                    : std::format("{}/{}", vm.asString(), controller.asString());
+    }
+    // The daemon sends an explicit null layer for a device no rule in the file matched: the
+    // fifth zone is the engine's default rather than a row, it is at no index, and printing
+    // "[-1]" would send a reader looking for a rule that is in no file and on no page.
+    // get() would not help -- the key is there, it is its value that is null.
+    if (result["layer"].isNull()) return std::format("no rule matched -> {}", where);
+    return std::format("{}[{}] -> {}", result["layer"].asString(),
+                       result.get("index", 0).asInt(), where);
 }
 
 int UsbRulesCommand::test() {
@@ -205,17 +212,19 @@ int UsbRulesCommand::test() {
     // command a person runs to ask why a rule did not fire.
     printf("passthrough: %s\n",
            resp.get("enabled", true).asBool() ? "enabled" : "disabled");
-    // AUTH beside HELD, because the dry run is where a person checks that a sink took effect.
-    printf("%-10s %-30s %-8s %-5s %-5s %-36s %s\n",
-           "SYSFS", "ID", "PORT", "HELD", "AUTH", "ATTACHED_VM", "RESULT");
+    // STATE and LOCK are the two things that decide whether a rule may speak for a device at
+    // all: what it is doing, read off the drivers bound to its interfaces, and whether the user
+    // has already decided about it by hand.
+    printf("%-10s %-30s %-8s %-8s %-5s %-36s %s\n",
+           "SYSFS", "ID", "PORT", "STATE", "LOCK", "ATTACHED_VM", "RESULT");
     for (const auto &dev: resp["devices"]) {
         auto attached = dev.get("attached_vm", Json::Value::null);
-        printf("%-10s %-30s %-8s %-5s %-5s %-36s %s\n",
+        printf("%-10s %-30s %-8s %-8s %-5s %-36s %s\n",
                dev.get("sysfs", "").asCString(),
                dev.get("id", "").asCString(),
                dev.get("port", "").asCString(),
-               dev.get("held", false).asBool() ? "yes" : "no",
-               dev.get("authorized", true).asBool() ? "yes" : "no",
+               dev.get("state", "").asCString(),
+               dev.get("lock", false).asBool() ? "yes" : "no",
                attached.isNull() ? "-" : attached.asCString(),
                describe_result(dev.get("result", Json::Value::null)).c_str());
     }

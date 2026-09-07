@@ -636,6 +636,21 @@ public final class UsbRuleEngineTest {
     }
 
     @Test
+    public void onlyTheDaemonStartPassHandsDevicesBackWhileTheSwitchIsOff() {
+        // The gate is what leaves a device idle, and a pass is what hands one back. With the
+        // rules running every pass may: the fifth zone answers for everything nothing else
+        // matched. With them off no trigger acts at all -- an interface somebody unbound by
+        // hand stays unbound, whatever is plugged in afterwards -- except the daemon's own
+        // start, which is the only pass that runs to repair rather than to decide.
+        var engine = engine(rules(Layer.ANY, List.of(sink(null, null))));
+        assertTrue(engine.recoversIdleDevices(false));
+        assertTrue(engine.recoversIdleDevices(true));
+        engine.setRules(disabled(Layer.ANY, List.of(sink(null, null))));
+        assertFalse(engine.recoversIdleDevices(false));
+        assertTrue(engine.recoversIdleDevices(true));
+    }
+
+    @Test
     public void everyLockGoesBackWithTheDevicesWhenTheSwitchGoesOff() {
         var engine = engine(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
         engine.lock(STICK.sysfs, STICK.devnum);

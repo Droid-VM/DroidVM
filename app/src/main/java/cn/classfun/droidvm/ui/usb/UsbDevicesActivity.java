@@ -269,9 +269,9 @@ public final class UsbDevicesActivity extends AppCompatActivity
 
     /**
      * What the daemon made of it. The state it read back is what the row will show after the
-     * reload, and it is also the one answer worth a sentence: asking for nobody to have a device
-     * the host already has leaves it exactly where it was, because nothing unbinds a driver --
-     * the way back to idle is the gate, on the device's next plug.
+     * reload, and it is also the one answer worth a sentence: choosing nobody takes the host's
+     * drivers off the device, and a driver that will not let go is the one way that can fail
+     * silently -- the row would simply come back saying the host still has it.
      */
     private void finished(@NonNull UsbHostDeviceInfo device, @NonNull UsbDeviceTarget target,
                           @NonNull String state, @Nullable String error) {

@@ -36,6 +36,8 @@ import java.util.regex.Pattern;
 public final class UsbHostDevice {
     /** Hub class, in the two-hex form both bDeviceClass and bInterfaceClass use. */
     private static final String CLASS_HUB = "09";
+    /** A root hub directory, and its bus number: {@code usb3}. */
+    private static final Pattern ROOT_HUB_NAME = Pattern.compile("^usb(\\d+)$");
     /** The interface driver the VMM's own claim leaves behind; not a host owner. */
     private static final String DRIVER_USBFS = "usbfs";
 
@@ -259,10 +261,34 @@ public final class UsbHostDevice {
 
     /** Whether a {@code bDeviceClass} value is the hub class, for a reader that has only that. */
     public static boolean isHubClass(@NonNull String deviceClass) {
-        // Normalised here rather than by the caller: the kernel prints the class %02x, but this
-        // is the one guard between an any-layer sink rule and a hub taking its whole subtree
-        // down with it, and the fast lane reads the attribute raw.
+        // Normalised here rather than by the caller: the kernel prints the class %02x, but a
+        // caller may have read the attribute raw, and this is the one guard between an
+        // any-layer sink rule and a hub taking its whole subtree down with it.
         return CLASS_HUB.equals(deviceClass.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Whether [sysfs] names a root hub -- {@code usb3} -- rather than a device plugged into one.
+     * A root hub is a bus's own hub: it is nobody's to lend out, no rule speaks for it and no
+     * page lists it, but a driver still has to be bound to it or its ports are never scanned.
+     */
+    public static boolean isRootHubName(@NonNull String sysfs) {
+        return ROOT_HUB_NAME.matcher(sysfs).matches();
+    }
+
+    /**
+     * The prefix the kernel gives the interface directories of the device [sysfs], for a caller
+     * that has the name and wants the interfaces beside it in {@code /sys/bus/usb/devices}.
+     *
+     * <p>A root hub is the one exception the naming scheme has: the device is {@code usb3} and
+     * its interface is {@code 3-0:1.0}, the bus number with the port the root hub is not on. Get
+     * this wrong and a sweep over a root hub finds no interface at all and silently does
+     * nothing, which is a whole bus left dead.</p>
+     */
+    @NonNull
+    public static String interfacePrefix(@NonNull String sysfs) {
+        var root = ROOT_HUB_NAME.matcher(sysfs);
+        return root.matches() ? fmt("%s-0:", root.group(1)) : fmt("%s:", sysfs);
     }
 
     /** A hub carries the rest of the tree; handing one to a VM would take its own children away. */

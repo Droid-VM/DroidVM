@@ -24,6 +24,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Pattern;
 
 /**
@@ -65,6 +66,9 @@ public final class UsbHostInventory {
     private final Map<String, FileObserver> busObservers = new HashMap<>();
     private volatile List<UsbHostDevice> snapshot = Collections.emptyList();
     private volatile Listener listener = null;
+    private volatile Runnable busListener = null;
+    /** Set when a bus directory came or went, and read by the next debounced rescan. */
+    private final AtomicBoolean busesMoved = new AtomicBoolean(false);
     private FileObserver rootObserver = null;
     private ScheduledExecutorService scheduler = null;
     private ScheduledFuture<?> pending = null;
@@ -105,9 +109,19 @@ public final class UsbHostInventory {
         return devices;
     }
 
-    /** Takes the first snapshot -- without calling [listener] -- and starts watching. */
-    public void start(@NonNull Listener listener) {
+    /**
+     * Takes the first snapshot -- without calling either listener -- and starts watching.
+     *
+     * <p>[onBusesChanged] is the other half of the news: a bus directory appearing means a USB
+     * controller was registered, and that controller's root hub is not a device this scan
+     * returns or a rule can speak for. It is reported on its own because nothing else reports
+     * it -- a root hub raises no device diff -- and because a root hub with no driver bound is a
+     * bus whose ports are never scanned, so no device below it will ever enumerate to raise a
+     * change of its own.</p>
+     */
+    public void start(@NonNull Listener listener, @NonNull Runnable onBusesChanged) {
         this.listener = listener;
+        this.busListener = onBusesChanged;
         synchronized (rescanLock) {
             snapshot = scan();
         }
@@ -161,6 +175,7 @@ public final class UsbHostInventory {
         List<UsbHostDevice> all;
         List<UsbHostDevice> added = new ArrayList<>();
         List<UsbHostDevice> removed = new ArrayList<>();
+        var busesChanged = busesMoved.getAndSet(false);
         synchronized (rescanLock) {
             var previous = snapshot;
             all = scan();
@@ -177,6 +192,16 @@ public final class UsbHostInventory {
             for (var device : previous)
                 if (!after.contains(instanceKey(device))) removed.add(device);
             snapshot = all;
+        }
+        if (busesChanged) {
+            var buses = busListener;
+            if (buses != null) {
+                try {
+                    buses.run();
+                } catch (Exception e) {
+                    Log.w(TAG, "USB bus listener failed", e);
+                }
+            }
         }
         if (added.isEmpty() && removed.isEmpty()) return all;
         var target = listener;
@@ -214,22 +239,29 @@ public final class UsbHostInventory {
         }
     }
 
-    /** Adds an observer for every bus directory that appeared and drops the ones that went. */
-    private void refreshBusObservers() {
+    /**
+     * Adds an observer for every bus directory that appeared and drops the ones that went.
+     * Returns whether the set of buses is not the one it was: that is a USB controller having
+     * been registered or removed, which is news of its own -- see {@link #start}.
+     */
+    private boolean refreshBusObservers() {
         synchronized (watchLock) {
-            if (rootObserver == null) return;
+            if (rootObserver == null) return false;
             var present = new HashSet<String>();
             var entries = new File(devRoot).listFiles();
-            if (entries != null) {
+            if (entries != null)
                 for (var entry : entries) {
                     var name = entry.getName();
                     if (!entry.isDirectory() || !BUS_NAME.matcher(name).matches()) continue;
                     present.add(name);
-                    if (busObservers.containsKey(name)) continue;
-                    var observer = new DirObserver(entry, BUS_MASK, false);
-                    busObservers.put(name, observer);
-                    observer.startWatching();
                 }
+            // Compared before the map is touched, so what is compared is the previous set.
+            var changed = !present.equals(busObservers.keySet());
+            for (var name : present) {
+                if (busObservers.containsKey(name)) continue;
+                var observer = new DirObserver(new File(devRoot, name), BUS_MASK, false);
+                busObservers.put(name, observer);
+                observer.startWatching();
             }
             var it = busObservers.entrySet().iterator();
             while (it.hasNext()) {
@@ -238,6 +270,7 @@ public final class UsbHostInventory {
                 e.getValue().stopWatching();
                 it.remove();
             }
+            return changed;
         }
     }
 
@@ -258,7 +291,8 @@ public final class UsbHostInventory {
             // dropped queue or an unmounted devfs is precisely when a rescan is owed, and the
             // bus observers have to be rebuilt first because their watches may be gone with it.
             if ((event & (mask | LOST_EVENTS)) == 0) return;
-            if (isRoot || (event & LOST_EVENTS) != 0) refreshBusObservers();
+            if ((isRoot || (event & LOST_EVENTS) != 0) && refreshBusObservers())
+                busesMoved.set(true);
             scheduleRescan();
         }
     }

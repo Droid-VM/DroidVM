@@ -1651,5 +1651,5 @@
     <string name="usb_devices_state_locked">手动指定，拔除后才恢复规则</string>
     <string name="usb_devices_state_idle">闲置：没有挂上任何驱动</string>
     <string name="usb_devices_state_vmuse">被虚拟机占用中</string>
-    <string name="usb_devices_sink_kept">%1$s 留在主机：这里不会卸载任何驱动，要拔掉重插才会回到谁都不给</string>
+    <string name="usb_devices_sink_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到谁都不给</string>
 </resources>

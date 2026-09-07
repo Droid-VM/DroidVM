@@ -225,6 +225,21 @@ public final class UsbHostDeviceTest {
     }
 
     @Test
+    public void aRootHubsInterfacesAreNamedAfterItsBusAndNotAfterIt() {
+        // The one exception the naming scheme has, and the whole of why it is worth a test: a
+        // sweep that looked for "usb3:" would find no interface, write nothing, and leave a
+        // root hub without a driver -- which is a bus whose ports are never scanned, so nothing
+        // plugged into it enumerates and no trigger is ever raised to notice.
+        assertTrue(UsbHostDevice.isRootHubName("usb1"));
+        assertTrue(UsbHostDevice.isRootHubName("usb12"));
+        assertFalse(UsbHostDevice.isRootHubName("1-1"));
+        assertFalse(UsbHostDevice.isRootHubName("1-1.4:1.0"));
+        assertFalse(UsbHostDevice.isRootHubName("usbmisc"));
+        assertEquals("3-0:", UsbHostDevice.interfacePrefix("usb3"));
+        assertEquals("1-1.4:", UsbHostDevice.interfacePrefix("1-1.4"));
+    }
+
+    @Test
     public void scanTakesEveryDeviceAndTheHubsWithThem() throws Exception {
         var root = folder.newFolder("sysfs");
         writeFlashDrive(root);

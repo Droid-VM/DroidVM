@@ -77,6 +77,13 @@ public final class UsbRulesActivity extends AppCompatActivity
     private boolean dirty = false;
     /** True while the daemon's own answer is being written into the switch, which is no edit. */
     private boolean applying = false;
+    /**
+     * True while the switch's warning is on screen. The page is not dirty yet -- the edit is
+     * made when the dialog is answered -- so without this a reload arriving in that window
+     * would write the daemon's own value over a switch the user is being asked about, and the
+     * OK they then tap would mark a page whose switch had been turned back off underneath it.
+     */
+    private boolean confirming = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -117,10 +124,14 @@ public final class UsbRulesActivity extends AppCompatActivity
      * direction nobody needs warning about.</p>
      */
     private void confirmEnable() {
+        confirming = true;
         new MaterialAlertDialogBuilder(this)
             .setTitle(R.string.usb_rules_enable_warning_title)
             .setMessage(R.string.usb_rules_enable_warning_message)
-            .setPositiveButton(android.R.string.ok, (d, w) -> setDirty(true))
+            .setPositiveButton(android.R.string.ok, (d, w) -> {
+                confirming = false;
+                setDirty(true);
+            })
             .setNegativeButton(android.R.string.cancel, (d, w) -> revertEnable())
             .setOnCancelListener(d -> revertEnable())
             .show();
@@ -128,6 +139,7 @@ public final class UsbRulesActivity extends AppCompatActivity
 
     /** The switch back to off, written the way the daemon's own answer is: not an edit. */
     private void revertEnable() {
+        confirming = false;
         applying = true;
         swEnabled.setChecked(false);
         applying = false;
@@ -179,7 +191,9 @@ public final class UsbRulesActivity extends AppCompatActivity
         loadControllers();
         loadVms();
         loadDevices();
-        if (!dirty) loadRules();
+        // A switch waiting for its warning to be answered is an edit in the making, and reading
+        // the daemon's value over it would be clobbering one.
+        if (!dirty && !confirming) loadRules();
     }
 
     private void loadControllers() {

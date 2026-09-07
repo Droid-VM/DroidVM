@@ -144,6 +144,21 @@ public final class UsbRuleEngine {
     }
 
     /**
+     * Whether a pass may offer an idle device nobody speaks for to the host drivers.
+     *
+     * <p>With the rules running, always: that is the fifth zone's answer for everything the gate
+     * has left idle. With the switch off, no trigger acts at all -- that is the whole of what
+     * the switch means, and a pass that handed devices back anyway would rebind an interface
+     * somebody had unbound by hand the next time anything was plugged in. The exception is
+     * [daemonStart], which is the one pass that runs to repair rather than to decide: a daemon
+     * killed with the gate shut, or a release that never finished, is itself why a device is
+     * idle, and no plug event is ever going to be raised for one.</p>
+     */
+    public boolean recoversIdleDevices(boolean daemonStart) {
+        return rulesEnabled() || daemonStart;
+    }
+
+    /**
      * What saving [next] over the rules held right now owes, asked before they are replaced.
      *
      * <p>The release is the switch's falling edge and only that: it is the one save that has to
