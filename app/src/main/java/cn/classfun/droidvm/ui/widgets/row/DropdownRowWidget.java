@@ -79,6 +79,19 @@ public final class DropdownRowWidget extends FrameLayout {
      */
     private void refuseFiltering() {
         dropdownView.setThreshold(Integer.MAX_VALUE);
+        // And it never holds focus. updateDropDownForFilter is gated on hasFocus(), so a row
+        // that cannot be focused cannot be opened by anything but the touch -- which is the
+        // whole of what a menu should answer to. The delegate's own show survives it: it calls
+        // requestFocus() and throws the answer away, then calls showDropDown() regardless.
+        dropdownView.setFocusable(false);
+        dropdownView.setFocusableInTouchMode(false);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        // A popup is its own window and outlives the row that anchors it.
+        dropdownView.dismissDropDown();
+        super.onDetachedFromWindow();
     }
 
     @Override
@@ -132,7 +145,9 @@ public final class DropdownRowWidget extends FrameLayout {
         super.setEnabled(enabled);
         textInputLayout.setEnabled(enabled);
         dropdownView.setEnabled(enabled);
-        dropdownView.setFocusable(enabled);
+        // Not setFocusable(enabled): see refuseFiltering. An enabled menu is one a touch opens,
+        // not one that opens itself the moment something hands it the focus.
+        dropdownView.setFocusable(false);
         dropdownView.setFocusableInTouchMode(false);
         if (!enabled) dropdownView.dismissDropDown();
     }
