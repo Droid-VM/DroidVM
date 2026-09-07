@@ -64,12 +64,16 @@ public final class UsbRulesTest {
         assertTrue(refused(Layer.ANY, new Rule(null, "1.2", VM, null)).contains("takes no port"));
     }
 
+    /**
+     * The last layer takes a host rule like any other. It was refused once, on the reasoning
+     * that keeping a device on the host is what happens anyway there so the row does nothing --
+     * but it is the sentence that says out loud what the daemon does by default, and a reader
+     * who finds it knows the silence was on purpose. The page offers it; the save has to take it.
+     */
     @Test
-    public void anyRefusesAHostRule() {
-        // Nothing follows the last layer, so "keep it on the host" there is what already
-        // happens; a row that does nothing has to read as one that does.
-        assertTrue(refused(Layer.ANY, new Rule(null, null, null, null))
-            .contains("any[0]: the any layer takes no host rule"));
+    public void anyTakesAHostRule() {
+        var rules = build(Layer.ANY, new Rule(null, null, null, null));
+        assertEquals(Target.HOST, rules.layer(Layer.ANY).get(0).target);
     }
 
     @Test

@@ -228,10 +228,6 @@ public final class UsbRules {
             throw new RequestException(fmt("%s: missing port", where));
         if (!wantsPort && rule.port != null)
             throw new RequestException(fmt("%s: a %s rule takes no port", where, layer.key));
-        // The any layer is the last one, so nothing follows a rule in it: "keep it on the host"
-        // there is what already happens, and a row that does nothing reads as one that does.
-        if (layer == Layer.ANY && rule.target == Target.HOST)
-            throw new RequestException(fmt("%s: the any layer takes no host rule", where));
         if (rule.target == Target.SINK && rule.vm != null)
             throw new RequestException(fmt("%s: a sink rule takes no vm", where));
         if (rule.target == Target.VM && rule.vm == null)
