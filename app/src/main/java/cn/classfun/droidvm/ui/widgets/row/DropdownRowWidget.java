@@ -58,53 +58,6 @@ public final class DropdownRowWidget extends FrameLayout {
         textInputLayout = findViewById(R.id.dd_layout);
         dropdownView = findViewById(R.id.dd_dropdown);
         initAttrs(attrs);
-        refuseFiltering();
-    }
-
-    /**
-     * Takes the popup off the filter, which is the only thing that ever opened it by itself.
-     *
-     * <p>Material's exposed-dropdown delegate calls {@code setThreshold(0)}, so
-     * {@code enoughToFilter()} is true for every value including none, and
-     * {@code AutoCompleteTextView.updateDropDownForFilter} then calls {@code showDropDown()}
-     * whenever a filter completes and the field happens to hold focus. That is a text box's
-     * behaviour and this is a menu: it opened itself as its dialog appeared, and once the
-     * dialog's root took the focus away instead, it opened itself again on the way out, as the
-     * focus fell back to it while the window was closing -- the flash on dismiss.</p>
-     *
-     * <p>A threshold nothing can reach ends both. Nothing is lost: the adapter these rows carry
-     * returns every entry whatever the constraint, so filtering never did anything, and the
-     * delegate's own show is a plain {@code showDropDown()} that no threshold gates -- the
-     * touch still opens it.</p>
-     */
-    private void refuseFiltering() {
-        dropdownView.setThreshold(Integer.MAX_VALUE);
-        // And it never holds focus. updateDropDownForFilter is gated on hasFocus(), so a row
-        // that cannot be focused cannot be opened by anything but the touch -- which is the
-        // whole of what a menu should answer to. The delegate's own show survives it: it calls
-        // requestFocus() and throws the answer away, then calls showDropDown() regardless.
-        dropdownView.setFocusable(false);
-        dropdownView.setFocusableInTouchMode(false);
-    }
-
-    /** Closes the popup now, for an owner that knows its window is about to go. */
-    public void dismissPopup() {
-        dropdownView.dismissDropDown();
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        // A popup is its own window and outlives the row that anchors it.
-        dropdownView.dismissDropDown();
-        super.onDetachedFromWindow();
-    }
-
-    @Override
-    protected void onAttachedToWindow() {
-        super.onAttachedToWindow();
-        // Again here: the delegate sets its threshold when the field is attached to the layout,
-        // and which of the two runs last is the library's business rather than ours.
-        refuseFiltering();
     }
 
     private void initAttrs(@Nullable AttributeSet attrs) {
@@ -131,6 +84,26 @@ public final class DropdownRowWidget extends FrameLayout {
         }
     }
 
+    /**
+     * Closes the popup now, for an owner that knows its window is about to go.
+     *
+     * <p>A popup is a window of its own and does not leave with the one that anchors it. A
+     * dialog cancelled by a touch outside starts leaving on the DOWN -- {@code shouldCloseOnTouch}
+     * is true for a touch past its bounds -- one event earlier than a button's UP, and a popup
+     * still open at that point is drawn for a frame or two over a window that is already fading.
+     * The owner calls this before the window animates away; {@link #onDetachedFromWindow} is the
+     * same close for an owner that does not.</p>
+     */
+    public void dismissPopup() {
+        dropdownView.dismissDropDown();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        dismissPopup();
+        super.onDetachedFromWindow();
+    }
+
     public <T extends ListAdapter & Filterable> void setAdapter(@Nullable T adapter) {
         dropdownView.setAdapter(adapter);
     }
@@ -150,9 +123,7 @@ public final class DropdownRowWidget extends FrameLayout {
         super.setEnabled(enabled);
         textInputLayout.setEnabled(enabled);
         dropdownView.setEnabled(enabled);
-        // Not setFocusable(enabled): see refuseFiltering. An enabled menu is one a touch opens,
-        // not one that opens itself the moment something hands it the focus.
-        dropdownView.setFocusable(false);
+        dropdownView.setFocusable(enabled);
         dropdownView.setFocusableInTouchMode(false);
         if (!enabled) dropdownView.dismissDropDown();
     }
