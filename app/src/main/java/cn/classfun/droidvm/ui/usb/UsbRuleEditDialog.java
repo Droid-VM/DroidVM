@@ -12,7 +12,6 @@ import android.view.LayoutInflater;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.google.android.material.button.MaterialButton;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
 import com.google.android.material.textfield.TextInputLayout;
@@ -22,6 +21,8 @@ import java.util.List;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
+import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 
 /**
  * What one rule matches on, asked as one dialog instead of a field at a time.
@@ -53,8 +54,8 @@ public final class UsbRuleEditDialog {
     /** The values as the dialog has them now; written back only when it is confirmed. */
     private String id;
     private String port;
-    private MaterialButton btnId;
-    private MaterialButton btnPort;
+    private DropdownRowWidget ddId;
+    private DropdownRowWidget ddPort;
     private androidx.appcompat.app.AlertDialog dialog;
 
     private UsbRuleEditDialog(@NonNull Context context, @NonNull UsbRuleLayer layer,
@@ -94,12 +95,17 @@ public final class UsbRuleEditDialog {
         if (layer.needsSubject()) {
             var view = LayoutInflater.from(context)
                 .inflate(R.layout.dialog_usb_rule_edit, null);
-            btnId = view.findViewById(R.id.btn_edit_id);
-            btnPort = view.findViewById(R.id.btn_edit_port);
-            if (!layer.hasId) view.findViewById(R.id.row_edit_id).setVisibility(GONE);
-            if (!layer.hasPort) view.findViewById(R.id.row_edit_port).setVisibility(GONE);
-            btnId.setOnClickListener(v -> pick(true));
-            btnPort.setOnClickListener(v -> pick(false));
+            ddId = view.findViewById(R.id.dd_edit_id);
+            ddPort = view.findViewById(R.id.dd_edit_port);
+            if (!layer.hasId) ddId.setVisibility(GONE);
+            if (!layer.hasPort) ddPort.setVisibility(GONE);
+            if (layer.hasId) fill(ddId, true);
+            if (layer.hasPort) fill(ddPort, false);
+            // The dropdown is the only thing in here that can hold focus, so without this the
+            // dialog opens with the first one already unrolled over the second: an exact rule
+            // would ask its two questions on top of each other before either had been read.
+            view.setFocusableInTouchMode(true);
+            view.requestFocus();
             builder.setView(view);
         }
         // The catch-all zone's dialog has nothing to cancel, so it is not offered one: the two
@@ -115,11 +121,14 @@ public final class UsbRuleEditDialog {
         render();
     }
 
-    /** Both buttons and the confirm, from the values as they stand. */
+    /**
+     * Both fields and the confirm, from the values as they stand. The field shows the value the
+     * rule stores rather than the row that was picked: that is what is saved, what the card
+     * prints, and the only thing there is to show for a value typed in by hand.
+     */
     private void render() {
-        var hint = context.getString(R.string.usb_rules_pick_hint);
-        if (btnId != null) btnId.setText(id.isEmpty() ? hint : id);
-        if (btnPort != null) btnPort.setText(port.isEmpty() ? hint : port);
+        if (ddId != null) ddId.setText(id);
+        if (ddPort != null) ddPort.setText(port);
         var ok = dialog.getButton(BUTTON_POSITIVE);
         // A rule saved without the field its zone matches on would match nothing and could not
         // be told from one that matches everything, so the answer is refused here rather than
@@ -134,39 +143,45 @@ public final class UsbRuleEditDialog {
 
     /**
      * One dropdown. The rows are the devices plugged in now, listed the way the field asks about
-     * them, and picking one sets BOTH fields -- see the class comment. Custom is last and sets
-     * only the field it was opened from.
+     * them, and picking one sets BOTH fields -- see the class comment. Custom is the last row
+     * and sets only the field it was opened from.
      */
-    private void pick(boolean wantsId) {
+    private void fill(@NonNull DropdownRowWidget widget, boolean wantsId) {
         var subjects = UsbRuleSubjects.of(context,
             wantsId ? UsbRuleLayer.DEVICE : UsbRuleLayer.PORT, devices);
         var labels = new ArrayList<String>(subjects.size() + 1);
-        for (var subject : subjects) labels.add(subject.label);
+        var icons = new int[subjects.size() + 1];
+        for (var subject : subjects) {
+            icons[labels.size()] = wantsId ? R.drawable.ic_usb : R.drawable.ic_connection;
+            labels.add(subject.label);
+        }
+        icons[labels.size()] = R.drawable.ic_edit;
         labels.add(context.getString(R.string.edit_vm_xhci_add_custom));
-        new MaterialAlertDialogBuilder(context)
-            .setTitle(wantsId ? R.string.usb_rules_field_id : R.string.usb_rules_field_port)
-            .setItems(labels.toArray(new String[0]), (d, which) -> {
-                if (which >= subjects.size()) {
-                    askCustom(wantsId);
-                    return;
-                }
-                // The whole device, not the field that was asked about: the subject list for
-                // one field carries only that field, so the other is read off the device again.
-                var subject = subjects.get(which);
-                var device = UsbDeviceNames.deviceFor(
-                    wantsId ? UsbRuleLayer.DEVICE : UsbRuleLayer.PORT,
-                    subject.id, subject.port, devices);
-                if (device != null) {
-                    id = device.id;
-                    port = device.port;
-                } else if (wantsId) {
-                    id = subject.id;
-                } else {
-                    port = subject.port;
-                }
+        widget.setAdapter(IconItemAdapter.create(context, labels, icons));
+        widget.setOnItemClickListener((parent, view, which, rowId) -> {
+            if (which >= subjects.size()) {
+                // The list wrote its own row into the field on the way here; the value is
+                // whatever the prompt answers, or what was there before if it is dismissed.
                 render();
-            })
-            .show();
+                askCustom(wantsId);
+                return;
+            }
+            // The whole device, not the field that was asked about: the subject list for one
+            // field carries only that field, so the other is read off the device again.
+            var subject = subjects.get(which);
+            var device = UsbDeviceNames.deviceFor(
+                wantsId ? UsbRuleLayer.DEVICE : UsbRuleLayer.PORT,
+                subject.id, subject.port, devices);
+            if (device != null) {
+                id = device.id;
+                port = device.port;
+            } else if (wantsId) {
+                id = subject.id;
+            } else {
+                port = subject.port;
+            }
+            render();
+        });
     }
 
     /**

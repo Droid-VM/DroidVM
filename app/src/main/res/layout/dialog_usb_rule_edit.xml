@@ -2,69 +2,28 @@
      What one rule matches on, and only the fields its zone stores. The exact zone shows both
      and the other two show one; the catch-all zone shows neither, so this view is not inflated
      for it at all and its dialog is the title and the buttons.
+
+     Two dropdowns, not two buttons that open lists: the value is chosen from what is plugged in
+     right now, which is the same shape of question the network and boot pages ask. The row
+     widget carries its own 16dp, so the padding here is what is left to reach the dialog's.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:paddingStart="24dp"
-    android:paddingTop="8dp"
-    android:paddingEnd="24dp">
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp">
 
-    <LinearLayout
-        android:id="@+id/row_edit_id"
+    <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+        android:id="@+id/dd_edit_id"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:hint="@string/usb_rules_field_id" />
 
-        <TextView
-            android:layout_width="64dp"
-            android:layout_height="wrap_content"
-            android:text="@string/usb_rules_field_id"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_edit_id"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textSize="12sp"
-            tools:ignore="VisualLintButtonSize"
-            tools:text="152d:a583:DD564198838E9" />
-
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/row_edit_port"
+    <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+        android:id="@+id/dd_edit_port"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:layout_width="64dp"
-            android:layout_height="wrap_content"
-            android:text="@string/usb_rules_field_port"
-            android:textAppearance="?attr/textAppearanceBodyMedium" />
-
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/btn_edit_port"
-            style="@style/Widget.Material3.Button.TonalButton"
-            android:layout_width="0dp"
-            android:layout_height="48dp"
-            android:layout_weight="1"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textSize="12sp"
-            tools:ignore="VisualLintButtonSize"
-            tools:text="1.1" />
-
-    </LinearLayout>
+        android:hint="@string/usb_rules_field_port" />
 
 </LinearLayout>

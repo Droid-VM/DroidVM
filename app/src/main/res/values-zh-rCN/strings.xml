@@ -1636,7 +1636,6 @@
     <string name="usb_rules_field_id">识别</string>
     <string name="usb_rules_field_port">端口</string>
     <string name="usb_rules_delete_action">删除</string>
-    <string name="usb_rules_pick_hint">选择\u2026</string>
     <string name="usb_rules_delete">删除规则</string>
     <string name="usb_rules_save">保存并应用</string>
     <string name="usb_rules_saved">已应用 %1$d 台</string>

@@ -1685,7 +1685,6 @@
     <string name="usb_rules_field_id">Device</string>
     <string name="usb_rules_field_port">Port</string>
     <string name="usb_rules_delete_action">Delete</string>
-    <string name="usb_rules_pick_hint">Choose\u2026</string>
     <string name="usb_rules_delete">Delete rule</string>
     <string name="usb_rules_save">Save and apply</string>
     <string name="usb_rules_saved">Applied to %1$d device(s)</string>

@@ -68,7 +68,11 @@ public final class DropdownRowWidget extends FrameLayout {
                 iconView.setImageDrawable(icon);
             } else {
                 iconView.setVisibility(GONE);
-                var lp = (LayoutParams) textInputLayout.getLayoutParams();
+                // MarginLayoutParams, not this view's own: the field is a child of the
+                // LinearLayout inflated inside, so its params are that layout's, and casting
+                // them to the FrameLayout's threw for every row that carries no icon.
+                iconView.setContentDescription(null);
+                var lp = (MarginLayoutParams) textInputLayout.getLayoutParams();
                 lp.setMarginStart(0);
                 textInputLayout.setLayoutParams(lp);
             }
