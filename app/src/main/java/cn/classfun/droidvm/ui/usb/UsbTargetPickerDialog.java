@@ -91,7 +91,7 @@ public final class UsbTargetPickerDialog {
         targets.add(UsbDeviceTarget.host());
         labels.add(lockedLabel(context, R.string.usb_devices_target_host));
         targets.add(UsbDeviceTarget.sink());
-        labels.add(lockedLabel(context, R.string.usb_devices_target_sink));
+        labels.add(lockedLabel(context, R.string.usb_devices_target_idle));
         show(context, targets, labels, null, onPicked);
     }
 

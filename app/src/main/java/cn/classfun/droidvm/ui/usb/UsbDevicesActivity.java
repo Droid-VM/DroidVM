@@ -218,8 +218,11 @@ public final class UsbDevicesActivity extends AppCompatActivity
             return current.controller == null ? name
                 : getString(R.string.usb_rules_vm_label_fmt, name, current.controller);
         }
+        // "Idle" on this page, "Sink" in a rule: the same target, named for what it is here.
+        // A rule says where a device is to be sent; this button says where the device is, and a
+        // device nobody holds is idle -- the state's own word, the one UsbHostDevice.State uses.
         var label = current.kind == UsbRules.Target.SINK
-            ? R.string.usb_devices_target_sink : R.string.usb_devices_target_host;
+            ? R.string.usb_devices_target_idle : R.string.usb_devices_target_host;
         return device.locked ? UsbTargetPickerDialog.lockedLabel(this, label) : getString(label);
     }
 
@@ -274,7 +277,7 @@ public final class UsbDevicesActivity extends AppCompatActivity
                 .show();
         else if (target.kind == UsbRules.Target.SINK
             && UsbHostDevice.State.HOSTUSE.key.equals(state))
-            snackbar(getString(R.string.usb_devices_sink_kept,
+            snackbar(getString(R.string.usb_devices_idle_kept,
                 UsbDeviceNames.cardTitle(this, device)));
         loadDevices();
     }

@@ -1645,7 +1645,7 @@
     <string name="usb_devices_empty">沒有插入的 USB 裝置</string>
     <string name="usb_devices_action_failed_title">裝置沒有移動</string>
     <string name="usb_devices_target_host">主機</string>
-    <string name="usb_devices_target_sink">Sink</string>
+    <string name="usb_devices_target_idle">Idle</string>
     <string name="usb_devices_target_claimed">被其他程式占用</string>
-    <string name="usb_devices_sink_kept">%1$s 留在主機：有驅動不肯卸載，要拔掉重插才會回到誰都不給</string>
+    <string name="usb_devices_idle_kept">%1$s 留在主機：有驅動不肯卸載，要拔掉重插才會回到 Idle</string>
 </resources>

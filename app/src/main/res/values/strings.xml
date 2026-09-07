@@ -1693,10 +1693,10 @@
     <string name="usb_devices_action_failed_title">The device did not move</string>
     <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
     <string name="usb_devices_target_host">Host</string>
-    <string name="usb_devices_target_sink">Sink</string>
+    <string name="usb_devices_target_idle">Idle</string>
     <!-- Neither the host nor one of our VMs: something opened the device through usbfs. -->
     <string name="usb_devices_target_claimed">In use elsewhere</string>
     <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
     <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
-    <string name="usb_devices_sink_kept">%1$s stays with the host: a driver of its would not let go, so it reaches nobody only when it is unplugged</string>
+    <string name="usb_devices_idle_kept">%1$s stays with the host: a driver of its would not let go, so it goes idle only when it is unplugged</string>
 </resources>

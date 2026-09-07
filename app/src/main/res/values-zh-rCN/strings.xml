@@ -1645,7 +1645,7 @@
     <string name="usb_devices_empty">没有插入的 USB 设备</string>
     <string name="usb_devices_action_failed_title">设备没有移动</string>
     <string name="usb_devices_target_host">主机</string>
-    <string name="usb_devices_target_sink">Sink</string>
+    <string name="usb_devices_target_idle">Idle</string>
     <string name="usb_devices_target_claimed">被其他程序占用</string>
-    <string name="usb_devices_sink_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到谁都不给</string>
+    <string name="usb_devices_idle_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到 Idle</string>
 </resources>
