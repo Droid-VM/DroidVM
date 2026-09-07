@@ -8,6 +8,7 @@ import androidx.annotation.Nullable;
 
 import java.util.Objects;
 
+import cn.classfun.droidvm.daemon.usb.UsbHostDevice;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
 
 /**
@@ -65,6 +66,23 @@ public final class UsbDeviceTarget {
         if (kind == null) kind = vm == null ? UsbRules.Target.HOST : UsbRules.Target.VM;
         if (kind != UsbRules.Target.VM) return new UsbDeviceTarget(kind, null, null);
         return new UsbDeviceTarget(kind, vm, controller);
+    }
+
+    /**
+     * Where a device is right now, said in the words the menu speaks: the VM that holds it, the
+     * host, or nobody.
+     *
+     * <p>Read off the device's state rather than remembered, because the state is the only copy
+     * of it there is. A device claimed through usbfs that this daemon has no attachment for is
+     * one a VMM is still holding or dying with -- nobody's option, and reported as the host's,
+     * which is the answer that offers the user nothing that is not there.</p>
+     */
+    @NonNull
+    public static UsbDeviceTarget current(@NonNull UsbHostDevice.State state,
+                                          @Nullable String attachedVm,
+                                          @Nullable String attachedController) {
+        if (attachedVm != null) return vm(attachedVm, attachedController);
+        return state == UsbHostDevice.State.IDLE ? sink() : host();
     }
 
     /** Whether two targets say the same thing, so a picker can mark the row that is current. */

@@ -88,6 +88,16 @@ public final class VmEntry {
     }
 
     /**
+     * Whether the VM could take a device right now. Only a running one has a crosvm to ask, so
+     * the management page's menu is built out of these -- a stopped VM is not an answer the
+     * page could carry out, and offering one only to have the daemon refuse it would be a menu
+     * that lies.
+     */
+    public boolean isRunning() {
+        return state == VMState.RUNNING;
+    }
+
+    /**
      * "name (state)" for a picker; the daemon's raw state text when it is one this build has
      * no word for, the bare name when it sent none.
      */

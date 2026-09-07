@@ -51,8 +51,8 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
  * held in four adapters and the master switch at the top, and pushes the whole object back with
  * {@code usb_rules_set}; it never touches the rules file itself. {@code usb_host_list} and
  * {@code vm_list} only give the rows and the pickers something readable to show. While the page
- * is open it listens on the daemon event stream, so a plug, an unplug, an automatic attach or an
- * automatic sink shows up without a reload.</p>
+ * is open it listens on the daemon event stream, so a plug, an unplug or an automatic attach
+ * shows up without a reload.</p>
  */
 public final class UsbRulesActivity extends AppCompatActivity
     implements DaemonConnection.EventListener, UsbRuleAdapter.Listener {
@@ -96,12 +96,41 @@ public final class UsbRulesActivity extends AppCompatActivity
         });
         swEnabled = findViewById(R.id.sw_usb_enabled);
         swEnabled.setOnCheckedChangeListener(() -> {
-            if (!applying) setDirty(true);
+            if (applying) return;
+            if (swEnabled.isChecked()) confirmEnable();
+            else setDirty(true);
         });
         bindList(R.id.list_exact, UsbRuleLayer.EXACT);
         bindList(R.id.list_port, UsbRuleLayer.PORT);
         bindList(R.id.list_device, UsbRuleLayer.DEVICE);
         bindList(R.id.list_any, UsbRuleLayer.ANY);
+    }
+
+    /**
+     * The warning the switch raises on its way on, before the save can act on it.
+     *
+     * <p>Turning passthrough on is not a preference among the rules: it shuts the autoprobe gate,
+     * and from then on a plugged-in device binds no driver of its own and reaches Android only
+     * because a rule sent it there. That is worth saying once, in front of the change, rather
+     * than leaving it to be discovered by a keyboard that stops typing. Refusing puts the switch
+     * back without an edit; turning it off asks nothing, because giving control back is the
+     * direction nobody needs warning about.</p>
+     */
+    private void confirmEnable() {
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.usb_rules_enable_warning_title)
+            .setMessage(R.string.usb_rules_enable_warning_message)
+            .setPositiveButton(android.R.string.ok, (d, w) -> setDirty(true))
+            .setNegativeButton(android.R.string.cancel, (d, w) -> revertEnable())
+            .setOnCancelListener(d -> revertEnable())
+            .show();
+    }
+
+    /** The switch back to off, written the way the daemon's own answer is: not an edit. */
+    private void revertEnable() {
+        applying = true;
+        swEnabled.setChecked(false);
+        applying = false;
     }
 
     private void bindList(int viewId, @NonNull UsbRuleLayer layer) {
@@ -345,14 +374,10 @@ public final class UsbRulesActivity extends AppCompatActivity
                     loadDevices();
                 });
                 break;
-            case "usb_auto_sinked":
-                post(() -> {
-                    snackbar(getString(R.string.usb_rules_event_sinked, deviceLabel(data)));
-                    loadDevices();
-                });
-                break;
             case "usb_auto_failed":
-                post(() -> snackbar(failureText(data)));
+                post(() -> snackbar(getString(R.string.usb_rules_event_failed,
+                    deviceLabel(data), data.optString("vm_name", ""),
+                    data.optString("error", ""))));
                 break;
             case "output":
                 break;
@@ -361,19 +386,6 @@ public final class UsbRulesActivity extends AppCompatActivity
                 if (data.has("state")) post(this::loadVms);
                 break;
         }
-    }
-
-    /**
-     * What went wrong. A failed sink names no VM -- it is a sysfs write, not a VM's business --
-     * so it gets its own sentence rather than one with an empty name in it.
-     */
-    @NonNull
-    private String failureText(@NonNull JSONObject data) {
-        var error = data.optString("error", "");
-        if (UsbRules.Target.SINK.key.equals(data.optString("target", "")))
-            return getString(R.string.usb_rules_event_sink_failed, deviceLabel(data), error);
-        return getString(R.string.usb_rules_event_failed,
-            deviceLabel(data), data.optString("vm_name", ""), error);
     }
 
     /** The plugged-in device an auto event names: by sysfs, else by id, else the id itself. */

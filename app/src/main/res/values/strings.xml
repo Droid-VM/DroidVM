@@ -1635,6 +1635,8 @@
     <string name="usb_rules_unsaved">Unsaved changes</string>
     <string name="usb_rules_enabled">Enable USB passthrough</string>
     <string name="usb_rules_enabled_note">While this is off no rule runs, and every device stays with Android</string>
+    <string name="usb_rules_enable_warning_title">Let DroidVM take over USB?</string>
+    <string name="usb_rules_enable_warning_message">While USB passthrough is on, DroidVM decides where every USB device you plug in goes: nothing binds a driver by itself, and a device reaches Android only if a rule says so.</string>
     <string name="usb_rules_layer_exact">1. Exact (device + port)</string>
     <string name="usb_rules_layer_port">2. Port</string>
     <string name="usb_rules_layer_device">3. Device</string>
@@ -1645,8 +1647,8 @@
     <string name="usb_rules_empty_any">No catch-all rules</string>
     <string name="usb_rules_add">Add rule</string>
     <string name="usb_rules_keep_host">Keep on host</string>
-    <string name="usb_rules_target_sink">Sink (hidden from everything)</string>
-    <string name="usb_rules_target_sink_pick">Sink: hide it from Android and every VM</string>
+    <string name="usb_rules_target_sink">Sink (nobody gets it)</string>
+    <string name="usb_rules_target_sink_pick">Sink: leave the device to nobody</string>
     <string name="usb_rules_target_custom">Custom...</string>
     <string name="usb_rules_custom_target_title">Custom target</string>
     <string name="usb_rules_custom_vm">VM id (UUID)</string>
@@ -1688,20 +1690,16 @@
     <string name="usb_rules_discard_message">The rules have not been saved. Leave without applying them?</string>
     <string name="usb_rules_event_attached">%1$s was attached to %2$s automatically</string>
     <string name="usb_rules_event_failed">Could not attach %1$s to %2$s: %3$s</string>
-    <string name="usb_rules_event_sinked">%1$s was hidden from Android</string>
-    <string name="usb_rules_event_sink_failed">Could not hide %1$s: %2$s</string>
     <string name="usb_devices_title">USB passthrough manager</string>
     <string name="usb_devices_empty">No USB devices are plugged in</string>
-    <string name="usb_devices_apply">Apply</string>
-    <string name="usb_devices_applied">Applied to %1$d device(s)</string>
-    <string name="usb_devices_apply_failed_title">Some devices did not move</string>
-    <string name="usb_devices_apply_failed_fmt" translatable="false">%1$s: %2$s</string>
+    <string name="usb_devices_action_failed_title">The device did not move</string>
     <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
-    <string name="usb_devices_target_host">Do not attach (leave on host)</string>
-    <string name="usb_devices_state_sinked">Hidden from Android and every VM</string>
-    <string name="usb_devices_same_vm">The device is already on that VM; crosvm gives it no other controller to move to</string>
-    <string name="usb_devices_state_sinked_rule">Hidden by rule %1$s[%2$d]</string>
-    <string name="usb_devices_state_pinned">Set by hand; the rules take it back after a replug</string>
-    <string name="usb_devices_discard_message">The devices you picked have not been applied. Leave without applying them?</string>
-    <string name="usb_devices_gone">%1$s was unplugged; the choice made for it is gone</string>
+    <string name="usb_devices_target_host">Host</string>
+    <string name="usb_devices_target_sink">Sink</string>
+    <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
+    <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
+    <string name="usb_devices_state_locked">Set by hand; the rules leave it alone until it is replugged</string>
+    <string name="usb_devices_state_idle">Idle: no driver is bound to it</string>
+    <string name="usb_devices_state_vmuse">Claimed by a virtual machine</string>
+    <string name="usb_devices_sink_kept">%1$s stays with the host: nothing unbinds a driver, so it comes back to nobody only when it is unplugged</string>
 </resources>

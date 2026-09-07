@@ -10,6 +10,7 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import cn.classfun.droidvm.daemon.usb.UsbHostDevice.State;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
 
 /**
@@ -63,6 +64,25 @@ public final class UsbDeviceTargetTest {
         // "the VM's first controller" is not the same answer as naming that controller.
         assertFalse(UsbDeviceTarget.vm("vm-1", null)
             .sameAs(UsbDeviceTarget.vm("vm-1", "xhci-0")));
+    }
+
+    @Test
+    public void aRowsMenuValueIsReadOffTheDeviceState() {
+        // The three the page can show: the VM that holds it, the host, nobody.
+        var onVm = UsbDeviceTarget.current(State.VMUSE, "vm-1", "xhci-0");
+        assertEquals(UsbRules.Target.VM, onVm.kind);
+        assertEquals("vm-1", onVm.vmId);
+        assertEquals("xhci-0", onVm.controller);
+        assertEquals(UsbRules.Target.HOST,
+            UsbDeviceTarget.current(State.HOSTUSE, null, null).kind);
+        assertEquals(UsbRules.Target.SINK, UsbDeviceTarget.current(State.IDLE, null, null).kind);
+    }
+
+    @Test
+    public void aClaimNobodyOwnsReadsAsTheHosts() {
+        // A usbfs claim with no attachment behind it is a VMM still holding the device, or one
+        // dying with it: not an answer the menu offers, and never "nobody has it".
+        assertEquals(UsbRules.Target.HOST, UsbDeviceTarget.current(State.VMUSE, null, null).kind);
     }
 
     @Test

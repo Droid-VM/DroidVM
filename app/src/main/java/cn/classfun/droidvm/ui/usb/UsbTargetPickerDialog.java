@@ -10,6 +10,7 @@ import android.view.LayoutInflater;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputEditText;
@@ -63,32 +64,44 @@ public final class UsbTargetPickerDialog {
     }
 
     /**
-     * Where one device the management page lists should go now.
+     * Where one device the management page lists should go now: the xHCI controllers of the VMs
+     * that are running, then the host, then nobody.
      *
-     * <p>Nothing is typed in here: the page lists what is plugged in, and a VM with no controller
-     * has nothing to attach to, so it is left out rather than offered and refused. A VM that is
-     * not running is offered, with its state in the label -- the daemon answers that it is not
-     * running and the page says so, which is truer than hiding the option.</p>
+     * <p>Nothing is typed in here, and nothing that cannot be done is offered: a VM that is not
+     * running has no crosvm to hand a device to, and one with no controller has nothing to hand
+     * it to, so neither is a row. The other two rows carry the lock in their name, because that
+     * is the whole difference between choosing one of them and the device merely being there --
+     * a locked device is one no rules pass will move again until it is unplugged.</p>
      */
     public static void pickForDevice(@NonNull Context context, @NonNull List<VmEntry> vms,
                                      @NonNull Map<String, List<String>> controllers,
                                      @NonNull OnPicked onPicked) {
         var targets = new ArrayList<UsbDeviceTarget>();
         var labels = new ArrayList<String>();
-        targets.add(UsbDeviceTarget.host());
-        labels.add(context.getString(R.string.usb_devices_target_host));
         for (var vm : vms) {
+            if (!vm.isRunning()) continue;
             var ids = controllers.get(vm.id);
             if (ids == null) continue;
             for (var controller : ids) {
                 targets.add(UsbDeviceTarget.vm(vm.id, controller));
                 labels.add(context.getString(R.string.usb_rules_vm_label_fmt,
-                    vm.label(context), controller));
+                    vm.name, controller));
             }
         }
+        targets.add(UsbDeviceTarget.host());
+        labels.add(lockedLabel(context, R.string.usb_devices_target_host));
         targets.add(UsbDeviceTarget.sink());
-        labels.add(context.getString(R.string.usb_rules_target_sink_pick));
+        labels.add(lockedLabel(context, R.string.usb_devices_target_sink));
         show(context, targets, labels, null, onPicked);
+    }
+
+    /**
+     * The name of a menu row that locks the device, told from the plain word for the state the
+     * device is already in: the button shows the plain word for a state nobody chose.
+     */
+    @NonNull
+    public static String lockedLabel(@NonNull Context context, @StringRes int label) {
+        return context.getString(R.string.usb_devices_locked_fmt, context.getString(label));
     }
 
     /** The list itself; [onCustom] runs for the one row that stands for no target. */

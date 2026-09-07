@@ -1594,6 +1594,8 @@
     <string name="usb_rules_unsaved">尚未保存的更改</string>
     <string name="usb_rules_enabled">启用 USB 直通</string>
     <string name="usb_rules_enabled_note">关闭时不会执行任何直通规则，设备全部留给 Android</string>
+    <string name="usb_rules_enable_warning_title">要让 DroidVM 接管 USB 吗？</string>
+    <string name="usb_rules_enable_warning_message">开启 USB 直通后，插入的每个 USB 设备去哪里都由 DroidVM 决定：设备不会自己挂上驱动，只有规则指定给主机，Android 才拿得到。</string>
     <string name="usb_rules_layer_exact">1. 精确（设备＋port）</string>
     <string name="usb_rules_layer_port">2. port</string>
     <string name="usb_rules_layer_device">3. 设备</string>
@@ -1604,8 +1606,8 @@
     <string name="usb_rules_empty_any">尚无任意规则</string>
     <string name="usb_rules_add">新增规则</string>
     <string name="usb_rules_keep_host">留给 host</string>
-    <string name="usb_rules_target_sink">Sink（隐藏，任何程序都拿不到）</string>
-    <string name="usb_rules_target_sink_pick">Sink：从 Android 和所有虚拟机隐藏</string>
+    <string name="usb_rules_target_sink">Sink（谁都不给）</string>
+    <string name="usb_rules_target_sink_pick">Sink：谁都不给，留着不用</string>
     <string name="usb_rules_target_custom">自定义…</string>
     <string name="usb_rules_custom_target_title">自定义目标</string>
     <string name="usb_rules_custom_vm">虚拟机 id（UUID）</string>
@@ -1641,18 +1643,13 @@
     <string name="usb_rules_discard_message">规则尚未保存，要不应用就离开吗？</string>
     <string name="usb_rules_event_attached">%1$s 已自动接入 %2$s</string>
     <string name="usb_rules_event_failed">%1$s 自动接入 %2$s 失败：%3$s</string>
-    <string name="usb_rules_event_sinked">%1$s 已从 Android 隐藏</string>
-    <string name="usb_rules_event_sink_failed">无法隐藏 %1$s：%2$s</string>
     <string name="usb_devices_title">USB直通管理</string>
     <string name="usb_devices_empty">没有插入的 USB 设备</string>
-    <string name="usb_devices_apply">应用</string>
-    <string name="usb_devices_applied">已应用 %1$d 台</string>
-    <string name="usb_devices_apply_failed_title">有设备没有应用</string>
-    <string name="usb_devices_target_host">不挂载（留在主机）</string>
-    <string name="usb_devices_state_sinked">已从 Android 和所有虚拟机隐藏</string>
-    <string name="usb_devices_same_vm">设备已经在那台虚拟机上，crosvm 没有另一个控制器可以移过去</string>
-    <string name="usb_devices_state_sinked_rule">已按规则 %1$s[%2$d] 隐藏</string>
-    <string name="usb_devices_state_pinned">手动指定，拔除后才恢复规则</string>
-    <string name="usb_devices_discard_message">选好的去向还没应用，要不应用就离开吗？</string>
-    <string name="usb_devices_gone">%1$s 已拔除，暂存的选择已取消</string>
+    <string name="usb_devices_action_failed_title">设备没有移动</string>
+    <string name="usb_devices_target_host">主机</string>
+    <string name="usb_devices_target_sink">Sink</string>
+    <string name="usb_devices_state_locked">手动指定，拔除后才恢复规则</string>
+    <string name="usb_devices_state_idle">闲置：没有挂上任何驱动</string>
+    <string name="usb_devices_state_vmuse">被虚拟机占用中</string>
+    <string name="usb_devices_sink_kept">%1$s 留在主机：这里不会卸载任何驱动，要拔掉重插才会回到谁都不给</string>
 </resources>

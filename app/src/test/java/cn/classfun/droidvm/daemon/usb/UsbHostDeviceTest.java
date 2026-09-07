@@ -6,6 +6,7 @@ package cn.classfun.droidvm.daemon.usb;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Rule;
@@ -193,6 +194,16 @@ public final class UsbHostDeviceTest {
         bindDriver(second, "usb-storage");
         assertEquals(UsbHostDevice.State.VMUSE,
             UsbHostDevice.fromSysfs(dev, "/dev/bus/usb").state());
+    }
+
+    @Test
+    public void aStateReadsBackFromTheKeyItWentOutUnder() {
+        // What the pages do with the wire: the state is the whole of where a device is, so a
+        // key this build has no word for has to say so rather than pass for one of the three.
+        for (var state : UsbHostDevice.State.values())
+            assertEquals(state, UsbHostDevice.State.fromKey(state.key));
+        assertNull(UsbHostDevice.State.fromKey("sinked"));
+        assertNull(UsbHostDevice.State.fromKey(""));
     }
 
     @Test

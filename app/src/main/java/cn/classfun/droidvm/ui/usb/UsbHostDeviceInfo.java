@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.daemon.usb.UsbHostDevice;
 
 /**
  * One entry of {@code usb_host_list} as the two USB pages need it: what the device is, where it
@@ -26,25 +27,6 @@ import cn.classfun.droidvm.R;
  * them, so the rows still describe their rules sensibly.
  */
 public final class UsbHostDeviceInfo {
-    /**
-     * Why a device is deauthorized, when this daemon is the one that did it. A record naming no
-     * layer is one the user asked for directly, which the page says with the pin instead.
-     */
-    public static final class Sink {
-        @Nullable
-        public final UsbRuleLayer layer;
-        /** Its index inside that layer; meaningless when {@link #layer} is null. */
-        public final int index;
-
-        private Sink(@NonNull JSONObject obj) {
-            // The null is checked rather than parsed: opt() hands back org.json's own NULL
-            // sentinel, which reaches the same answer only by failing to be a layer key and
-            // then failing to be a number.
-            layer = obj.isNull("layer") ? null : UsbRuleLayer.fromValue(obj.opt("layer"));
-            index = obj.optInt("index", -1);
-        }
-    }
-
     public final String sysfs;
     public final String vid;
     public final String pid;
@@ -63,19 +45,17 @@ public final class UsbHostDeviceInfo {
      */
     public final int devnum;
     /**
-     * Whether the kernel lets the device be configured at all. False is the sink: nothing for
-     * Android, a host driver or a VM to bind to.
+     * What the device is doing, read off the drivers bound to its interfaces: the host has it,
+     * a VM has it, or nobody does. It is the whole of where the device is -- there is no second
+     * copy of that answer anywhere, in the daemon or here.
      */
-    public final boolean authorized;
+    @NonNull
+    public final UsbHostDevice.State state;
     /**
-     * Pinned by hand: the daemon skips it until it is unplugged.
-     *
-     * <p>The daemon also sends {@code pin}, which says to what -- the host or the sink. It is
-     * deliberately not read: the pages say where the device is from the device itself, and what
-     * the pin adds is only that the rules will not move it, which is this boolean.</p>
+     * Whether the user decided this device by hand, so no rules pass will move it again until
+     * it is unplugged. What they decided is {@link #state}; the lock only says that they did.
      */
-    public final boolean held;
-    public final boolean hostInUse;
+    public final boolean locked;
     @Nullable
     public final String attachedVm;
     @Nullable
@@ -83,9 +63,6 @@ public final class UsbHostDeviceInfo {
     /** Which xHCI controller of that VM it landed on, when the daemon recorded one. */
     @Nullable
     public final String attachedController;
-    /** Why it is hidden, when this daemon hid it. */
-    @Nullable
-    public final Sink sink;
     /** The rule that attached it, when a rule did. */
     @Nullable
     public final UsbRuleLayer autoRuleLayer;
@@ -105,14 +82,14 @@ public final class UsbHostDeviceInfo {
         var wirePort = optText(obj, "port");
         port = wirePort.isEmpty() ? derivePort(sysfs) : wirePort;
         devnum = obj.optInt("devnum", -1);
-        authorized = obj.optBoolean("authorized", true);
-        held = obj.optBoolean("held", false);
-        hostInUse = obj.optBoolean("host_in_use", false);
+        // A state this build cannot read is shown as the host's: that is the answer that
+        // promises the user nothing, and the only one that is safe to be wrong about.
+        var wireState = UsbHostDevice.State.fromKey(obj.optString("state", ""));
+        state = wireState == null ? UsbHostDevice.State.HOSTUSE : wireState;
+        locked = obj.optBoolean("lock", false);
         attachedVm = optNullable(obj, "attached_vm");
         attachedVmName = optNullable(obj, "attached_vm_name");
         attachedController = optNullable(obj, "attached_controller");
-        var hidden = obj.optJSONObject("sink");
-        sink = hidden == null ? null : new Sink(hidden);
         var rule = obj.optJSONObject("auto_rule");
         autoRuleLayer = rule == null ? null : UsbRuleLayer.fromValue(rule.opt("layer"));
         autoRuleIndex = rule == null ? -1 : rule.optInt("index", -1);

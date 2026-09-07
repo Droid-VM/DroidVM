@@ -7,6 +7,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -74,6 +75,20 @@ public final class UsbHostDevice {
 
         State(@NonNull String key) {
             this.key = key;
+        }
+
+        /**
+         * The state a wire key names, or null for a key this build has no word for.
+         *
+         * <p>Read back by the pages, which draw a device's row out of it: the daemon ships in
+         * the same APK, so an unknown key is not a version to bridge but a reading that went
+         * wrong, and a null says so rather than guessing one of the three.</p>
+         */
+        @Nullable
+        public static State fromKey(@NonNull String key) {
+            for (var state : values())
+                if (state.key.equals(key)) return state;
+            return null;
         }
     }
 

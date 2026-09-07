@@ -5,7 +5,6 @@ package cn.classfun.droidvm.ui.usb;
 
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.os.Bundle;
@@ -13,13 +12,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
-import android.view.MenuItem;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
-import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -38,67 +34,57 @@ import java.util.List;
 import java.util.Map;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.daemon.usb.UsbHostDevice;
 import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 
 /**
- * Settings, Virtual Machine, USB passthrough manager: every host USB device, and one button per
+ * Settings, Virtual Machine, USB passthrough manager: every host USB device, and one menu per
  * device saying where it should go.
  *
- * <p>This is the direct action, not a rule. Nothing happens until the tick is pressed, and what
- * it then sends is one {@code usb_set_target} per changed row: the daemon detaches whoever held
- * the device, attaches the new holder or deauthorizes it, and pins it so the next rules pass
- * leaves it alone until the device is unplugged. The rules are neither read nor written here --
- * they are the other page.</p>
+ * <p>This is the direct action, not a rule, and it has no save button: picking a row of the menu
+ * sends one {@code usb_set_target} there and then, and cancelling the menu does nothing. What a
+ * row shows is read from the device itself -- which VM holds it, or the host, or nobody -- so
+ * there is no pending state to keep, nothing to discard on the way out, and no way for the page
+ * to disagree with the daemon about where a device is.</p>
+ *
+ * <p>The two rows that are not a VM carry a lock, because that is what choosing them adds: the
+ * host and "nobody" are states a device can already be in by itself, and asking for one is how
+ * a user says the rules may not decide it again until it is unplugged.</p>
  */
 public final class UsbDevicesActivity extends AppCompatActivity
     implements DaemonConnection.EventListener {
     private static final String TAG = "UsbDevicesActivity";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final List<UsbDeviceRow> rows = new ArrayList<>();
+    private final List<UsbHostDeviceInfo> devices = new ArrayList<>();
     private final List<VmEntry> vms = new ArrayList<>();
     /** Each VM's xHCI controller ids, read from vms.json; see {@link VmEntry#controllersOf}. */
     private final Map<String, List<String>> vmControllers = new HashMap<>();
     private View root;
-    private MaterialToolbar toolbar;
     private TextView tvStatus;
     private TextView tvEmpty;
     private LinearLayout deviceRows;
-    /** Choices the daemon has not been told about yet; guards the back key. */
-    private boolean dirty = false;
     /**
-     * Whether a run of the apply is still going. One request is out at a time and each can spend
-     * seconds inside crosvm's CLI, so a second tap would otherwise start a second chain over the
-     * same rows and report the first one's work as a conflict.
+     * Whether one action is still out. A move can spend seconds inside crosvm's CLI, and a
+     * second one started over the same devices meanwhile would race it -- so every menu on the
+     * page is closed to taps until the daemon has answered, which is also the only way this
+     * page has of saying that something is happening.
      */
-    private boolean applying = false;
+    private boolean acting = false;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_usb_devices);
         root = findViewById(R.id.root);
-        toolbar = findViewById(R.id.toolbar);
+        MaterialToolbar toolbar = findViewById(R.id.toolbar);
         tvStatus = findViewById(R.id.tv_status);
         tvEmpty = findViewById(R.id.tv_empty);
         deviceRows = findViewById(R.id.device_rows);
         toolbar.setTitle(R.string.usb_devices_title);
-        toolbar.setNavigationOnClickListener(v -> confirmExit());
-        toolbar.setOnMenuItemClickListener(this::onMenuItem);
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                confirmExit();
-            }
-        });
-    }
-
-    private boolean onMenuItem(@NonNull MenuItem item) {
-        if (item.getItemId() == R.id.menu_apply) {
-            apply();
-            return true;
-        }
-        return false;
+        // Nothing is held back to be saved, so leaving takes nothing with it and the back key
+        // means what it says everywhere else.
+        toolbar.setNavigationOnClickListener(v -> finish());
     }
 
     @Override
@@ -142,26 +128,9 @@ public final class UsbDevicesActivity extends AppCompatActivity
             .invoke();
     }
 
-    /**
-     * Rebuilds the list, carrying every choice that has not been applied yet across to the
-     * device it was made about. One that is gone is said out loud rather than dropped in
-     * silence: it was about to move something that is no longer there.
-     */
     private void applyDevices(@Nullable JSONArray arr) {
-        var pending = new HashMap<String, UsbDeviceRow>();
-        for (var row : rows) if (row.isChanged()) pending.put(row.key(), row);
-        rows.clear();
-        for (var device : UsbHostDeviceInfo.fromArray(arr)) rows.add(new UsbDeviceRow(device));
-        for (var row : rows) {
-            var previous = pending.remove(row.key());
-            // A choice the new row refuses is one the device has meanwhile answered for itself
-            // -- it landed on that VM -- so it is dropped, and only a device that is gone is
-            // worth saying anything about.
-            if (previous != null) row.want(previous.wanted());
-        }
-        for (var gone : pending.values())
-            snackbar(getString(R.string.usb_devices_gone,
-                UsbDeviceNames.cardTitle(this, gone.device)));
+        devices.clear();
+        devices.addAll(UsbHostDeviceInfo.fromArray(arr));
         showStatus(null);
         renderRows();
     }
@@ -177,7 +146,7 @@ public final class UsbDevicesActivity extends AppCompatActivity
     private void applyVms(@Nullable JSONArray arr) {
         vms.clear();
         vms.addAll(VmEntry.fromArray(arr));
-        // The rows say which VM holds a device by name, so they are worth redrawing.
+        // The rows say which VM holds a device by name, and the menu offers the running ones.
         renderRows();
     }
 
@@ -186,40 +155,31 @@ public final class UsbDevicesActivity extends AppCompatActivity
     private void renderRows() {
         deviceRows.removeAllViews();
         var inflater = LayoutInflater.from(this);
-        for (var row : rows) {
+        for (var device : devices) {
             var view = inflater.inflate(R.layout.item_usb_device, deviceRows, false);
-            bindRow(view, row);
+            bindRow(view, device);
             deviceRows.addView(view);
         }
-        tvEmpty.setVisibility(rows.isEmpty() ? VISIBLE : GONE);
-        refreshDirty();
+        tvEmpty.setVisibility(devices.isEmpty() ? VISIBLE : GONE);
     }
 
-    private void bindRow(@NonNull View view, @NonNull UsbDeviceRow row) {
+    private void bindRow(@NonNull View view, @NonNull UsbHostDeviceInfo device) {
         TextView name = view.findViewById(R.id.tv_device_name);
         TextView id = view.findViewById(R.id.tv_device_id);
         TextView path = view.findViewById(R.id.tv_device_path);
         TextView state = view.findViewById(R.id.tv_device_state);
         MaterialButton target = view.findViewById(R.id.btn_device_target);
-        name.setText(UsbDeviceNames.cardTitle(this, row.device));
-        id.setText(row.device.id);
-        path.setText(getString(R.string.usb_devices_path_fmt, row.device.port, row.device.sysfs));
-        state.setText(stateOf(row.device));
-        // A pinned device is one the rules will not touch again until it is unplugged, and
+        name.setText(UsbDeviceNames.cardTitle(this, device));
+        id.setText(device.id);
+        path.setText(getString(R.string.usb_devices_path_fmt, device.port, device.sysfs));
+        state.setText(stateOf(device));
+        // A locked device is one the rules will not touch again until it is unplugged, and
         // nothing else on the page could tell the user that.
-        view.findViewById(R.id.tv_device_note).setVisibility(row.device.held ? VISIBLE : GONE);
-        target.setText(targetLabel(row.wanted()));
+        view.findViewById(R.id.tv_device_note).setVisibility(device.locked ? VISIBLE : GONE);
+        target.setText(valueOf(device));
+        target.setEnabled(!acting);
         target.setOnClickListener(v -> UsbTargetPickerDialog.pickForDevice(this, vms,
-            vmControllers, picked -> {
-                // Painted from the row, not from the pick: one pick the row refuses, and a
-                // button showing a move nothing will make is worse than no move at all.
-                if (!row.want(picked)) {
-                    toast(getString(R.string.usb_devices_same_vm), LENGTH_SHORT);
-                    return;
-                }
-                target.setText(targetLabel(row.wanted()));
-                refreshDirty();
-            }));
+            vmControllers, picked -> setTarget(device, picked)));
     }
 
     /** Where the device is right now, in the daemon's own words. */
@@ -227,11 +187,16 @@ public final class UsbDevicesActivity extends AppCompatActivity
     private String stateOf(@NonNull UsbHostDeviceInfo device) {
         if (device.attachedVm != null)
             return getString(R.string.usb_rules_state_attached, holderOf(device));
-        var sink = device.sink;
-        if (sink != null && sink.layer != null)
-            return getString(R.string.usb_devices_state_sinked_rule, sink.layer.key, sink.index);
-        if (!device.authorized) return getString(R.string.usb_devices_state_sinked);
-        return getString(R.string.usb_rules_state_host);
+        switch (device.state) {
+            // A usbfs claim this daemon has no attachment for: a VMM still holds it, or one
+            // died holding it and the leftovers have not taken it back yet.
+            case VMUSE:
+                return getString(R.string.usb_devices_state_vmuse);
+            case IDLE:
+                return getString(R.string.usb_devices_state_idle);
+            default:
+                return getString(R.string.usb_rules_state_host);
+        }
     }
 
     /** The VM holding the device, named with the controller it landed on when there is one. */
@@ -243,17 +208,29 @@ public final class UsbDevicesActivity extends AppCompatActivity
             : getString(R.string.usb_rules_vm_label_fmt, name, device.attachedController);
     }
 
-    /** What the button says: where the device will go once the tick is pressed. */
+    /**
+     * What the menu shows as this row's value, read from the device the moment the row is drawn.
+     *
+     * <p>A host or idle device the user never asked for is a value the menu does not offer: it
+     * is where the rules, or the gate, happen to have left the device, and showing it as the
+     * locked option would claim a decision nobody made. So it shows as the plain word, and only
+     * a locked device reads back as one of the two rows that lock.</p>
+     */
     @NonNull
-    private String targetLabel(@NonNull UsbDeviceTarget target) {
-        if (target.kind == UsbRules.Target.SINK)
-            return getString(R.string.usb_rules_target_sink);
-        if (target.kind != UsbRules.Target.VM)
-            return getString(R.string.usb_devices_target_host);
-        var name = vmName(target.vmId);
-        return target.controller == null
-            ? getString(R.string.usb_rules_target_vm, name)
-            : getString(R.string.usb_rules_target_controller, name, target.controller);
+    private String valueOf(@NonNull UsbHostDeviceInfo device) {
+        var current = UsbDeviceTarget.current(device.state, device.attachedVm,
+            device.attachedController);
+        if (current.kind == UsbRules.Target.VM) {
+            var name = vmName(current.vmId);
+            // The same shape the menu's own VM rows carry, so the value the button shows is
+            // recognisable as one of them; a device attached before controllers were recorded
+            // names none, and the bare VM name is the whole of what is known about it.
+            return current.controller == null ? name
+                : getString(R.string.usb_rules_vm_label_fmt, name, current.controller);
+        }
+        var label = current.kind == UsbRules.Target.SINK
+            ? R.string.usb_devices_target_sink : R.string.usb_devices_target_host;
+        return device.locked ? UsbTargetPickerDialog.lockedLabel(this, label) : getString(label);
     }
 
     /** The VM's name, or the bare id for one the daemon no longer lists. */
@@ -264,82 +241,58 @@ public final class UsbDevicesActivity extends AppCompatActivity
         return vmId;
     }
 
-    // Applying
-
-    private void apply() {
-        if (applying) return;
-        var queue = new ArrayList<UsbDeviceRow>();
-        for (var row : rows) if (row.isChanged()) queue.add(row);
-        applying = true;
-        setApplyEnabled(false);
-        applyNext(queue, 0, new ArrayList<>());
-    }
-
-    /** The tick, while a run is out: the page has no other way of saying one is. */
-    private void setApplyEnabled(boolean enabled) {
-        var item = toolbar.getMenu().findItem(R.id.menu_apply);
-        if (item != null) item.setEnabled(enabled);
-    }
+    // The action
 
     /**
-     * One request at a time, each answered before the next is sent: two devices swapping between
-     * the same two VMs would otherwise interleave, and the second attach could land before the
-     * first detach.
+     * One picked row of the menu, sent as it is picked. Choosing what the device already shows
+     * is not a no-op: for the host and for nobody it is what locks the device, which is the
+     * whole reason those two rows exist.
      */
-    private void applyNext(@NonNull List<UsbDeviceRow> queue, int index,
-                           @NonNull List<String> failures) {
-        if (index >= queue.size()) {
-            finishApply(queue.size() - failures.size(), failures);
-            return;
-        }
-        var row = queue.get(index);
-        var target = row.wanted();
+    private void setTarget(@NonNull UsbHostDeviceInfo device, @NonNull UsbDeviceTarget target) {
+        if (acting) return;
+        setActing(true);
         var request = DaemonConnection.getInstance().buildRequest("usb_set_target")
-            .put("device", row.device.sysfs)
+            .put("device", device.sysfs)
             .put("target", target.toRuleTarget());
         if (target.kind == UsbRules.Target.VM) {
             request.put("vm_id", target.vmId);
             if (target.controller != null) request.put("controller", target.controller);
         }
         request
-            .onResponse(resp -> post(() -> applyNext(queue, index + 1, failures)))
-            .onUnsuccessful(resp -> post(() -> {
-                failures.add(failure(row, message(resp)));
-                applyNext(queue, index + 1, failures);
-            }))
-            .onError(e -> post(() -> {
-                failures.add(failure(row, getString(R.string.usb_rules_daemon_unavailable)));
-                applyNext(queue, index + 1, failures);
-            }))
+            .onResponse(resp -> post(() ->
+                finished(device, target, resp.optString("state", ""), null)))
+            .onUnsuccessful(resp -> post(() -> finished(device, target, "", message(resp))))
+            .onError(e -> post(() -> finished(device, target, "",
+                getString(R.string.usb_rules_daemon_unavailable))))
             .invoke();
     }
 
-    @NonNull
-    private String failure(@NonNull UsbDeviceRow row, @NonNull String reason) {
-        return getString(R.string.usb_devices_apply_failed_fmt,
-            UsbDeviceNames.cardTitle(this, row.device), reason);
-    }
-
-    private void finishApply(int applied, @NonNull List<String> failures) {
-        applying = false;
-        setApplyEnabled(true);
-        if (failures.isEmpty())
-            toast(getString(R.string.usb_devices_applied, applied), LENGTH_SHORT);
-        else
+    /**
+     * What the daemon made of it. The state it read back is what the row will show after the
+     * reload, and it is also the one answer worth a sentence: asking for nobody to have a device
+     * the host already has leaves it exactly where it was, because nothing unbinds a driver --
+     * the way back to idle is the gate, on the device's next plug.
+     */
+    private void finished(@NonNull UsbHostDeviceInfo device, @NonNull UsbDeviceTarget target,
+                          @NonNull String state, @Nullable String error) {
+        setActing(false);
+        if (error != null)
             new MaterialAlertDialogBuilder(this)
-                .setTitle(R.string.usb_devices_apply_failed_title)
-                .setMessage(String.join("\n", failures))
+                .setTitle(R.string.usb_devices_action_failed_title)
+                .setMessage(error)
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
-        // The reload is what decides where the page stands: a row that landed now agrees with
-        // the daemon, and one that did not keeps its choice and keeps the page dirty.
+        else if (target.kind == UsbRules.Target.SINK
+            && UsbHostDevice.State.HOSTUSE.key.equals(state))
+            snackbar(getString(R.string.usb_devices_sink_kept,
+                UsbDeviceNames.cardTitle(this, device)));
         loadDevices();
     }
 
-    private void refreshDirty() {
-        dirty = false;
-        for (var row : rows) if (row.isChanged()) dirty = true;
-        toolbar.setSubtitle(dirty ? getString(R.string.usb_rules_unsaved) : null);
+    /** Closes or reopens every menu on the page, which the rows read as they are drawn. */
+    private void setActing(boolean value) {
+        acting = value;
+        renderRows();
     }
 
     // DaemonConnection.EventListener; called off the main thread.
@@ -362,7 +315,6 @@ public final class UsbDevicesActivity extends AppCompatActivity
             }
             case "usb_vm_changed":
             case "usb_auto_attached":
-            case "usb_auto_sinked":
                 post(this::loadDevices);
                 break;
             case "output":
@@ -388,19 +340,6 @@ public final class UsbDevicesActivity extends AppCompatActivity
 
     // Helpers
 
-    private void confirmExit() {
-        if (!dirty) {
-            finish();
-            return;
-        }
-        new MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.usb_rules_discard_title)
-            .setMessage(R.string.usb_devices_discard_message)
-            .setPositiveButton(R.string.back_ask_discard, (d, w) -> finish())
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
-    }
-
     /** A line at the top for what stops the page working; hidden when nothing does. */
     private void showStatus(@Nullable String message) {
         if (message == null || message.isEmpty()) {
@@ -419,10 +358,6 @@ public final class UsbDevicesActivity extends AppCompatActivity
 
     private void snackbar(@NonNull String text) {
         Snackbar.make(root, text, Snackbar.LENGTH_LONG).show();
-    }
-
-    private void toast(@Nullable String text, int duration) {
-        Toast.makeText(this, text, duration).show();
     }
 
     /** Runs on the main thread, unless the page is already going away. */
