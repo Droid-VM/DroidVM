@@ -43,7 +43,8 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
 import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
-import cn.classfun.droidvm.ui.usb.UsbSubjectPickerDialog;
+import cn.classfun.droidvm.ui.usb.UsbRuleEditDialog;
+import cn.classfun.droidvm.ui.usb.UsbRuleZoneDialog;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
@@ -466,8 +467,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             var id = new VMPeripheralConfig(items.get(pos)).getControllerId();
             if (id.isEmpty()) return;
             var store = xhciHost.bindings();
-            boolean anyTaken = !store.rows(id, UsbRuleLayer.ANY).isEmpty();
-            UsbSubjectPickerDialog.show(context, xhciHost.hostDevices(), anyTaken,
+            // The zone, then the same edit dialog the rules page opens. No target is asked for
+            // afterwards: a rule bound to this card has exactly one place to send a device, and
+            // it is the controller the card is.
+            UsbRuleZoneDialog.show(context, xhciHost.hostDevices(),
                 (layer, deviceId, port) -> {
                     store.add(id, layer, new Row(deviceId, port, null, id));
                     notifyItemChangedSafe(holder.getBindingAdapterPosition());
@@ -499,18 +502,25 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             MaterialButton value = view.findViewById(R.id.btn_xhci_binding);
             MaterialButton remove = view.findViewById(R.id.btn_xhci_binding_remove);
             value.setText(rowLabel(layer, row));
-            // The catch-all row is every device no earlier rule claimed: there is nothing to
-            // pick, so the value is text on a button rather than a picker.
-            value.setClickable(layer.needsSubject());
-            if (layer.needsSubject())
-                value.setOnClickListener(v -> UsbSubjectPickerDialog.pick(context, layer,
-                    xhciHost.hostDevices(), (picked, id, port) -> {
+            // Every row, the catch-all one included: it matches everything and so has nothing
+            // to pick, but the dialog is still where deleting a rule lives.
+            value.setOnClickListener(v -> UsbRuleEditDialog.edit(context, layer,
+                xhciHost.hostDevices(), row.id, row.port, new UsbRuleEditDialog.Listener() {
+                    @Override
+                    public void onConfirm(@Nullable String id, @Nullable String port) {
                         // An edit of the rule, not a new one: it keeps the place it had, which
-                        // inside a layer is its priority.
-                        store.replace(controllerId, picked, index,
+                        // inside a zone is its priority.
+                        store.replace(controllerId, layer, index,
                             row.edited(id, port, controllerId));
                         notifyItemChangedSafe(holder.getBindingAdapterPosition());
-                    }));
+                    }
+
+                    @Override
+                    public void onDelete() {
+                        store.remove(controllerId, layer, index);
+                        notifyItemChangedSafe(holder.getBindingAdapterPosition());
+                    }
+                }));
             remove.setOnClickListener(v -> {
                 store.remove(controllerId, layer, index);
                 notifyItemChangedSafe(holder.getBindingAdapterPosition());
