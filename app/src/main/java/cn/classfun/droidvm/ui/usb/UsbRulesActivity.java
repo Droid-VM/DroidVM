@@ -373,7 +373,7 @@ public final class UsbRulesActivity extends AppCompatActivity
 
     private void askTarget(@NonNull UsbRuleLayer layer, @Nullable String id,
                            @Nullable String port) {
-        UsbTargetPickerDialog.pick(this, layer, vms, vmControllers, target -> {
+        UsbTargetPickerDialog.pick(this, vms, vmControllers, null, target -> {
             var rule = DataItem.newObject();
             if (layer.hasId) rule.set("id", id);
             if (layer.hasPort) rule.set("port", port);

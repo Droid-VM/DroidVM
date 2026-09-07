@@ -1679,6 +1679,8 @@
          the management page says where it is, but the answer is the same answer. -->
     <string name="usb_target_host">Host</string>
     <string name="usb_target_idle">Idle</string>
+    <string name="usb_rules_target_title">Edit attach target</string>
+    <string name="usb_rules_attach_to">Attach to\u2026</string>
     <string name="usb_rules_edit_title">Edit match rule</string>
     <string name="usb_rules_add_title">Add match rule</string>
     <string name="usb_rules_field_id">Device</string>

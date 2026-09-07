@@ -304,8 +304,13 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     }
 
     private void pickTarget(@NonNull UsbRuleViewHolder holder) {
-        if (holder.getBindingAdapterPosition() == RecyclerView.NO_POSITION) return;
-        UsbTargetPickerDialog.pick(context, layer, vms, vmControllers, target -> {
+        int at = holder.getBindingAdapterPosition();
+        if (at == RecyclerView.NO_POSITION) return;
+        var rule = items.get(at);
+        // Opened on what the rule says now, so the dialog is an edit rather than a fresh ask.
+        var current = UsbDeviceTarget.of(rule.optString("target", null),
+            rule.optString("vm", null), rule.optString("controller", null));
+        UsbTargetPickerDialog.pick(context, vms, vmControllers, current, target -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             applyTarget(items.get(pos), target);

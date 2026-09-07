@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.daemon.usb.UsbRules;
+import cn.classfun.droidvm.lib.ui.IconItemAdapter;
+import cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget;
 
 /**
  * Where a device goes: the host, the sink, or one VM's controller. A rule says it about whatever
@@ -45,24 +48,85 @@ public final class UsbTargetPickerDialog {
      *                    rule written before controllers existed says, and the card calls it out
      *                    in red rather than the picker hiding a VM the user can see.
      */
-    public static void pick(@NonNull Context context, @NonNull UsbRuleLayer layer,
-                            @NonNull List<VmEntry> vms,
+    public static void pick(@NonNull Context context, @NonNull List<VmEntry> vms,
                             @NonNull Map<String, List<String>> controllers,
-                            @NonNull OnPicked onPicked) {
+                            @Nullable UsbDeviceTarget current, @NonNull OnPicked onPicked) {
         var targets = new ArrayList<UsbDeviceTarget>();
         var labels = new ArrayList<String>();
+        var icons = new ArrayList<Integer>();
         // The controllers first: sending a device somewhere is the reason a rule is written at
-        // all, and the two answers that send it nowhere read as the end of the list rather than
-        // as the head of it. Sink before host, because they are ordered by how much the rule
-        // takes away -- and in the catch-all zone, where host is refused, that leaves the list
-        // ending on the only answer it has.
-        for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels);
+        // all. Then the VM this app cannot see, typed in, because it is one of those answers
+        // too. The two that send it nowhere end the list, ordered by how much they take away.
+        for (var vm : vms) addVm(context, vm, controllers.get(vm.id), targets, labels, icons);
+        var customAt = targets.size();
+        labels.add(context.getString(R.string.usb_rules_target_custom));
+        icons.add(R.drawable.ic_edit);
+        targets.add(null);
         targets.add(UsbDeviceTarget.sink());
         labels.add(context.getString(R.string.usb_target_idle));
+        icons.add(R.drawable.ic_sleep);
         targets.add(UsbDeviceTarget.host());
         labels.add(context.getString(R.string.usb_target_host));
-        labels.add(context.getString(R.string.usb_rules_target_custom));
-        show(context, targets, labels, () -> askCustom(context, onPicked), onPicked);
+        icons.add(R.drawable.ic_android);
+
+        var view = LayoutInflater.from(context).inflate(R.layout.dialog_usb_target_edit, null);
+        DropdownRowWidget dd = view.findViewById(R.id.dd_edit_target);
+        var chosen = new UsbDeviceTarget[]{current};
+        var dialog = new MaterialAlertDialogBuilder(context)
+            .setTitle(R.string.usb_rules_target_title)
+            .setView(view)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, (d, w) -> {
+                if (chosen[0] != null) onPicked.onPicked(chosen[0]);
+            })
+            .show();
+        Runnable render = () -> {
+            dd.setText(chosen[0] == null ? "" : labelOf(context, chosen[0], vms));
+            var ok = dialog.getButton(BUTTON_POSITIVE);
+            // A rule with no target is not a rule; the answer is refused here rather than
+            // written and explained afterwards.
+            if (ok != null) ok.setEnabled(chosen[0] != null);
+        };
+        dd.setAdapter(IconItemAdapter.create(context, labels, unbox(icons)));
+        dd.setOnItemClickListener((parent, v, which, id) -> {
+            if (which == customAt) {
+                // The list wrote its own row into the field on the way here; the value is
+                // whatever the prompt answers, or what was there before if it is dismissed.
+                render.run();
+                askCustom(context, target -> {
+                    chosen[0] = target;
+                    render.run();
+                });
+                return;
+            }
+            chosen[0] = targets.get(which);
+            render.run();
+        });
+        render.run();
+    }
+
+    /** The int[] IconItemAdapter wants, from the list the rows were built into. */
+    @NonNull
+    private static int[] unbox(@NonNull List<Integer> icons) {
+        var out = new int[icons.size()];
+        for (var i = 0; i < out.length; i++) out[i] = icons.get(i);
+        return out;
+    }
+
+    /** What the field says for a target: the row it stands for, in the same words. */
+    @NonNull
+    private static String labelOf(@NonNull Context context, @NonNull UsbDeviceTarget target,
+                                  @NonNull List<VmEntry> vms) {
+        if (target.kind == UsbRules.Target.HOST)
+            return context.getString(R.string.usb_target_host);
+        if (target.kind == UsbRules.Target.SINK)
+            return context.getString(R.string.usb_target_idle);
+        var name = target.vmId == null ? "" : target.vmId;
+        for (var vm : vms)
+            if (vm.id.equals(target.vmId)) name = vm.name;
+        return target.controller == null
+            ? context.getString(R.string.usb_rules_no_controller, name)
+            : context.getString(R.string.usb_rules_vm_label_fmt, name, target.controller);
     }
 
     /**
@@ -111,7 +175,9 @@ public final class UsbTargetPickerDialog {
                              @NonNull List<String> labels, @Nullable Runnable onCustom,
                              @NonNull OnPicked onPicked) {
         new MaterialAlertDialogBuilder(context)
-            .setTitle(R.string.usb_rules_field_target)
+            // The management page's own list, which asks where a device goes now rather than
+            // editing a rule that will decide it later.
+            .setTitle(R.string.usb_rules_attach_to)
             .setItems(labels.toArray(new String[0]), (dialog, which) -> {
                 if (which < targets.size()) onPicked.onPicked(targets.get(which));
                 else if (onCustom != null) onCustom.run();
@@ -122,16 +188,21 @@ public final class UsbTargetPickerDialog {
     private static void addVm(@NonNull Context context, @NonNull VmEntry vm,
                               @Nullable List<String> controllers,
                               @NonNull List<UsbDeviceTarget> targets,
-                              @NonNull List<String> labels) {
-        var name = vm.label(context);
+                              @NonNull List<String> labels, @Nullable List<Integer> icons) {
+        // The name alone, not the state beside it: a rule is written for whenever it matches,
+        // and whether the VM happens to be stopped while somebody types it says nothing about
+        // where the device should go when it is not.
+        var name = vm.name;
         if (controllers == null || controllers.isEmpty()) {
             targets.add(UsbDeviceTarget.vm(vm.id, null));
             labels.add(context.getString(R.string.usb_rules_no_controller, name));
+            if (icons != null) icons.add(R.drawable.ic_nav_vm);
             return;
         }
         for (var controller : controllers) {
             targets.add(UsbDeviceTarget.vm(vm.id, controller));
             labels.add(context.getString(R.string.usb_rules_vm_label_fmt, name, controller));
+            if (icons != null) icons.add(R.drawable.ic_nav_vm);
         }
     }
 

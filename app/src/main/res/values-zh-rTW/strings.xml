@@ -1629,7 +1629,9 @@
     <string name="usb_rules_edit_done">完成</string>
     <string name="usb_rules_reorder">調整順序</string>
     <string name="usb_target_host">主機</string>
-    <string name="usb_target_idle">Idle</string>
+    <string name="usb_target_idle">閒置</string>
+    <string name="usb_rules_target_title">編輯 附加目標</string>
+    <string name="usb_rules_attach_to">附加到\u2026</string>
     <string name="usb_rules_edit_title">編輯 匹配規則</string>
     <string name="usb_rules_add_title">新增 匹配規則</string>
     <string name="usb_rules_field_id">識別</string>
