@@ -113,6 +113,14 @@ public final class UsbRuleEditDialog {
         builder.setPositiveButton(android.R.string.ok,
             (d, w) -> listener.onConfirm(layer.hasId ? id : null, layer.hasPort ? port : null));
         dialog = builder.show();
+        // Before the window animates away rather than after it is gone: a popup is its own
+        // window, and one still open while its dialog fades is a window the compositor is left
+        // holding with nothing to anchor it. Cancelling by touching outside is the path that
+        // shows it, because that dismissal starts on the DOWN rather than on a button.
+        dialog.setOnDismissListener(d -> {
+            if (ddId != null) ddId.dismissPopup();
+            if (ddPort != null) ddPort.dismissPopup();
+        });
         render();
     }
 

@@ -87,6 +87,11 @@ public final class DropdownRowWidget extends FrameLayout {
         dropdownView.setFocusableInTouchMode(false);
     }
 
+    /** Closes the popup now, for an owner that knows its window is about to go. */
+    public void dismissPopup() {
+        dropdownView.dismissDropDown();
+    }
+
     @Override
     protected void onDetachedFromWindow() {
         // A popup is its own window and outlives the row that anchors it.
