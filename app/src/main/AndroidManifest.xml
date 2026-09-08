@@ -253,6 +253,20 @@
             android:theme="@style/Theme.DroidVM.NoActionBar"
             android:windowSoftInputMode="adjustNothing" />
 
+        <activity
+            android:name=".ui.usb.UsbRulesActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustNothing" />
+
+        <activity
+            android:name=".ui.usb.UsbDevicesActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustNothing" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

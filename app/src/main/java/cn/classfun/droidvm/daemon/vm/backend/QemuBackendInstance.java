@@ -50,6 +50,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
+import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class QemuBackendInstance extends VMBackendInstance {
@@ -371,16 +372,53 @@ public final class QemuBackendInstance extends VMBackendInstance {
         args.add("virtio-keyboard-pci,disable-legacy=on,disable-modern=off");
     }
 
+    /**
+     * One qemu-xhci per xHCI controller the config carries, with that controller's port counts.
+     *
+     * <p>QEMU is the backend that can honour several controllers and both counts, so it reads the
+     * list rather than a boolean: a card that says two ports must not silently get fifteen. The
+     * first controller keeps the historic {@code usb-bus} id and the guest's USB pointer and
+     * keyboard, so a Windows guest that enumerated devices on that bus does not see them move
+     * because a second controller was added.</p>
+     *
+     * <p>No controller means no {@code qemu-xhci} and no USB tablet or keyboard either, which is
+     * also what a config with no {@code "usb"} key at all gets: {@link VMXhciConfig#migrate} runs
+     * in the constructor of every config either process reads and turns an absent key into
+     * {@code false}, so this backend can no longer tell that shape from a VM whose owner turned
+     * USB off. It used to default such a config to on; the guest keeps its pointer and keyboard
+     * through virtio ({@link #buildInputCommand}), and adding the card back says so explicitly.</p>
+     */
     private void buildUsbCommand(@NonNull List<String> args) {
-        if (!config.item.optBoolean("usb", true)) return;
-        args.add("-device");
-        args.add("qemu-xhci,id=usb-bus,p2=15,p3=15");
-        if (hasAnyScreen()) {
+        var controllers = VMXhciConfig.listControllers(config.item);
+        if (controllers.isEmpty()) return;
+        for (int i = 0; i < controllers.size(); i++) {
+            var controller = controllers.get(i);
+            var busId = i == 0 ? "usb-bus" : fmt("usb-%s", controller.getControllerId());
             args.add("-device");
-            args.add("usb-tablet,bus=usb-bus.0");
-            args.add("-device");
-            args.add("usb-kbd,bus=usb-bus.0");
+            args.add(fmt("qemu-xhci,id=%s,p2=%d,p3=%d", busId,
+                qemuPorts(controller.getUsb2Ports(), busId),
+                qemuPorts(controller.getUsb3Ports(), busId)));
+            if (i == 0) addUsbInput(args, busId);
         }
+    }
+
+    /** The guest's USB pointer and keyboard, which only a VM with a screen has a use for. */
+    private void addUsbInput(@NonNull List<String> args, @NonNull String busId) {
+        if (!hasAnyScreen()) return;
+        args.add("-device");
+        args.add(fmt("usb-tablet,bus=%s.0", busId));
+        args.add("-device");
+        args.add(fmt("usb-kbd,bus=%s.0", busId));
+    }
+
+    /**
+     * qemu-xhci refuses a root hub with no ports, while the editor offers 0 because that is the
+     * range the user asked for; a zero therefore becomes one rather than a VM that will not start.
+     */
+    private static int qemuPorts(int ports, @NonNull String busId) {
+        if (ports >= 1) return Math.min(ports, VMXhciConfig.MAX_PORTS);
+        Log.w(TAG, fmt("xHCI %s asked for 0 ports; qemu-xhci needs at least one", busId));
+        return 1;
     }
 
     private void buildSharedDirCommand(@NonNull List<String> args) {

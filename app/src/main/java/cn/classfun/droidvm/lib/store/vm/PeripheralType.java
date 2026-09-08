@@ -42,7 +42,20 @@ public enum PeripheralType implements StringEnum {
      * <p>Unavailable until crosvm carries the device; the host half (Camera2 NDK through
      * {@code android_camera}) exists, the virtio-media capture device on top of it does not.</p>
      */
-    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
+    /**
+     * xHCI USB controller: the root the guest's USB devices hang off.
+     *
+     * <p>What is attached to it is not stored here. Host devices arrive through the app-global
+     * automatic attach rules, which name this controller as their target -- which VM gets a
+     * device when two of them want it is a property of the rules, and a per-VM list has nowhere
+     * to say it.</p>
+     *
+     * <p>Appended last on purpose: the ordinal is used as a transient menu item id when a
+     * peripheral is added, and storage is by {@code name()}, so appending is the only position
+     * that leaves every stored config reading as what it says.</p>
+     */
+    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;

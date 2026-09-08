@@ -37,6 +37,11 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     protected final VMConfig config;
     protected final String name;
     protected final RingBuffer buffer = new RingBuffer(MAX_BUFFER_SIZE);
+    /**
+     * How many bytes have ever been appended, so a reader can ask for what came after a point.
+     * Guarded by [buffer].
+     */
+    private long appended = 0;
     private Thread readerThread;
     private OutputStream logWriter = null;
     private boolean disableSave = false;
@@ -86,7 +91,10 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     }
 
     public void appendBuffer(@NonNull byte[] data, int off, int len) {
-        buffer.adds(data, off, len);
+        synchronized (buffer) {
+            buffer.adds(data, off, len);
+            appended += len;
+        }
         if (disableSave || !persistentLogEnabled) return;
         try {
             if (logWriter == null) {
@@ -155,6 +163,34 @@ public abstract class ConsoleStream implements Closeable, JSONSerialize {
     @SuppressWarnings("unused")
     public String getBuffer() {
         return new String(buffer.peekAll(), UTF_8);
+    }
+
+    /**
+     * A point in the stream for {@link #since}: how many bytes have been appended so far. Constant
+     * time, so taking one before an operation whose outcome may need the log costs nothing.
+     */
+    public long mark() {
+        synchronized (buffer) {
+            return appended;
+        }
+    }
+
+    /**
+     * Everything appended after [mark] was taken, as far as the buffer still holds it: it keeps
+     * the last {@link #MAX_BUFFER_SIZE} bytes, so a mark older than that yields all of them.
+     */
+    @NonNull
+    public String since(long mark) {
+        byte[] all;
+        long total;
+        synchronized (buffer) {
+            all = buffer.peekAll();
+            total = appended;
+        }
+        var count = total - mark;
+        if (count <= 0) return "";
+        if (count >= all.length) return new String(all, UTF_8);
+        return new String(all, all.length - (int) count, (int) count, UTF_8);
     }
 
     @NonNull

@@ -29,6 +29,9 @@ public final class CardItemListView extends LinearLayout {
     private MaterialButton addButton;
     private CardItemAdapter<?> adapter;
     private boolean reorderable = false;
+    /** Kept so a card can lift itself from a handle; null until a reorderable list attaches one. */
+    @Nullable
+    private ItemTouchHelper touchHelper = null;
     private boolean dragging = false;
 
     public CardItemListView(@NonNull Context context) {
@@ -148,7 +151,17 @@ public final class CardItemListView extends LinearLayout {
                 }
             }
         };
-        new ItemTouchHelper(callback).attachToRecyclerView(listView);
+        touchHelper = new ItemTouchHelper(callback);
+        touchHelper.attachToRecyclerView(listView);
+    }
+
+    /**
+     * Lifts [holder] now, for a card with a drag handle of its own. The long press stays: this
+     * is the same drag started by a touch that says so, rather than by a press-and-wait a user
+     * has to be told about before they can find it.
+     */
+    public void startDrag(@NonNull RecyclerView.ViewHolder holder) {
+        if (touchHelper != null) touchHelper.startDrag(holder);
     }
 
     public void setAdapter(@Nullable CardItemAdapter<?> adapter) {
