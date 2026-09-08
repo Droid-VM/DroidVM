@@ -437,6 +437,8 @@
     <string name="edit_vm_boot_menu_boot_in">启动 (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">记住此选择</string>
     <string name="edit_vm_boot_menu_fallback">未找到固定的引导项“%1$s”,已改用默认</string>
+    <string name="edit_vm_boot_menu_pseudo">改用伪非保护启动</string>
+    <string name="edit_vm_boot_menu_windows_only">这个镜像启动的是 Windows，直接内核启动无法带起它。请改用下方的内置内核，或把启动协议改成 UEFI。</string>
     <string name="edit_vm_boot_protected_dma_warn">此内核未启用 CONFIG_DMA_RESTRICTED_POOL。\n在受保护 VM 下客户机无法与主机共享 DMA 内存,virtio 设备(磁盘/网络)将无法启动。\n请改用内置内核,或重新编译并启用该选项。</string>
     <string name="kernel_analysis_title">内核分析</string>
     <string name="kernel_analysis_analyze">分析</string>
@@ -598,6 +600,13 @@
     <string name="vm_kernel_module_reason_memory">内存超过 2 GB 的虚拟机需要</string>
     <string name="vm_kernel_module_start_anyway">仍要开机</string>
     <string name="vm_kernel_module_start_countdown">仍要开机 (%1$d)</string>
+    <string name="vm_protected_guest_dma_title">内核在这里碰不到 virtio</string>
+    <string name="vm_protected_guest_dma_message">这台虚拟机是保护模式，内存借给了 hypervisor，virtio 必须经由受限 DMA 池中转。这个启动项要加载的内核编译时没有开 CONFIG_DMA_RESTRICTED_POOL，起来后会看不到磁盘也没有网络。\n\n伪非保护改成共享内存，发行版原本的内核就能用。仍要启动的话，就跟原本的启动一模一样。</string>
+    <string name="vm_protected_guest_usb_title">Windows 在这里无法使用 USB 直通</string>
+    <string name="vm_protected_guest_usb_message">这台虚拟机是保护模式，内存借给了 hypervisor，直通的 USB 没有地方映射它的传输缓冲区。Windows 客户机不支持这种情况，指向这台虚拟机的附加规则不会有任何作用。\n\n伪非保护改成共享内存，直通就能工作。仍要启动的话，就跟原本的启动一模一样。</string>
+    <string name="vm_protected_guest_start_anyway">仍要启动</string>
+    <string name="vm_protected_guest_start_countdown">仍要启动 (%1$d)</string>
+    <string name="vm_protected_guest_pseudo">这次改用伪非保护</string>
     <string name="vm_kernel_module_manage">管理模块</string>
     <string name="vm_kernel_module_manage_unavailable">请到“设置 \u2192 内核模块”加载</string>
     <string name="vm_compressed_disk_start_anyway">仍要启动</string>

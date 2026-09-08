@@ -437,6 +437,8 @@
     <string name="edit_vm_boot_menu_boot_in">啟動 (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">記住此選擇</string>
     <string name="edit_vm_boot_menu_fallback">未找到固定的引導項“%1$s”,已改用預設</string>
+    <string name="edit_vm_boot_menu_pseudo">改用偽非保護啟動</string>
+    <string name="edit_vm_boot_menu_windows_only">這個映像啟動的是 Windows，直接核心啟動無法帶起它。請改用下方的內建核心，或把啟動協定改成 UEFI。</string>
     <string name="edit_vm_boot_protected_dma_warn">此核心未啟用 CONFIG_DMA_RESTRICTED_POOL。\n在受保護 VM 下客戶機無法與主機共享 DMA 記憶體,virtio 裝置(磁碟/網路)將無法啟動。\n請改用內建核心,或重新編譯並啟用該選項。</string>
     <string name="kernel_analysis_title">核心分析</string>
     <string name="kernel_analysis_analyze">分析</string>
@@ -598,6 +600,13 @@
     <string name="vm_kernel_module_reason_memory">記憶體超過 2 GB 的虛擬機器需要</string>
     <string name="vm_kernel_module_start_anyway">仍要開機</string>
     <string name="vm_kernel_module_start_countdown">仍要開機 (%1$d)</string>
+    <string name="vm_protected_guest_dma_title">核心在這裡碰不到 virtio</string>
+    <string name="vm_protected_guest_dma_message">這台虛擬機器是保護模式，記憶體借給了 hypervisor，virtio 必須經由受限 DMA 池中轉。這個開機項要載入的核心編譯時沒有開 CONFIG_DMA_RESTRICTED_POOL，開起來會看不到磁碟也沒有網路。\n\n偽非保護改成共享記憶體，發行版原本的核心就能用。仍要啟動的話，就跟原本的啟動一模一樣。</string>
+    <string name="vm_protected_guest_usb_title">Windows 在這裡無法使用 USB 直通</string>
+    <string name="vm_protected_guest_usb_message">這台虛擬機器是保護模式，記憶體借給了 hypervisor，直通的 USB 沒有地方對應它的傳輸緩衝區。Windows 客體不支援這種情況，指向這台虛擬機器的附加規則不會有任何作用。\n\n偽非保護改成共享記憶體，直通就能運作。仍要啟動的話，就跟原本的啟動一模一樣。</string>
+    <string name="vm_protected_guest_start_anyway">仍要啟動</string>
+    <string name="vm_protected_guest_start_countdown">仍要啟動 (%1$d)</string>
+    <string name="vm_protected_guest_pseudo">這次改用偽非保護</string>
     <string name="vm_kernel_module_manage">管理模組</string>
     <string name="vm_kernel_module_manage_unavailable">請到「設定 \u2192 內核模組」載入</string>
     <string name="vm_compressed_disk_start_anyway">仍要啟動</string>
