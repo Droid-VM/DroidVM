@@ -65,6 +65,8 @@ extern void command_register_powerbtn(CommandRegistry &registry);
 
 extern void command_register_sleepbtn(CommandRegistry &registry);
 
+extern void command_register_usb(CommandRegistry &registry);
+
 extern void command_register_version(CommandRegistry &registry);
 
 extern void command_register_help(CommandRegistry &registry);

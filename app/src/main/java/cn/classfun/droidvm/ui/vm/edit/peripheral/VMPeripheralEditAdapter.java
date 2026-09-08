@@ -37,8 +37,15 @@ import cn.classfun.droidvm.lib.store.vm.SoundBuffer;
 import cn.classfun.droidvm.lib.store.vm.SoundMode;
 import cn.classfun.droidvm.lib.store.vm.SoundPurpose;
 import cn.classfun.droidvm.lib.store.vm.SoundUnderrun;
+import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
+import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
+import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
+import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
+import cn.classfun.droidvm.ui.usb.UsbRuleEditDialog;
+import cn.classfun.droidvm.ui.usb.UsbRuleZoneDialog;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemAdapter;
 
 /**
@@ -59,6 +66,33 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
      */
     private static final int MAX_PER_DIRECTION = 4;
 
+    /**
+     * What an xHCI card needs and its row cannot hold: the bindings, which are not VM config at
+     * all but a view of the app-global attach rules; the host devices they are described
+     * against; the backend, which decides whether the crosvm limits apply; and the minting of a
+     * controller id, which needs the VM-wide counter the tab carries.
+     */
+    interface XhciHost {
+        @NonNull
+        XhciBindingStore bindings();
+
+        @NonNull
+        List<UsbHostDeviceInfo> hostDevices();
+
+        @NonNull
+        VMBackend backend();
+
+        /**
+         * Whether the app-wide master switch is on. Off means the rows below are saved and then
+         * ignored at boot, which is worth saying on the card that shows them.
+         */
+        boolean usbPassthroughEnabled();
+
+        /** A new controller entry, id minted and counter bumped. */
+        @NonNull
+        DataItem createController();
+    }
+
     /** Asks for RECORD_AUDIO before a capture-capable device is added; set by the tab. */
     private Consumer<Runnable> micPermissionGate;
     /** Asks for CAMERA before a camera device is added, and drops the add if refused. */
@@ -67,6 +101,12 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     // time it scrolls past. Dropped by refreshHostDevices().
     private List<HostAudioDevices.Entry> outputCache;
     private List<HostAudioDevices.Entry> inputCache;
+    private XhciHost xhciHost;
+    // True while onBindViewHolder is programmatically setting view values. A port picker fires
+    // its value-changed listener from inside configure(), and on a recycled row that is still
+    // the PREVIOUS bind's listener -- which would write this row's port count into whatever the
+    // last one was. Same idiom as VMSerialEditAdapter.
+    private boolean updatingViews = false;
 
     public VMPeripheralEditAdapter(@NonNull Context context) {
         super(context);
@@ -78,6 +118,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     public void setCameraPermissionGate(@Nullable Consumer<Runnable> gate) {
         this.cameraPermissionGate = gate;
+    }
+
+    void setXhciHost(@Nullable XhciHost host) {
+        this.xhciHost = host;
     }
 
     @NonNull
@@ -118,6 +162,16 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 appendItem(VMPeripheralConfig.createDefaultVirtioSound().item);
                 return;
             }
+            if (type == PeripheralType.XHCI_USB) {
+                // Through the tab, because minting the id is also what moves the VM's counter
+                // past it: a controller that handed itself one could hand out the same id twice.
+                if (xhciHost == null) return;
+                var entry = xhciHost.createController();
+                xhciHost.bindings().addController(
+                    new VMPeripheralConfig(entry).getControllerId());
+                appendItem(entry);
+                return;
+            }
             var config = new VMPeripheralConfig(DataItem.newObject());
             config.setType(type);
             appendItem(config.item);
@@ -130,9 +184,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             else add.run();
             return;
         }
-        // Anything that can capture needs the host mic permission asked for, and both kinds now
-        // start with a microphone on them.
-        if (micPermissionGate != null) {
+        // Anything that can capture needs the host mic permission asked for, and the two sound
+        // kinds both start with a microphone on them. A USB controller captures nothing itself
+        // -- what hangs off it is the host's device, already the host's to grant.
+        if (type != PeripheralType.XHCI_USB && micPermissionGate != null) {
             micPermissionGate.accept(add);
             return;
         }
@@ -151,6 +206,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupIntelHda.setVisibility(type == PeripheralType.INTEL_HDA ? VISIBLE : GONE);
         holder.groupVirtioCamera.setVisibility(
             type == PeripheralType.VIRTIO_CAMERA ? VISIBLE : GONE);
+        holder.groupXhci.setVisibility(type == PeripheralType.XHCI_USB ? VISIBLE : GONE);
 
         switch (type) {
             case VIRTIO_SOUND:
@@ -162,12 +218,20 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             case VIRTIO_CAMERA:
                 bindVirtioCamera(holder, peripheral);
                 break;
+            case XHCI_USB:
+                bindXhci(holder, peripheral, position);
+                break;
         }
 
         holder.btnDelete.setOnClickListener(v -> {
             int pos = holder.getBindingAdapterPosition();
-            if (pos != RecyclerView.NO_POSITION)
-                removeItem(pos);
+            if (pos == RecyclerView.NO_POSITION) return;
+            // A controller's bindings go with it: they name a controller that will not exist
+            // after this save, and nothing else can reach them once the card is gone.
+            var gone = new VMPeripheralConfig(items.get(pos));
+            if (gone.getType() == PeripheralType.XHCI_USB && xhciHost != null)
+                xhciHost.bindings().removeController(gone.getControllerId());
+            removeItem(pos);
         });
     }
 
@@ -352,6 +416,223 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 notifyItemChangedSafe(pos);
             });
         });
+    }
+
+    /**
+     * The controller card: which controller it is, what the rules bind to it, and how many root
+     * ports it offers.
+     *
+     * <p>The four zones are not this VM's config. They are the app-global attach rules seen
+     * through this controller, loaded once when the editor opened and pushed as a diff when it
+     * saves -- so the rows survive the global rules page being open at the same time. Everything
+     * here edits the working copy the tab holds; nothing reaches the daemon until save.</p>
+     */
+    private void bindXhci(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral,
+        int position
+    ) {
+        // The card's shared warning line belongs to the host-endpoint cards, and a recycled row
+        // would otherwise arrive here still showing the last one's.
+        holder.tvWarning.setVisibility(GONE);
+        var controllerId = peripheral.getControllerId();
+        // Only worth saying when there is more than one: that is the only case where a rule
+        // below could have meant the other card.
+        boolean named = !controllerId.isEmpty() && countControllers() > 1;
+        holder.tvXhciId.setVisibility(named ? VISIBLE : GONE);
+        holder.tvXhciId.setText(controllerId);
+
+        boolean loaded = xhciHost != null && xhciHost.bindings().isLoaded();
+        holder.tvXhciNote.setText(loaded
+            ? R.string.edit_vm_xhci_rules_note : R.string.usb_rules_daemon_unavailable);
+        // Only once the rules were actually read: a page that never got an answer does not know
+        // the switch is off, and saying so would be a warning made up out of a failed request.
+        holder.tvXhciPassthroughOff.setVisibility(
+            loaded && !xhciHost.usbPassthroughEnabled() ? VISIBLE : GONE);
+        // Nothing to pick from and nowhere to save it to: an unreachable daemon leaves the zones
+        // empty rather than letting the page write rules it cannot push.
+        holder.btnXhciAdd.setEnabled(loaded && !controllerId.isEmpty());
+
+        int exactRows = bindZone(holder, controllerId, UsbRuleLayer.EXACT, holder.xhciZoneExact);
+        int portRows = bindZone(holder, controllerId, UsbRuleLayer.PORT, holder.xhciZonePort);
+        int deviceRows =
+            bindZone(holder, controllerId, UsbRuleLayer.DEVICE, holder.xhciZoneDevice);
+        int anyRows = bindZone(holder, controllerId, UsbRuleLayer.ANY, holder.xhciZoneAny);
+        // A rule separates two layers that both have rows. Anything else -- a line above the
+        // first row, below the last, or between two empty layers -- would divide nothing.
+        holder.xhciDividerExact.setVisibility(
+            exactRows > 0 && portRows + deviceRows + anyRows > 0 ? VISIBLE : GONE);
+        holder.xhciDividerPort.setVisibility(
+            portRows > 0 && deviceRows + anyRows > 0 ? VISIBLE : GONE);
+        holder.xhciDividerDevice.setVisibility(
+            deviceRows > 0 && anyRows > 0 ? VISIBLE : GONE);
+
+        updatingViews = true;
+        try {
+            holder.btnUsb2Ports.configure(
+                XhciPortCount.class, XhciPortCount.of(peripheral.getUsb2Ports()));
+            holder.btnUsb3Ports.configure(
+                XhciPortCount.class, XhciPortCount.of(peripheral.getUsb3Ports()));
+        } finally {
+            updatingViews = false;
+        }
+        holder.btnUsb2Ports.setOnValueChangedListener(
+            (oldVal, newVal) -> onPortsPicked(holder, false, (XhciPortCount) newVal));
+        holder.btnUsb3Ports.setOnValueChangedListener(
+            (oldVal, newVal) -> onPortsPicked(holder, true, (XhciPortCount) newVal));
+
+        holder.btnXhciAdd.setOnClickListener(v -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION || xhciHost == null) return;
+            var id = new VMPeripheralConfig(items.get(pos)).getControllerId();
+            if (id.isEmpty()) return;
+            var store = xhciHost.bindings();
+            // The zone, then the same edit dialog the rules page opens. No target is asked for
+            // afterwards: a rule bound to this card has exactly one place to send a device, and
+            // it is the controller the card is.
+            UsbRuleZoneDialog.show(context, xhciHost.hostDevices(),
+                (layer, deviceId, port) -> {
+                    store.add(id, layer, new Row(deviceId, port, null, id));
+                    notifyItemChangedSafe(holder.getBindingAdapterPosition());
+                });
+        });
+
+        updateXhciWarnings(holder, peripheral, position);
+    }
+
+    /**
+     * Rebuilds one zone's rows, the way a sound card rebuilds a direction.
+     *
+     * <p>A row is identified by its place in the zone rather than by what it says: two identical
+     * rules in one layer are two rules, and removing one has to remove exactly one.</p>
+     *
+     * @return how many rows the zone ended up with, which is what decides the rules around it
+     */
+    private int bindZone(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull String controllerId,
+        @NonNull UsbRuleLayer layer, @NonNull LinearLayout container
+    ) {
+        container.removeAllViews();
+        if (xhciHost == null || controllerId.isEmpty()) return 0;
+        var store = xhciHost.bindings();
+        var rows = store.rows(controllerId, layer);
+        var inflater = LayoutInflater.from(container.getContext());
+        for (int i = 0; i < rows.size(); i++) {
+            final int index = i;
+            final var row = rows.get(i);
+            var view = inflater.inflate(R.layout.item_xhci_binding, container, false);
+            TextView label = view.findViewById(R.id.tv_xhci_binding_layer);
+            MaterialButton value = view.findViewById(R.id.btn_xhci_binding);
+            MaterialButton remove = view.findViewById(R.id.btn_xhci_binding_remove);
+            // Which layer this rule is in, because the list it sits in no longer says so.
+            label.setText(layer.titleRes);
+            value.setText(rowLabel(layer, row));
+            // Every row, the catch-all one included: it matches everything and so has nothing
+            // to pick, but the dialog is still where deleting a rule lives.
+            value.setOnClickListener(v -> UsbRuleEditDialog.edit(context, layer,
+                xhciHost.hostDevices(), row.id, row.port, new UsbRuleEditDialog.Listener() {
+                    @Override
+                    public void onConfirm(@Nullable String id, @Nullable String port) {
+                        // An edit of the rule, not a new one: it keeps the place it had, which
+                        // inside a zone is its priority.
+                        store.replace(controllerId, layer, index,
+                            row.edited(id, port, controllerId));
+                        notifyItemChangedSafe(holder.getBindingAdapterPosition());
+                    }
+
+                    @Override
+                    public void onDelete() {
+                        store.remove(controllerId, layer, index);
+                        notifyItemChangedSafe(holder.getBindingAdapterPosition());
+                    }
+                }));
+            remove.setOnClickListener(v -> {
+                store.remove(controllerId, layer, index);
+                notifyItemChangedSafe(holder.getBindingAdapterPosition());
+            });
+            container.addView(view);
+        }
+        return rows.size();
+    }
+
+    /** What a bound rule is about, with the layer itself left to the label beside it. */
+    @NonNull
+    private String rowLabel(@NonNull UsbRuleLayer layer, @NonNull Row row) {
+        var id = row.id == null ? "" : row.id;
+        var port = row.port == null ? "" : row.port;
+        switch (layer) {
+            case EXACT:
+                return context.getString(R.string.usb_rules_row_exact_fmt,
+                    port, deviceName(id), id);
+            case PORT:
+                return context.getString(R.string.usb_rules_row_port_fmt, port);
+            case DEVICE:
+                return context.getString(R.string.usb_rules_row_device_fmt,
+                    deviceName(id), id);
+            default:
+                return context.getString(R.string.usb_rules_any_device);
+        }
+    }
+
+    /** The name of the device with this id if it is plugged in now, the id itself if not. */
+    @NonNull
+    private String deviceName(@NonNull String id) {
+        if (xhciHost != null)
+            for (var device : xhciHost.hostDevices())
+                if (device.id.equals(id)) return device.displayName(context);
+        return context.getString(R.string.usb_rules_unknown_device, id);
+    }
+
+    private void onPortsPicked(
+        @NonNull VMPeripheralEditViewHolder holder, boolean usb3, @NonNull XhciPortCount value
+    ) {
+        if (updatingViews) return;
+        int pos = holder.getBindingAdapterPosition();
+        if (pos == RecyclerView.NO_POSITION) return;
+        var peripheral = new VMPeripheralConfig(items.get(pos));
+        // A recycled row's picker can still be carrying the previous bind's listener, and the
+        // row under it may not be a controller at all any more.
+        if (peripheral.getType() != PeripheralType.XHCI_USB) return;
+        if (usb3) peripheral.setUsb3Ports(value.ports());
+        else peripheral.setUsb2Ports(value.ports());
+        // The warning, not the whole row: rebinding here would re-enter configure() and set the
+        // picker from the value it just reported.
+        updateXhciWarnings(holder, peripheral, pos);
+    }
+
+    /**
+     * What this build will make of the card, said in red without refusing anything.
+     *
+     * <p>Both limits are crosvm's, and the backend is a pull rather than a push -- nothing tells
+     * this tab that the picker in the General tab moved. It does not have to: reaching this card
+     * means leaving that tab, and {@code onTabShown} rebinds the list on the way in.</p>
+     */
+    private void updateXhciWarnings(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral,
+        int position
+    ) {
+        boolean crosvm = xhciHost != null && xhciHost.backend() == VMBackend.CROSVM;
+        // The first controller in array order is the one crosvm emulates; the rest are skipped,
+        // which is the same order the backend picks by.
+        holder.tvXhciWarnMulti.setVisibility(
+            crosvm && controllerIndexOf(position) > 0 ? VISIBLE : GONE);
+        boolean odd = peripheral.getUsb2Ports() != VMXhciConfig.DEFAULT_PORTS
+            || peripheral.getUsb3Ports() != VMXhciConfig.DEFAULT_PORTS;
+        holder.tvXhciWarnPorts.setVisibility(crosvm && odd ? VISIBLE : GONE);
+    }
+
+    /** Where this card sits among the controllers alone, ignoring every other kind of row. */
+    private int controllerIndexOf(int position) {
+        int index = 0;
+        for (int i = 0; i < position && i < items.size(); i++)
+            if (new VMPeripheralConfig(items.get(i)).getType() == PeripheralType.XHCI_USB) index++;
+        return index;
+    }
+
+    private int countControllers() {
+        int count = 0;
+        for (int i = 0; i < items.size(); i++)
+            if (new VMPeripheralConfig(items.get(i)).getType() == PeripheralType.XHCI_USB) count++;
+        return count;
     }
 
     private boolean hasCamera(@NonNull String key) {
@@ -585,6 +866,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     }
 
     private void notifyItemChangedSafe(int position) {
+        if (position == RecyclerView.NO_POSITION) return;
         try {
             notifyItemChanged(position);
         } catch (Exception ignored) {
@@ -598,6 +880,15 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     public void refreshHostDevices() {
         outputCache = null;
         inputCache = null;
+        notifyDataSetChanged();
+    }
+
+    /**
+     * Rebinds every card because something the tab holds for them changed: the USB rules landed,
+     * or the plugged-in devices the controller rows are described against did.
+     */
+    @SuppressLint("NotifyDataSetChanged")
+    void refreshBindings() {
         notifyDataSetChanged();
     }
 }

@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     One rule, in the card the management page uses: what it is on the left, where the device
+     goes on the right. The two pages are one feature and now read as one.
+
+     The left column is three lines and which three is the zone's business. The bold ones are
+     what the rule MATCHES on, the only part of it that is stored, and they are the only ones
+     that open a picker; the plain ones describe the device that matcher resolves to right now
+     and are read-only, because a rule that matched on a name would stop matching when the name
+     changed. A catch-all rule matches on nothing, so it says so in one line and has no other.
+
+     The drag handle and the delete button are the edit mode's, hidden until it is on. Order
+     inside a zone is priority, so it has to be movable without the long-press nobody finds,
+     while a permanent pair of arrows on every card is three controls competing for a row that
+     only has one thing to say.
+-->
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="16dp"
+    android:layout_marginEnd="16dp"
+    android:layout_marginBottom="8dp"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="0dp"
+    app:strokeColor="?attr/colorOutlineVariant"
+    app:strokeWidth="1dp">
+
+    <!-- Everything the card says lives in here, so a rule that can never be reached fades as
+         one thing while the card's own stroke stays where it is: the row is still a row, still
+         draggable and still editable, it just no longer claims to decide anything. -->
+    <LinearLayout
+        android:id="@+id/rule_content"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/iv_rule_drag"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
+                android:layout_marginEnd="12dp"
+                android:contentDescription="@string/usb_rules_reorder"
+                android:src="@drawable/ic_drag_handle"
+                android:visibility="gone"
+                app:tint="?attr/colorOnSurfaceVariant"
+                tools:visibility="visible" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tv_rule_line1"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    tools:text="Match port: 1.1" />
+
+                <TextView
+                    android:id="@+id/tv_rule_line2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    tools:text="Device: 152d:a583:DD564198838E9" />
+
+                <TextView
+                    android:id="@+id/tv_rule_line3"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    tools:text="USB 3.0 UNITEK" />
+
+            </LinearLayout>
+
+            <!-- Sized as the management page's, so the same answer is the same control on both:
+                 48dp tall, wide enough for a VM and its controller, ellipsised past that. -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_rule_target"
+                style="@style/Widget.Material3.Button.IconButton.Filled.Tonal"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="12dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:maxWidth="200dp"
+                android:minWidth="120dp"
+                android:textSize="12sp"
+                tools:text="Debian testing (xhci-0)" />
+
+            <ImageButton
+                android:id="@+id/btn_rule_delete"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_marginStart="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/usb_rules_delete"
+                android:src="@drawable/ic_delete"
+                android:visibility="gone"
+                app:tint="?attr/colorError"
+                tools:ignore="TouchTargetSizeCheck"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tv_rule_warning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?attr/colorError"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:text="Unknown VM (2f0a...)"
+            tools:visibility="visible" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

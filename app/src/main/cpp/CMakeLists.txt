@@ -27,6 +27,7 @@ set(CONSOLE_SOURCES
     console/commands/resume.cpp
     console/commands/powerbtn.cpp
     console/commands/sleepbtn.cpp
+    console/commands/usb.cpp
     console/commands/version.cpp
     console/commands/help.cpp
 )

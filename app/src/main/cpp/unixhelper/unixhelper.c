@@ -7,6 +7,7 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <linux/netlink.h>
 #include <android/log.h>
 #include <android/log.h>
 #include <stdio.h>
@@ -215,6 +216,97 @@ JNI_PREFIX(nativePollIn)(
     if (pfd.revents & (POLLERR | POLLHUP | POLLNVAL)) return -2;
     if (pfd.revents & POLLIN) return 1;
     return 0;
+}
+
+/*
+ * The kernel's uevent multicast socket, which is the only place a driver bind or unbind is
+ * reported. Everything else this daemon watches moves a node under /dev/bus/usb and so raises an
+ * inotify event, but binding or unbinding a driver moves nothing: the interface directory stays,
+ * the device node stays, and only the driver symlink comes or goes. Measured on the phone --
+ * unbinding usbhid from 1-1.6:1.0 left the node set byte-identical and still pushed the kernel's
+ * uevent sequence number by five.
+ *
+ * Group 1 is the kernel's own group; nl_pid 0 asks the kernel to pick an address, so several
+ * sockets in one process do not collide. The receive buffer is raised best-effort because a
+ * whole tree re-enumerating is a burst and a dropped datagram is a missed change.
+ */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeUeventOpen)(
+    JNIEnv *env, jclass clazz
+) {
+    (void) env;
+    (void) clazz;
+    int fd = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT);
+    if (fd < 0) {
+        LOGW("uevent socket() failed: %s", strerror(errno));
+        return -1;
+    }
+    int size = 1 << 20;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &size, sizeof(size)) < 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    struct sockaddr_nl addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.nl_family = AF_NETLINK;
+    addr.nl_pid = 0;
+    addr.nl_groups = 1;
+    if (bind(fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        LOGW("uevent bind() failed: %s", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    LOGI("uevent socket -> %d", fd);
+    return fd;
+}
+
+/*
+ * poll() over two descriptors, for a reader that has to be stoppable without a standing timeout.
+ * Returns a bitmask -- 1 for the first, 2 for the second -- 0 on timeout, -1 on error and -2 when
+ * either side hung up. The second descriptor is normally the read end of a pipe somebody writes a
+ * byte to in order to end the loop, which is what keeps a watcher that may live for the whole
+ * daemon from waking the phone on a timer just to ask whether it should stop.
+ */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativePollIn2)(
+    JNIEnv *env, jclass clazz, jint fd1, jint fd2, jint timeoutMs
+) {
+    (void) env;
+    (void) clazz;
+    struct pollfd pfds[2];
+    pfds[0].fd = fd1;
+    pfds[0].events = POLLIN;
+    pfds[0].revents = 0;
+    pfds[1].fd = fd2;
+    pfds[1].events = POLLIN;
+    pfds[1].revents = 0;
+    int ret;
+    do {
+        ret = poll(pfds, 2, timeoutMs);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) return -1;
+    if (ret == 0) return 0;
+    if ((pfds[0].revents | pfds[1].revents) & (POLLERR | POLLHUP | POLLNVAL)) return -2;
+    jint mask = 0;
+    if (pfds[0].revents & POLLIN) mask |= 1;
+    if (pfds[1].revents & POLLIN) mask |= 2;
+    return mask;
+}
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeWrite)(
+    JNIEnv *env, jclass clazz, jint fd, jbyteArray buf, jint len
+) {
+    (void) clazz;
+    if (!buf) return -1;
+    jint arrLen = (*env)->GetArrayLength(env, buf);
+    if (len > arrLen) len = arrLen;
+    jbyte *bytes = (*env)->GetByteArrayElements(env, buf, NULL);
+    if (!bytes) return -1;
+    ssize_t n;
+    do {
+        n = write(fd, bytes, len);
+    } while (n < 0 && errno == EINTR);
+    (*env)->ReleaseByteArrayElements(env, buf, bytes, JNI_ABORT);
+    return (jint) n;
 }
 
 JNIEXPORT jint JNICALL

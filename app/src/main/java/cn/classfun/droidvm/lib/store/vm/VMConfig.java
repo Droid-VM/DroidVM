@@ -50,6 +50,10 @@ public class VMConfig extends DataConfig {
         // Configs from before "serial_ports" implicitly meant "COM1 = app console, rest sinks";
         // make that explicit so every reader sees the same list.
         VMSerialConfig.ensureDefaults(item);
+        // Configs from before the xHCI peripheral say "usb": true; turn that into the one
+        // controller it meant, so a USB rule has something to point at. Deterministic, because
+        // the daemon runs this too on the config the app pushes and never writes the result back.
+        VMXhciConfig.migrate(item);
     }
 
     /**
@@ -68,7 +72,6 @@ public class VMConfig extends DataConfig {
         item.set("pmu", NEW_VM_DEFAULT_PMU);
         item.set("rng", NEW_VM_DEFAULT_RNG);
         item.set("smt", NEW_VM_DEFAULT_SMT);
-        item.set("usb", NEW_VM_DEFAULT_USB);
         item.set("sandbox", false);
         item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
         item.set("strace", false);
@@ -148,7 +151,10 @@ public class VMConfig extends DataConfig {
 
         var peripherals = DataItem.newArray();
         peripherals.append(VMPeripheralConfig.createDefaultVirtioSound().item);
-        item.set("peripherals", peripherals);
+        item.set(VMXhciConfig.KEY_PERIPHERALS, peripherals);
+        // Through the minting path rather than a literal entry, so the id and the counter behind
+        // it are the same "xhci-0" the migration of an old config produces.
+        if (NEW_VM_DEFAULT_USB) VMXhciConfig.addController(item);
         VMSerialConfig.ensureDefaults(item);
         return config;
     }

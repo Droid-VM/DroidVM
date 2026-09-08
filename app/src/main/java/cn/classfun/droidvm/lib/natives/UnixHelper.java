@@ -48,7 +48,22 @@ public final class UnixHelper {
 
     public static native int nativePollIn(int fd, int timeoutMs);
 
+    /**
+     * The kernel's uevent multicast socket, or -1. A driver bind or unbind moves no node, so it
+     * raises no inotify event anywhere: this is the only report of one there is.
+     */
+    public static native int nativeUeventOpen();
+
+    /**
+     * poll() over two descriptors: 1 for the first readable, 2 for the second, 3 for both, 0 on
+     * timeout, -1 on error, -2 on hangup. For a reader that must be stoppable at once without
+     * waking on a timer to ask whether it should stop.
+     */
+    public static native int nativePollIn2(int fd1, int fd2, int timeoutMs);
+
     public static native int nativeRead(int fd, @NonNull byte[] buf, int len);
+
+    public static native int nativeWrite(int fd, @NonNull byte[] buf, int len);
 
     @SuppressLint("UnsafeDynamicallyLoadedCode")
     public static void load() {
