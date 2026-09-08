@@ -1,5 +1,9 @@
 languages:
-  - tag: en
+  # en-US, not a bare en: the platform filters an app locale against the locales the app has
+  # resource folders for, and English lives in the unqualified values/ rather than a values-en,
+  # so a bare en is refused and the system's first supported locale is used instead -- which on
+  # a device listing Chinese after English is Chinese. See app/src/main/res/xml/locales_config.
+  - tag: en-US
     name: English
 
   - tag: zh-Hans-CN
