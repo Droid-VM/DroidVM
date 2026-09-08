@@ -63,6 +63,13 @@ public final class BootEntries {
         public final boolean isDefault;
         @NonNull
         public final String source;
+        /**
+         * What booting this entry means: {@code linux} (kernel + initrd, which is what direct
+         * boot loads) or {@code windows} (an install that only firmware can start). An entry
+         * from an older lbx carries no type and is a Linux one.
+         */
+        @NonNull
+        public final String type;
         @NonNull
         public final String kernel;
         @NonNull
@@ -82,6 +89,8 @@ public final class BootEntries {
             version = emptyToNull(optStr(o, "version"));
             isDefault = o.optBoolean("default", false);
             source = optStr(o, "source");
+            var kind = optStr(o, "type");
+            type = kind.isEmpty() ? TYPE_LINUX : kind;
             kernel = optStr(o, "kernel");
             cmdline = optStr(o, "cmdline");
             cmdlineFixed = optStr(o, "cmdline_fixed");
@@ -135,6 +144,34 @@ public final class BootEntries {
         public boolean lacksRestrictedDmaPool() {
             return Boolean.FALSE.equals(dmaRestrictedPool);
         }
+
+        /** Direct boot loads a kernel, so only a Linux entry is one it can start. */
+        public boolean isLinux() {
+            return TYPE_LINUX.equals(type);
+        }
+
+        public boolean isWindows() {
+            return TYPE_WINDOWS.equals(type);
+        }
+    }
+
+    public static final String TYPE_LINUX = "linux";
+    public static final String TYPE_WINDOWS = "windows";
+
+    /** The entries direct boot can actually start, in listing order. */
+    @NonNull
+    public List<Entry> linuxEntries() {
+        var out = new ArrayList<Entry>();
+        for (var e : entries)
+            if (e.isLinux()) out.add(e);
+        return out;
+    }
+
+    /** True when the image holds a Windows install (bootable only under firmware). */
+    public boolean hasWindows() {
+        for (var e : entries)
+            if (e.isWindows()) return true;
+        return false;
     }
 
     @Nullable
@@ -272,32 +309,53 @@ public final class BootEntries {
      * The entry a boot would use right now: pinned entry by exact id,
      * then exact title, falling back to the bootloader default -- the
      * same cascade as the daemon's BootPlan.
+     *
+     * <p>Only Linux entries are candidates, there as here. A Windows entry
+     * is in the list because the image boots it -- on a dual-boot disk it
+     * may even be what the bootloader would pick -- but direct boot loads
+     * a kernel, and that entry has none.</p>
      */
     @Nullable
     public Entry resolve(@Nullable BootConfig.ImageEntry pinned) {
         if (pinned != null) {
-            for (var e : entries)
+            for (var e : linuxEntries())
                 if (pinned.id != null && pinned.id.equals(e.id)) return e;
-            for (var e : entries)
+            for (var e : linuxEntries())
                 if (pinned.title != null && pinned.title.equals(e.title)) return e;
         }
         return defaultEntry();
     }
 
-    /** True when {@code pinned} no longer matches any entry. */
+    /** True when {@code pinned} no longer matches any entry direct boot can start. */
     public boolean isFallback(@Nullable BootConfig.ImageEntry pinned) {
         if (pinned == null) return false;
-        for (var e : entries) {
+        for (var e : linuxEntries()) {
             if (pinned.id != null && pinned.id.equals(e.id)) return false;
             if (pinned.title != null && pinned.title.equals(e.title)) return false;
         }
         return true;
     }
 
+    /**
+     * What the image's own bootloader would start, whatever type it is -- lbx resolves that the
+     * way the bootloader would (GRUB's {@code set default}, a BLS pin, version order).
+     *
+     * <p>This is the entry that comes up under UEFI, where the guest boots itself and nothing
+     * here picks anything. {@link #defaultEntry()} is the direct-boot answer instead: it takes
+     * over from the bootloader, so it can only pick an entry that has a kernel.</p>
+     */
     @Nullable
-    public Entry defaultEntry() {
+    public Entry bootloaderDefault() {
         for (var e : entries)
             if (e.isDefault) return e;
         return entries.isEmpty() ? null : entries.get(0);
+    }
+
+    @Nullable
+    public Entry defaultEntry() {
+        var bootable = linuxEntries();
+        for (var e : bootable)
+            if (e.isDefault) return e;
+        return bootable.isEmpty() ? null : bootable.get(0);
     }
 }
