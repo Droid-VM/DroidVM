@@ -406,7 +406,6 @@
     <string name="edit_vm_uefi_firmware">UEFI 韌體(留空 = 內建 EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">內建 EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">選擇 UEFI 韌體</string>
-    <string name="edit_vm_uefi_firmware_hint">自定義韌體僅對 QEMU 後端生效\ncrosvm 始終使用內建 EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI 變數(留空 = 內建 EDK2 變數)</string>
     <string name="edit_vm_uefi_vars_browse_title">選擇 UEFI 變數檔案</string>
     <string name="edit_vm_uefi_vars_too_large">對於 crosvm,pflash 鏡像大小不能超過 %1$d MiB</string>
