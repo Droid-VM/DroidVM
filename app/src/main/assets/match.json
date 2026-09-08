@@ -1,7 +1,11 @@
 {
   "version": 1,
   "modules": {
-    "gh_hugepage_reserve": { "soc_vendor": ["qualcomm"] },
+    "gh_hugepage_reserve": {
+      "soc_vendor": ["qualcomm"],
+      "kernel_below": "6.18",
+      "comment": "the reserve exists because Gunyah could not take guest memory without migrating it out of CMA; Qualcomm fixed that in 6.18, where the module is no longer needed"
+    },
     "gunyah_host_share": { "soc_vendor": ["qualcomm"] },
     "gunyah_kvcalloc": { "soc_vendor": ["qualcomm"] },
     "gh_unmovable": { "soc_vendor": ["qualcomm"] },
