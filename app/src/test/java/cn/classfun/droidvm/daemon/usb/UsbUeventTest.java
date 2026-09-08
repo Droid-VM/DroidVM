@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -36,9 +37,9 @@ public final class UsbUeventTest {
     @Test
     public void anInterfaceBindCarriesTheDriverThatTookIt() {
         var raw = message(
-            "bind@" + IFACE_PATH,
+            fmt("bind@%s", IFACE_PATH),
             "ACTION=bind",
-            "DEVPATH=" + IFACE_PATH,
+            fmt("DEVPATH=%s", IFACE_PATH),
             "SUBSYSTEM=usb",
             "DEVTYPE=usb_interface",
             "DRIVER=usbhid",
@@ -58,9 +59,9 @@ public final class UsbUeventTest {
     @Test
     public void anInterfaceUnbindCarriesNoDriver() {
         var raw = message(
-            "unbind@" + IFACE_PATH,
+            fmt("unbind@%s", IFACE_PATH),
             "ACTION=unbind",
-            "DEVPATH=" + IFACE_PATH,
+            fmt("DEVPATH=%s", IFACE_PATH),
             "SUBSYSTEM=usb",
             "DEVTYPE=usb_interface",
             "PRODUCT=bda/1100/101",
@@ -81,9 +82,9 @@ public final class UsbUeventTest {
     public void aRootHubAddIsAUsbDeviceNamedAfterItsBus() {
         var path = "/devices/platform/soc/a600000.ssusb/a600000.dwc3/xhci-hcd.1.auto/usb1";
         var raw = message(
-            "add@" + path,
+            fmt("add@%s", path),
             "ACTION=add",
-            "DEVPATH=" + path,
+            fmt("DEVPATH=%s", path),
             "SUBSYSTEM=usb",
             "DEVTYPE=usb_device",
             "PRODUCT=1d6b/2/606",
@@ -103,11 +104,11 @@ public final class UsbUeventTest {
      */
     @Test
     public void aMessageFromAnotherSubsystemIsNotRead() {
-        var path = IFACE_PATH + "/usbmisc/hiddev0";
+        var path = fmt("%s/usbmisc/hiddev0", IFACE_PATH);
         var raw = message(
-            "remove@" + path,
+            fmt("remove@%s", path),
             "ACTION=remove",
-            "DEVPATH=" + path,
+            fmt("DEVPATH=%s", path),
             "SUBSYSTEM=usbmisc",
             "MAJOR=180",
             "MINOR=96",
@@ -118,7 +119,7 @@ public final class UsbUeventTest {
 
     @Test
     public void aMessageWithoutTheKeysItNeedsIsNotRead() {
-        var raw = message("bind@" + IFACE_PATH, "SUBSYSTEM=usb", "DEVTYPE=usb_interface");
+        var raw = message(fmt("bind@%s", IFACE_PATH), "SUBSYSTEM=usb", "DEVTYPE=usb_interface");
         assertNull(UsbUevent.parse(raw, raw.length));
         var empty = new byte[0];
         assertNull(UsbUevent.parse(empty, 0));
@@ -128,7 +129,7 @@ public final class UsbUeventTest {
     @Test
     public void onlyTheBytesThisDatagramBroughtAreRead() {
         var raw = message(
-            "ACTION=bind", "DEVPATH=" + IFACE_PATH, "SUBSYSTEM=usb", "DRIVER=usbhid");
+            "ACTION=bind", fmt("DEVPATH=%s", IFACE_PATH), "SUBSYSTEM=usb", "DRIVER=usbhid");
         var buffer = new byte[8192];
         System.arraycopy(raw, 0, buffer, 0, raw.length);
         // What a previous, longer message left behind, which a reader that trusted the buffer

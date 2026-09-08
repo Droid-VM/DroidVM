@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.usb;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -110,7 +112,7 @@ final class UsbUevent {
     @Override
     public String toString() {
         return driver.isEmpty()
-            ? action + " " + name
-            : action + " " + name + " (" + driver + ")";
+            ? fmt("%s %s", action, name)
+            : fmt("%s %s (%s)", action, name, driver);
     }
 }
