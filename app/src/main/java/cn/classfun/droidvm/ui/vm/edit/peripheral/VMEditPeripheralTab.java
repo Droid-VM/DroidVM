@@ -77,6 +77,12 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
     private long xhciNext = 0;
     /** A push is in flight; a second Save would otherwise merge against a stale read. */
     private boolean pushing = false;
+    /**
+     * The master switch as the daemon last reported it. True until told otherwise, which is what
+     * an absent "enabled" means to the daemon as well: a card must not claim passthrough is off
+     * on the strength of a read that has not come back.
+     */
+    private boolean usbEnabled = true;
 
     public VMEditPeripheralTab(VMEditActivity parent, View view) {
         super(parent, view);
@@ -120,6 +126,10 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         // session load, and reading it again here would throw away rows the user just added.
         if (adapter != null) adapter.refreshHostDevices();
         loadHostDevices();
+        // The master switch is the exception to that: it lives on the rules page, it is not a
+        // row, and reading it back cannot lose an edit -- so the warning it drives is refreshed
+        // rather than left at what it said when the editor opened.
+        refreshUsbEnabled();
     }
 
     /** Whether the unsaved peripheral rows give the guest a host microphone. */
@@ -221,6 +231,11 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         } catch (Exception ignored) {
         }
         return VMBackend.DEFAULT;
+    }
+
+    @Override
+    public boolean usbPassthroughEnabled() {
+        return usbEnabled;
     }
 
     @NonNull
@@ -357,12 +372,33 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         }
         DaemonConnection.getInstance().buildRequest("usb_rules_get")
             .onResponse(resp -> post(() -> {
-                bindings.load(rowsOf(resp.optJSONObject("rules")), controllers, vmId);
+                var rules = resp.optJSONObject("rules");
+                usbEnabled = rules == null || rules.optBoolean("enabled", true);
+                bindings.load(rowsOf(rules), controllers, vmId);
                 if (adapter != null) adapter.refreshBindings();
             }))
             // A page that could not read the rules pushes nothing at save: the cards say the
             // daemon is not there and refuse to add, which is better than a save that would
             // truncate every rule the user has.
+            .onUnsuccessful(resp -> Log.w(TAG, fmt("usb_rules_get: %s", message(resp))))
+            .onError(e -> Log.w(TAG, "usb_rules_get failed", e))
+            .invoke();
+    }
+
+    /**
+     * The master switch alone, for a tab that is being shown again: the rules page may have been
+     * visited in between. Nothing else of the response is used -- the rows on this page are the
+     * ones the user has been editing, and a re-read would throw them away.
+     */
+    private void refreshUsbEnabled() {
+        DaemonConnection.getInstance().buildRequest("usb_rules_get")
+            .onResponse(resp -> post(() -> {
+                var rules = resp.optJSONObject("rules");
+                boolean enabled = rules == null || rules.optBoolean("enabled", true);
+                if (enabled == usbEnabled) return;
+                usbEnabled = enabled;
+                if (adapter != null) adapter.refreshBindings();
+            }))
             .onUnsuccessful(resp -> Log.w(TAG, fmt("usb_rules_get: %s", message(resp))))
             .onError(e -> Log.w(TAG, "usb_rules_get failed", e))
             .invoke();

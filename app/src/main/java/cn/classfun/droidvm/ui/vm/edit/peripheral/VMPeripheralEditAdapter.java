@@ -82,6 +82,12 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         @NonNull
         VMBackend backend();
 
+        /**
+         * Whether the app-wide master switch is on. Off means the rows below are saved and then
+         * ignored at boot, which is worth saying on the card that shows them.
+         */
+        boolean usbPassthroughEnabled();
+
         /** A new controller entry, id minted and counter bumped. */
         @NonNull
         DataItem createController();
@@ -438,14 +444,27 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         boolean loaded = xhciHost != null && xhciHost.bindings().isLoaded();
         holder.tvXhciNote.setText(loaded
             ? R.string.edit_vm_xhci_rules_note : R.string.usb_rules_daemon_unavailable);
+        // Only once the rules were actually read: a page that never got an answer does not know
+        // the switch is off, and saying so would be a warning made up out of a failed request.
+        holder.tvXhciPassthroughOff.setVisibility(
+            loaded && !xhciHost.usbPassthroughEnabled() ? VISIBLE : GONE);
         // Nothing to pick from and nowhere to save it to: an unreachable daemon leaves the zones
         // empty rather than letting the page write rules it cannot push.
         holder.btnXhciAdd.setEnabled(loaded && !controllerId.isEmpty());
 
-        bindZone(holder, controllerId, UsbRuleLayer.EXACT, holder.xhciZoneExact);
-        bindZone(holder, controllerId, UsbRuleLayer.PORT, holder.xhciZonePort);
-        bindZone(holder, controllerId, UsbRuleLayer.DEVICE, holder.xhciZoneDevice);
-        bindZone(holder, controllerId, UsbRuleLayer.ANY, holder.xhciZoneAny);
+        int exactRows = bindZone(holder, controllerId, UsbRuleLayer.EXACT, holder.xhciZoneExact);
+        int portRows = bindZone(holder, controllerId, UsbRuleLayer.PORT, holder.xhciZonePort);
+        int deviceRows =
+            bindZone(holder, controllerId, UsbRuleLayer.DEVICE, holder.xhciZoneDevice);
+        int anyRows = bindZone(holder, controllerId, UsbRuleLayer.ANY, holder.xhciZoneAny);
+        // A rule separates two layers that both have rows. Anything else -- a line above the
+        // first row, below the last, or between two empty layers -- would divide nothing.
+        holder.xhciDividerExact.setVisibility(
+            exactRows > 0 && portRows + deviceRows + anyRows > 0 ? VISIBLE : GONE);
+        holder.xhciDividerPort.setVisibility(
+            portRows > 0 && deviceRows + anyRows > 0 ? VISIBLE : GONE);
+        holder.xhciDividerDevice.setVisibility(
+            deviceRows > 0 && anyRows > 0 ? VISIBLE : GONE);
 
         updatingViews = true;
         try {
@@ -485,13 +504,15 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
      *
      * <p>A row is identified by its place in the zone rather than by what it says: two identical
      * rules in one layer are two rules, and removing one has to remove exactly one.</p>
+     *
+     * @return how many rows the zone ended up with, which is what decides the rules around it
      */
-    private void bindZone(
+    private int bindZone(
         @NonNull VMPeripheralEditViewHolder holder, @NonNull String controllerId,
         @NonNull UsbRuleLayer layer, @NonNull LinearLayout container
     ) {
         container.removeAllViews();
-        if (xhciHost == null || controllerId.isEmpty()) return;
+        if (xhciHost == null || controllerId.isEmpty()) return 0;
         var store = xhciHost.bindings();
         var rows = store.rows(controllerId, layer);
         var inflater = LayoutInflater.from(container.getContext());
@@ -499,8 +520,11 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             final int index = i;
             final var row = rows.get(i);
             var view = inflater.inflate(R.layout.item_xhci_binding, container, false);
+            TextView label = view.findViewById(R.id.tv_xhci_binding_layer);
             MaterialButton value = view.findViewById(R.id.btn_xhci_binding);
             MaterialButton remove = view.findViewById(R.id.btn_xhci_binding_remove);
+            // Which layer this rule is in, because the list it sits in no longer says so.
+            label.setText(layer.titleRes);
             value.setText(rowLabel(layer, row));
             // Every row, the catch-all one included: it matches everything and so has nothing
             // to pick, but the dialog is still where deleting a rule lives.
@@ -527,21 +551,22 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             });
             container.addView(view);
         }
+        return rows.size();
     }
 
-    /** What a bound rule reads as: the same wording its row has on the global rules page. */
+    /** What a bound rule is about, with the layer itself left to the label beside it. */
     @NonNull
     private String rowLabel(@NonNull UsbRuleLayer layer, @NonNull Row row) {
         var id = row.id == null ? "" : row.id;
         var port = row.port == null ? "" : row.port;
         switch (layer) {
             case EXACT:
-                return context.getString(R.string.usb_rules_pick_device_exact_fmt,
-                    deviceName(id), id, port);
+                return context.getString(R.string.usb_rules_row_exact_fmt,
+                    port, deviceName(id), id);
             case PORT:
-                return context.getString(R.string.usb_rules_port_label, port);
+                return context.getString(R.string.usb_rules_row_port_fmt, port);
             case DEVICE:
-                return context.getString(R.string.usb_rules_pick_device_device_fmt,
+                return context.getString(R.string.usb_rules_row_device_fmt,
                     deviceName(id), id);
             default:
                 return context.getString(R.string.usb_rules_any_device);

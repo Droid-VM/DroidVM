@@ -34,10 +34,16 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final View groupXhci;
     final TextView tvXhciId;
     final TextView tvXhciNote;
+    final TextView tvXhciPassthroughOff;
     final LinearLayout xhciZoneExact;
     final LinearLayout xhciZonePort;
     final LinearLayout xhciZoneDevice;
     final LinearLayout xhciZoneAny;
+    // The rule between two layers, named after the zone above it. Shown only where a layer with
+    // rows is followed by another one that has some, so an empty layer draws no line.
+    final View xhciDividerExact;
+    final View xhciDividerPort;
+    final View xhciDividerDevice;
     final MaterialButton btnXhciAdd;
     final PickerButtonWidget btnUsb2Ports;
     final PickerButtonWidget btnUsb3Ports;
@@ -66,10 +72,14 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         groupXhci = itemView.findViewById(R.id.group_xhci);
         tvXhciId = itemView.findViewById(R.id.tv_xhci_id);
         tvXhciNote = itemView.findViewById(R.id.tv_xhci_note);
+        tvXhciPassthroughOff = itemView.findViewById(R.id.tv_xhci_passthrough_off);
         xhciZoneExact = itemView.findViewById(R.id.xhci_zone_exact);
         xhciZonePort = itemView.findViewById(R.id.xhci_zone_port);
         xhciZoneDevice = itemView.findViewById(R.id.xhci_zone_device);
         xhciZoneAny = itemView.findViewById(R.id.xhci_zone_any);
+        xhciDividerExact = itemView.findViewById(R.id.xhci_divider_exact);
+        xhciDividerPort = itemView.findViewById(R.id.xhci_divider_port);
+        xhciDividerDevice = itemView.findViewById(R.id.xhci_divider_device);
         btnXhciAdd = itemView.findViewById(R.id.btn_xhci_device_add);
         btnUsb2Ports = itemView.findViewById(R.id.btn_xhci_usb2_ports);
         btnUsb3Ports = itemView.findViewById(R.id.btn_xhci_usb3_ports);

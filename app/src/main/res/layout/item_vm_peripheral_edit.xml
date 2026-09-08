@@ -263,41 +263,42 @@
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="12sp" />
 
-            <!--
-              The four layers of the attach rules, in the order the daemon tries them, each with a
-              heading and a rule between them. Both stay put when a zone is empty: a zone with no
-              rows still has to say which layer it is, or an empty card would read as one list
-              rather than as four that happen to be empty.
-            -->
+            <!-- What passthrough being off means for this card: the rows below stay editable
+                 and are still saved, they just do not run until the master switch is on. -->
             <TextView
-                android:id="@+id/tv_xhci_zone_exact"
+                android:id="@+id/tv_xhci_passthrough_off"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/usb_rules_layer_exact"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="12sp" />
+                android:layout_marginTop="4dp"
+                android:text="@string/edit_vm_xhci_passthrough_off"
+                android:textColor="?attr/colorError"
+                android:textSize="12sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
+            <!--
+              The four layers of the attach rules, in the order the daemon tries them. They are
+              one list rather than four headed zones: a row states its own layer on the left, the
+              way a sound endpoint states its direction, so a heading over an empty zone would be
+              a title for nothing. The rules between them are drawn by bindXhci, and only where
+              two layers that both have rows meet, so an empty layer costs no line.
+            -->
             <LinearLayout
                 android:id="@+id/xhci_zone_exact"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
                 android:orientation="vertical" />
 
             <View
+                android:id="@+id/xhci_divider_exact"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="4dp"
-                android:background="?attr/colorOutlineVariant" />
-
-            <TextView
-                android:id="@+id/tv_xhci_zone_port"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/usb_rules_layer_port"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="12sp" />
+                android:background="?attr/colorOutlineVariant"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
             <LinearLayout
                 android:id="@+id/xhci_zone_port"
@@ -306,19 +307,14 @@
                 android:orientation="vertical" />
 
             <View
+                android:id="@+id/xhci_divider_port"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="4dp"
-                android:background="?attr/colorOutlineVariant" />
-
-            <TextView
-                android:id="@+id/tv_xhci_zone_device"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/usb_rules_layer_device"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="12sp" />
+                android:background="?attr/colorOutlineVariant"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
             <LinearLayout
                 android:id="@+id/xhci_zone_device"
@@ -327,19 +323,14 @@
                 android:orientation="vertical" />
 
             <View
+                android:id="@+id/xhci_divider_device"
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginTop="8dp"
                 android:layout_marginBottom="4dp"
-                android:background="?attr/colorOutlineVariant" />
-
-            <TextView
-                android:id="@+id/tv_xhci_zone_any"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="@string/usb_rules_layer_any"
-                android:textColor="?attr/colorPrimary"
-                android:textSize="12sp" />
+                android:background="?attr/colorOutlineVariant"
+                android:visibility="gone"
+                tools:visibility="visible" />
 
             <LinearLayout
                 android:id="@+id/xhci_zone_any"
