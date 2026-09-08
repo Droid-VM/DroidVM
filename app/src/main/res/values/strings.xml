@@ -441,6 +441,8 @@
     <string name="edit_vm_boot_menu_boot_in">Boot (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">Remember this choice</string>
     <string name="edit_vm_boot_menu_fallback">Pinned entry "%1$s" not found; using default</string>
+    <string name="edit_vm_boot_menu_pseudo">Boot pseudo-unprotected</string>
+    <string name="edit_vm_boot_menu_windows_only">This image boots Windows, which a direct kernel boot cannot start. Use the built-in kernel below, or switch the boot protocol to UEFI.</string>
     <string name="edit_vm_boot_protected_dma_warn">This kernel lacks CONFIG_DMA_RESTRICTED_POOL.\nUnder a protected VM the guest cannot share DMA memory with the host, so virtio devices (disk/network) will fail to start.\nUse the built-in kernel, or rebuild with CONFIG_DMA_RESTRICTED_POOL.</string>
     <string name="kernel_analysis_title">Kernel analysis</string>
     <string name="kernel_analysis_analyze">Analyze</string>
@@ -635,6 +637,13 @@
     <string name="vm_kernel_module_reason_memory">needed by a VM with more than 2 GB of RAM</string>
     <string name="vm_kernel_module_start_anyway">Start anyway</string>
     <string name="vm_kernel_module_start_countdown">Start anyway (%1$d)</string>
+    <string name="vm_protected_guest_dma_title">Kernel cannot reach virtio here</string>
+    <string name="vm_protected_guest_dma_message">This VM is protected, so its memory is lent to the hypervisor and virtio has to bounce through a restricted DMA pool. The kernel this entry boots was built without CONFIG_DMA_RESTRICTED_POOL, so the guest comes up with no disk and no network.\n\nPseudo-unprotected shares the memory instead, and a stock kernel works. Starting anyway is the same start as before.</string>
+    <string name="vm_protected_guest_usb_title">Windows cannot use USB passthrough here</string>
+    <string name="vm_protected_guest_usb_message">This VM is protected, so its memory is lent to the hypervisor and passed-through USB has nowhere to map its transfer buffers. Windows guests do not support that; the attach rules pointing at this VM will do nothing.\n\nPseudo-unprotected shares the memory instead, and passthrough works. Starting anyway is the same start as before.</string>
+    <string name="vm_protected_guest_start_anyway">Start anyway</string>
+    <string name="vm_protected_guest_start_countdown">Start anyway (%1$d)</string>
+    <string name="vm_protected_guest_pseudo">Start pseudo-unprotected once</string>
     <string name="vm_kernel_module_manage">Manage modules</string>
     <string name="vm_kernel_module_manage_unavailable">Open Settings \u2192 Kernel Modules to load it</string>
     <string name="vm_compressed_disk_start_anyway">Start anyway</string>
