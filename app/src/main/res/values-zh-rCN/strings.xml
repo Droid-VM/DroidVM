@@ -720,6 +720,9 @@
     <string name="linux_vm_create_action">创建</string>
     <string name="linux_vm_create_success">虚拟机“%1$s”已创建。</string>
     <string name="linux_vm_create_failed">Linux 虚拟机创建流程未完成。</string>
+    <string name="linux_vm_step_resize">磁盘扩容</string>
+    <string name="linux_vm_create_partial">虚拟机“%1$s”已创建，但下列准备步骤没有完成：\n%2$s\n\n可以稍后从磁盘菜单重新执行。</string>
+    <string name="linux_vm_create_partial_title">虚拟机已创建</string>
 
     <string name="lxc_title">下载发行版 LXC 镜像</string>
     <string name="lxc_category_source">来源</string>
@@ -832,6 +835,9 @@
     <string name="agent_operation_running">执行中\u2026</string>
     <string name="agent_operation_success">操作完成。</string>
     <string name="agent_operation_success_skipped">操作完成；有操作不适用，未进行更改。</string>
+    <string name="agent_operation_action_autogrow">文件系统扩容</string>
+    <string name="agent_operation_action_password">更改密码</string>
+    <string name="agent_operation_partial">操作已完成，但部分步骤失败：\n%1$s</string>
     <string name="agent_operation_failed">操作失败（退出码 %1$d）。</string>
     <string name="agent_operation_failed_detail">操作失败：%1$s</string>
     <string name="agent_operation_prepare_failed">准备代理虚拟机失败。</string>
@@ -853,6 +859,7 @@
     <string name="agent_operation_control_failed">救援虚拟机的控制通道已断开。</string>
     <string name="agent_operation_error_root_not_found">找不到受支持的 Linux 根分区。</string>
     <string name="agent_operation_error_password">无法更新密码数据库。</string>
+    <string name="agent_operation_error_password_missing">目标系统中找不到 passwd 程序。</string>
     <string name="agent_operation_error_unmount">密码已更新，但无法安全卸载目标文件系统。</string>
     <string name="agent_operation_error_script">救援脚本意外失败。</string>
     <string name="agent_operation_error_autogrow_disk">无法检查目标磁盘。</string>

@@ -67,10 +67,30 @@ public final class PasswordAction extends BaseAction {
             "[ -d /mnt/proc ] || fail PASSWD_FAILED",
             "mount -o bind /dev /mnt/dev || fail PASSWD_FAILED",
             "mount -t proc proc /mnt/proc || fail PASSWD_FAILED",
+            // Distributions disagree on where passwd lives: shadow-utils installs
+            // /usr/bin/passwd, busybox roots such as OpenWrt only carry the applet
+            // symlink (/bin/passwd), and a root missing both can still be served by
+            // calling the busybox binary with the applet name.
+            "PASSWD_BIN=",
+            "for candidate in /usr/bin/passwd /bin/passwd /usr/sbin/passwd /sbin/passwd; do",
+            "    [ -x \"/mnt$candidate\" ] || continue",
+            "    PASSWD_BIN=$candidate",
+            "    break",
+            "done",
+            "if [ -z \"$PASSWD_BIN\" ]; then",
+            "    for candidate in /bin/busybox /usr/bin/busybox; do",
+            "        [ -x \"/mnt$candidate\" ] || continue",
+            "        PASSWD_BIN=\"$candidate passwd\"",
+            "        break",
+            "    done",
+            "fi",
+            "[ -n \"$PASSWD_BIN\" ] || fail PASSWD_NOT_FOUND",
+            "marker \"PASSWD:BINARY:$PASSWD_BIN\"",
             "change_password() {",
             "    marker \"PASSWD:$1\"",
-            "    command_log \"LC_ALL=C busybox chroot /mnt /usr/bin/passwd $1\"",
-            "    LC_ALL=C busybox chroot /mnt /usr/bin/passwd \"$1\"",
+            "    command_log \"LC_ALL=C busybox chroot /mnt $PASSWD_BIN $1\"",
+            // Unquoted on purpose: the busybox fallback above is a binary plus an applet name.
+            "    LC_ALL=C busybox chroot /mnt $PASSWD_BIN \"$1\"",
             "    rc=$?",
             "    marker \"COMMAND:RC:PASSWD:$1:$rc\"",
             "    [ \"$rc\" -eq 0 ] || fail PASSWD_FAILED",
