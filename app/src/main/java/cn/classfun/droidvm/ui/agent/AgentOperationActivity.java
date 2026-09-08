@@ -27,6 +27,7 @@ import android.widget.TextView;
 
 import androidx.activity.OnBackPressedCallback;
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.appbar.MaterialToolbar;
@@ -39,6 +40,7 @@ import org.json.JSONObject;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -51,6 +53,7 @@ import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
+import cn.classfun.droidvm.ui.agent.autogrow.AutoGrowAction;
 import cn.classfun.droidvm.ui.agent.base.AgentPayloadChunks;
 import cn.classfun.droidvm.ui.agent.base.AgentVM;
 import cn.classfun.droidvm.ui.agent.base.BaseAction;
@@ -62,6 +65,8 @@ public final class AgentOperationActivity extends AppCompatActivity
     private static final String TAG = "AgentOperationActivity";
     public static final String EXTRA_AGENT_VM_JSON = "agent_vm_json";
     public static final String EXTRA_AUTOFINISH_ON_SUCCESS = "autofinish_on_success";
+    /** Result extra listing the optional actions that failed, as {@code type=code} pairs. */
+    public static final String EXTRA_FAILED_ACTIONS = "failed_actions";
     private static final String AGENT_MARKER = "__DROIDVM_AGENT__:";
     private static final String TTY_READY_MARKER = AGENT_MARKER + "TTY:READY"; // concat-ok: compile-time constant
     private static final String READY_MARKER = AGENT_MARKER + "READY"; // concat-ok: compile-time constant
@@ -71,6 +76,7 @@ public final class AgentOperationActivity extends AppCompatActivity
     private static final String SHELL_READY_MARKER = AGENT_MARKER + "SHELL:READY"; // concat-ok: compile-time constant
     private static final String RESULT_OK_MARKER = AGENT_MARKER + "RESULT:OK"; // concat-ok: compile-time constant
     private static final String RESULT_ERROR_MARKER = AGENT_MARKER + "RESULT:ERROR:"; // concat-ok: compile-time constant
+    private static final String RESULT_PARTIAL_MARKER = AGENT_MARKER + "RESULT:PARTIAL:"; // concat-ok: compile-time constant
     private static final String ACTION_START_MARKER = AGENT_MARKER + "ACTION:START:"; // concat-ok: compile-time constant
     private static final String ACTION_OK_MARKER = AGENT_MARKER + "ACTION:OK:"; // concat-ok: compile-time constant
     private static final String ACTION_ERROR_MARKER = AGENT_MARKER + "ACTION:ERROR:"; // concat-ok: compile-time constant
@@ -79,6 +85,7 @@ public final class AgentOperationActivity extends AppCompatActivity
         "New password:",
         "Re-enter new password:",
         "Retype new password:",
+        "Retype password:", // busybox passwd, as shipped by OpenWrt and other applet-only roots
         "Enter new UNIX password:",
         "Retype new UNIX password:",
     };
@@ -115,6 +122,7 @@ public final class AgentOperationActivity extends AppCompatActivity
     private volatile List<String> actionPayloadChunks = Collections.emptyList();
     private int nextPayloadChunk = 0;
     private String activePassword = null;
+    private volatile String failedActions = "";
     private String passwordPromptTail = "";
     private int activeActionIndex = -1;
 
@@ -395,14 +403,35 @@ public final class AgentOperationActivity extends AppCompatActivity
             mainHandler.post(this::showSuccess);
             return;
         }
-        if (!resultShown && snapshot.contains(RESULT_ERROR_MARKER)) {
-            clearPasswords();
-            var start = snapshot.lastIndexOf(RESULT_ERROR_MARKER) + RESULT_ERROR_MARKER.length();
-            var end = snapshot.indexOf('\n', start);
-            if (end < 0) end = snapshot.length();
-            var code = snapshot.substring(start, end).replace("\r", "").trim();
-            mainHandler.post(() -> showFailed(describeAgentError(code), true));
+        if (!resultShown) {
+            var failed = markerValue(snapshot, RESULT_PARTIAL_MARKER);
+            if (failed != null) {
+                clearPasswords();
+                failedActions = failed;
+                mainHandler.post(() -> showPartial(failed));
+                return;
+            }
+            var code = markerValue(snapshot, RESULT_ERROR_MARKER);
+            if (code != null) {
+                clearPasswords();
+                mainHandler.post(() -> showFailed(describeAgentError(code), true));
+            }
         }
+    }
+
+    /**
+     * Reads the rest of the line carrying the last occurrence of {@code marker}, or null when
+     * the marker is absent -- or when its line has not arrived whole yet. Console output
+     * reaches us in chunks that can split any line, and half a value names no known error.
+     */
+    @Nullable
+    private static String markerValue(@NonNull String snapshot, @NonNull String marker) {
+        var found = snapshot.lastIndexOf(marker);
+        if (found < 0) return null;
+        var start = found + marker.length();
+        var end = snapshot.indexOf('\n', start);
+        if (end < 0) return null;
+        return snapshot.substring(start, end).replace("\r", "").trim();
     }
 
     private void continuePayloadStage(@NonNull String snapshot) {
@@ -551,6 +580,8 @@ public final class AgentOperationActivity extends AppCompatActivity
                 return getString(R.string.agent_operation_error_root_not_found);
             case "PASSWD_FAILED":
                 return getString(R.string.agent_operation_error_password);
+            case "PASSWD_NOT_FOUND":
+                return getString(R.string.agent_operation_error_password_missing);
             case "UNMOUNT_FAILED":
                 return getString(R.string.agent_operation_error_unmount);
             case "SCRIPT_FAILED":
@@ -594,6 +625,64 @@ public final class AgentOperationActivity extends AppCompatActivity
         }
         showResultButtons();
         requestConsoleHandoff();
+    }
+
+    /** One or more optional actions failed; the rest of the queue still ran. */
+    private void showPartial(@NonNull String failed) {
+        if (resultShown || closing) return;
+        resultShown = true;
+        progressSpinner.setVisibility(GONE);
+        ivStatus.setVisibility(VISIBLE);
+        ivStatus.setImageResource(R.drawable.ic_large_warning);
+        tvStatus.setText(getString(
+            R.string.agent_operation_partial, describeFailedActions(failed)));
+        if (autoFinishOnSuccess) {
+            // Same contract as showSuccess(): the caller drives the rest of its chain and
+            // reads EXTRA_FAILED_ACTIONS to tell the user what did not happen.
+            finishAgent(true);
+            return;
+        }
+        showResultButtons();
+        requestConsoleHandoff();
+    }
+
+    /** Renders {@code type=code} pairs as one human-readable line per failed action. */
+    @NonNull
+    private String describeFailedActions(@NonNull String failed) {
+        var out = new StringBuilder();
+        for (var entry : parseFailedActions(failed).entrySet()) {
+            if (out.length() > 0) out.append('\n');
+            out.append(fmt("%s: %s",
+                describeActionType(entry.getKey()), describeAgentError(entry.getValue())));
+        }
+        return out.toString();
+    }
+
+    @NonNull
+    private String describeActionType(@NonNull String type) {
+        switch (type) {
+            case PasswordAction.TYPE:
+            case "passwd": // Early AgentVM prototype spelling.
+                return getString(R.string.agent_operation_action_password);
+            case AutoGrowAction.TYPE:
+                return getString(R.string.agent_operation_action_autogrow);
+            default:
+                return type;
+        }
+    }
+
+    /** Reads an {@link #EXTRA_FAILED_ACTIONS} value back as ordered action type to error code. */
+    @NonNull
+    public static Map<String, String> parseFailedActions(@Nullable String failed) {
+        var out = new LinkedHashMap<String, String>();
+        if (failed == null) return out;
+        for (var entry : failed.split(",")) {
+            if (entry.isEmpty()) continue;
+            int separator = entry.indexOf('=');
+            out.put(separator < 0 ? entry : entry.substring(0, separator),
+                separator < 0 ? "" : entry.substring(separator + 1));
+        }
+        return out;
     }
 
     private void showFailed(@NonNull String message, boolean logsAvailable) {
@@ -760,7 +849,11 @@ public final class AgentOperationActivity extends AppCompatActivity
         if (activityDone) return;
         activityDone = true;
         stopConsoleSession();
-        if (returnSuccess) setResult(RESULT_OK);
+        if (returnSuccess) {
+            var data = new Intent();
+            if (!failedActions.isEmpty()) data.putExtra(EXTRA_FAILED_ACTIONS, failedActions);
+            setResult(RESULT_OK, data);
+        }
         finish();
     }
 
