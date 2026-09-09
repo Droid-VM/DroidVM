@@ -28,6 +28,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import cn.classfun.droidvm.daemon.server.ServerContext;
+import cn.classfun.droidvm.display.IPhysicalKeyEcho;
 import cn.classfun.droidvm.daemon.vm.VMInstance;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
@@ -71,7 +72,10 @@ public final class KeyboardGrabManager {
 
     private static final short EV_SYN = 0x00;
     private static final short EV_KEY = 0x01;
+    private static final short EV_LED = 0x11;
     private static final short SYN_REPORT = 0x00;
+    /** The lamps a keyboard has: LED_NUML, LED_CAPSL, LED_SCROLLL. */
+    private static final int LED_COUNT = 3;
 
     private static final int KEY_UP = 0;
     private static final int KEY_DOWN = 1;
@@ -104,6 +108,9 @@ public final class KeyboardGrabManager {
         final IBinder token;
         @Nullable
         IBinder.DeathRecipient death;
+        /** The console's copy of the keys and lamps; null when it has nothing to show. */
+        @Nullable
+        volatile IPhysicalKeyEcho echo;
 
         Target(@NonNull String vmId, @NonNull String screenId, @Nullable IBinder token) {
             this.vmId = vmId;
@@ -199,6 +206,14 @@ public final class KeyboardGrabManager {
     private volatile KeyboardGrabConfig config;
     @Nullable
     private Watcher watcher;
+    /**
+     * The guest's keyboard lamps: which ones it has ever reported, and their state. virtio-input
+     * has no way to ask, so a lamp is genuinely unknown until the guest changes it -- and what is
+     * known is the guest's own view, which is the only correct one, since software in the guest
+     * can toggle caps lock with no key involved.
+     */
+    private volatile int ledKnown;
+    private volatile int ledOn;
 
     public KeyboardGrabManager(@NonNull ServerContext ctx) {
         this.ctx = ctx;
@@ -272,6 +287,21 @@ public final class KeyboardGrabManager {
         }
     }
 
+    /**
+     * Registers the console's copy of the keys and lamps, or clears it with null. Only the console
+     * that holds the keyboard is heard: a page that is no longer in front must not keep a feed of
+     * what is being typed into the guest. Answers with the lamps as they stand, so a console that
+     * has just registered does not have to wait for the next change to draw them.
+     */
+    public void setEcho(@NonNull String vmId, @NonNull String screenId,
+                        @Nullable IPhysicalKeyEcho echo) {
+        var current = target;
+        if (current == null
+            || !current.vmId.equals(vmId) || !current.screenId.equals(screenId)) return;
+        current.echo = echo;
+        if (echo != null) sendLeds(echo);
+    }
+
     /** Hands every grabbed keyboard back to Android. Safe to call when nothing is held. */
     public void release(@NonNull String reason) {
         synchronized (lock) {
@@ -303,6 +333,10 @@ public final class KeyboardGrabManager {
                 // is a stop and a start): the keys go to Android meanwhile, and the console stays
                 // armed. Its token is what ends this if the console goes instead.
                 dropGrabsLocked(reason);
+                ledKnown = 0;
+                ledOn = 0;
+                var echo = armed.echo;
+                if (echo != null) sendLeds(echo);
             } else {
                 // Nobody's console: a grab taken over IPC has no token to end it, so the VM
                 // leaving RUNNING is what does.
@@ -331,6 +365,14 @@ public final class KeyboardGrabManager {
             }
         }
         obj.put("held", held);
+        // The guest's lamps, and which of them it has said anything about at all.
+        var leds = new JSONObject();
+        leds.put("known", ledKnown);
+        leds.put("on", ledOn);
+        leds.put("num", (ledKnown & 1) == 0 ? JSONObject.NULL : ((ledOn & 1) != 0));
+        leds.put("caps", (ledKnown & 2) == 0 ? JSONObject.NULL : ((ledOn & 2) != 0));
+        leds.put("scroll", (ledKnown & 4) == 0 ? JSONObject.NULL : ((ledOn & 4) != 0));
+        obj.put("leds", leds);
         // Everything the host has, so a page can say which keyboard is not being taken.
         var available = new JSONArray();
         for (var kb : HostKeyboard.scan()) {
@@ -381,6 +423,9 @@ public final class KeyboardGrabManager {
         grab.thread = thread;
         grabs.put(kb.path, grab);
         thread.start();
+        // A keyboard that joined late (or came back after a Bluetooth drop) starts with the lamps
+        // the guest has already told us about, rather than whatever Android left them at.
+        writeLeds(grab);
         Log.i(TAG, fmt("grabbed %s for the guest", kb));
         return true;
     }
@@ -417,6 +462,9 @@ public final class KeyboardGrabManager {
         if (current == null && grabs.isEmpty()) return;
         dropGrabsLocked(reason);
         target = null;
+        // The lamps were the guest's, and the next console may be looking at another guest.
+        ledKnown = 0;
+        ledOn = 0;
         unlinkToken(current);
         stopWatcherLocked();
     }
@@ -430,6 +478,83 @@ public final class KeyboardGrabManager {
         // watcher is what grabs it again when it is.
     }
 
+    /**
+     * What the guest said about its keyboard, off the status queue crosvm writes back onto the
+     * input socket: the caps/num/scroll lamps. Two things happen with it -- the lamp on the real
+     * keyboard is set to match (the grabbed descriptor is opened read-write for exactly this), and
+     * the console is told so it can draw the state.
+     *
+     * <p>Reading this at all also drains a socket the daemon used to only write to; the records
+     * had nowhere to go and sat in its buffer.</p>
+     */
+    public void onGuestStatus(@NonNull String vmId, @NonNull String screenId,
+                              @NonNull byte[] records) {
+        var current = target;
+        if (current == null
+            || !current.vmId.equals(vmId) || !current.screenId.equals(screenId)) return;
+        var in = ByteBuffer.wrap(records).order(ByteOrder.LITTLE_ENDIAN);
+        int known = ledKnown;
+        int on = ledOn;
+        boolean changed = false;
+        for (int offset = 0; offset + 8 <= records.length; offset += 8) {
+            short type = in.getShort(offset);
+            short code = in.getShort(offset + 2);
+            int value = in.getInt(offset + 4);
+            // EV_REP (the guest's repeat delay and period) also arrives here and is the host
+            // keyboard's own business, not ours: the guest repeats for itself, see onEvents.
+            if (type != EV_LED || code < 0 || code >= LED_COUNT) continue;
+            int bit = 1 << code;
+            known |= bit;
+            int next = value != 0 ? (on | bit) : (on & ~bit);
+            if (next != on || (known != ledKnown)) changed = true;
+            on = next;
+        }
+        if (!changed) return;
+        ledKnown = known;
+        ledOn = on;
+        Log.i(TAG, fmt("guest lamps: num=%s caps=%s scroll=%s",
+            lampText(known, on, 1), lampText(known, on, 2), lampText(known, on, 4)));
+        synchronized (lock) {
+            for (var grab : grabs.values()) writeLeds(grab);
+        }
+        var echo = current.echo;
+        if (echo != null) sendLeds(echo);
+    }
+
+    private static String lampText(int known, int on, int bit) {
+        if ((known & bit) == 0) return "?";
+        return (on & bit) != 0 ? "on" : "off";
+    }
+
+    /** Sets [grab]'s lamps to the guest's state, as far as the guest has said what it is. */
+    private void writeLeds(@NonNull Grab grab) {
+        int known = ledKnown;
+        if (known == 0) return;
+        var out = ByteBuffer.allocate(EVENT_SIZE * (LED_COUNT + 1)).order(ByteOrder.LITTLE_ENDIAN);
+        for (int code = 0; code < LED_COUNT; code++) {
+            if ((known & (1 << code)) == 0) continue;
+            putInputEvent(out, EV_LED, (short) code, (ledOn & (1 << code)) != 0 ? 1 : 0);
+        }
+        if (out.position() == 0) return;
+        putInputEvent(out, EV_SYN, SYN_REPORT, 0);
+        var bytes = Arrays.copyOf(out.array(), out.position());
+        UnixHelper.nativeWrite(grab.fd, bytes, bytes.length);
+    }
+
+    /** One {@code struct input_event}: an empty timeval, then type, code, value. */
+    private static void putInputEvent(@NonNull ByteBuffer out, short type, short code, int value) {
+        out.putLong(0).putLong(0);
+        out.putShort(type).putShort(code).putInt(value);
+    }
+
+    private void sendLeds(@NonNull IPhysicalKeyEcho echo) {
+        try {
+            echo.onLeds(ledKnown, ledOn);
+        } catch (Exception e) {
+            Log.d(TAG, "console echo refused the lamps", e);
+        }
+    }
+
     // ---- events -----------------------------------------------------------------------------
 
     /**
@@ -441,6 +566,10 @@ public final class KeyboardGrabManager {
     private void onEvents(@NonNull Grab grab, @NonNull byte[] buffer, int length) {
         var in = ByteBuffer.wrap(buffer, 0, length).order(ByteOrder.LITTLE_ENDIAN);
         var out = ByteBuffer.allocate(8 * (length / EVENT_SIZE)).order(ByteOrder.LITTLE_ENDIAN);
+        // The console's copy, collected alongside: same keys, same order, sent after the guest's.
+        var echoCodes = new int[length / EVENT_SIZE];
+        var echoValues = new int[echoCodes.length];
+        int echoCount = 0;
         boolean escape = false;
         for (int offset = 0; offset + EVENT_SIZE <= length; offset += EVENT_SIZE) {
             short type = in.getShort(offset + EVENT_TYPE_OFFSET);
@@ -461,6 +590,9 @@ public final class KeyboardGrabManager {
                     }
                 }
                 out.putShort(type).putShort(code).putInt(value);
+                echoCodes[echoCount] = code;
+                echoValues[echoCount] = value;
+                echoCount++;
             } else if (type == EV_SYN && code == SYN_REPORT) {
                 // A frame with nothing in it is not worth a write: the guest reads events, and
                 // the next real one brings its own SYN.
@@ -470,6 +602,22 @@ public final class KeyboardGrabManager {
             // is host bookkeeping the guest keeps its own copy of.
         }
         if (out.position() > 0) deliver(Arrays.copyOf(out.array(), out.position()));
+        // After the guest, always: what a console does with these must not be in the way of
+        // typing. Oneway, so this returns before the console has looked at them.
+        if (echoCount > 0) {
+            var current = target;
+            var echo = current == null ? null : current.echo;
+            if (echo != null) {
+                try {
+                    echo.onKeys(Arrays.copyOf(echoCodes, echoCount),
+                        Arrays.copyOf(echoValues, echoCount));
+                } catch (Exception e) {
+                    // A console that has gone: stop echoing rather than throwing every keypress.
+                    current.echo = null;
+                    Log.d(TAG, "console echo is gone; keys stay between the daemon and the guest");
+                }
+            }
+        }
         if (escape) {
             // Off this thread: the release joins reader threads, and this is one of them.
             var t = new Thread(() -> release("escape chord"), "kbd-grab-escape");

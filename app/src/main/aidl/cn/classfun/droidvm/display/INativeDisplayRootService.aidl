@@ -1,5 +1,7 @@
 package cn.classfun.droidvm.display;
 
+import cn.classfun.droidvm.display.IPhysicalKeyEcho;
+
 /**
  * AIDL interface for the native-display broker. It is implemented and hosted by the daemon (which
  * already runs as root) and handed to the UI via a broadcast (see
@@ -45,4 +47,12 @@ interface INativeDisplayRootService {
      * attached -- the console stays armed for one that appears later).
      */
     int setKeyboardGrab(String vmId, String screenId, boolean grab, IBinder token);
+
+    /**
+     * Registers (or clears, with null) the console's copy of the grabbed keyboard's keys and the
+     * guest's keyboard lamps, for [vmId]'s [screenId] console. Only the console that holds the
+     * grab is heard, and only while it has something to show -- the laptop-keyboard mode lights
+     * the pressed key on the drawn keyboard, and nothing else needs the traffic.
+     */
+    void setKeyEcho(String vmId, String screenId, IPhysicalKeyEcho echo);
 }

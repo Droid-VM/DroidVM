@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
+import cn.classfun.droidvm.display.IPhysicalKeyEcho;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
@@ -82,6 +83,12 @@ public final class NativeDisplayBinder {
                     return 0;
                 }
                 return keyboard.request(vmId, screen, token);
+            }
+
+            @Override
+            public void setKeyEcho(String vmId, String screenId, IPhysicalKeyEcho echo) {
+                if (vmId == null || vmId.isEmpty()) return;
+                ctx.getKeyboard().setEcho(vmId, screenId == null ? "" : screenId, echo);
             }
         };
     }

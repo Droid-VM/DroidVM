@@ -6,7 +6,9 @@ package cn.classfun.droidvm.ui.vm.display.base;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.os.Binder;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -17,6 +19,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 
 import cn.classfun.droidvm.display.INativeDisplayRootService;
+import cn.classfun.droidvm.display.IPhysicalKeyEcho;
 
 /**
  * Asks the daemon to take the host's physical keyboard for this console, and to give it back.
@@ -56,6 +59,48 @@ public final class PhysicalKeyboardGrab {
     /** False when this screen takes no input, which leaves the keyboard to Android for good. */
     private final boolean allowed;
 
+    /**
+     * What the console does with a copy of the grabbed keys. Called on the main thread. Only worth
+     * having while the drawn keyboard is up, which is the one place a pressed key can be shown.
+     */
+    public interface Echo {
+        /** Scan codes and their 1 (down) / 0 (up), in the order they were typed. */
+        void onKeys(@NonNull int[] codes, @NonNull int[] values);
+
+        /** The guest's lock lamps; [known] says which of them the guest has ever reported. */
+        void onLeds(int known, int on);
+
+        /** The feed stopped: nothing is held any more, whatever was drawn as held is not. */
+        void onCleared();
+    }
+
+    private final Handler main = new Handler(Looper.getMainLooper());
+    @Nullable
+    private Echo listener;
+    /** Only the laptop keyboard draws keys, so only it is worth a feed. */
+    private boolean laptop;
+    /** What was last registered, so an unchanged state is not registered twice. */
+    private boolean echoRegistered;
+
+    private final IPhysicalKeyEcho.Stub echoStub = new IPhysicalKeyEcho.Stub() {
+        @Override
+        public void onKeys(int[] codes, int[] values) {
+            if (codes == null || values == null) return;
+            main.post(() -> {
+                var l = listener;
+                if (l != null) l.onKeys(codes, values);
+            });
+        }
+
+        @Override
+        public void onLeds(int known, int on) {
+            main.post(() -> {
+                var l = listener;
+                if (l != null) l.onLeds(known, on);
+            });
+        }
+    };
+
     @Nullable
     private INativeDisplayRootService service;
     private boolean resumed;
@@ -86,6 +131,13 @@ public final class PhysicalKeyboardGrab {
     /** The typing surface changed; only {@link KeyboardMode#SYSTEM} wants the IME to have keys. */
     public void setKeyboardMode(@NonNull KeyboardMode mode) {
         this.wantsKeys = mode != KeyboardMode.SYSTEM;
+        this.laptop = mode == KeyboardMode.LAPTOP;
+        apply();
+    }
+
+    /** Who draws the keys as they are pressed; null to stop asking for them. */
+    public void setEcho(@Nullable Echo echo) {
+        this.listener = echo;
         apply();
     }
 
@@ -93,6 +145,10 @@ public final class PhysicalKeyboardGrab {
     public void close() {
         if (closed) return;
         closed = true;
+        if (echoRegistered) {
+            echoRegistered = false;
+            sendEcho(false);
+        }
         if (requested) {
             requested = false;
             send(false);
@@ -103,9 +159,32 @@ public final class PhysicalKeyboardGrab {
     private void apply() {
         if (closed) return;
         boolean want = allowed && resumed && wantsKeys && service != null;
-        if (want == requested) return;
-        requested = want;
-        send(want);
+        if (want != requested) {
+            requested = want;
+            send(want);
+        }
+        // The echo rides on the grab: no grab, no keys to copy. Registered only for the drawn
+        // keyboard, so every other mode costs not one call.
+        boolean wantEcho = requested && laptop && listener != null;
+        if (wantEcho != echoRegistered) {
+            echoRegistered = wantEcho;
+            sendEcho(wantEcho);
+        }
+    }
+
+    private void sendEcho(boolean want) {
+        var target = service;
+        if (target == null) return;
+        var screen = screenId.get();
+        var l = listener;
+        if (!want && l != null) main.post(l::onCleared);
+        caller.execute(() -> {
+            try {
+                target.setKeyEcho(vmId, screen, want ? echoStub : null);
+            } catch (Exception e) {
+                Log.w(TAG, fmt("setKeyEcho(%b) failed", want), e);
+            }
+        });
     }
 
     private void send(boolean grab) {

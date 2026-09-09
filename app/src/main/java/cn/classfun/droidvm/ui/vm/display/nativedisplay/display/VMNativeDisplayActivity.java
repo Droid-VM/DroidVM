@@ -72,6 +72,7 @@ import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.KeyCodeMapper;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.perf.SystemGestureGuard;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeExtraKeysPanel;
@@ -270,6 +271,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Asks the daemon to take the host's physical keyboard for this console while it is in
     // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
     private PhysicalKeyboardGrab keyboardGrab;
+    // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
+    // SCROLLL 2.
+    private static final int LED_MASK_NUM = 1;
+    private static final int LED_MASK_CAPS = 1 << 1;
+    private static final int LED_MASK_SCROLL = 1 << 2;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -294,6 +300,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
+        wireHardwareKeyEcho();
         setupLayoutControllers();
         setStatus(getString(R.string.native_display_connecting), R.color.vnc_status_connecting);
         showOverlay(getString(R.string.native_display_waiting));
@@ -1070,6 +1077,40 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             if (isFinishing()) return;
             Log.i(TAG, "VM stopped; closing the display");
             finish();
+        });
+    }
+
+    /**
+     * Draws the grabbed physical keyboard on the on-screen one. The grabbed keys go from the
+     * daemon straight into the guest and never through this process, so without this feed the
+     * drawn keyboard would sit still while the user types. Registered by the grab only while the
+     * laptop keyboard is the mode -- no other mode has a key to light.
+     */
+    private void wireHardwareKeyEcho() {
+        keyboardGrab.setEcho(new PhysicalKeyboardGrab.Echo() {
+            @Override
+            public void onKeys(@NonNull int[] codes, @NonNull int[] values) {
+                for (int i = 0; i < codes.length && i < values.length; i++) {
+                    int androidCode = KeyCodeMapper.evdevToAndroid(codes[i]);
+                    // A key the drawn keyboard has no face for (media keys, F13 and up) is simply
+                    // not drawn; it still reached the guest.
+                    if (androidCode != -1)
+                        phyKeyboard.setHardwareKeyHeld(androidCode, values[i] != 0);
+                }
+            }
+
+            @Override
+            public void onLeds(int known, int on) {
+                phyKeyboard.setLockState(
+                    (known & LED_MASK_CAPS) != 0, (on & LED_MASK_CAPS) != 0,
+                    (known & LED_MASK_NUM) != 0, (on & LED_MASK_NUM) != 0,
+                    (known & LED_MASK_SCROLL) != 0, (on & LED_MASK_SCROLL) != 0);
+            }
+
+            @Override
+            public void onCleared() {
+                phyKeyboard.clearHardwareKeys();
+            }
         });
     }
 
