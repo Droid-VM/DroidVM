@@ -17,6 +17,7 @@ import java.lang.reflect.Method;
 
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
+import cn.classfun.droidvm.display.IPhysicalKeyEcho;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
@@ -69,6 +70,25 @@ public final class NativeDisplayBinder {
                 var inst = ctx.getVMs().findById(vmId);
                 if (inst == null) return false;
                 return inst.writeNativeInput(screenId == null ? "" : screenId, channel, data);
+            }
+
+            @Override
+            public int setKeyboardGrab(String vmId, String screenId, boolean grab,
+                                       IBinder token) {
+                var keyboard = ctx.getKeyboard();
+                var screen = screenId == null ? "" : screenId;
+                if (!grab || vmId == null || vmId.isEmpty()) {
+                    if (vmId != null && !vmId.isEmpty()) keyboard.releaseFor(vmId, screen);
+                    else keyboard.release("console released it");
+                    return 0;
+                }
+                return keyboard.request(vmId, screen, token);
+            }
+
+            @Override
+            public void setKeyEcho(String vmId, String screenId, IPhysicalKeyEcho echo) {
+                if (vmId == null || vmId.isEmpty()) return;
+                ctx.getKeyboard().setEcho(vmId, screenId == null ? "" : screenId, echo);
             }
         };
     }

@@ -8,6 +8,8 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <linux/netlink.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
 #include <android/log.h>
 #include <android/log.h>
 #include <stdio.h>
@@ -325,4 +327,88 @@ JNI_PREFIX(nativeRead)(
     } while (n < 0 && errno == EINTR);
     (*env)->ReleaseByteArrayElements(env, buf, bytes, n > 0 ? 0 : JNI_ABORT);
     return (jint) n;
+}
+
+
+/*
+ * evdev, for the physical-keyboard grab. A grabbed keyboard is the only way the keys Android
+ * keeps for itself -- Home, the task switcher, every Meta shortcut -- can reach a guest: EVIOCGRAB
+ * makes this descriptor the sole recipient of the device's events, so Android's InputReader keeps
+ * its own fd open and is simply never woken again. Reading and writing the fd is nativeRead /
+ * nativeWrite's job; only the parts that need an ioctl live here.
+ */
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeEvdevOpen)(
+    JNIEnv *env, jclass clazz, jstring path
+) {
+    (void) clazz;
+    if (!path) return -1;
+    const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
+    if (!cpath) return -1;
+    // Read-write first because the LEDs (caps lock and friends) are written back to the same
+    // descriptor; a node that refuses it is still perfectly readable, and only the LEDs are lost.
+    int fd = open(cpath, O_RDWR | O_CLOEXEC);
+    if (fd < 0) fd = open(cpath, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) LOGW("evdev open %s failed: %s", cpath, strerror(errno));
+    (*env)->ReleaseStringUTFChars(env, path, cpath);
+    return fd;
+}
+
+/* 0 on success, -errno otherwise. EBUSY means somebody else holds the grab. */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeEvdevGrab)(
+    JNIEnv *env, jclass clazz, jint fd, jboolean grab
+) {
+    (void) env;
+    (void) clazz;
+    int ret = ioctl(fd, EVIOCGRAB, grab ? 1 : 0);
+    if (ret < 0) return -errno;
+    return 0;
+}
+
+JNIEXPORT jstring JNICALL
+JNI_PREFIX(nativeEvdevName)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    char name[256];
+    memset(name, 0, sizeof(name));
+    if (ioctl(fd, EVIOCGNAME(sizeof(name) - 1), name) < 0) return NULL;
+    return (*env)->NewStringUTF(env, name);
+}
+
+/* {bustype, vendor, product, version}, or null when the kernel would not say. */
+JNIEXPORT jintArray JNICALL
+JNI_PREFIX(nativeEvdevIds)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    struct input_id id;
+    memset(&id, 0, sizeof(id));
+    if (ioctl(fd, EVIOCGID, &id) < 0) return NULL;
+    jintArray out = (*env)->NewIntArray(env, 4);
+    if (!out) return NULL;
+    jint vals[4] = {id.bustype, id.vendor, id.product, id.version};
+    (*env)->SetIntArrayRegion(env, out, 0, 4, vals);
+    return out;
+}
+
+/*
+ * The device's EV_KEY bitmap, one bit per key code, little-endian by byte -- what says whether
+ * this node is a keyboard at all rather than a lid switch or a touchscreen's button. Null when the
+ * ioctl fails.
+ */
+JNIEXPORT jbyteArray JNICALL
+JNI_PREFIX(nativeEvdevKeyBits)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    unsigned char bits[(KEY_MAX / 8) + 1];
+    memset(bits, 0, sizeof(bits));
+    if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(bits)), bits) < 0) return NULL;
+    jbyteArray out = (*env)->NewByteArray(env, (jsize) sizeof(bits));
+    if (!out) return NULL;
+    (*env)->SetByteArrayRegion(env, out, 0, (jsize) sizeof(bits), (const jbyte *) bits);
+    return out;
 }

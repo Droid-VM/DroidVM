@@ -153,6 +153,14 @@ public final class VMInstance extends VMConfig {
         } catch (Exception e) {
             Log.w(TAG, "usb: state hook failed", e);
         }
+        // And the physical keyboard, if a console for this VM had it grabbed: a guest that is no
+        // longer running has no keyboard socket to type into, so the keys go back to Android on
+        // the same edge. Guarded for the same reason.
+        try {
+            store.context.getKeyboard().onVmState(this, newState);
+        } catch (Exception e) {
+            Log.w(TAG, "keyboard: state hook failed", e);
+        }
     }
 
     private void fireEvent(@NonNull String event, @Nullable JSONObject extra) {

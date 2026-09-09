@@ -159,6 +159,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // diverge. The two lists differ: a VNC-exported screen's tablet and keyboard are crosvm's,
         // not ours.
         if (isInputBridgeNeeded()) {
+            // What the guest says back about its keyboard -- the caps/num lamps -- goes to the
+            // grab manager: it is what lights the lamp on the physical keyboard and what a
+            // console shows. Set before the sockets are bound, because the reader that carries it
+            // starts with crosvm's first connection.
+            inputBridge.setStatusListener((screenId, channel, records) ->
+                context.getKeyboard().onGuestStatus(
+                    config.getId().toString(), screenId, records));
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
                     touchscreenScreens(), nativeInputScreens())) {
