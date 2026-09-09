@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.nativedisplay.input;
 
+import android.util.SparseIntArray;
 import android.view.KeyEvent;
 
 import java.util.HashMap;
@@ -43,6 +44,10 @@ public final class KeyCodeMapper {
     public static final int KEY_KPEQUAL = 117, KEY_LEFTMETA = 125, KEY_RIGHTMETA = 126;
 
     private static final Map<Integer, Integer> KEYCODE_MAP = new HashMap<>();
+
+    /** The inverse, built as {@link #put} fills the map above. */
+
+    private static final SparseIntArray EVDEV_MAP = new SparseIntArray();
 
     static {
         // Letters
@@ -126,6 +131,17 @@ public final class KeyCodeMapper {
 
     private static void put(int androidKey, int evdev) {
         KEYCODE_MAP.put(androidKey, evdev);
+        // The way back, for keys that arrive as scan codes rather than as Android events: the
+        // physical keyboard the daemon grabbed never passes through Android, so a console that
+        // wants to draw what was pressed has only the scan code to go on. First writer wins,
+        // because a couple of Android codes map onto one scan code and the first is the plain
+        // one (KEYCODE_DEL over any alias for backspace).
+        if (EVDEV_MAP.indexOfKey(evdev) < 0) EVDEV_MAP.put(evdev, androidKey);
+    }
+
+    /** Android key code for a Linux evdev KEY_*, or -1 if unmapped. */
+    public static int evdevToAndroid(int evdev) {
+        return EVDEV_MAP.get(evdev, -1);
     }
 
     /** Linux evdev KEY_* for an Android key code, or -1 if unmapped. */

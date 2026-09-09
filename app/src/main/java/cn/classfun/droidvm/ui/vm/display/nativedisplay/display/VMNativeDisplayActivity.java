@@ -59,6 +59,7 @@ import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
+import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -71,6 +72,7 @@ import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.KeyCodeMapper;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.perf.SystemGestureGuard;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.NativeExtraKeysPanel;
@@ -266,6 +268,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Daemon broker binder acquisition (display_attach -> nonce-matched broadcast), shared with
     // the VNC display path.
     private DaemonDisplayAttach displayAttach;
+    // Asks the daemon to take the host's physical keyboard for this console while it is in
+    // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
+    private PhysicalKeyboardGrab keyboardGrab;
+    // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
+    // SCROLLL 2.
+    private static final int LED_MASK_NUM = 1;
+    private static final int LED_MASK_CAPS = 1 << 1;
+    private static final int LED_MASK_SCROLL = 1 << 2;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -282,11 +292,15 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
+        // Before the views: applyInitial() runs while they are being built and tells this
+        // the keyboard mode it starts in.
+        keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
 
         bindViews();
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
+        wireHardwareKeyEcho();
         setupLayoutControllers();
         setStatus(getString(R.string.native_display_connecting), R.color.vnc_status_connecting);
         showOverlay(getString(R.string.native_display_waiting));
@@ -306,12 +320,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                 @Override
                 public void onLost() {
                     // DirectInputSink falls back to the vm_input RPC per write on a dead binder.
+                    // The grab has no such fallback: the daemon is the only process that can hold
+                    // it, and it has already dropped it with the token.
+                    keyboardGrab.setService(null);
                 }
             });
         displayAttach.start();
     }
 
     private void onRootConnected(@NonNull INativeDisplayRootService service) {
+        keyboardGrab.setService(service);
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
         directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
@@ -829,6 +847,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     extraVisible, fnxVisible, mode == KeyboardMode.SYSTEM);
                 phyKeyboard.setZoneToggleState(extraVisible, fnxVisible);
                 phyKeyboard.setVisibleAnimated(mode == KeyboardMode.LAPTOP);
+                // SYSTEM is the mode whose text comes from the IME, and an IME cannot see a
+                // grabbed keyboard: that mode hands the physical one back to Android.
+                keyboardGrab.setKeyboardMode(mode);
                 var controller = getWindow().getInsetsController();
                 if (controller != null) {
                     if (fullscreen) {
@@ -1059,6 +1080,40 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         });
     }
 
+    /**
+     * Draws the grabbed physical keyboard on the on-screen one. The grabbed keys go from the
+     * daemon straight into the guest and never through this process, so without this feed the
+     * drawn keyboard would sit still while the user types. Registered by the grab only while the
+     * laptop keyboard is the mode -- no other mode has a key to light.
+     */
+    private void wireHardwareKeyEcho() {
+        keyboardGrab.setEcho(new PhysicalKeyboardGrab.Echo() {
+            @Override
+            public void onKeys(@NonNull int[] codes, @NonNull int[] values) {
+                for (int i = 0; i < codes.length && i < values.length; i++) {
+                    int androidCode = KeyCodeMapper.evdevToAndroid(codes[i]);
+                    // A key the drawn keyboard has no face for (media keys, F13 and up) is simply
+                    // not drawn; it still reached the guest.
+                    if (androidCode != -1)
+                        phyKeyboard.setHardwareKeyHeld(androidCode, values[i] != 0);
+                }
+            }
+
+            @Override
+            public void onLeds(int known, int on) {
+                phyKeyboard.setLockState(
+                    (known & LED_MASK_CAPS) != 0, (on & LED_MASK_CAPS) != 0,
+                    (known & LED_MASK_NUM) != 0, (on & LED_MASK_NUM) != 0,
+                    (known & LED_MASK_SCROLL) != 0, (on & LED_MASK_SCROLL) != 0);
+            }
+
+            @Override
+            public void onCleared() {
+                phyKeyboard.clearHardwareKeys();
+            }
+        });
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -1068,6 +1123,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // And keep the host's full-screen touch gestures (OEM three-finger screenshot etc.)
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
+        keyboardGrab.setResumed(true);
     }
 
     @Override
@@ -1075,11 +1131,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         super.onPause();
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
+        keyboardGrab.setResumed(false);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (keyboardGrab != null) keyboardGrab.close();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;
