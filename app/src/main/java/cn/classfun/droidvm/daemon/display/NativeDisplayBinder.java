@@ -70,6 +70,19 @@ public final class NativeDisplayBinder {
                 if (inst == null) return false;
                 return inst.writeNativeInput(screenId == null ? "" : screenId, channel, data);
             }
+
+            @Override
+            public int setKeyboardGrab(String vmId, String screenId, boolean grab,
+                                       IBinder token) {
+                var keyboard = ctx.getKeyboard();
+                var screen = screenId == null ? "" : screenId;
+                if (!grab || vmId == null || vmId.isEmpty()) {
+                    if (vmId != null && !vmId.isEmpty()) keyboard.releaseFor(vmId, screen);
+                    else keyboard.release("console released it");
+                    return 0;
+                }
+                return keyboard.request(vmId, screen, token);
+            }
         };
     }
 

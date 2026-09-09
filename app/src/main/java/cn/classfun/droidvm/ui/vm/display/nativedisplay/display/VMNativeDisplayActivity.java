@@ -59,6 +59,7 @@ import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
+import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -266,6 +267,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Daemon broker binder acquisition (display_attach -> nonce-matched broadcast), shared with
     // the VNC display path.
     private DaemonDisplayAttach displayAttach;
+    // Asks the daemon to take the host's physical keyboard for this console while it is in
+    // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
+    private PhysicalKeyboardGrab keyboardGrab;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -282,6 +286,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
+        // Before the views: applyInitial() runs while they are being built and tells this
+        // the keyboard mode it starts in.
+        keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
 
         bindViews();
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
@@ -306,12 +313,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                 @Override
                 public void onLost() {
                     // DirectInputSink falls back to the vm_input RPC per write on a dead binder.
+                    // The grab has no such fallback: the daemon is the only process that can hold
+                    // it, and it has already dropped it with the token.
+                    keyboardGrab.setService(null);
                 }
             });
         displayAttach.start();
     }
 
     private void onRootConnected(@NonNull INativeDisplayRootService service) {
+        keyboardGrab.setService(service);
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
         directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
@@ -829,6 +840,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     extraVisible, fnxVisible, mode == KeyboardMode.SYSTEM);
                 phyKeyboard.setZoneToggleState(extraVisible, fnxVisible);
                 phyKeyboard.setVisibleAnimated(mode == KeyboardMode.LAPTOP);
+                // SYSTEM is the mode whose text comes from the IME, and an IME cannot see a
+                // grabbed keyboard: that mode hands the physical one back to Android.
+                keyboardGrab.setKeyboardMode(mode);
                 var controller = getWindow().getInsetsController();
                 if (controller != null) {
                     if (fullscreen) {
@@ -1068,6 +1082,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // And keep the host's full-screen touch gestures (OEM three-finger screenshot etc.)
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
+        keyboardGrab.setResumed(true);
     }
 
     @Override
@@ -1075,11 +1090,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         super.onPause();
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
+        keyboardGrab.setResumed(false);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (keyboardGrab != null) keyboardGrab.close();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;

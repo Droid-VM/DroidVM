@@ -31,4 +31,18 @@ interface INativeDisplayRootService {
      * some other screen.
      */
     boolean writeInput(String vmId, String screenId, int channel, in byte[] data);
+
+    /**
+     * Grabs the host's physical keyboards for [vmId]'s [screenId] console, or hands them back.
+     * A grabbed keyboard is the only way the keys Android keeps for itself -- Home, the task
+     * switcher, Alt+Tab, the Meta shortcuts -- can reach a guest, and while it is held that
+     * keyboard types nowhere else, the IME included. So a console asks for it only while it is in
+     * front with a typing surface that wants no IME, and gives it back on the way out.
+     *
+     * [token] is the caller's own binder: the daemon releases the grab if it dies, so a console
+     * that crashed cannot leave the user with a keyboard that types into nothing. Returns how
+     * many keyboards are held (0 when the feature is off, the VM is not running, or none is
+     * attached -- the console stays armed for one that appears later).
+     */
+    int setKeyboardGrab(String vmId, String screenId, boolean grab, IBinder token);
 }
