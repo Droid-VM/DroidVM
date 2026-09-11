@@ -1,8 +1,19 @@
 gunyah:
-  # Qualcomm Snapdragon 8 Gen 3
+  # Qualcomm Snapdragon 7s(+) Gen 3/4
+  - socs:
+      - SM7635
+      - SM7635AC
+      - SM7675
+      - SM7675AB
+      - SM7675AC
+    capabilities:
+      gunyah: yes
+
+  # Qualcomm Snapdragon 8(s) Gen 3
   - socs:
       - SG8350P
       - SM8650
+      - SM8635
       - SM8650AA
       - SM8650AB
       - SM8650AC
