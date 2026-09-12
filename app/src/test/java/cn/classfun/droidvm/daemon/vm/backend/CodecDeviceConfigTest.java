@@ -150,8 +150,8 @@ public final class CodecDeviceConfigTest {
         // Everything else the switch buys is untouched.
         assertTrue(VpuConfig.mediaDevicesAttached(item));
         assertTrue(PeripheralType.VIRTIO_CAMERA.isAttachedTo(item));
-        assertEquals(256, VpuConfig.hostPoolMbFor(item));
-        assertEquals(128, VpuConfig.bootMediaGuestMb(item));
+        assertEquals(320, VpuConfig.hostPoolMbFor(item));
+        assertEquals(192, VpuConfig.bootMediaGuestMb(item));
         // And it is a subtraction from the switch, never a reason of its own: with video
         // acceleration off the override answers nothing.
         VpuConfig.setEnabled(item, false);

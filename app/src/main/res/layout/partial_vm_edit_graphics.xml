@@ -490,7 +490,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:inputType="number"
-                    android:text="256"
+                    android:text="320"
                     tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
             </com.google.android.material.textfield.TextInputLayout>
@@ -517,7 +517,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:inputType="number"
-                        android:text="128"
+                        android:text="192"
                         tools:ignore="HardcodedText,VisualLintTextFieldSize" />
 
                 </com.google.android.material.textfield.TextInputLayout>
