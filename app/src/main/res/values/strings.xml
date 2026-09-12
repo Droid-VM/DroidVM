@@ -205,7 +205,6 @@
     <string name="create_vm_pmu">PMU (Performance Monitor Unit)</string>
     <string name="create_vm_rng">RNG (Random Number Generator)</string>
     <string name="create_vm_smt">SMT (Simultaneous MultiThread)</string>
-    <string name="create_vm_usb">USB (Universal Serial Bus)</string>
     <string name="create_vm_debug">Debug trace</string>
     <string name="create_vm_protected_vm">Protected VM</string>
     <string name="create_vm_swiotlb_hint">SWIOTLB Size (Protected VM)</string>
@@ -326,8 +325,6 @@
     <string name="create_vm_screen_transport_gpu_hw">GPU Copy (hardware encode)</string>
     <string name="create_vm_option_not_implemented">not implemented</string>
     <string name="create_vm_option_unavailable_reset">A stored option is not available in this build; that row was reset to its default.</string>
-    <string name="create_vm_screen_width_cpu_fallback">Transport pipeline will use CPU Copy at this width</string>
-    <string name="create_vm_screen_width_cpu_fallback_desc">GPU Copy imports the framebuffer as a linear dma-buf, and the driver takes one only when its row pitch is 64-byte aligned. SimpleFB\'s pitch is exactly width x 4 with nothing padding it, so GPU Copy needs a width that is a multiple of 16 -- 1408 rather than 1400. This width is fine; its frames just take the CPU copy.</string>
     <string name="create_vm_screen_input_enabled">Input devices</string>
     <string name="create_vm_error_vnc_port_conflict">Two listeners cannot share the same port.</string>
     <string name="create_vm_vnc_host">Host</string>
@@ -412,7 +409,6 @@
     <string name="edit_vm_uefi_firmware">UEFI firmware (empty = built-in EDK2)</string>
     <string name="edit_vm_uefi_firmware_builtin">Built-in EDK2</string>
     <string name="edit_vm_uefi_firmware_browse_title">Select UEFI firmware</string>
-    <string name="edit_vm_uefi_firmware_hint">Custom firmware only takes effect on the QEMU backend\ncrosvm always uses the built-in EDK2</string>
     <string name="edit_vm_uefi_vars">UEFI vars (empty = built-in EDK2 vars)</string>
     <string name="edit_vm_uefi_vars_browse_title">Select UEFI vars</string>
     <string name="edit_vm_uefi_vars_too_large">For crosvm, pflash image size must not exceed %1$d MiB</string>
@@ -445,6 +441,8 @@
     <string name="edit_vm_boot_menu_boot_in">Boot (%1$d)</string>
     <string name="edit_vm_boot_menu_remember">Remember this choice</string>
     <string name="edit_vm_boot_menu_fallback">Pinned entry "%1$s" not found; using default</string>
+    <string name="edit_vm_boot_menu_pseudo">Boot pseudo-unprotected</string>
+    <string name="edit_vm_boot_menu_windows_only">This image boots Windows, which a direct kernel boot cannot start. Use the built-in kernel below, or switch the boot protocol to UEFI.</string>
     <string name="edit_vm_boot_protected_dma_warn">This kernel lacks CONFIG_DMA_RESTRICTED_POOL.\nUnder a protected VM the guest cannot share DMA memory with the host, so virtio devices (disk/network) will fail to start.\nUse the built-in kernel, or rebuild with CONFIG_DMA_RESTRICTED_POOL.</string>
     <string name="kernel_analysis_title">Kernel analysis</string>
     <string name="kernel_analysis_analyze">Analyze</string>
@@ -639,6 +637,13 @@
     <string name="vm_kernel_module_reason_memory">needed by a VM with more than 2 GB of RAM</string>
     <string name="vm_kernel_module_start_anyway">Start anyway</string>
     <string name="vm_kernel_module_start_countdown">Start anyway (%1$d)</string>
+    <string name="vm_protected_guest_dma_title">Kernel cannot reach virtio here</string>
+    <string name="vm_protected_guest_dma_message">This VM is protected, so its memory is lent to the hypervisor and virtio has to bounce through a restricted DMA pool. The kernel this entry boots was built without CONFIG_DMA_RESTRICTED_POOL, so the guest comes up with no disk and no network.\n\nPseudo-unprotected shares the memory instead, and a stock kernel works. Starting anyway is the same start as before.</string>
+    <string name="vm_protected_guest_usb_title">Windows cannot use USB passthrough here</string>
+    <string name="vm_protected_guest_usb_message">This VM is protected, so its memory is lent to the hypervisor and passed-through USB has nowhere to map its transfer buffers. Windows guests do not support that; the attach rules pointing at this VM will do nothing.\n\nPseudo-unprotected shares the memory instead, and passthrough works. Starting anyway is the same start as before.</string>
+    <string name="vm_protected_guest_start_anyway">Start anyway</string>
+    <string name="vm_protected_guest_start_countdown">Start anyway (%1$d)</string>
+    <string name="vm_protected_guest_pseudo">Start pseudo-unprotected once</string>
     <string name="vm_kernel_module_manage">Manage modules</string>
     <string name="vm_kernel_module_manage_unavailable">Open Settings \u2192 Kernel Modules to load it</string>
     <string name="vm_compressed_disk_start_anyway">Start anyway</string>
@@ -759,6 +764,9 @@
     <string name="linux_vm_create_action">Create</string>
     <string name="linux_vm_create_success">Virtual machine "%1$s" created.</string>
     <string name="linux_vm_create_failed">Linux virtual machine creation did not complete.</string>
+    <string name="linux_vm_create_partial_title">Virtual machine created</string>
+    <string name="linux_vm_create_partial">Virtual machine "%1$s" was created, but these preparation steps did not complete:\n%2$s\n\nYou can run them again from the disk menu.</string>
+    <string name="linux_vm_step_resize">Disk resize</string>
 
     <string name="lxc_title">Download LXC Distro Image</string>
     <string name="lxc_category_source">Source</string>
@@ -872,6 +880,9 @@
     <string name="agent_operation_running">Running\u2026</string>
     <string name="agent_operation_success">Operation completed successfully.</string>
     <string name="agent_operation_success_skipped">Operation completed; an action was not applicable.</string>
+    <string name="agent_operation_partial">Operation completed, but some steps failed:\n%1$s</string>
+    <string name="agent_operation_action_password">Password change</string>
+    <string name="agent_operation_action_autogrow">Filesystem expansion</string>
     <string name="agent_operation_failed">Operation failed (exit code %1$d).</string>
     <string name="agent_operation_failed_detail">Operation failed: %1$s</string>
     <string name="agent_operation_prepare_failed">Failed to prepare agent VM.</string>
@@ -893,6 +904,7 @@
     <string name="agent_operation_control_failed">Lost the rescue VM control channel.</string>
     <string name="agent_operation_error_root_not_found">No supported Linux root partition was found.</string>
     <string name="agent_operation_error_password">Failed to update the password database.</string>
+    <string name="agent_operation_error_password_missing">No passwd program was found in the target system.</string>
     <string name="agent_operation_error_unmount">The password was updated, but the target filesystem could not be unmounted safely.</string>
     <string name="agent_operation_error_script">The rescue script failed unexpectedly.</string>
     <string name="agent_operation_error_autogrow_disk">The target disk could not be inspected.</string>
@@ -1578,6 +1590,23 @@
     <string name="edit_vm_sound_underrun_lpc">LPC</string>
     <string name="edit_vm_peripheral_host_output">Output</string>
     <string name="edit_vm_peripheral_host_input">Input</string>
+    <string name="edit_vm_peripheral_type_xhci">xHCI USB controller</string>
+    <string name="edit_vm_xhci_rules_note">Bindings live in the app-wide USB passthrough rules.</string>
+    <string name="edit_vm_xhci_passthrough_off">USB passthrough is off: the VM ignores USB devices when it starts. Turn it on under Settings -&gt; USB passthrough rules.</string>
+    <string name="edit_vm_xhci_device_add">Add device</string>
+    <string name="edit_vm_xhci_device_remove">Remove binding</string>
+    <string name="edit_vm_xhci_usb2_ports">USB 2.0 ports</string>
+    <string name="edit_vm_xhci_usb3_ports">USB 3.0 ports</string>
+    <string name="edit_vm_xhci_port_item">%1$d Port</string>
+    <string name="edit_vm_xhci_add_custom">Custom...</string>
+    <string name="edit_vm_xhci_custom_title">Custom binding</string>
+    <string name="edit_vm_xhci_custom_id">Device id (vid:pid or vid:pid:serial)</string>
+    <string name="edit_vm_xhci_custom_port">Port path, for example 1.2.2</string>
+    <string name="edit_vm_xhci_custom_bad_id">Enter vid:pid, optionally with a serial</string>
+    <string name="edit_vm_xhci_custom_bad_port">Enter a port chain such as 1.2.2</string>
+    <string name="edit_vm_xhci_crosvm_one_only">crosvm supports one xHCI controller; the device is skipped when the VM starts.</string>
+    <string name="edit_vm_xhci_crosvm_ports_fixed">crosvm supports 8 ports; this setting is ignored when the VM starts.</string>
+    <string name="edit_vm_xhci_rules_save_failed">The VM was saved, but its USB bindings were not: %1$s</string>
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>
@@ -1612,4 +1641,91 @@
     <string name="settings_usb_acm_disabled">Disabled</string>
     <string name="edit_vm_serial_usb_disabled_hint">USB serial (ACM) is disabled; enable it in settings or this VM will not boot.</string>
     <string name="edit_vm_serial_full">All ports of this hardware are already added.</string>
+    <string name="settings_usb_passthrough_title">USB passthrough rules</string>
+    <string name="settings_usb_passthrough_summary">Which VM a plugged-in USB device goes to automatically</string>
+    <string name="settings_usb_devices_title">USB passthrough manager</string>
+    <string name="settings_usb_devices_summary">Send one device somewhere now, without changing the rules</string>
+    <string name="usb_rules_title">USB passthrough rules</string>
+    <string name="usb_rules_unsaved">Unsaved changes</string>
+    <string name="usb_rules_enabled">Enable USB passthrough</string>
+    <string name="usb_rules_enabled_note">While this is off no rule runs, and every device stays with Android</string>
+    <string name="usb_rules_enable_warning_title">Let DroidVM take over USB?</string>
+    <string name="usb_rules_enable_warning_message">While USB passthrough is on, DroidVM decides where every USB device you plug in goes: nothing binds a driver by itself, and a device reaches Android only if a rule says so.</string>
+    <string name="usb_rules_layer_exact">Exact</string>
+    <string name="usb_rules_layer_port">Port</string>
+    <string name="usb_rules_layer_device">Device</string>
+    <string name="usb_rules_layer_any">Any</string>
+    <!-- One bound rule on an xHCI card: the layer is the label to its left, so the value
+         says only what that layer stores. -->
+    <string name="usb_rules_row_exact_fmt">Port: %1$s, Device: %2$s (%3$s)</string>
+    <string name="usb_rules_row_port_fmt">Port: %1$s</string>
+    <string name="usb_rules_row_device_fmt">%1$s (%2$s)</string>
+    <string name="usb_rules_empty_exact">No exact rules</string>
+    <string name="usb_rules_empty_port">No port rules</string>
+    <string name="usb_rules_empty_device">No device rules</string>
+    <string name="usb_rules_empty_any">No catch-all rules</string>
+    <string name="usb_rules_add">Add rule</string>
+    <string name="usb_rules_target_custom">Custom...</string>
+    <string name="usb_rules_custom_target_title">Custom target</string>
+    <string name="usb_rules_custom_vm">VM id (UUID)</string>
+    <string name="usb_rules_custom_controller">Controller id, blank for the first</string>
+    <string name="usb_rules_custom_vm_required">Enter a VM id</string>
+    <string name="usb_rules_target_vm">Attach to %1$s</string>
+    <string name="usb_rules_target_controller">Attach to %1$s (%2$s)</string>
+    <string name="usb_rules_unknown_controller">%1$s (missing controller %2$s)</string>
+    <string name="usb_rules_no_controller">%1$s (no USB controller)</string>
+    <string name="usb_rules_unknown_vm">Unknown VM (%1$s)</string>
+    <string name="usb_rules_unknown_device">Unknown device %1$s</string>
+    <string name="usb_rules_any_device">Any USB device</string>
+    <string name="usb_rules_device_absent">Not plugged in</string>
+    <string name="usb_rules_device_unnamed">Unknown device</string>
+    <string name="usb_rules_device_name_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_card_title_fmt" translatable="false">USB %1$s %2$s</string>
+    <string name="usb_rules_card_title_plain_fmt" translatable="false">USB %1$s</string>
+    <!-- The bold lines of a rule card: what the rule matches on, which is all of it that is
+         stored. The plain ones below describe the device that matcher resolves to right now. -->
+    <string name="usb_rules_match_id_fmt">Match device: %1$s</string>
+    <string name="usb_rules_match_port_fmt">Match port: %1$s</string>
+    <string name="usb_rules_match_any">Match any USB device</string>
+    <string name="usb_rules_info_id_fmt">Device: %1$s</string>
+    <string name="usb_rules_info_port_fmt">Port: %1$s</string>
+    <string name="usb_rules_value_absent" translatable="false">\u2014</string>
+    <string name="usb_rules_edit">Edit</string>
+    <string name="usb_rules_edit_done">Done</string>
+    <string name="usb_rules_reorder">Reorder</string>
+    <!-- Where a device goes, in the words both USB pages use. A rule sends it somewhere and
+         the management page says where it is, but the answer is the same answer. -->
+    <string name="usb_target_host">Host</string>
+    <string name="usb_target_idle">Idle</string>
+    <string name="usb_rules_target_title">Edit attach target</string>
+    <string name="usb_rules_attach_to">Attach to\u2026</string>
+    <string name="usb_rules_edit_title">Edit match rule</string>
+    <string name="usb_rules_add_title">Add match rule</string>
+    <string name="usb_rules_field_id">Device</string>
+    <string name="usb_rules_field_port">Port</string>
+    <string name="usb_rules_delete_action">Delete</string>
+    <string name="usb_rules_delete">Delete rule</string>
+    <string name="usb_rules_save">Save and apply</string>
+    <string name="usb_rules_saved">Applied to %1$d device(s)</string>
+    <string name="usb_rules_released">Returned %1$d device(s) to Android</string>
+    <string name="usb_rules_save_failed_title">Rules not saved</string>
+    <string name="usb_rules_request_failed">The daemon refused the request</string>
+    <string name="usb_rules_daemon_unavailable">The daemon is not connected</string>
+    <string name="usb_rules_pick_device_exact_fmt" translatable="false">%1$s (%2$s, port %3$s)</string>
+    <string name="usb_rules_pick_device_port_fmt">Port %1$s: %2$s</string>
+    <string name="usb_rules_pick_device_device_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_vm_label_fmt" translatable="false">%1$s (%2$s)</string>
+    <string name="usb_rules_discard_title">Discard changes?</string>
+    <string name="usb_rules_discard_message">The rules have not been saved. Leave without applying them?</string>
+    <string name="usb_rules_event_attached">%1$s was attached to %2$s automatically</string>
+    <string name="usb_rules_event_failed">Could not attach %1$s to %2$s: %3$s</string>
+    <string name="usb_devices_title">USB passthrough manager</string>
+    <string name="usb_devices_empty">No USB devices are plugged in</string>
+    <string name="usb_devices_action_failed_title">The device did not move</string>
+    <string name="usb_devices_path_fmt" translatable="false">%1$s (%2$s)</string>
+    <!-- Neither the host nor one of our VMs: something opened the device through usbfs. -->
+    <string name="usb_devices_target_claimed">In use elsewhere</string>
+    <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
+    <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
+    <string name="usb_devices_idle_kept">%1$s stays with the host: a driver of its would not let go, so it goes idle only when it is unplugged</string>
 </resources>

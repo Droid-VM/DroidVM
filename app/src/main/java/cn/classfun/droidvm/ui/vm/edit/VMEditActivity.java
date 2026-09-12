@@ -18,6 +18,7 @@ import androidx.annotation.NonNull;
 import androidx.core.widget.NestedScrollView;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.tabs.TabLayout;
 
@@ -286,9 +287,35 @@ public final class VMEditActivity extends SwipeableTabActivity {
             store.update(config);
         } else {
             store.add(config);
+            // The VM exists from here on, so this session is editing it, not creating one. The
+            // save can still end in the editor staying open -- the USB rules below -- and a
+            // second Save that took the creation path again would mint another id and leave two
+            // copies of the VM in the file, after refusing the name the first copy already has.
+            editVMId = config.getId();
+            editMode = true;
         }
         store.save(this);
         setResult(RESULT_OK);
+        // The VM config first, the USB rules second: a rule names the VM and the controller it
+        // attaches to, and the daemon refuses one whose target it cannot find -- which a VM
+        // being created is until the config it was just given has landed. A failure here leaves
+        // the editor open, because the bindings only exist in this page until they are pushed.
+        if (peripheralTab instanceof VMEditPeripheralTab
+            && ((VMEditPeripheralTab) peripheralTab).hasPendingUsbRules()) {
+            ((VMEditPeripheralTab) peripheralTab)
+                .pushUsbRules(config, this::finish, this::showUsbRulesError);
+            return;
+        }
         finish();
+    }
+
+    /** The VM was saved and its USB bindings were not; the editor stays open so they are not
+     *  lost, and the message is the daemon's own. */
+    private void showUsbRulesError(@NonNull String message) {
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.usb_rules_save_failed_title)
+            .setMessage(getString(R.string.edit_vm_xhci_rules_save_failed, message))
+            .setPositiveButton(android.R.string.ok, null)
+            .show();
     }
 }

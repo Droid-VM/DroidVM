@@ -1,0 +1,513 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright DroidVM contributors
+// Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
+package cn.classfun.droidvm.daemon.usb;
+
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
+import android.os.FileObserver;
+import android.util.Log;
+
+import cn.classfun.droidvm.lib.natives.UnixHelper;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
+import java.io.File;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Pattern;
+
+/**
+ * The host's USB devices, and the inotify watch that keeps the list current.
+ *
+ * <p>sysfs has no usable inotify semantics, so the watch is on {@code /dev/bus/usb} instead: the
+ * kernel creates and removes a node there for every device, and the bus directories themselves
+ * come and go with USB role switches, which is why the root is watched as well as each bus.</p>
+ */
+public final class UsbHostInventory {
+    private static final String TAG = "UsbHostInventory";
+    /**
+     * A device directory: {@code 1-1}, {@code 1-1.4.2}, and the root hubs {@code usb1}. Excludes
+     * the interface directories, which carry a colon.
+     *
+     * <p>The root hubs are in it for one reason: they are the only thing on the bus whose arrival
+     * nothing else reports. A dual-role port switching back to host re-registers the host
+     * controller, and the kernel deletes and creates the root hub's node inside the bus directory
+     * it already had -- so the set of bus directories does not change, {@code onBusesChanged} is
+     * never raised, and a scan that skipped root hubs would find the same nothing before and
+     * after and call it no news. Measured on the phone: the dock was pulled and put back at
+     * 16:11:53 and the daemon logged not one line for the six minutes that followed, with both
+     * root hubs unconfigured, no {@code 1-0:1.0} at all and every device below them gone from
+     * sysfs. In the scan a root hub is a device that arrived, the diff is not empty, and the pass
+     * that follows hands it its driver back. Nothing downstream has to care: a root hub is a hub,
+     * and {@link UsbHostDevice#isHub} keeps hubs out of every list and every rule already.</p>
+     */
+    private static final Pattern DEVICE_NAME = Pattern.compile("^(\\d+-[\\d.]+|usb\\d+)$");
+    /** A bus directory under devRoot: {@code 001}. */
+    private static final Pattern BUS_NAME = Pattern.compile("^\\d+$");
+    /** One plug event is several inotify events; rescan once they have stopped arriving. */
+    private static final long QUIET_PERIOD_MS = 300;
+    /** A uevent datagram; the kernel's own limit is well under this. */
+    private static final int UEVENT_BUFFER = 8192;
+    private static final int ROOT_MASK = FileObserver.CREATE | FileObserver.DELETE
+        | FileObserver.MOVED_TO | FileObserver.MOVED_FROM;
+    private static final int BUS_MASK = FileObserver.CREATE | FileObserver.DELETE;
+    /**
+     * IN_Q_OVERFLOW and IN_UNMOUNT, which FileObserver has no constants for: the kernel sends both
+     * unasked, and both mean events were lost, so they stand for "whatever you missed".
+     */
+    private static final int LOST_EVENTS = 0x4000 | 0x2000;
+
+    public interface Listener {
+        void onChanged(@NonNull Diff diff);
+    }
+
+    /**
+     * What one rescan found different, and the whole of what a trigger is: a device that arrived,
+     * one that went, or one that is doing something else than it was.
+     *
+     * <p>That third list is not a nicety. Losing a driver creates and removes no device node, so
+     * a device that falls to idle raises nothing by itself, and with the gate shut nothing binds
+     * a driver back on its own -- measured on the phone, unbinding and rebinding hub 1-1 left it
+     * driverless with its whole subtree gone and not one line in the daemon log for 78 seconds,
+     * while a forced pass put the tree back in 7. The rules are cheap and idempotent, so every
+     * difference gets one and a pass that owes nothing simply decides nothing.</p>
+     *
+     * <p>Read exactly, then: this is every driver change the NEXT rescan finds, and a rescan is
+     * raised by a node event and by nothing else -- the watch below, or {@code attach}. That is
+     * enough for the measured case and for every case this daemon can create, because a driver
+     * change worth a pass moves nodes: unbinding hub 1-1 unconfigured it and took the whole
+     * subtree's nodes down with it, and it is those deletions that wake this. What it does not
+     * cover is a driver change with nothing under it -- an empty hub's interface unbound by
+     * hand, a leaf whose driver drops itself -- which stays unnoticed until the next plug
+     * anywhere on the machine. Deliberately not answered with a timer: the triggers are the
+     * spec's (plug, VM running, rules saved, VM releasing, daemon start), nothing here or in the
+     * manager can leave a device in that state, and a standing sweep is a wakeup a phone would
+     * pay for every few seconds forever to catch a shell command nobody but a developer runs.</p>
+     */
+    public static final class Diff {
+        /** Every device the scan found, whether it moved or not. */
+        public final List<UsbHostDevice> all;
+        public final List<UsbHostDevice> added;
+        public final List<UsbHostDevice> removed;
+        /**
+         * Devices that were there before and are there now, with a different set of interfaces or
+         * a different driver on one of them. Compared that finely rather than by the derived
+         * state, because the two differ exactly where it matters: a device the generic driver has
+         * just given a configuration to gains its interfaces with no driver on any of them, so it
+         * reads idle before and idle after, and it is precisely the device somebody has to be
+         * told about.
+         */
+        public final List<UsbHostDevice> changed;
+
+        Diff(@NonNull List<UsbHostDevice> all, @NonNull List<UsbHostDevice> added,
+             @NonNull List<UsbHostDevice> removed, @NonNull List<UsbHostDevice> changed) {
+            this.all = all;
+            this.added = added;
+            this.removed = removed;
+            this.changed = changed;
+        }
+
+        /** Nothing moved: no listener is called and no pass is owed. */
+        public boolean isEmpty() {
+            return added.isEmpty() && removed.isEmpty() && changed.isEmpty();
+        }
+
+        /** What to call the pass this diff owes, in the log. */
+        @NonNull
+        public String reason() {
+            if (!added.isEmpty()) return "plug";
+            if (!removed.isEmpty()) return "unplug";
+            return "drivers";
+        }
+
+        /**
+         * The difference between two scans. Keyed by address and device number, not by address
+         * alone: an unplug and replug that both land inside one quiet period put a new device at
+         * the same sysfs name, and by name the two scans would agree that nothing happened. The
+         * kernel hands every enumeration a fresh devnum, so that is what tells the two instances
+         * apart -- and what makes a replug an add and a remove rather than a change.
+         */
+        @NonNull
+        static Diff between(@NonNull List<UsbHostDevice> previous,
+                            @NonNull List<UsbHostDevice> now) {
+            var before = new HashMap<String, UsbHostDevice>();
+            for (var device : previous) before.put(instanceKey(device), device);
+            var after = new HashMap<String, UsbHostDevice>();
+            for (var device : now) after.put(instanceKey(device), device);
+            var added = new ArrayList<UsbHostDevice>();
+            var changed = new ArrayList<UsbHostDevice>();
+            for (var device : now) {
+                var was = before.get(instanceKey(device));
+                if (was == null) added.add(device);
+                else if (!sameDrivers(was, device)) changed.add(device);
+            }
+            var removed = new ArrayList<UsbHostDevice>();
+            for (var device : previous)
+                if (!after.containsKey(instanceKey(device))) removed.add(device);
+            return new Diff(now, added, removed, changed);
+        }
+
+        /** Whether two readings of one device show the same interfaces held by the same drivers. */
+        private static boolean sameDrivers(@NonNull UsbHostDevice was, @NonNull UsbHostDevice now) {
+            if (was.interfaces.size() != now.interfaces.size()) return false;
+            for (var i = 0; i < was.interfaces.size(); i++) {
+                // Both lists are sorted by name, so position is the same interface.
+                var before = was.interfaces.get(i);
+                var after = now.interfaces.get(i);
+                if (!before.name.equals(after.name)) return false;
+                if (!before.driver.equals(after.driver)) return false;
+            }
+            return true;
+        }
+    }
+
+    private final String sysfsRoot;
+    private final String devRoot;
+    /** Guards the snapshot and serialises scan-diff-notify against itself. */
+    private final Object rescanLock = new Object();
+    /** Guards the observers and the debounce timer; held only for the moment it takes to arm. */
+    private final Object watchLock = new Object();
+    /** Strong references: an unreferenced FileObserver is collected and stops watching silently. */
+    private final Map<String, FileObserver> busObservers = new HashMap<>();
+    private volatile List<UsbHostDevice> snapshot = Collections.emptyList();
+    private volatile Listener listener = null;
+    private volatile Runnable busListener = null;
+    /** Set when a bus directory came or went, and read by the next debounced rescan. */
+    private final AtomicBoolean busesMoved = new AtomicBoolean(false);
+    private FileObserver rootObserver = null;
+    private ScheduledExecutorService scheduler = null;
+    private ScheduledFuture<?> pending = null;
+    /** The kernel's uevent socket and the pipe that ends its reader; -1 when it is not running. */
+    private int ueventFd = -1;
+    private int wakeReadFd = -1;
+    private int wakeWriteFd = -1;
+    private Thread ueventThread = null;
+
+    public UsbHostInventory(@NonNull String sysfsRoot, @NonNull String devRoot) {
+        this.sysfsRoot = sysfsRoot;
+        this.devRoot = devRoot;
+    }
+
+    /**
+     * Every device sysfs currently describes, sorted by its sysfs name. Hubs included: a hub
+     * whose driver is not bound takes its whole subtree down with it, so the rule pass has to
+     * hear about one arriving exactly as it hears about a keyboard. What may not be lent out is
+     * refused where a device is lent out, not here.
+     */
+    @NonNull
+    public List<UsbHostDevice> scan() {
+        var entries = new File(sysfsRoot).listFiles();
+        var devices = new ArrayList<UsbHostDevice>();
+        if (entries == null) {
+            Log.w(TAG, fmt("Cannot list %s", sysfsRoot));
+            return devices;
+        }
+        for (var entry : entries) {
+            var name = entry.getName();
+            if (!DEVICE_NAME.matcher(name).matches()) continue;
+            UsbHostDevice device;
+            try {
+                device = UsbHostDevice.fromSysfs(entry, devRoot);
+            } catch (Exception e) {
+                // A device disconnected mid-scan leaves a directory whose files are already gone.
+                Log.w(TAG, fmt("Skipping USB device %s: %s", name, e.getMessage()));
+                continue;
+            }
+            devices.add(device);
+        }
+        devices.sort(Comparator.comparing((UsbHostDevice device) -> device.sysfs));
+        return devices;
+    }
+
+    /**
+     * Takes the first snapshot -- without calling either listener -- and starts watching.
+     *
+     * <p>[onBusesChanged] is the other half of the news: a bus directory appearing means a USB
+     * controller was registered, and that controller's root hub is not a device this scan
+     * returns or a rule can speak for. It is reported on its own because nothing else reports
+     * it -- a root hub raises no device diff -- and because a root hub with no driver bound is a
+     * bus whose ports are never scanned, so no device below it will ever enumerate to raise a
+     * change of its own.</p>
+     */
+    public void start(@NonNull Listener listener, @NonNull Runnable onBusesChanged) {
+        this.listener = listener;
+        this.busListener = onBusesChanged;
+        synchronized (rescanLock) {
+            snapshot = scan();
+        }
+        synchronized (watchLock) {
+            if (scheduler == null) {
+                scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                    var t = new Thread(r, "usb-inventory");
+                    t.setDaemon(true);
+                    return t;
+                });
+            }
+            if (rootObserver == null) {
+                // FileObserver(File, int) needs API 29; minSdk is 33, so the File form is fine.
+                rootObserver = new DirObserver(new File(devRoot), ROOT_MASK, true);
+                rootObserver.startWatching();
+            }
+            refreshBusObservers();
+            startUevents();
+        }
+        Log.i(TAG, fmt("Watching %s (%d device(s) present)", devRoot, snapshot.size()));
+    }
+
+    /**
+     * Starts the reader on the kernel's uevent socket, which is the second source and the only
+     * one that reports a driver bind or unbind: those move no node, so nothing under
+     * {@code /dev/bus/usb} changes and the watch above hears nothing at all.
+     *
+     * <p>It feeds the same debounce as the watch and decides nothing of its own. The two sources
+     * overlap on plugs -- a node appears and an {@code add} uevent is sent for the same device --
+     * and that is deliberate: a duplicate costs one scan that finds no difference, and the
+     * alternative is deciding which source owns which kind of change and being wrong about one.
+     *
+     * <p>Best effort. If the socket cannot be opened the daemon runs on the watch alone, which is
+     * what it did before this existed: every change that moves a node is still seen, and only a
+     * driver somebody unbound by hand goes unnoticed.</p>
+     */
+    private void startUevents() {
+        if (ueventThread != null) return;
+        int fd;
+        int[] wake;
+        try {
+            fd = UnixHelper.nativeUeventOpen();
+            if (fd < 0) {
+                Log.w(TAG, "No uevent socket; a driver unbound by hand will not be noticed");
+                return;
+            }
+            wake = UnixHelper.nativePipe();
+        } catch (Throwable e) {
+            Log.w(TAG, "No uevent socket; a driver unbound by hand will not be noticed", e);
+            return;
+        }
+        if (wake == null || wake.length != 2) {
+            UnixHelper.nativeCloseFd(fd);
+            Log.w(TAG, "No pipe for the uevent reader; running on the node watch alone");
+            return;
+        }
+        ueventFd = fd;
+        wakeReadFd = wake[0];
+        wakeWriteFd = wake[1];
+        var thread = new Thread(this::readUevents, "usb-uevent");
+        thread.setDaemon(true);
+        ueventThread = thread;
+        thread.start();
+        Log.i(TAG, "Watching the kernel uevent socket for USB driver binds and unbinds");
+    }
+
+    /**
+     * Reads until the pipe says stop. Every USB message schedules a rescan and nothing more: what
+     * changed is the scan's answer, not this thread's, which is what keeps one event source from
+     * having an opinion the other does not.
+     */
+    private void readUevents() {
+        var buffer = new byte[UEVENT_BUFFER];
+        while (true) {
+            int ready;
+            try {
+                ready = UnixHelper.nativePollIn2(ueventFd, wakeReadFd, -1);
+            } catch (Throwable e) {
+                Log.w(TAG, "USB uevent poll failed; the node watch carries on alone", e);
+                return;
+            }
+            // The pipe, or a hangup on either: both mean this reader is over. A poll error is
+            // not retried in a tight loop -- a socket that cannot be polled will not recover.
+            if (ready < 0 || (ready & 2) != 0) return;
+            if ((ready & 1) == 0) continue;
+            var n = UnixHelper.nativeRead(ueventFd, buffer, buffer.length);
+            if (n <= 0) {
+                if (n == 0) return;
+                continue;
+            }
+            var event = UsbUevent.parse(buffer, n);
+            if (event == null) continue;
+            if (event.isDriverChange())
+                Log.d(TAG, fmt("uevent %s", event));
+            scheduleRescan();
+        }
+    }
+
+    /** Ends the reader at once: the pipe wakes the poll, and the thread is a daemon anyway. */
+    private void stopUevents() {
+        var thread = ueventThread;
+        ueventThread = null;
+        if (wakeWriteFd >= 0) {
+            UnixHelper.nativeWrite(wakeWriteFd, new byte[]{1}, 1);
+            UnixHelper.nativeCloseFd(wakeWriteFd);
+            wakeWriteFd = -1;
+        }
+        if (thread != null) {
+            try {
+                thread.join(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        if (ueventFd >= 0) {
+            UnixHelper.nativeCloseFd(ueventFd);
+            ueventFd = -1;
+        }
+        if (wakeReadFd >= 0) {
+            UnixHelper.nativeCloseFd(wakeReadFd);
+            wakeReadFd = -1;
+        }
+    }
+
+    public void stop() {
+        // Outside the lock on purpose: the reader takes watchLock to arm a rescan, so joining it
+        // while holding that lock is the two of them waiting on each other.
+        stopUevents();
+        synchronized (watchLock) {
+            if (pending != null) {
+                pending.cancel(false);
+                pending = null;
+            }
+            for (var observer : busObservers.values())
+                observer.stopWatching();
+            busObservers.clear();
+            if (rootObserver != null) {
+                rootObserver.stopWatching();
+                rootObserver = null;
+            }
+            if (scheduler != null) {
+                scheduler.shutdownNow();
+                scheduler = null;
+            }
+        }
+    }
+
+    /** The last scan; never null, empty before {@link #start}. */
+    @NonNull
+    public List<UsbHostDevice> snapshot() {
+        return snapshot;
+    }
+
+    /** Scans now, diffs against the snapshot and calls the listener if anything moved. */
+    @NonNull
+    public List<UsbHostDevice> rescanNow() {
+        Diff diff;
+        var busesChanged = busesMoved.getAndSet(false);
+        synchronized (rescanLock) {
+            diff = Diff.between(snapshot, scan());
+            snapshot = diff.all;
+        }
+        if (busesChanged) {
+            var buses = busListener;
+            if (buses != null) {
+                try {
+                    buses.run();
+                } catch (Exception e) {
+                    Log.w(TAG, "USB bus listener failed", e);
+                }
+            }
+        }
+        if (diff.isEmpty()) return diff.all;
+        var target = listener;
+        if (target == null) return diff.all;
+        try {
+            target.onChanged(diff);
+        } catch (Exception e) {
+            Log.w(TAG, "USB inventory listener failed", e);
+        }
+        return diff.all;
+    }
+
+    @NonNull
+    private static String instanceKey(@NonNull UsbHostDevice device) {
+        return fmt("%s#%d", device.sysfs, device.devnum);
+    }
+
+    private void scheduleRescan() {
+        synchronized (watchLock) {
+            var exec = scheduler;
+            if (exec == null) return;
+            if (pending != null) pending.cancel(false);
+            try {
+                pending = exec.schedule(() -> {
+                    try {
+                        rescanNow();
+                    } catch (Exception e) {
+                        Log.w(TAG, "USB inventory rescan failed", e);
+                    }
+                }, QUIET_PERIOD_MS, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException e) {
+                // stop() won the race; there is nothing left to keep current.
+                pending = null;
+            }
+        }
+    }
+
+    /**
+     * Adds an observer for every bus directory that appeared and drops the ones that went.
+     * Returns whether the set of buses is not the one it was: that is a USB controller having
+     * been registered or removed, which is news of its own -- see {@link #start}.
+     */
+    private boolean refreshBusObservers() {
+        synchronized (watchLock) {
+            if (rootObserver == null) return false;
+            var present = new HashSet<String>();
+            var entries = new File(devRoot).listFiles();
+            if (entries != null)
+                for (var entry : entries) {
+                    var name = entry.getName();
+                    if (!entry.isDirectory() || !BUS_NAME.matcher(name).matches()) continue;
+                    present.add(name);
+                }
+            // Compared before the map is touched, so what is compared is the previous set.
+            var changed = !present.equals(busObservers.keySet());
+            for (var name : present) {
+                if (busObservers.containsKey(name)) continue;
+                var observer = new DirObserver(new File(devRoot, name), BUS_MASK, false);
+                busObservers.put(name, observer);
+                observer.startWatching();
+            }
+            var it = busObservers.entrySet().iterator();
+            while (it.hasNext()) {
+                var e = it.next();
+                if (present.contains(e.getKey())) continue;
+                e.getValue().stopWatching();
+                it.remove();
+            }
+            return changed;
+        }
+    }
+
+    private final class DirObserver extends FileObserver {
+        private final int mask;
+        private final boolean isRoot;
+
+        DirObserver(@NonNull File dir, int mask, boolean isRoot) {
+            super(dir, mask);
+            this.mask = mask;
+            this.isRoot = isRoot;
+        }
+
+        @Override
+        public void onEvent(int event, @Nullable String path) {
+            // FileObserver hands the raw inotify bits through, so events nobody asked for land
+            // here too. IN_IGNORED only says this one watch is over and carries no news; a
+            // dropped queue or an unmounted devfs is precisely when a rescan is owed, and the
+            // bus observers have to be rebuilt first because their watches may be gone with it.
+            if ((event & (mask | LOST_EVENTS)) == 0) return;
+            if ((isRoot || (event & LOST_EVENTS) != 0) && refreshBusObservers())
+                busesMoved.set(true);
+            scheduleRescan();
+        }
+    }
+}

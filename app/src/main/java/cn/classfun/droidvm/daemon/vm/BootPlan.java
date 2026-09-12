@@ -193,9 +193,11 @@ public final class BootPlan {
                 var entry = pinned != null
                     ? matchEntry(entries, pinned.id, pinned.title) : null;
                 if (entry == null) entry = defaultEntry(entries);
-                var fixed = boot.isVdafix() ? optStr(entry, "cmdline_fixed") : "";
-                var cmdline = !fixed.isEmpty() ? fixed : optStr(entry, "cmdline");
-                if (!cmdline.isEmpty()) return cmdline;
+                if (entry != null) {
+                    var fixed = boot.isVdafix() ? optStr(entry, "cmdline_fixed") : "";
+                    var cmdline = !fixed.isEmpty() ? fixed : optStr(entry, "cmdline");
+                    if (!cmdline.isEmpty()) return cmdline;
+                }
             }
         } catch (IOException e) {
             Log.w(TAG, fmt(
@@ -228,6 +230,12 @@ public final class BootPlan {
             fallback = entryOverrideId != null || pinned != null;
             entry = defaultEntry(entries);
         }
+        if (entry == null)
+            throw new IOException(fmt(
+                "%s has no boot entry a direct kernel boot can start%s",
+                image,
+                hasWindows(entries)
+                    ? ": it boots Windows, which needs the UEFI boot protocol" : ""));
         if (fallback)
             Log.w(TAG, fmt(
                 "VM %s: pinned boot entry not found in %s, using bootloader default",
@@ -293,17 +301,41 @@ public final class BootPlan {
     ) {
         for (int i = 0; i < entries.length(); i++) {
             var e = entries.optJSONObject(i);
-            if (e == null) continue;
+            if (!isLinux(e)) continue;
             if (id != null && !id.isEmpty() && id.equals(optStr(e, "id")))
                 return e;
         }
         for (int i = 0; i < entries.length(); i++) {
             var e = entries.optJSONObject(i);
-            if (e == null) continue;
+            if (!isLinux(e)) continue;
             if (title != null && !title.isEmpty() && title.equals(optStr(e, "title")))
                 return e;
         }
         return null;
+    }
+
+    /**
+     * Is this an entry a direct kernel boot can start?
+     *
+     * <p>lbx lists what the image boots, which since it learned to see Windows includes entries
+     * that have no kernel at all -- an install only firmware can start, and on a dual-boot disk
+     * possibly the one the bootloader would pick. Direct boot loads a kernel, so those are not
+     * candidates here, neither for a pin nor for the automatic choice. An entry from an older
+     * lbx carries no type and is a Linux one.</p>
+     */
+    private static boolean isLinux(@Nullable JSONObject e) {
+        if (e == null) return false;
+        var type = optStr(e, "type");
+        return type.isEmpty() || "linux".equals(type);
+    }
+
+    /** Whether the image holds a Windows install, for saying so in the error. */
+    private static boolean hasWindows(@NonNull JSONArray entries) {
+        for (int i = 0; i < entries.length(); i++) {
+            var e = entries.optJSONObject(i);
+            if (e != null && "windows".equals(optStr(e, "type"))) return true;
+        }
+        return false;
     }
 
     /**
@@ -315,13 +347,18 @@ public final class BootPlan {
         return o.isNull(key) ? "" : o.optString(key, "");
     }
 
-    @NonNull
+    /** The bootloader's own choice, or the first entry -- Linux ones only. */
+    @Nullable
     private static JSONObject defaultEntry(@NonNull JSONArray entries) {
         for (int i = 0; i < entries.length(); i++) {
             var e = entries.optJSONObject(i);
-            if (e != null && e.optBoolean("default", false)) return e;
+            if (isLinux(e) && e.optBoolean("default", false)) return e;
         }
-        return entries.optJSONObject(0);
+        for (int i = 0; i < entries.length(); i++) {
+            var e = entries.optJSONObject(i);
+            if (isLinux(e)) return e;
+        }
+        return null;
     }
 
     /**

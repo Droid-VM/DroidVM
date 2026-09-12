@@ -65,4 +65,37 @@ public final class HostKernel {
         var m = MAJOR_MINOR.matcher(unameRelease.trim());
         return m.find() ? m.group(1) : null;
     }
+
+    /**
+     * Orders two series the way version numbers go, not the way strings do: 6.6 is below 6.18,
+     * which no textual comparison of those two will tell you. Negative when {@code a} is the
+     * older series, zero when they are the same one, positive when it is the newer.
+     *
+     * <p>Null when either side is not a {@code major.minor} we can read -- "we do not know",
+     * the same answer {@link #majorMinor} gives, for callers to decide what to do with. Pure.</p>
+     */
+    @Nullable
+    public static Integer compareSeries(@Nullable String a, @Nullable String b) {
+        var left = parts(a);
+        var right = parts(b);
+        if (left == null || right == null) return null;
+        return left[0] != right[0] ? Integer.compare(left[0], right[0])
+            : Integer.compare(left[1], right[1]);
+    }
+
+    /** {@code major.minor} as two numbers, or null when it is not one. */
+    @Nullable
+    private static int[] parts(@Nullable String version) {
+        var series = majorMinorOf(version);
+        if (series == null) return null;
+        var dot = series.indexOf('.');
+        try {
+            return new int[]{
+                Integer.parseInt(series.substring(0, dot)),
+                Integer.parseInt(series.substring(dot + 1)),
+            };
+        } catch (NumberFormatException e) {
+            return null; // more digits than an int holds; not a kernel anyone is running
+        }
+    }
 }

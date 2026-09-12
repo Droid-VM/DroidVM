@@ -21,6 +21,7 @@ import cn.classfun.droidvm.lib.utils.JsonUtils;
 public final class AgentActionSpec implements JSONSerialize {
     private final String type;
     private final Map<String, String> params = new HashMap<>();
+    private boolean optional = false;
 
     public AgentActionSpec(@NonNull String type) {
         var normalized = type.trim().toLowerCase(java.util.Locale.ROOT);
@@ -32,11 +33,24 @@ public final class AgentActionSpec implements JSONSerialize {
     public AgentActionSpec(@NonNull JSONObject jo) throws JSONException {
         this(jo.getString("type"));
         if (jo.has("params")) params.putAll(JsonUtils.objectToStringMap(jo, "params"));
+        optional = jo.optBoolean("optional", false);
     }
 
     @NonNull
     public String getType() {
         return type;
+    }
+
+    /**
+     * Marks an action whose failure must not cancel the queue. The caller wants whatever
+     * the remaining actions can still do, and one report at the end instead of an abort.
+     */
+    public void setOptional(boolean optional) {
+        this.optional = optional;
+    }
+
+    public boolean isOptional() {
+        return optional;
     }
 
     public void setParam(@NonNull String key, @NonNull String value) {
@@ -66,6 +80,7 @@ public final class AgentActionSpec implements JSONSerialize {
         for (var entry : params.entrySet())
             paramsObject.put(entry.getKey(), entry.getValue());
         out.put("params", paramsObject);
+        if (optional) out.put("optional", true);
         return out;
     }
 }

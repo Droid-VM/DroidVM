@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical"
+    tools:context=".ui.usb.UsbRulesActivity">
+
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar"
+        android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize"
+        app:menu="@menu/menu_usb_rules"
+        app:navigationIcon="?attr/homeAsUpIndicator" />
+
+    <androidx.core.widget.NestedScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="16dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginEnd="16dp"
+                android:textAppearance="?attr/textAppearanceBodyMedium"
+                android:textColor="?attr/colorError"
+                android:visibility="gone"
+                tools:text="Daemon is not connected"
+                tools:visibility="visible" />
+
+            <!-- The master switch, above the zones and saved by the same button: toggling it
+                 alone changes nothing, and the four zones stay editable while it is off so
+                 rules can be prepared before they are allowed to run. Checked in the layout
+                 because that is what an absent "enabled" means to the daemon: a page waiting
+                 for its answer, or one that never got it, must not show passthrough as off. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_usb_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:icon="@drawable/ic_usb"
+                android:subtitle="@string/usb_rules_enabled_note"
+                android:text="@string/usb_rules_enabled" />
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/usb_rules_layer_exact">
+
+                <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+                    android:id="@+id/list_exact"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/usb_rules_empty_exact"
+                    android:icon="@drawable/ic_add"
+                    android:text="@string/usb_rules_add"
+                    app:reorderable="true" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/usb_rules_layer_port">
+
+                <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+                    android:id="@+id/list_port"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/usb_rules_empty_port"
+                    android:icon="@drawable/ic_add"
+                    android:text="@string/usb_rules_add"
+                    app:reorderable="true" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/usb_rules_layer_device">
+
+                <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+                    android:id="@+id/list_device"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/usb_rules_empty_device"
+                    android:icon="@drawable/ic_add"
+                    android:text="@string/usb_rules_add"
+                    app:reorderable="true" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:title="@string/usb_rules_layer_any">
+
+                <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+                    android:id="@+id/list_any"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/usb_rules_empty_any"
+                    android:icon="@drawable/ic_add"
+                    android:text="@string/usb_rules_add"
+                    app:reorderable="true" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+        </LinearLayout>
+
+    </androidx.core.widget.NestedScrollView>
+
+</LinearLayout>

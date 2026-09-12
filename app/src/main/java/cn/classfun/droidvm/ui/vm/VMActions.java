@@ -24,6 +24,7 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.FragmentActivity;
 
@@ -53,10 +54,12 @@ import cn.classfun.droidvm.ui.disk.tree.DiskTree;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.hugepage.PoolPreflight;
+import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.ui.hugepage.HugePageActivity;
 import cn.classfun.droidvm.ui.main.settings.KernelModuleDialog;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.ui.DialogTouch;
 import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
@@ -88,21 +91,27 @@ public final class VMActions {
     ) {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
         // image attached writable (writing would corrupt its overlays - any backend), a disk a
-        // running VM already holds, compressed clusters (crosvm boots to I/O errors), a host
-        // kernel module this configuration needs but nobody loaded, a LEND mode this kernel's
-        // resource manager will not accept, and a huge-page reserve too small to back this VM.
-        // Each prompts with its fix and chains to the next; everything else starts normally. The
-        // shared-disk guard may hand the rest of the chain a session copy of the config, so
-        // everything downstream uses what it passes on rather than `config`.
+        // running VM already holds, compressed clusters (crosvm boots to I/O errors), a guest
+        // that cannot work with its memory lent, a host kernel module this configuration needs
+        // but nobody loaded, a LEND mode this kernel's resource manager will not accept, and a
+        // huge-page reserve too small to back this VM. Each prompts with its fix and chains to
+        // the next; everything else starts normally.
+        //
+        // Two of them may hand the rest of the chain a different config -- the shared-disk
+        // guard a read-only session copy, the protected-guest guard a pseudo-unprotected one --
+        // so everything downstream uses what it passes on rather than `config`. The
+        // protected-guest guard comes before the module one deliberately: pseudo-unprotected
+        // RAM needs gunyah_host_share, and choosing it here has to be checked for that.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
             () -> guardLockedParents(config, mainHandler, ui,
                 () -> guardSharedRunning(config, mainHandler, ui,
                     started -> guardCompressedDisks(started, mainHandler, ui, convertLauncher,
-                        () -> guardKernelModules(started, mainHandler, ui,
-                            () -> guardLendMthp(started, mainHandler, ui,
-                                () -> guardHugePagePool(started, mainHandler, ui,
-                                    () -> startAfterGuard(started, mainHandler, ui,
-                                        wantOpenConsole))))))));
+                        () -> guardProtectedGuest(started, mainHandler, ui,
+                            chosen -> guardKernelModules(chosen, mainHandler, ui,
+                                () -> guardLendMthp(chosen, mainHandler, ui,
+                                    () -> guardHugePagePool(chosen, mainHandler, ui,
+                                        () -> startAfterGuard(chosen, mainHandler, ui,
+                                            wantOpenConsole)))))))));
     }
 
     /**
@@ -197,6 +206,144 @@ public final class VMActions {
     }
 
     /**
+     * Pre-start check: can this guest work with its memory lent to the hypervisor?
+     * {@link ProtectedGuestPreflight} answers that from the image itself, whichever way this VM
+     * boots -- a Linux kernel with no restricted DMA pool, or a Windows install with USB
+     * passthrough pointing at it. An image it cannot read, or an OS it has no rule for, raises
+     * nothing.
+     *
+     * <p>There is something to repair, and it is one setting: pseudo-unprotected shares the
+     * guest's RAM rather than lending it, and both cases work. Unlike the LEND correction it is
+     * <em>not</em> persisted -- protection is a choice the user made about this VM, and a start
+     * that quietly downgraded it for good would be a worse surprise than the one it prevents.
+     * The session copy this hands on is the whole of the change.</p>
+     *
+     * <p>Starting anyway stays the countdown's answer, as everywhere else: it costs the feature
+     * that wanted the host's reach, and nothing that changes a user's configuration should
+     * happen because nobody was looking.</p>
+     */
+    private static void guardProtectedGuest(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull Consumer<VMConfig> proceed
+    ) {
+        // An image-booting VM with the menu ahead of it is asked there instead, per entry.
+        var menuWillAsk = BootMenuDialog.wanted(config) && ui.isAlive();
+        ProtectedGuestPreflight.check(config, menuWillAsk, reason -> mainHandler.post(() -> {
+            if (reason == null || !ui.isAlive()) {
+                // Nobody to ask: the start was requested, so honour it.
+                proceed.accept(config);
+                return;
+            }
+            promptProtectedGuest(config, ui, reason, proceed);
+        }));
+    }
+
+    private static void promptProtectedGuest(
+        @NonNull VMConfig config,
+        @NonNull UIContext ui,
+        @NonNull ProtectedGuestPreflight.Reason reason,
+        @NonNull Consumer<VMConfig> proceed
+    ) {
+        var ctx = ui.getContext();
+        var dma = reason == ProtectedGuestPreflight.Reason.DMA_POOL;
+        var dialog = new MaterialAlertDialogBuilder(ctx)
+            .setTitle(dma ? R.string.vm_protected_guest_dma_title
+                : R.string.vm_protected_guest_usb_title)
+            .setMessage(dma ? R.string.vm_protected_guest_dma_message
+                : R.string.vm_protected_guest_usb_message)
+            // Changing nothing is the neutral answer, the mode switch the positive one.
+            .setNeutralButton(R.string.vm_protected_guest_start_anyway, (d, w) ->
+                proceed.accept(config))
+            .setPositiveButton(R.string.vm_protected_guest_pseudo, (d, w) ->
+                proceed.accept(pseudoUnprotectedSession(config)))
+            .setNegativeButton(android.R.string.cancel, null)
+            .create();
+        dialog.show();
+        guardCountdown(ctx, dialog, R.string.vm_protected_guest_start_countdown,
+            () -> proceed.accept(config));
+    }
+
+    /**
+     * This VM as pseudo-unprotected, for one start: a copy, so the store and the editor keep
+     * the mode the user chose.
+     *
+     * <p>Through JSON for the same reason {@link #readonlyForSession} is -- DataItem's copy
+     * constructor shares the nested items, so a copy made any other way would write straight
+     * back into the caller's config.</p>
+     */
+    @NonNull
+    private static VMConfig pseudoUnprotectedSession(@NonNull VMConfig config) {
+        try {
+            var session = new VMConfig();
+            session.item.set(config.toJson());
+            session.item.set(ProtectedVM.KEY, ProtectedVM.PSEUDO_UNPROTECTED);
+            return session;
+        } catch (Exception e) {
+            // The user asked for this start to be pseudo-unprotected; a live flip still starts
+            // it that way, and nothing is saved either way.
+            Log.w(TAG, "session config copy failed; flipping the live config instead", e);
+            config.item.set(ProtectedVM.KEY, ProtectedVM.PSEUDO_UNPROTECTED);
+            return config;
+        }
+    }
+
+    /**
+     * Puts the 5-second countdown on a guard dialog, ending in {@code onFinish}.
+     *
+     * <p>Every guard prompt lays its answers out the same way, by what pressing one means:
+     *
+     * <ul>
+     *   <li><b>neutral</b> (bottom left) -- go ahead, changing nothing;</li>
+     *   <li><b>positive</b> (bottom right) -- go ahead, with the change that fixes it;</li>
+     *   <li><b>negative</b> -- do not go ahead.</li>
+     * </ul>
+     *
+     * <p>The countdown lands on the neutral button, and only falls to the positive one when the
+     * dialog has no neutral -- i.e. when going ahead unchanged was not on offer at all. That is
+     * the whole rule: a start nobody is watching is never blocked, and never has a setting
+     * changed under it.</p>
+     *
+     * <p>Touching the dialog anywhere but its buttons stops the countdown for good and puts the
+     * button's own label back: someone is there, reading, and the answer is now theirs to give.
+     * Pressing a button dismisses the dialog, which stops it too.</p>
+     */
+    private static void guardCountdown(
+        @NonNull Context ctx,
+        @NonNull AlertDialog dialog,
+        @StringRes int countdownText,
+        @NonNull Runnable onFinish
+    ) {
+        var neutral = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
+        var button = neutral != null ? neutral : dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        // What the button said before the countdown took it over, to put back on a touch.
+        var label = button == null ? null : button.getText();
+        if (button != null)
+            button.setText(ctx.getString(countdownText, 5));
+        var timer = new CountDownTimer(5000, 1000) {
+            @Override
+            public void onTick(long ms) {
+                if (button != null)
+                    button.setText(ctx.getString(
+                        countdownText, (int) Math.ceil(ms / 1000.0)));
+            }
+
+            @Override
+            public void onFinish() {
+                dialog.dismiss();
+                onFinish.run();
+            }
+        };
+        dialog.setOnDismissListener(d -> timer.cancel());
+        DialogTouch.whenTouched(dialog, () -> {
+            timer.cancel();
+            if (button != null) button.setText(label);
+        });
+        timer.start();
+    }
+
+    /**
      * Pre-start check: does this VM's configuration reach for a host kernel module nobody has
      * loaded? {@link KernelModulePreflight} answers that from the config itself (pseudo-
      * unprotected RAM, GPU acceleration, a VM too big for the 6.1 Gunyah driver's page list),
@@ -250,34 +397,12 @@ public final class VMActions {
         var dialog = new MaterialAlertDialogBuilder(ctx)
             .setTitle(R.string.vm_kernel_module_title)
             .setMessage(ctx.getString(R.string.vm_kernel_module_message, lines.toString()))
-            .setPositiveButton(R.string.vm_kernel_module_start_anyway, (d, w) -> proceed.run())
-            .setNeutralButton(R.string.vm_kernel_module_manage, (d, w) -> showKernelModules(ctx))
+            .setNeutralButton(R.string.vm_kernel_module_start_anyway, (d, w) -> proceed.run())
+            .setPositiveButton(R.string.vm_kernel_module_manage, (d, w) -> showKernelModules(ctx))
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.show();
-        // No response in 5s = "start anyway" (the chosen default), so an
-        // unattended start isn't blocked; the countdown shows on that button.
-        var startAnyway = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (startAnyway != null)
-            startAnyway.setText(ctx.getString(R.string.vm_kernel_module_start_countdown, 5));
-        var timer = new CountDownTimer(5000, 1000) {
-            @Override
-            public void onTick(long ms) {
-                if (startAnyway != null)
-                    startAnyway.setText(ctx.getString(
-                        R.string.vm_kernel_module_start_countdown,
-                        (int) Math.ceil(ms / 1000.0)));
-            }
-
-            @Override
-            public void onFinish() {
-                dialog.dismiss();
-                proceed.run();
-            }
-        };
-        // Any interaction (a button tap dismisses the dialog) stops the countdown.
-        dialog.setOnDismissListener(d -> timer.cancel());
-        timer.start();
+        guardCountdown(ctx, dialog, R.string.vm_kernel_module_start_countdown, proceed);
     }
 
     /**
@@ -356,12 +481,21 @@ public final class VMActions {
         if (BootMenuDialog.wanted(config) && ui.isAlive()) {
             BootMenuDialog.show(
                 ui.getContext(), config,
-                (bootEntry, remember, selected, builtinCmdline) -> {
+                (bootEntry, remember, selected, builtinCmdline, pseudoUnprotected) -> {
                     var startEntry = remember
                         ? rememberChoice(ui.getContext(), config, bootEntry,
                             selected, builtinCmdline)
                         : bootEntry;
-                    doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
+                    if (!pseudoUnprotected) {
+                        doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
+                        return;
+                    }
+                    // The module guard ran before the menu, on a mode this start no longer
+                    // uses: pseudo-unprotected RAM is SHARE'd through gunyah_host_share, so
+                    // ask that question again against what is actually about to start.
+                    var session = pseudoUnprotectedSession(config);
+                    guardKernelModules(session, mainHandler, ui, () -> doCreateAndStart(
+                        session, mainHandler, ui, wantOpenConsole, startEntry));
                 },
                 () -> { /* cancelled: do not start */ }
             );
@@ -505,29 +639,10 @@ public final class VMActions {
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.show();
-        // No response in 5s = the read-only start (the only safe answer while the other VM
-        // holds the file), so an unattended start isn't blocked; the countdown shows on it.
-        var readonlyStart = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (readonlyStart != null)
-            readonlyStart.setText(ctx.getString(R.string.vm_shared_disk_readonly_countdown, 5));
-        var timer = new CountDownTimer(5000, 1000) {
-            @Override
-            public void onTick(long ms) {
-                if (readonlyStart != null)
-                    readonlyStart.setText(ctx.getString(
-                        R.string.vm_shared_disk_readonly_countdown,
-                        (int) Math.ceil(ms / 1000.0)));
-            }
-
-            @Override
-            public void onFinish() {
-                dialog.dismiss();
-                start.run();
-            }
-        };
-        // Any interaction (a button tap dismisses the dialog) stops the countdown.
-        dialog.setOnDismissListener(d -> timer.cancel());
-        timer.start();
+        // Starting unchanged is not on offer here -- writable is what would corrupt the other
+        // VM's disk -- so this dialog has no neutral answer and the countdown falls to the
+        // read-only start, the only safe one.
+        guardCountdown(ctx, dialog, R.string.vm_shared_disk_readonly_countdown, start);
     }
 
     /**
@@ -739,29 +854,7 @@ public final class VMActions {
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.show();
-        // No response in 5s = "start anyway" (the chosen default), so an
-        // unattended start isn't blocked; the countdown shows on that button.
-        var startAnyway = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
-        if (startAnyway != null)
-            startAnyway.setText(ctx.getString(R.string.vm_compressed_disk_start_countdown, 5));
-        var timer = new CountDownTimer(5000, 1000) {
-            @Override
-            public void onTick(long ms) {
-                if (startAnyway != null)
-                    startAnyway.setText(ctx.getString(
-                        R.string.vm_compressed_disk_start_countdown,
-                        (int) Math.ceil(ms / 1000.0)));
-            }
-
-            @Override
-            public void onFinish() {
-                dialog.dismiss();
-                proceed.run();
-            }
-        };
-        // Any interaction (a button tap dismisses the dialog) stops the countdown.
-        dialog.setOnDismissListener(d -> timer.cancel());
-        timer.start();
+        guardCountdown(ctx, dialog, R.string.vm_compressed_disk_start_countdown, proceed);
     }
 
     /** Convert each compressed disk in turn, then {@code proceed} to start. */

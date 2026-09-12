@@ -7,6 +7,9 @@
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <linux/netlink.h>
+#include <linux/input.h>
+#include <sys/ioctl.h>
 #include <android/log.h>
 #include <android/log.h>
 #include <stdio.h>
@@ -217,6 +220,97 @@ JNI_PREFIX(nativePollIn)(
     return 0;
 }
 
+/*
+ * The kernel's uevent multicast socket, which is the only place a driver bind or unbind is
+ * reported. Everything else this daemon watches moves a node under /dev/bus/usb and so raises an
+ * inotify event, but binding or unbinding a driver moves nothing: the interface directory stays,
+ * the device node stays, and only the driver symlink comes or goes. Measured on the phone --
+ * unbinding usbhid from 1-1.6:1.0 left the node set byte-identical and still pushed the kernel's
+ * uevent sequence number by five.
+ *
+ * Group 1 is the kernel's own group; nl_pid 0 asks the kernel to pick an address, so several
+ * sockets in one process do not collide. The receive buffer is raised best-effort because a
+ * whole tree re-enumerating is a burst and a dropped datagram is a missed change.
+ */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeUeventOpen)(
+    JNIEnv *env, jclass clazz
+) {
+    (void) env;
+    (void) clazz;
+    int fd = socket(PF_NETLINK, SOCK_DGRAM | SOCK_CLOEXEC, NETLINK_KOBJECT_UEVENT);
+    if (fd < 0) {
+        LOGW("uevent socket() failed: %s", strerror(errno));
+        return -1;
+    }
+    int size = 1 << 20;
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &size, sizeof(size)) < 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    struct sockaddr_nl addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.nl_family = AF_NETLINK;
+    addr.nl_pid = 0;
+    addr.nl_groups = 1;
+    if (bind(fd, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+        LOGW("uevent bind() failed: %s", strerror(errno));
+        close(fd);
+        return -1;
+    }
+    LOGI("uevent socket -> %d", fd);
+    return fd;
+}
+
+/*
+ * poll() over two descriptors, for a reader that has to be stoppable without a standing timeout.
+ * Returns a bitmask -- 1 for the first, 2 for the second -- 0 on timeout, -1 on error and -2 when
+ * either side hung up. The second descriptor is normally the read end of a pipe somebody writes a
+ * byte to in order to end the loop, which is what keeps a watcher that may live for the whole
+ * daemon from waking the phone on a timer just to ask whether it should stop.
+ */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativePollIn2)(
+    JNIEnv *env, jclass clazz, jint fd1, jint fd2, jint timeoutMs
+) {
+    (void) env;
+    (void) clazz;
+    struct pollfd pfds[2];
+    pfds[0].fd = fd1;
+    pfds[0].events = POLLIN;
+    pfds[0].revents = 0;
+    pfds[1].fd = fd2;
+    pfds[1].events = POLLIN;
+    pfds[1].revents = 0;
+    int ret;
+    do {
+        ret = poll(pfds, 2, timeoutMs);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) return -1;
+    if (ret == 0) return 0;
+    if ((pfds[0].revents | pfds[1].revents) & (POLLERR | POLLHUP | POLLNVAL)) return -2;
+    jint mask = 0;
+    if (pfds[0].revents & POLLIN) mask |= 1;
+    if (pfds[1].revents & POLLIN) mask |= 2;
+    return mask;
+}
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeWrite)(
+    JNIEnv *env, jclass clazz, jint fd, jbyteArray buf, jint len
+) {
+    (void) clazz;
+    if (!buf) return -1;
+    jint arrLen = (*env)->GetArrayLength(env, buf);
+    if (len > arrLen) len = arrLen;
+    jbyte *bytes = (*env)->GetByteArrayElements(env, buf, NULL);
+    if (!bytes) return -1;
+    ssize_t n;
+    do {
+        n = write(fd, bytes, len);
+    } while (n < 0 && errno == EINTR);
+    (*env)->ReleaseByteArrayElements(env, buf, bytes, JNI_ABORT);
+    return (jint) n;
+}
+
 JNIEXPORT jint JNICALL
 JNI_PREFIX(nativeRead)(
     JNIEnv *env, jclass clazz, jint fd, jbyteArray buf, jint len
@@ -233,4 +327,88 @@ JNI_PREFIX(nativeRead)(
     } while (n < 0 && errno == EINTR);
     (*env)->ReleaseByteArrayElements(env, buf, bytes, n > 0 ? 0 : JNI_ABORT);
     return (jint) n;
+}
+
+
+/*
+ * evdev, for the physical-keyboard grab. A grabbed keyboard is the only way the keys Android
+ * keeps for itself -- Home, the task switcher, every Meta shortcut -- can reach a guest: EVIOCGRAB
+ * makes this descriptor the sole recipient of the device's events, so Android's InputReader keeps
+ * its own fd open and is simply never woken again. Reading and writing the fd is nativeRead /
+ * nativeWrite's job; only the parts that need an ioctl live here.
+ */
+
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeEvdevOpen)(
+    JNIEnv *env, jclass clazz, jstring path
+) {
+    (void) clazz;
+    if (!path) return -1;
+    const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
+    if (!cpath) return -1;
+    // Read-write first because the LEDs (caps lock and friends) are written back to the same
+    // descriptor; a node that refuses it is still perfectly readable, and only the LEDs are lost.
+    int fd = open(cpath, O_RDWR | O_CLOEXEC);
+    if (fd < 0) fd = open(cpath, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) LOGW("evdev open %s failed: %s", cpath, strerror(errno));
+    (*env)->ReleaseStringUTFChars(env, path, cpath);
+    return fd;
+}
+
+/* 0 on success, -errno otherwise. EBUSY means somebody else holds the grab. */
+JNIEXPORT jint JNICALL
+JNI_PREFIX(nativeEvdevGrab)(
+    JNIEnv *env, jclass clazz, jint fd, jboolean grab
+) {
+    (void) env;
+    (void) clazz;
+    int ret = ioctl(fd, EVIOCGRAB, grab ? 1 : 0);
+    if (ret < 0) return -errno;
+    return 0;
+}
+
+JNIEXPORT jstring JNICALL
+JNI_PREFIX(nativeEvdevName)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    char name[256];
+    memset(name, 0, sizeof(name));
+    if (ioctl(fd, EVIOCGNAME(sizeof(name) - 1), name) < 0) return NULL;
+    return (*env)->NewStringUTF(env, name);
+}
+
+/* {bustype, vendor, product, version}, or null when the kernel would not say. */
+JNIEXPORT jintArray JNICALL
+JNI_PREFIX(nativeEvdevIds)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    struct input_id id;
+    memset(&id, 0, sizeof(id));
+    if (ioctl(fd, EVIOCGID, &id) < 0) return NULL;
+    jintArray out = (*env)->NewIntArray(env, 4);
+    if (!out) return NULL;
+    jint vals[4] = {id.bustype, id.vendor, id.product, id.version};
+    (*env)->SetIntArrayRegion(env, out, 0, 4, vals);
+    return out;
+}
+
+/*
+ * The device's EV_KEY bitmap, one bit per key code, little-endian by byte -- what says whether
+ * this node is a keyboard at all rather than a lid switch or a touchscreen's button. Null when the
+ * ioctl fails.
+ */
+JNIEXPORT jbyteArray JNICALL
+JNI_PREFIX(nativeEvdevKeyBits)(
+    JNIEnv *env, jclass clazz, jint fd
+) {
+    (void) clazz;
+    unsigned char bits[(KEY_MAX / 8) + 1];
+    memset(bits, 0, sizeof(bits));
+    if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(bits)), bits) < 0) return NULL;
+    jbyteArray out = (*env)->NewByteArray(env, (jsize) sizeof(bits));
+    if (!out) return NULL;
+    (*env)->SetByteArrayRegion(env, out, 0, (jsize) sizeof(bits), (const jbyte *) bits);
+    return out;
 }
