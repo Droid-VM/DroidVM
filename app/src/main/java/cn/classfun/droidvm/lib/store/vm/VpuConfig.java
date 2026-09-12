@@ -37,8 +37,42 @@ public final class VpuConfig {
     public static final String KEY_GUEST_POOL_MB = "vpu_guest_pool_mb";
     public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
 
-    public static final int DEFAULT_HOST_POOL_MB = 256;
-    public static final int DEFAULT_GUEST_POOL_MB = 128;
+    /**
+     * The {@code media_host} pool a VM gets when nobody chose a size.
+     *
+     * <p>320 MiB, raised from 256 by B12's D68: {@code ffmpeg -f v4l2 -video_size 3840x2160 -i
+     * /dev/video0} asks the camera device for 22 buffers of 12,441,600 B = 273,715,200 B = 261
+     * MiB, and the VMM correctly refused the 22nd out of a 268,435,456 B pool -- an honest
+     * capacity limit met by a client that has no way to ask for fewer buffers
+     * ({@code libavdevice}'s v4l2 input device has no buffer-count option). 320 MiB is
+     * 335,544,320 B, which holds 26 such buffers: the 22 ffmpeg wants plus four, so a second
+     * client or a slightly greedier one does not land straight back on the limit. The host pool
+     * is {@code consume_system_mem} on the crosvm side, so those 64 extra MiB come out of the
+     * VM's {@code --mem} and cost the huge-page reserve nothing
+     * ({@link cn.classfun.droidvm.lib.hugepage.PoolPreflight#neededPages}).</p>
+     *
+     * <p>A multiple of the 2 MiB huge-page granule, like every pool size here. See
+     * {@code plans/VPU_DESIGN.md} section 8 and {@code logs/vpu_wp/B12-acceptance.md} D68.</p>
+     */
+    public static final int DEFAULT_HOST_POOL_MB = 320;
+
+    /**
+     * The {@code media_guest} pool a protected VM gets when nobody chose a size.
+     *
+     * <p>192 MiB, raised from 128 by B12's D67: a 4K hardware encode never even reached its
+     * encoder session, because the encoder's OUTPUT queue is driver-owned and its 11 buffers of
+     * 12,441,600 B = 136,857,600 B = 130.5 MiB do not fit a 134,217,728 B pool -- buffer 10 (the
+     * eleventh) failed with {@code -12} and 4K encoding was simply impossible. 192 MiB is
+     * 201,326,592 B, which holds 16 such buffers: the 11 the 4K OUTPUT set needs plus five, so a
+     * second driver-owned queue in the same VM still fits.</p>
+     *
+     * <p>Unlike the host pool this one is paid for: it is memory beside the VM's RAM, so it is
+     * added to the huge-page preflight, and the extra 64 MiB is 32 more 2 MiB pages served out
+     * of the reserve (2624 -> 2656 on the lab VM's 5120 MiB, against a 3072-page
+     * {@code pool_want}). A multiple of the 2 MiB granule for that reason. See
+     * {@code plans/VPU_DESIGN.md} section 8 and {@code logs/vpu_wp/B12-acceptance.md} D67.</p>
+     */
+    public static final int DEFAULT_GUEST_POOL_MB = 192;
 
     /**
      * The codec devices the video-acceleration switch attaches, spelt as the {@code kind=} value
@@ -232,7 +266,7 @@ public final class VpuConfig {
     public static int guestPoolMbFor(@NonNull DataItem config, @Nullable ProtectedVM pvm) {
         // A VM with the switch off gets neither pool. The sizes stay in the config so that
         // turning it back on restores what was set, but a stored size is not a request: without
-        // this a VM that never asked for video acceleration would still pay 128 MB of the
+        // this a VM that never asked for video acceleration would still pay 192 MB of the
         // huge-page reserve for a node its guest has no driver to look for.
         if (!isEnabled(config)) return 0;
         return guestPoolApplies(pvm) ? getGuestPoolMb(config) : 0;

@@ -92,18 +92,18 @@ public final class CrosvmMediaPoolTest {
 
     @Test
     public void protectedModesGetBothPools() {
-        assertEquals("media-host-mb=256,media-guest-mb=128",
+        assertEquals("media-host-mb=320,media-guest-mb=192",
             mediaFragment(vm("protected_without_firmware", true),
                 ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
-        assertEquals("media-host-mb=256,media-guest-mb=128",
+        assertEquals("media-host-mb=320,media-guest-mb=192",
             mediaFragment(vm("protected_protected", true), ProtectedVM.PROTECTED_PROTECTED));
     }
 
     @Test
     public void hostVisibleRamGetsTheHostPoolOnly() {
-        assertEquals("media-host-mb=256",
+        assertEquals("media-host-mb=320",
             mediaFragment(vm("pseudo_unprotected", true), ProtectedVM.PSEUDO_UNPROTECTED));
-        assertEquals("media-host-mb=256",
+        assertEquals("media-host-mb=320",
             mediaFragment(vm("protected_normal", true), ProtectedVM.PROTECTED_NORMAL));
     }
 
@@ -119,7 +119,7 @@ public final class CrosvmMediaPoolTest {
     public void aZeroedGuestPoolIsNoNodeRatherThanAnEmptyOne() {
         var item = vm("protected_without_firmware", true);
         VpuConfig.setGuestPoolMb(item, 0);
-        assertEquals("media-host-mb=256",
+        assertEquals("media-host-mb=320",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
         assertEquals(4096, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
     }
@@ -131,7 +131,7 @@ public final class CrosvmMediaPoolTest {
         CrosvmBackendInstance.appendPreAllocKey(preAlloc, "venus-host-mb=256");
         CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
             ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-        assertEquals("venus-host-mb=256,media-host-mb=256,media-guest-mb=128",
+        assertEquals("venus-host-mb=256,media-host-mb=320,media-guest-mb=192",
             record(preAlloc.toString()));
     }
 
@@ -140,12 +140,37 @@ public final class CrosvmMediaPoolTest {
     public void preflightBudgetsTheGuestPoolOnly() {
         var on = vm("protected_without_firmware", true);
         var off = vm("protected_without_firmware", false);
-        assertEquals(128, VpuConfig.bootMediaGuestMb(on));
-        assertEquals(4096 + 128,
+        assertEquals(192, VpuConfig.bootMediaGuestMb(on));
+        assertEquals(4096 + 192,
             PoolPreflight.neededPages(on) * PoolPreflight.PAGE_MB);
+        // In the unit the reserve is actually kept in: the guest pool is 96 of the 2 MiB pages
+        // on top of the VM's 2048 -- 32 more than the 64 pages 128 MiB used to cost.
+        assertEquals(2048 + 96, PoolPreflight.neededPages(on));
         assertEquals(4096, PoolPreflight.neededPages(off) * PoolPreflight.PAGE_MB);
         assertEquals(4096, PoolPreflight.neededPages(vm("pseudo_unprotected", true))
             * PoolPreflight.PAGE_MB);
+    }
+
+    /**
+     * The default pool sizes are the capacities B12 measured, not round numbers.
+     *
+     * <p>D67: a 4K encoder's driver-owned OUTPUT set is 11 buffers of 12,441,600 B = 130.5 MiB,
+     * which is why the guest pool is no longer 128. D68: ffmpeg's 4K v4l2 capture asks for 22 of
+     * the same buffer = 261 MiB, which is why the host pool is no longer 256. Both are whole 2
+     * MiB huge pages, because the guest one is served out of the reserve a page at a time.
+     * See {@code plans/VPU_DESIGN.md} section 8.</p>
+     */
+    @Test
+    public void theDefaultPoolsHoldWhatB12MeasuredAndAreWholeHugePages() {
+        long buffer4k = 12_441_600L;
+        long hostBytes = (long) VpuConfig.DEFAULT_HOST_POOL_MB * 1024 * 1024;
+        long guestBytes = (long) VpuConfig.DEFAULT_GUEST_POOL_MB * 1024 * 1024;
+        assertTrue("D68: 22 x 12,441,600 B must fit the host pool",
+            hostBytes >= 22 * buffer4k);
+        assertTrue("D67: 11 x 12,441,600 B must fit the guest pool",
+            guestBytes >= 11 * buffer4k);
+        assertEquals(0, VpuConfig.DEFAULT_HOST_POOL_MB % PoolPreflight.PAGE_MB);
+        assertEquals(0, VpuConfig.DEFAULT_GUEST_POOL_MB % PoolPreflight.PAGE_MB);
     }
 
     /**
@@ -181,8 +206,8 @@ public final class CrosvmMediaPoolTest {
         var item = withCamera(vm("protected_without_firmware", true), "", "");
         VpuConfig.setHostPoolMb(item, 0);
         assertTrue(VpuConfig.hostPoolIsDefaulted(item));
-        assertEquals(256, VpuConfig.hostPoolMbFor(item));
-        assertEquals("media-host-mb=256,media-guest-mb=128",
+        assertEquals(320, VpuConfig.hostPoolMbFor(item));
+        assertEquals("media-host-mb=320,media-guest-mb=192",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
         // With the switch off the same stored zero is just one more thing that is not passed.
         VpuConfig.setEnabled(item, false);
@@ -198,10 +223,10 @@ public final class CrosvmMediaPoolTest {
     public void theSwitchOnWithACameraIsStillOneOfEachPool() {
         var item = withCamera(vm("protected_without_firmware", true), "1", "Front camera (1)");
         assertTrue(VpuConfig.mediaDevicesAttached(item));
-        assertEquals("media-host-mb=256,media-guest-mb=128",
+        assertEquals("media-host-mb=320,media-guest-mb=192",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
         assertFalse(VpuConfig.hostPoolIsDefaulted(item));
-        assertEquals(4096 + 128, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
+        assertEquals(4096 + 192, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
     }
 
     /** A VM with the switch off asks for nothing, camera row or not. */
@@ -226,9 +251,9 @@ public final class CrosvmMediaPoolTest {
         VpuConfig.setCodecEnabled(item, false);
         assertFalse(VpuConfig.codecDevicesAttached(item));
         assertTrue(VpuConfig.mediaDevicesAttached(item));
-        assertEquals("media-host-mb=256,media-guest-mb=128",
+        assertEquals("media-host-mb=320,media-guest-mb=192",
             mediaFragment(item, ProtectedVM.PROTECTED_WITHOUT_FIRMWARE));
-        assertEquals(4096 + 128, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
+        assertEquals(4096 + 192, PoolPreflight.neededPages(item) * PoolPreflight.PAGE_MB);
     }
 
     /**
@@ -243,7 +268,7 @@ public final class CrosvmMediaPoolTest {
         CrosvmBackendInstance.appendPreAllocKey(preAlloc, "gpu-guest-mb=1024");
         CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
             ProtectedVM.PROTECTED_NORMAL);
-        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=256",
+        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=320",
             record(preAlloc.toString()));
     }
 
@@ -256,7 +281,7 @@ public final class CrosvmMediaPoolTest {
         CrosvmBackendInstance.appendPreAllocKey(preAlloc, "gpu-guest-mb=1024");
         CrosvmBackendInstance.appendMediaPoolOptions(preAlloc, item,
             ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=256,media-guest-mb=128",
+        assertEquals("venus-host-mb=256,gpu-guest-mb=1024,media-host-mb=320,media-guest-mb=192",
             record(preAlloc.toString()));
     }
 }
