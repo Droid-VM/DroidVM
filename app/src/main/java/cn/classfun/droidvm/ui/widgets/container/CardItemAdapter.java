@@ -53,6 +53,18 @@ public abstract class CardItemAdapter<
     }
 
     /**
+     * Inserts one prepared item at the head, for a list whose order is priority: such a list
+     * usually ends in the row that catches everything left, and a row added behind that one
+     * would never fire.
+     */
+    protected final void prependItem(@NonNull DataItem item) {
+        items.insert(0, item);
+        notifyItemInserted(0);
+        // Every other row's up/down arrows just changed which of them are enabled.
+        notifyItemRangeChanged(1, items.size() - 1);
+    }
+
+    /**
      * The list's + button was pressed, with {@code anchor} the button itself. Appends one blank
      * item; adapters whose rows need something decided first (a type, a target) override this
      * and call {@link #appendItem} once they have it.

@@ -21,6 +21,7 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
+import cn.classfun.droidvm.lib.data.HostKernel;
 import cn.classfun.droidvm.lib.data.SocIdentity;
 
 /**
@@ -52,10 +53,16 @@ import cn.classfun.droidvm.lib.data.SocIdentity;
  * file would stop listing every named module -- whereas it never looks at extra top-level keys.
  *
  * <p>Supported fields: {@code soc_vendor} (tokens from {@link SocIdentity}), {@code soc_model}
- * (exact, case-insensitive), {@code soc_model_prefix}. <b>A field this app does not know makes the
- * rule fail</b>, rather than being skipped: a newer rule file narrowing a module by something we
- * cannot evaluate must not end up listing it anyway -- an insmod on the wrong device is a kernel
- * panic, so the safe default is to say no.
+ * (exact, case-insensitive), {@code soc_model_prefix}, {@code kernel_below} and
+ * {@code kernel_at_least} (a {@code major.minor} series, compared numerically -- 6.6 is below
+ * 6.18). <b>A field this app does not know makes the rule fail</b>, rather than being skipped: a
+ * newer rule file narrowing a module by something we cannot evaluate must not end up listing it
+ * anyway -- an insmod on the wrong device is a kernel panic, so the safe default is to say no.
+ *
+ * <p>A field we know but cannot <em>read</em> is the opposite case and goes the opposite way: if
+ * {@code uname} says nothing, a {@code kernel_below} rule still passes. Not knowing which kernel
+ * this is must not hide a module the phone may well need -- the cost of listing one it does not
+ * is a card nobody presses, and the cost of hiding one is a VM that will not start.
  *
  * <p>The app also ships {@code assets/match.json} in the same format. It carries the rule for
  * GH-Hugepage-Reserve -- which has no {@code .ko} and so no prebuilt to ride on -- and doubles as
@@ -207,6 +214,12 @@ public final class KernelModuleMatch {
                 case "soc_model_prefix":
                     if (!anyPrefixOf(rule.optJSONArray(field), SocIdentity.model())) return false;
                     break;
+                case "kernel_below":
+                    if (!kernelBelow(rule.optString(field), true)) return false;
+                    break;
+                case "kernel_at_least":
+                    if (!kernelBelow(rule.optString(field), false)) return false;
+                    break;
                 case "comment":
                     break;
                 default:
@@ -216,6 +229,19 @@ public final class KernelModuleMatch {
             }
         }
         return true;
+    }
+
+    /**
+     * Is the running kernel's series below {@code threshold}, when that is what {@code want}
+     * asks for? ({@code kernel_at_least} is the same question with {@code want} false.)
+     *
+     * <p>A version neither side can be read from passes either way -- both callers are
+     * narrowing a module to some kernels, and not knowing which one this is must not be what
+     * hides it. See the class note.</p>
+     */
+    private static boolean kernelBelow(@NonNull String threshold, boolean want) {
+        var cmp = HostKernel.compareSeries(HostKernel.majorMinor(), threshold);
+        return cmp == null || (cmp < 0) == want;
     }
 
     private static boolean anyEquals(@Nullable JSONArray values, @NonNull String actual) {

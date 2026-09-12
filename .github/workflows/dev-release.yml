@@ -21,6 +21,7 @@ jobs:
   dev-release:
     runs-on: ubuntu-latest
     env:
+      DROIDVM_PREBUILT_COMPRESSION_LEVEL: "9"
       HAS_SIGN_KEY: ${{ secrets.APP_SIGN_KEY_JKS != '' }}
 
     steps:

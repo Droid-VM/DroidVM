@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     Where a rule sends what it matches. One dropdown, in the shape the match rule's fields
+     have, so the two halves of a rule are edited by the same control.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="8dp"
+    android:paddingEnd="8dp">
+
+    <cn.classfun.droidvm.ui.widgets.row.DropdownRowWidget
+        android:id="@+id/dd_edit_target"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/usb_rules_attach_to" />
+
+</LinearLayout>

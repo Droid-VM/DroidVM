@@ -215,10 +215,23 @@ abstract class RegenPrebuiltsTask : DefaultTask() {
     @get:Inject
     abstract val exec: ExecOperations
 
+    // The working directory only; the sources Gradle should hash are declared below. Hashing the
+    // whole root would drag in manual-build/, which carries hundreds of megabytes of binaries the
+    // script never reads.
     @get:Internal
     abstract val prebuiltRoot: DirectoryProperty
 
-    @get:Internal
+    /** What the script builds from: a change here is the only reason to pack again. */
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val autoBuildSources: DirectoryProperty
+
+    /** The script itself, so editing it invalidates the last run too. */
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val autoBuildScript: RegularFileProperty
+
+    @get:OutputDirectory
     abstract val prebuiltsOut: DirectoryProperty
 
     @TaskAction
@@ -291,6 +304,8 @@ val prebuiltsSubmoduleDir = rootProject.layout.projectDirectory.dir("app/src/mai
 val regenPrebuilts = tasks.register<RegenPrebuiltsTask>("regenPrebuilts") {
     description = "Regenerate prebuilts from DroidVM-Prebuilt-Root if it exists and has auto-build/ content"
     prebuiltRoot.set(prebuiltRootDir)
+    autoBuildSources.set(prebuiltRootDir.dir("auto-build"))
+    autoBuildScript.set(prebuiltRootDir.file("auto-build.py"))
     prebuiltsOut.set(prebuiltsSubmoduleDir)
     // Only when a native dev has checked out DroidVM-Prebuilt-Root with source
     // under auto-build/. Otherwise, the published submodule artifacts are used.
@@ -301,8 +316,9 @@ val regenPrebuilts = tasks.register<RegenPrebuiltsTask>("regenPrebuilts") {
             (autoBuild.listFiles()?.any { it.name != ".gitignore" } == true)
     }
 }
-// Run before anything reads the prebuilts dir (assets merge + jniLibs unpack).
-tasks.named("preBuild").configure { dependsOn(regenPrebuilts) }
+// Hung on the two tasks that actually read the prebuilts dir, not on preBuild: preBuild is a
+// dependency of every JVM unit test run as well, and packing an APK payload is not something a
+// test of the rules engine should wait for.
 
 androidComponents {
     onVariants { variant ->
@@ -312,6 +328,7 @@ androidComponents {
         ) {
             description = "Unpack prebuilt-<abi>-comptime.zip into jniLibs/<abi>/ for ${variant.name}"
             dependsOn(regenPrebuilts)
+
             prebuiltsDir.set(prebuiltsSubmoduleDir)
             outputDir.set(
                 layout.buildDirectory.dir("generated/comptime_jnilibs/${variant.name}")
@@ -320,6 +337,10 @@ androidComponents {
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             unpackComptimeTask, UnpackComptimeJniLibsTask::outputDir
         )
+        // The other reader of the prebuilts dir. Declared here rather than on preBuild so that a
+        // unit test run never packs anything.
+        tasks.matching { it.name == "merge${variantName}Assets" }
+            .configureEach { dependsOn(regenPrebuilts) }
         val fetchFontTask = tasks.register<FetchTerminalFontTask>(
             "fetchTerminalFont${variantName}"
         ) {

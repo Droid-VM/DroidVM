@@ -138,6 +138,7 @@
     <chip id="SM4450A"      >Qualcomm Snapdragon 4 Gen 2 Accelerated Edition</chip>
     <chip id="SM4450AF"     >Qualcomm Snapdragon 4 Gen 4</chip>
     <chip id="SM4635"       >Qualcomm Snapdragon 4s Gen 2</chip>
+    <chip id="SM4850"       >Qualcomm Snapdragon 4 Gen 5</chip>
     <chip id="SM6115"       >Qualcomm Snapdragon 662</chip>
     <chip id="SM6115AC"     >Qualcomm Snapdragon 6s 4G Gen 1</chip>
     <chip id="SM6115NEW"    >Qualcomm Snapdragon 6s Gen 1</chip>
@@ -156,6 +157,7 @@
     <chip id="SM6475"       >Qualcomm Snapdragon 6 Gen 3</chip>
     <chip id="SM6475AB"     >Qualcomm Snapdragon 6 Gen 3</chip>
     <chip id="SM6650"       >Qualcomm Snapdragon 6 Gen 4</chip>
+    <chip id="SM6850"       >Qualcomm Snapdragon 6 Gen 5</chip>
     <chip id="SM7125"       >Qualcomm Snapdragon 720G</chip>
     <chip id="SM7150"       >Qualcomm Snapdragon 730</chip>
     <chip id="SM7150AA"     >Qualcomm Snapdragon 730</chip>
@@ -219,9 +221,31 @@
     <chip id="SM8750AC"     >Qualcomm Snapdragon 8 Elite</chip>
     <chip id="SM8750P"      >Qualcomm Snapdragon 8 Elite</chip>
     <chip id="SM8845"       >Qualcomm Snapdragon 8 Gen 5</chip>
+    <!-- Also unconfirmed: the leaked "SM8845 Pro" is assumed to report as SM8845P, and
+         the SM8850Q bins are the cheaper "8 Elite Gen 5XX" that has no name of its own
+         yet. On every earlier part a P suffix kept the base name, so SM8845P is the
+         entry most likely to be wrong. -->
+    <chip id="SM8845AB"     >Qualcomm Snapdragon 8 Gen 5</chip>
+    <chip id="SM8845AC"     >Qualcomm Snapdragon 8 Gen 5</chip>
+    <chip id="SM8845P"      >Qualcomm Snapdragon 8 Gen 5 Pro</chip>
     <chip id="SM8850"       >Qualcomm Snapdragon 8 Elite Gen 5</chip>
+    <chip id="SM8850AB"     >Qualcomm Snapdragon 8 Elite Gen 5</chip>
     <chip id="SM8850AC"     >Qualcomm Snapdragon 8 Elite Gen 5</chip>
     <chip id="SM8850P"      >Qualcomm Snapdragon 8 Elite Gen 5</chip>
+    <chip id="SM8850Q"      >Qualcomm Snapdragon 8 Elite Gen 5</chip>
+    <chip id="SM8850QAA"    >Qualcomm Snapdragon 8 Elite Gen 5</chip>
+    <chip id="SM8850QAB"    >Qualcomm Snapdragon 8 Elite Gen 5</chip>
+    <!-- Not shipped yet as of 2026-09: names come from Qualcomm's pre-Summit
+         teasers, model numbers from leaks. Recheck after Snapdragon Summit
+         2026 (Sep 22-24) and against the first device that reports one. -->
+    <chip id="SM8950"       >Qualcomm Snapdragon 8 Elite Gen 6</chip>
+    <chip id="SM8950AB"     >Qualcomm Snapdragon 8 Elite Gen 6</chip>
+    <chip id="SM8950AC"     >Qualcomm Snapdragon 8 Elite Gen 6</chip>
+    <chip id="SM8950P"      >Qualcomm Snapdragon 8 Elite Gen 6</chip>
+    <chip id="SM8975"       >Qualcomm Snapdragon 8 Elite Extreme Gen 6</chip>
+    <chip id="SM8975AB"     >Qualcomm Snapdragon 8 Elite Extreme Gen 6</chip>
+    <chip id="SM8975AC"     >Qualcomm Snapdragon 8 Elite Extreme Gen 6</chip>
+    <chip id="SM8975P"      >Qualcomm Snapdragon 8 Elite Extreme Gen 6</chip>
     <chip id="SXR2230P"     >Qualcomm Snapdragon XR2 Gen 2</chip>
     <chip id="TRINKET"      >Qualcomm Snapdragon 665</chip>
 </soc>

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+     The last entry of the target list, for a VM this app cannot see. Only emptiness is checked
+     here: there is no pattern in the daemon to check a VM id against the way there is for a
+     device id, so a typo is caught by the save, and until then the card names the id in red. A
+     blank controller means the VM's first one, which is what a rule written before controllers
+     existed says.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingHorizontal="24dp"
+    android:paddingTop="8dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ti_custom_vm"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/usb_rules_custom_vm">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_vm"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/ti_custom_controller"
+        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="@string/usb_rules_custom_controller">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_custom_controller"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="text"
+            tools:ignore="VisualLintTextFieldSize" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

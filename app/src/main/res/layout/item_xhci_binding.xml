@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  One binding under an xHCI controller: which layer it is in, then what it is about: a device,
+  a port, or both, depending on that layer. The layer is the label on the left, the way a sound
+  endpoint's direction is. The rows of all four layers are one list, so a row that did not say
+  which layer it belongs to would be a rule of unknown priority.
+
+  The value is a button because tapping it re-opens that layer's picker: replacing what a rule
+  points at is the same gesture as choosing it in the first place.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="4dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <!-- Same width as a sound endpoint's mode label, so the value buttons of a sound card and a
+         controller card line up at the same place down the page. -->
+    <TextView
+        android:id="@+id/tv_xhci_binding_layer"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:textSize="12sp"
+        tools:text="@string/usb_rules_layer_exact" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_xhci_binding"
+        style="@style/Widget.Material3.Button.TonalButton"
+        android:layout_width="0dp"
+        android:layout_height="36dp"
+        android:layout_weight="1"
+        android:minWidth="72dp"
+        android:textSize="12sp"
+        tools:text="Port: 1.2.2, Device: Realtek USB LAN (0bda:8153)"
+        tools:ignore="TouchTargetSizeCheck,VisualLintButtonSize" />
+
+    <!-- Same height as the value button beside it, for the reason item_sound_endpoint gives. -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_xhci_binding_remove"
+        style="@style/Widget.Material3.Button.IconButton"
+        android:layout_width="40dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:contentDescription="@string/edit_vm_xhci_device_remove"
+        app:icon="@drawable/ic_close"
+        app:iconSize="18dp"
+        tools:ignore="TouchTargetSizeCheck" />
+
+</LinearLayout>

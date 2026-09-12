@@ -188,7 +188,18 @@ public final class Daemon {
         if (!cleaned.compareAndSet(false, true)) return;
         Log.i(TAG, "Stopping all VMs and networks...");
         var ctx = server.getContext();
-        ctx.getVMs().stopAll();
+        try {
+            ctx.getVMs().stopAll();
+        } finally {
+            // After the VMs, not before: stopping them only queues the USB releases, and the
+            // interfaces are handed back to the host from that queue. In a finally, because the
+            // first thing that shutdown does is put /sys/bus/usb/drivers_autoprobe back to the
+            // kernel's default: that flag is global and outlives this process, so a stop that
+            // throws on its way past here would leave every device plugged into the phone
+            // afterwards with no driver bound -- no keyboard, no storage -- and no daemon left
+            // to write it back.
+            ctx.getUsb().shutdown();
+        }
         ctx.getNetworks().stopAll();
         ctx.getNetworks().firewall.shutdown();
         ctx.getRouterWatcher().stop();

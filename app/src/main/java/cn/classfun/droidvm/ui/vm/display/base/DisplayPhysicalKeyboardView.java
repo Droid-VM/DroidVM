@@ -22,9 +22,11 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 import cn.classfun.droidvm.R;
 
@@ -174,7 +176,6 @@ public final class DisplayPhysicalKeyboardView extends LinearLayout {
     private KeyListener keyListener;
     @Nullable
     private ZoneListener zoneListener;
-    private final Map<Integer, List<View>> modifierButtons = new HashMap<>();
     private final List<View> extraZoneButtons = new ArrayList<>();
     private final List<View> fnxZoneButtons = new ArrayList<>();
     // Keys whose face changes under Shift, so the keyboard reads like what it will type.
@@ -198,6 +199,20 @@ public final class DisplayPhysicalKeyboardView extends LinearLayout {
         super(context, attrs, defStyleAttr);
         init(context);
     }
+
+    /**
+     * Every key by its Android code, modifiers included. The sticky-modifier map above is not
+     * enough: a grabbed physical keyboard sends scan codes for the whole board, and this is what
+     * turns one into the drawn key to light up.
+     */
+    private final Map<Integer, List<View>> keyButtons = new HashMap<>();
+    /** Codes the physical keyboard is holding down right now. */
+    private final Set<Integer> hardwareHeld = new HashSet<>();
+    /** Lock keys the guest says are on (caps, num, scroll) -- the guest's own view of them. */
+    private final Set<Integer> locksOn = new HashSet<>();
+    // Last sticky state from the adapter, so a hardware key coming up does not un-paint a
+    // modifier the panel is holding on the user's behalf.
+    private boolean stickyCtrl, stickyAlt, stickyShift, stickyWin;
 
     private void init(@NonNull Context context) {
         setOrientation(VERTICAL);
@@ -239,9 +254,10 @@ public final class DisplayPhysicalKeyboardView extends LinearLayout {
             view = btn;
         }
         view.setLayoutParams(new LayoutParams(0, LayoutParams.MATCH_PARENT, key.weight));
+        if (key.code != 0)
+            keyButtons.computeIfAbsent(key.code, c -> new ArrayList<>()).add(view);
         switch (key.kind) {
             case KIND_MODIFIER:
-                modifierButtons.computeIfAbsent(key.code, c -> new ArrayList<>()).add(view);
                 view.setOnClickListener(v -> {
                     v.performHapticFeedback(KEYBOARD_TAP);
                     if (keyListener != null) keyListener.onModifierClick(key.code);
@@ -293,24 +309,97 @@ public final class DisplayPhysicalKeyboardView extends LinearLayout {
 
     /** Repaint the sticky-modifier keys, and the key faces Shift changes, from adapter state. */
     public void refreshModifiers(boolean ctrl, boolean alt, boolean shift, boolean win) {
-        paintModifier(KeyEvent.KEYCODE_CTRL_LEFT, ctrl);
-        paintModifier(KeyEvent.KEYCODE_ALT_LEFT, alt);
-        paintModifier(KeyEvent.KEYCODE_SHIFT_LEFT, shift);
-        paintModifier(KeyEvent.KEYCODE_META_LEFT, win);
+        stickyCtrl = ctrl;
+        stickyAlt = alt;
+        stickyShift = shift;
+        stickyWin = win;
+        paintKey(KeyEvent.KEYCODE_CTRL_LEFT);
+        paintKey(KeyEvent.KEYCODE_ALT_LEFT);
+        paintKey(KeyEvent.KEYCODE_SHIFT_LEFT);
+        paintKey(KeyEvent.KEYCODE_META_LEFT);
+        applyShiftLabels();
+    }
+
+    /**
+     * A key on the grabbed physical keyboard went down or came up. Those keys never pass through
+     * Android -- the daemon sends them straight to the guest -- so this is the only way the drawn
+     * keyboard can follow along; the console feeds it from the daemon's echo.
+     */
+    public void setHardwareKeyHeld(int keyCode, boolean down) {
+        boolean changed = down ? hardwareHeld.add(keyCode) : hardwareHeld.remove(keyCode);
+        if (!changed) return;
+        paintKey(keyCode);
+        if (keyCode == KeyEvent.KEYCODE_SHIFT_LEFT || keyCode == KeyEvent.KEYCODE_SHIFT_RIGHT)
+            applyShiftLabels();
+    }
+
+    /** Nothing is held any more (the grab ended, or the keyboard did). */
+    public void clearHardwareKeys() {
+        if (hardwareHeld.isEmpty()) return;
+        var held = new ArrayList<>(hardwareHeld);
+        hardwareHeld.clear();
+        for (var code : held) paintKey(code);
+        applyShiftLabels();
+    }
+
+    /**
+     * The guest's lock lamps. [known] is a mask over the same key codes as [on]: a lamp the guest
+     * has never reported is drawn as off rather than guessed at, because virtio-input gives no way
+     * to ask and only the guest knows.
+     */
+    public void setLockState(boolean capsKnown, boolean capsOn,
+                             boolean numKnown, boolean numOn,
+                             boolean scrollKnown, boolean scrollOn) {
+        applyLock(KeyEvent.KEYCODE_CAPS_LOCK, capsKnown && capsOn);
+        applyLock(KeyEvent.KEYCODE_NUM_LOCK, numKnown && numOn);
+        applyLock(KeyEvent.KEYCODE_SCROLL_LOCK, scrollKnown && scrollOn);
+    }
+
+    private void applyLock(int keyCode, boolean on) {
+        boolean changed = on ? locksOn.add(keyCode) : locksOn.remove(keyCode);
+        if (changed) paintKey(keyCode);
+    }
+
+    private void applyShiftLabels() {
+        boolean shift = stickyShift
+            || hardwareHeld.contains(KeyEvent.KEYCODE_SHIFT_LEFT)
+            || hardwareHeld.contains(KeyEvent.KEYCODE_SHIFT_RIGHT);
         for (var entry : shiftableKeys.entrySet())
             entry.getKey().setText(shift ? entry.getValue().shiftLabel : entry.getValue().label);
+    }
+
+    /**
+     * One key's look, from every reason it might be lit at once: the panel is holding it sticky,
+     * the physical keyboard is holding it, or the guest says its lock is on.
+     */
+    private void paintKey(int keyCode) {
+        var buttons = keyButtons.get(keyCode);
+        if (buttons == null) return;
+        boolean active = hardwareHeld.contains(keyCode)
+            || locksOn.contains(keyCode)
+            || stickyFor(keyCode);
+        for (var btn : buttons) paintToggle(btn, active);
+    }
+
+    private boolean stickyFor(int keyCode) {
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_CTRL_LEFT:
+                return stickyCtrl;
+            case KeyEvent.KEYCODE_ALT_LEFT:
+                return stickyAlt;
+            case KeyEvent.KEYCODE_SHIFT_LEFT:
+                return stickyShift;
+            case KeyEvent.KEYCODE_META_LEFT:
+                return stickyWin;
+            default:
+                return false;
+        }
     }
 
     /** Repaint the Extra/FNx toggles to match the zones actually on screen. */
     public void setZoneToggleState(boolean extraOn, boolean fnxOn) {
         for (var btn : extraZoneButtons) paintToggle(btn, extraOn);
         for (var btn : fnxZoneButtons) paintToggle(btn, fnxOn);
-    }
-
-    private void paintModifier(int keyCode, boolean active) {
-        var buttons = modifierButtons.get(keyCode);
-        if (buttons == null) return;
-        for (var btn : buttons) paintToggle(btn, active);
     }
 
     /** Works for both kinds of key: a text {@link Button} and an icon-only {@link ImageButton}. */
