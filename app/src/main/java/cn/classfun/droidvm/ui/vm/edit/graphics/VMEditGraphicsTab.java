@@ -89,6 +89,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
     private SwitchRowWidget swVpuCodecEnabled;
+    private SwitchRowWidget swCameraKeepScreenOn;
     private View vpuOptions;
     private TextView tvVpuCameraOffNote;
     private View mediaGuestPoolOptions;
@@ -154,6 +155,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         swVpuCodecEnabled = view.findViewById(R.id.sw_vpu_codec_enabled);
+        swCameraKeepScreenOn = view.findViewById(R.id.sw_camera_keep_screen_on);
         vpuOptions = view.findViewById(R.id.vpu_options);
         tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
         mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
@@ -445,6 +447,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
         swVpuEnabled.setChecked(VpuConfig.isEnabled(item));
         swVpuCodecEnabled.setChecked(VpuConfig.isCodecEnabled(item));
+        swCameraKeepScreenOn.setChecked(VpuConfig.isCameraKeepScreenOn(item));
         etMediaHostPoolMb.setText(String.valueOf(VpuConfig.getHostPoolMb(item)));
         etMediaGuestPoolMb.setText(String.valueOf(VpuConfig.getGuestPoolMb(item)));
         updateVpuVisibility();
@@ -758,6 +761,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // video acceleration and means nothing without it, so keeping it lets turning video
         // acceleration off and on again give back the VM that was there before.
         VpuConfig.setCodecEnabled(item, swVpuCodecEnabled.isChecked());
+        // Stored for every VM, like the two above, and read only by a VM that has a camera:
+        // the daemon asks for it while it is walking the peripheral rows, so a VM without one
+        // is unaffected either way and adding a camera later does not need this set again.
+        VpuConfig.setCameraKeepScreenOn(item, swCameraKeepScreenOn.isChecked());
         VpuConfig.setHostPoolMb(item, parseInt(getEditText(etMediaHostPoolMb)));
         // Stored even while hidden, so flipping the protection mode back does not lose it. What
         // decides whether a media_guest pool is created is VpuConfig.guestPoolMbFor, not whether

@@ -6,7 +6,9 @@ package cn.classfun.droidvm.daemon.vm;
 import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
 import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -162,5 +164,79 @@ public final class PeripheralForegroundControlTest {
             | PeripheralForegroundControl.typesFor(VMState.RUNNING,
                 vm(false, PeripheralType.VIRTIO_CAMERA));
         assertEquals(FOREGROUND_SERVICE_TYPE_NONE, vpuOffOnly);
+    }
+
+    /**
+     * The display hold, over the four shapes a VM can have: no camera, a camera with the switch
+     * off, a camera with the switch on, and two VMs with one each. The bit is a union like the
+     * mask, so the second VM is what says the hold is not a property of "the VM being looked at".
+     *
+     * <p>What it is for is defect D76: the CAMERA app op is granted in {@code foreground} mode,
+     * a sleeping screen makes the app {@code TOP_SLEEPING}, and cameraserver revokes a session
+     * that is already streaming -- the guest sees {@code ENODEV} mid-capture. The foreground
+     * service cannot prevent that; a wake lock can, and {@code camera_keep_screen_on} is whether
+     * this VM's owner wants it taken.</p>
+     */
+    @Test
+    public void theScreenIsHeldOnlyForACameraVmWhoseSwitchIsOn() {
+        // 1. No camera: a VM with a sound card asks for no service and no screen.
+        assertFalse(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING,
+            vm(PeripheralType.VIRTIO_SOUND)));
+        // 2. A camera, switch off: the service is still raised (the guest gets its camera), the
+        //    display is not held, and the documented D76 limitation applies to that VM.
+        var off = vm(PeripheralType.VIRTIO_CAMERA);
+        VpuConfig.setCameraKeepScreenOn(off, false);
+        assertEquals(FOREGROUND_SERVICE_TYPE_CAMERA,
+            PeripheralForegroundControl.typesFor(VMState.RUNNING, off));
+        assertFalse(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, off));
+        // 3. A camera, switch on -- and on is the default, so this is a VM nobody configured.
+        var on = vm(PeripheralType.VIRTIO_CAMERA);
+        assertTrue(VpuConfig.isCameraKeepScreenOn(on));
+        assertTrue(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, on));
+        // 4. Two VMs, one each: the union is what the daemon computes, so one asker is enough.
+        assertTrue(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, on)
+            | PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, off));
+        // ... and the hold drops only when the last of them stops.
+        assertFalse(PeripheralForegroundControl.keepsScreenOn(VMState.STOPPED, on)
+            | PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, off));
+    }
+
+    /**
+     * The hold follows the camera service exactly, which is what makes the two impossible to get
+     * out of step: every state that raises the service holds the screen, and the two conditions
+     * that stop the service from being raised -- STOPPED, and the VPU switch off, which is a
+     * camera row the backend will skip -- stop the hold too.
+     */
+    @Test
+    public void theHoldFollowsTheCameraServiceAndNotTheRow() {
+        var item = vm(PeripheralType.VIRTIO_CAMERA);
+        for (var state : VMState.values())
+            assertEquals(state.name(),
+                PeripheralForegroundControl.typesFor(state, item) == FOREGROUND_SERVICE_TYPE_CAMERA,
+                PeripheralForegroundControl.keepsScreenOn(state, item));
+        // A camera row on a VM with no VPU is not a device, so there is nothing to keep awake for.
+        var noVpu = vm(false, PeripheralType.VIRTIO_CAMERA);
+        assertTrue(VpuConfig.isCameraKeepScreenOn(noVpu));
+        assertFalse(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, noVpu));
+        // Nor does a peripheral that has no app op to lose, whatever the switch says.
+        var sound = vm(PeripheralType.VIRTIO_SOUND);
+        VpuConfig.setCameraKeepScreenOn(sound, true);
+        assertFalse(PeripheralForegroundControl.keepsScreenOn(VMState.RUNNING, sound));
+    }
+
+    /**
+     * A refused request loses the hold as well as the mask. The two ride one intent, so believing
+     * the hold was applied after a refusal would leave the next transition with nothing to do --
+     * and a camera VM running its whole life with the screen free to sleep, which is D76 reached
+     * through the retry path instead of through the switch.
+     */
+    @Test
+    public void aRefusedRaiseForgetsTheHoldToo() {
+        assertTrue(PeripheralForegroundControl.keepScreenOnAfter(true, true));
+        assertFalse(PeripheralForegroundControl.keepScreenOnAfter(true, false));
+        assertFalse(PeripheralForegroundControl.keepScreenOnAfter(false, true));
+        // Which is the same rule the mask follows, spelt for a boolean.
+        assertEquals(PeripheralForegroundControl.appliedAfter(FOREGROUND_SERVICE_TYPE_CAMERA, false)
+            != 0, PeripheralForegroundControl.keepScreenOnAfter(true, false));
     }
 }

@@ -1493,6 +1493,8 @@
     <string name="create_vm_category_vpu">視訊加速 (VPU)</string>
     <string name="create_vm_vpu_enabled">掛載硬體視訊編碼器與解碼器</string>
     <string name="create_vm_vpu_codec_enabled">掛載編解碼裝置</string>
+    <string name="create_vm_vpu_camera_keep_screen_on">相機使用中時保持螢幕亮著</string>
+    <string name="create_vm_vpu_camera_keep_screen_on_sub">Android 只在這個 app 算前景時才允許串流相機，而螢幕睡著就不算前景。開著它，擷取可以在沒人看著手機時繼續跑；關掉它，螢幕一暗客戶機就會失去相機，要等螢幕醒來再重開。</string>
     <string name="create_vm_vpu_host_pool_mb">主機緩衝池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客戶機緩衝池大小 (MB)</string>
     <string name="create_vm_vpu_note">開啟後會依上面的大小保留緩衝池，並掛上這台 VM 的影片裝置。在「週邊」頁加的相機用的是同一套 virtio-media 硬體，只有開啟時才會掛上。</string>
