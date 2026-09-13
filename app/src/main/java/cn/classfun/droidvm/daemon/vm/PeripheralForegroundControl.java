@@ -5,6 +5,7 @@ package cn.classfun.droidvm.daemon.vm;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
+import android.content.pm.ServiceInfo;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -14,6 +15,7 @@ import cn.classfun.droidvm.lib.peripheral.PeripheralForegroundService;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
+import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 
 /**
  * Keeps {@link PeripheralForegroundService} in step with what this daemon is running.
@@ -38,6 +40,15 @@ import cn.classfun.droidvm.lib.store.vm.VMState;
  * actually attaches comes from {@code PeripheralType.isAttachedTo}, the predicate the crosvm
  * backend branches on.</p>
  *
+ * <p>It decides one more thing beside the mask: whether the phone's display is held on while a
+ * camera VM runs ({@link #keepsScreenOn}, the {@code camera_keep_screen_on} switch). That is here
+ * because it is the same question asked of the same VMs at the same moment -- a foreground
+ * service makes the uid foreground, and a screen that sleeps takes it straight back to
+ * {@code TOP_SLEEPING}, where AppOps stops resolving the camera op and the guest's session dies
+ * mid-capture (defect D76). The bit is handed to the service with the mask and the service holds
+ * the lock, because the service is the thing whose lifetime already is "a VM that needs this is
+ * running".</p>
+ *
  * <p>An apply that is refused is not remembered ({@link #appliedAfter}): the mask is the
  * short-circuit for "nothing changed", so recording a refusal as done would turn one transient
  * failure at STARTING into a VM that runs its whole life without the capability.</p>
@@ -59,6 +70,9 @@ final class PeripheralForegroundControl {
 
     /** Last mask handed to the service, so an unchanged state is not re-applied on every event. */
     private static int applied = 0;
+
+    /** The same for the display hold, which the service carries beside the mask. */
+    private static boolean appliedKeepScreenOn = false;
 
     private PeripheralForegroundControl() {
     }
@@ -90,19 +104,51 @@ final class PeripheralForegroundControl {
         return mask;
     }
 
+    /**
+     * Whether one VM in {@code state} with {@code item}'s peripherals wants the display held on.
+     *
+     * <p>Two things, and the first is {@link #typesFor}'s own answer rather than a second walk of
+     * the peripheral list: a VM keeps the screen awake exactly when it is raising a <em>camera</em>
+     * service, which already means a live state, an available type and the VPU switch on. That
+     * makes the pair impossible to get out of step -- there is no VM that holds the display and
+     * has no camera, and none that opens a camera and lets the display go.</p>
+     *
+     * <p>The second is the user's own answer, {@code camera_keep_screen_on}, default on. It is
+     * read here rather than in {@code VpuConfig} because it is only half a decision on its own:
+     * what it modifies is a rule about rows, and the rows are walked here.</p>
+     *
+     * <p>Why the camera type and not every foreground type: the failure this fixes is specific to
+     * a {@code foreground}-mode AppOp being resolved against a procstate that a sleeping screen
+     * demotes (defect D76, {@code logs/vpu_wp/B15-build.md} section 5.2). Microphone will have
+     * the same shape when it gets a type, and can join by name here; sound and USB have no AppOp
+     * to lose.</p>
+     */
+    static boolean keepsScreenOn(@NonNull VMState state, @NonNull DataItem item) {
+        int types = typesFor(state, item);
+        return (types & ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA) != 0
+            && VpuConfig.isCameraKeepScreenOn(item);
+    }
+
     /** Recomputes from every instance in {@code store} and starts, re-types or stops the service. */
     static synchronized void refresh(@NonNull VMInstanceStore store) {
         int wanted = 0;
+        boolean wantedKeepScreenOn = false;
         try {
             var mask = new int[1];
-            store.forEach((id, instance) ->
-                mask[0] |= typesFor(instance.getState(), instance.item));
+            var keep = new boolean[1];
+            store.forEach((id, instance) -> {
+                mask[0] |= typesFor(instance.getState(), instance.item);
+                // A union like the mask, and for the same reason: one VM that asked for the
+                // display is enough, and the hold drops only when the last of them has stopped.
+                keep[0] |= keepsScreenOn(instance.getState(), instance.item);
+            });
             wanted = mask[0];
+            wantedKeepScreenOn = keep[0];
         } catch (Exception e) {
             Log.w(TAG, "could not work out which peripherals are running", e);
             return;
         }
-        if (wanted == applied) return;
+        if (wanted == applied && wantedKeepScreenOn == appliedKeepScreenOn) return;
         var context = DaemonSystemContext.get();
         if (context == null) {
             // Without a Context there is no way to reach the service. Leave `applied` alone so a
@@ -110,13 +156,15 @@ final class PeripheralForegroundControl {
             Log.w(TAG, "no system context; peripheral foreground service not updated");
             return;
         }
-        Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s",
-            Integer.toHexString(applied), Integer.toHexString(wanted)));
-        boolean ok = PeripheralForegroundService.apply(context, wanted);
+        Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s, screen held %s -> %s",
+            Integer.toHexString(applied), Integer.toHexString(wanted),
+            appliedKeepScreenOn, wantedKeepScreenOn));
+        boolean ok = PeripheralForegroundService.apply(context, wanted, wantedKeepScreenOn);
         if (!ok)
             Log.w(TAG, fmt("peripheral foreground service types 0x%s refused; will retry on the "
                 + "next change", Integer.toHexString(wanted)));
         applied = appliedAfter(wanted, ok);
+        appliedKeepScreenOn = keepScreenOnAfter(wantedKeepScreenOn, ok);
     }
 
     /**
@@ -131,5 +179,16 @@ final class PeripheralForegroundControl {
      */
     static int appliedAfter(int wanted, boolean ok) {
         return ok ? wanted : 0;
+    }
+
+    /**
+     * The same rule for the display hold, and it has to be the same rule: the two are one request
+     * on one intent, so a refusal loses both and the next transition must ask for both again.
+     * Recording the hold as applied after a refused start would leave a camera VM whose STARTING
+     * transition was refused running to the end of its life with the screen free to sleep -- the
+     * D76 failure, arrived at through the retry path rather than through the switch.
+     */
+    static boolean keepScreenOnAfter(boolean wanted, boolean ok) {
+        return ok && wanted;
     }
 }

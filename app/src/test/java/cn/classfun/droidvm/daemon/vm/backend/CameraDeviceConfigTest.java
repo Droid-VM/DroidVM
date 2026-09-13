@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -133,6 +134,44 @@ public final class CameraDeviceConfigTest {
         VpuConfig.setEnabled(item, false);
         assertFalse(PeripheralType.INTEL_HDA.isAttachedTo(item));
         assertTrue(PeripheralType.VIRTIO_SOUND.isAttachedTo(item));
+    }
+
+    /**
+     * The {@code camera_keep_screen_on} key, its default, and that it survives the store.
+     *
+     * <p>Round-tripped through a fresh {@code DataItem} over a copy of the stored map rather than
+     * through {@code JSONObject}, for the reason {@code CodecDeviceConfigTest} gives: a JVM unit
+     * test has the android.jar stub for {@code org.json}. What it proves is the part that can
+     * drift -- that the value is written and read under exactly the key a hand-edited
+     * {@code vms.json} and {@code vm_modify} would use, and that a config which has never heard
+     * of the key gets the mitigation rather than the limitation.</p>
+     *
+     * <p>Default on is the decision (2026-09-13): D76 costs a user a dead capture and a log line
+     * they have to know how to read, while the switch costs a display that stays on for as long
+     * as their own VM is using the camera. Off restores the documented behaviour exactly.</p>
+     */
+    @Test
+    public void theKeepScreenOnKeyRoundTripsThroughTheStoreAndDefaultsOn() {
+        assertEquals("camera_keep_screen_on", VpuConfig.KEY_CAMERA_KEEP_SCREEN_ON);
+        // Every VM saved before this build, and every VM the creation defaults produce: on.
+        var fresh = VMConfig.createWithCustomizeDefaults(null).item;
+        assertTrue(VpuConfig.isCameraKeepScreenOn(fresh));
+        for (boolean stored : new boolean[]{false, true}) {
+            var item = VMConfig.createWithCustomizeDefaults(null).item;
+            VpuConfig.setCameraKeepScreenOn(item, stored);
+            var reloaded = DataItem.newObject(new HashMap<>(item.asObject()));
+            assertEquals(stored,
+                reloaded.optBoolean(VpuConfig.KEY_CAMERA_KEEP_SCREEN_ON, !stored));
+            assertEquals(stored, VpuConfig.isCameraKeepScreenOn(reloaded));
+        }
+        // It is not the VPU switch and does not touch it: a VM can keep the screen for its camera
+        // with the codec devices off, and turning it off takes nothing else away.
+        var item = VMConfig.createWithCustomizeDefaults(null).item;
+        VpuConfig.setEnabled(item, true);
+        VpuConfig.setCameraKeepScreenOn(item, false);
+        assertTrue(VpuConfig.mediaDevicesAttached(item));
+        assertTrue(VpuConfig.codecDevicesAttached(item));
+        assertEquals(VpuConfig.DEFAULT_HOST_POOL_MB, (int) VpuConfig.hostPoolMbFor(item));
     }
 
     /** Appends this test's strings to the file the Rust harness parses, one per line. */

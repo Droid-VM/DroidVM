@@ -473,6 +473,21 @@
                 android:icon="@drawable/ic_video"
                 android:text="@string/create_vm_vpu_codec_enabled" />
 
+            <!-- D76: the CAMERA app op is granted in "foreground" mode, so a sleeping screen
+                 makes the app TOP_SLEEPING and cameraserver revokes a session that is already
+                 streaming. The foreground service cannot fix that; a wake lock can, and this is
+                 the user's say over whether it is taken. Inside the block rather than beside the
+                 camera row: the row lives on another tab, is added and removed there, and can be
+                 added after this is set, so hiding this on a VM that has no camera today would
+                 make the setting come and go with a list this screen cannot see. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_camera_keep_screen_on"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_camera"
+                android:subtitle="@string/create_vm_vpu_camera_keep_screen_on_sub"
+                android:text="@string/create_vm_vpu_camera_keep_screen_on" />
+
             <!-- Where the host puts the buffers it allocates. The guest maps them at
                  pool base + the offset the host returns, which is what virtio-media's mmap
                  command already does, so this is the whole of the protected-VM story for
