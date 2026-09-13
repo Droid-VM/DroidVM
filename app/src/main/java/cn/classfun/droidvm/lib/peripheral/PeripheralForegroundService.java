@@ -39,12 +39,31 @@ import cn.classfun.droidvm.ui.main.MainActivity;
  * <p>Nothing here names a kind of peripheral. The type mask comes from
  * {@code PeripheralType.getForegroundServiceType}, so a device that starts needing this only has
  * to say so there.</p>
+ *
+ * <p>It also carries the display hold ({@link ScreenWakeLock}), for the same reason and over the
+ * same lifetime. A foreground service is enough to make the uid's <em>procstate</em> foreground,
+ * but not enough on a phone whose screen has gone to sleep: that drops the app to
+ * {@code TOP_SLEEPING} and AppOps stops resolving the {@code foreground}-mode {@code CAMERA} op,
+ * killing a streaming session that is already running (defect D76,
+ * {@code logs/vpu_wp/B15-build.md} section 5.2). So the two halves of "the guest can use the
+ * camera" are held by the same object: the service for the procstate, the wake lock for the
+ * screen. The lock is per-VM opt-out -- {@code camera_keep_screen_on}, default on -- and arrives
+ * as {@link #EXTRA_KEEP_SCREEN_ON} on the same intent as the mask.</p>
  */
 public final class PeripheralForegroundService extends Service {
     private static final String TAG = "PeripheralFgs";
     private static final String CHANNEL_ID = "peripheral_foreground";
     private static final int NOTIF_ID = 0x45_00_00_01;
     private static final String EXTRA_TYPES = "types";
+
+    /**
+     * Whether this VM's camera wants the display held on, {@code camera_keep_screen_on} folded
+     * over every running VM by {@code PeripheralForegroundControl}. It rides the same intent as
+     * the type mask because it is decided by the same walk of the same VMs at the same moment,
+     * and because a second channel would have to be kept in step with a service that is started
+     * and stopped by that mask.
+     */
+    private static final String EXTRA_KEEP_SCREEN_ON = "keep_screen_on";
 
     /** {@code UserHandle.PER_USER_RANGE}, to get a user id out of a uid without a hidden API. */
     private static final int PER_USER_RANGE = 100_000;
@@ -80,6 +99,13 @@ public final class PeripheralForegroundService extends Service {
      * Brings the service in line with {@code typeMask}: starts or re-types it when non-zero,
      * stops it when zero. Safe to call with the value it already has.
      *
+     * <p>{@code keepScreenOn} rides along and is applied by {@link #onStartCommand}, so changing
+     * only that is another start of an already-running service rather than a restart -- which is
+     * why it is an extra and not a second call: the service exists precisely while the mask is
+     * non-zero, and a wake lock held by a service that is not running is not a state that can
+     * happen. With {@code typeMask == 0} it is not passed at all; the lock goes with the
+     * service.</p>
+     *
      * <p>Called from the daemon, which is a bare root {@code app_process}. That costs two things,
      * both of which this method has to pay and neither of which {@code Context.startService} can.
      * <b>The component</b> is set explicitly in {@link #SERVICE_PACKAGE}, because
@@ -112,9 +138,12 @@ public final class PeripheralForegroundService extends Service {
      * {@link #onStartCommand} stopping itself, which the caller finds out about the next time it
      * asks for a different mask.</p>
      */
-    public static boolean apply(@NonNull Context context, int typeMask) {
+    public static boolean apply(@NonNull Context context, int typeMask, boolean keepScreenOn) {
         var intent = new Intent().setComponent(componentIn(SERVICE_PACKAGE));
-        if (typeMask != 0) intent.putExtra(EXTRA_TYPES, typeMask);
+        if (typeMask != 0) {
+            intent.putExtra(EXTRA_TYPES, typeMask);
+            intent.putExtra(EXTRA_KEEP_SCREEN_ON, keepScreenOn);
+        }
         int userId = userIdOf(context);
         var direct = applyThroughActivityManager(intent, typeMask, userId);
         if (direct != null) return direct;
@@ -210,6 +239,14 @@ public final class PeripheralForegroundService extends Service {
         }
     }
 
+    /**
+     * The display hold, created with the service and released with it. Not static and not shared:
+     * the service is the one thing in this app whose lifetime is "a VM that needs the app to look
+     * foreground is running", which is exactly the lifetime the lock has to have.
+     */
+    @Nullable
+    private ScreenWakeLock screenLock;
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -217,9 +254,28 @@ public final class PeripheralForegroundService extends Service {
     }
 
     @Override
+    public void onCreate() {
+        super.onCreate();
+        screenLock = ScreenWakeLock.of(this);
+    }
+
+    /**
+     * Released here rather than only where it is taken, so every way the service can end -- the
+     * daemon's stop, {@code stopSelf} after a refused {@code startForeground}, the system killing
+     * the app -- lets go of the display. The platform would drop it on process death anyway; this
+     * is what makes an ordinary stop immediate instead of eventual.
+     */
+    @Override
+    public void onDestroy() {
+        if (screenLock != null) screenLock.set(false);
+        super.onDestroy();
+    }
+
+    @Override
     public int onStartCommand(@Nullable Intent intent, int flags, int startId) {
         int typeMask = intent == null ? 0 : intent.getIntExtra(EXTRA_TYPES, 0);
         if (typeMask == 0) {
+            if (screenLock != null) screenLock.set(false);
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -236,6 +292,11 @@ public final class PeripheralForegroundService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
+        // Only after the service is really foreground. A wake lock taken by a service that then
+        // failed to carry its type would hold the display on for a camera the guest will never
+        // get -- and the stopSelf above already routes that case through onDestroy.
+        if (screenLock != null)
+            screenLock.set(intent != null && intent.getBooleanExtra(EXTRA_KEEP_SCREEN_ON, false));
         // Not sticky: the policy re-applies from the live VM states, so a restart by the system
         // with no VM running would raise a service nothing asked for.
         return START_NOT_STICKY;

@@ -36,6 +36,7 @@ public final class VpuConfig {
     public static final String KEY_HOST_POOL_MB = "vpu_host_pool_mb";
     public static final String KEY_GUEST_POOL_MB = "vpu_guest_pool_mb";
     public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
+    public static final String KEY_CAMERA_KEEP_SCREEN_ON = "camera_keep_screen_on";
 
     /**
      * The {@code media_host} pool a VM gets when nobody chose a size.
@@ -198,6 +199,45 @@ public final class VpuConfig {
     @NonNull
     public static String codecCard(@NonNull String kind) {
         return "droidvm " + kind;
+    }
+
+    /**
+     * Whether this VM holds the screen awake for as long as it is using the camera.
+     *
+     * <p>Default on, and what it is for is defect <b>D76</b>. The app's {@code CAMERA} AppOps
+     * mode on the lab phone is {@code foreground} ({@code cmd appops get cn.classfun.droidvm
+     * CAMERA} -> {@code Uid mode: CAMERA: foreground}), so cameraserver only lets a
+     * <em>streaming</em> operation through while the uid is in a foreground procstate. A screen
+     * that goes to sleep drops the app to {@code TOP_SLEEPING} even with its activity still
+     * resumed, and the access is then revoked <em>mid-capture</em>: logcat
+     * {@code Camera access permission lost mid-operation: Permission denied (-13)}, the device
+     * reports {@code camera device error 4} and the guest's next {@code VIDIOC_DQBUF} answers
+     * {@code ENODEV}. The session is dead and has to be reopened after the screen wakes.
+     * Five capture runs were lost to it before it was understood
+     * ({@code logs/vpu_wp/B15-build.md} section 5.2).</p>
+     *
+     * <p>So the mitigation is not to argue with AppOps -- changing the mode needs
+     * {@code MANAGE_APP_OPS_MODES} and the mode is the phone owner's decision -- but to stop the
+     * screen going to sleep while a camera VM is running, which the app is allowed to do with an
+     * ordinary wake lock. It is a switch rather than an unconditional behaviour because keeping a
+     * phone's display awake for hours is a real cost that only the owner can weigh: with this off
+     * the VM behaves exactly as it did before, and design section 7.1's known limitation applies
+     * in full.</p>
+     *
+     * <p>Not gated on the peripheral list here. Whether this VM has a camera at all is a question
+     * about rows, and it is asked where the rows are walked
+     * ({@code PeripheralForegroundControl.keepsScreenOn}), for the same reason
+     * {@link #isCodecEnabled} does not ask whether anything will decode: this file stores the
+     * user's answer, and the rule that spends it lives beside the thing it spends.</p>
+     *
+     * <p>See {@code plans/VPU_DESIGN.md} sections 7.1 and 8.</p>
+     */
+    public static boolean isCameraKeepScreenOn(@NonNull DataItem config) {
+        return config.optBoolean(KEY_CAMERA_KEEP_SCREEN_ON, true);
+    }
+
+    public static void setCameraKeepScreenOn(@NonNull DataItem config, boolean keepOn) {
+        config.set(KEY_CAMERA_KEEP_SCREEN_ON, keepOn);
     }
 
     /**

@@ -20,6 +20,13 @@
          invisible to ActivityManager) can never put itself there. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <!-- And a third thing, which the typed service cannot buy: the screen has to stay on. The
+         CAMERA app op is granted in "foreground" mode, and a sleeping screen makes the app
+         TOP_SLEEPING even with an activity resumed, so cameraserver revokes a session that is
+         already streaming (defect D76). PeripheralForegroundService holds a SCREEN_DIM wake lock
+         tagged droidvm:camera while such a VM runs, unless the VM's camera_keep_screen_on switch
+         is off. Protection level normal, so there is nothing for the user to grant. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
