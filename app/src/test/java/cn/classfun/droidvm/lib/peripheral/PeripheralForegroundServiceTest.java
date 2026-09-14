@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.peripheral;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotEquals;
 
@@ -30,7 +31,7 @@ public final class PeripheralForegroundServiceTest {
     /** The class half of the component is the service's own name, whoever asks. */
     @Test
     public void theComponentNamesThisService() {
-        assertEquals("cn.classfun.droidvm/" + CLASS_NAME,
+        assertEquals(fmt("cn.classfun.droidvm/%s", CLASS_NAME),
             PeripheralForegroundService.componentString("cn.classfun.droidvm"));
     }
 
@@ -44,7 +45,7 @@ public final class PeripheralForegroundServiceTest {
     /** And the package half, which is what {@code apply} actually puts on the intent. */
     @Test
     public void theServiceIsAddressedInTheAppsOwnPackage() {
-        assertEquals(BuildConfig.APPLICATION_ID + "/" + CLASS_NAME,
+        assertEquals(fmt("%s/%s", BuildConfig.APPLICATION_ID, CLASS_NAME),
             PeripheralForegroundService.componentString(BuildConfig.APPLICATION_ID));
         assertEquals("cn.classfun.droidvm", BuildConfig.APPLICATION_ID);
     }

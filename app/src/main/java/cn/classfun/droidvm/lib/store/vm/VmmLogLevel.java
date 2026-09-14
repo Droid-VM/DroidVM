@@ -11,6 +11,8 @@ import java.util.Set;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+
 /**
  * How loud the VMM is for one VM: the {@code log_level} key, and the {@code --log-level} filter
  * it becomes.
@@ -140,8 +142,8 @@ public final class VmmLogLevel {
             var target = directive.substring(0, eq);
             var level = directive.substring(eq + 1);
             if (!isTarget(target))
-                throw refuse(filter, "'" + target + "' is not a module path (letters, digits, "
-                    + "'_', '-', '.' and ':')");
+                throw refuse(filter, fmt("'%s' is not a module path (letters, digits, "
+                    + "'_', '-', '.' and ':')", target));
             if (!isLevel(level))
                 throw refuse(filter, fmtNotALevel(level));
         }
@@ -182,16 +184,16 @@ public final class VmmLogLevel {
     }
 
     private static String fmtNotALevel(@NonNull String part) {
-        return "'" + part + "' is not a level (" + String.join(", ", "off", "error", "warn",
-            "info", "debug", "trace") + "); a directive with no '=' must be one";
+        return fmt("'%s' is not a level (%s); a directive with no '=' must be one", part,
+            String.join(", ", "off", "error", "warn", "info", "debug", "trace"));
     }
 
     private static String fmtLength(int length) {
-        return "it is " + length + " characters, over the " + MAX_LENGTH + " this accepts";
+        return fmt("it is %d characters, over the %d this accepts", length, MAX_LENGTH);
     }
 
     private static IllegalArgumentException refuse(@NonNull String raw, @NonNull String why) {
         return new IllegalArgumentException(
-            KEY + " '" + raw + "' is not a crosvm --log-level filter: " + why);
+            fmt("%s '%s' is not a crosvm --log-level filter: %s", KEY, raw, why));
     }
 }

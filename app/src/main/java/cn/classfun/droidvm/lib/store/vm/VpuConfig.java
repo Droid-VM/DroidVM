@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.lib.store.vm;
 
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -198,7 +199,7 @@ public final class VpuConfig {
      */
     @NonNull
     public static String codecCard(@NonNull String kind) {
-        return "droidvm " + kind;
+        return fmt("droidvm %s", kind);
     }
 
     /**

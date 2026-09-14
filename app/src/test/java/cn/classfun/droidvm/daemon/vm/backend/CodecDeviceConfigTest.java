@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm.backend;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -239,7 +240,7 @@ public final class CodecDeviceConfigTest {
         assertEquals("droidvm decoder", VpuConfig.codecCard("decoder"));
         assertEquals("droidvm encoder", VpuConfig.codecCard("encoder"));
         for (var kind : VpuConfig.CODEC_KINDS)
-            assertEquals("droidvm " + kind, VpuConfig.codecCard(kind));
+            assertEquals(fmt("droidvm %s", kind), VpuConfig.codecCard(kind));
     }
 
     /** Every emitted argument, for the Rust harness that hands them to crosvm's own parser. */

@@ -92,7 +92,7 @@ public final class PeripheralForegroundService extends Service {
      */
     @NonNull
     static String componentString(@NonNull String packageName) {
-        return packageName + "/" + SERVICE_CLASS;
+        return fmt("%s/%s", packageName, SERVICE_CLASS);
     }
 
     /**
