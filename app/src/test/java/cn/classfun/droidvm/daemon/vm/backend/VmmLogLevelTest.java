@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.daemon.vm.backend;
 
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
@@ -147,14 +148,14 @@ public final class VmmLogLevelTest {
         )) {
             assertFalse(bad, VmmLogLevel.isValid(bad));
             var e = assertThrows(bad, IllegalArgumentException.class, () -> VmmLogLevel.parse(bad));
-            assertTrue("the refusal must name the key and the value: " + e.getMessage(),
+            assertTrue(fmt("the refusal must name the key and the value: %s", e.getMessage()),
                 e.getMessage().contains(VmmLogLevel.KEY) && e.getMessage().contains(bad));
         }
     }
 
     @Test
     public void anOverlongValueIsRefused() {
-        assertFalse(VmmLogLevel.isValid("debug," + "a".repeat(300) + "=off"));
+        assertFalse(VmmLogLevel.isValid(fmt("debug,%s=off", "a".repeat(300))));
     }
 
     @Test
