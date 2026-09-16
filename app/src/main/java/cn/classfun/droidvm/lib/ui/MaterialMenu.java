@@ -199,9 +199,6 @@ public final class MaterialMenu {
             bg.setFillColor(ColorStateList.valueOf(surfaceColor));
         }
         bg.setElevation(8 * density);
-        bg.setShadowCompatibilityMode(
-            MaterialShapeDrawable.SHADOW_COMPAT_MODE_ALWAYS
-        );
         return bg;
     }
 
