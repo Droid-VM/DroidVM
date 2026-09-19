@@ -84,6 +84,18 @@ public final class FileUtils {
         return true;
     }
 
+    /**
+     * Uses the lower external-storage path when direct access is enabled. The emulated-storage
+     * FUSE mount can expose stale file sizes while a VM backend reads the same inode directly.
+     */
+    @NonNull
+    public static String patchOptimizedPath(@NonNull String path, boolean enabled) {
+        final String prefix = "/storage/emulated/";
+        if (enabled && path.startsWith(prefix))
+            return "/data/media/" + path.substring(prefix.length());
+        return path;
+    }
+
     @NonNull
     public static JSONObject loadJSONFile(
         @NonNull File parent,

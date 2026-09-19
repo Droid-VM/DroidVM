@@ -155,11 +155,9 @@ public abstract class VMBackendInstance {
     }
 
     protected String patchOptimizedPath(@NonNull String path) {
-        var en = context.appConfig.optBoolean(KEY_OPTIMIZE_SDCARD, true);
-        var prefix = "/storage/emulated/";
-        var newPrefix = "/data/media/";
-        if (en && path.startsWith(prefix))
-            path = newPrefix + path.substring(prefix.length());
-        return path;
+        return FileUtils.patchOptimizedPath(
+            path,
+            context.appConfig.optBoolean(KEY_OPTIMIZE_SDCARD, true)
+        );
     }
 }

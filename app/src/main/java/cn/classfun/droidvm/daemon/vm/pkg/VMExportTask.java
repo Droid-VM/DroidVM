@@ -18,6 +18,8 @@ import static cn.classfun.droidvm.lib.utils.BinaryUtils.writeZero;
 import static cn.classfun.droidvm.lib.utils.StringUtils.basename;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
+import static cn.classfun.droidvm.lib.utils.FileUtils.patchOptimizedPath;
+import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.KEY_OPTIMIZE_SDCARD;
 
 import android.util.Log;
 
@@ -251,7 +253,11 @@ public final class VMExportTask {
         int doneItems,
         int totalItems
     ) throws Exception {
-        var f = new File(path);
+        var readPath = patchOptimizedPath(
+            path,
+            server.getContext().appConfig.optBoolean(KEY_OPTIMIZE_SDCARD, true)
+        );
+        var f = new File(readPath);
         var size = f.length();
         var data = DataItem.newObject();
         data.set("done", doneItems);
