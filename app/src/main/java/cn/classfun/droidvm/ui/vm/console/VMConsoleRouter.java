@@ -114,6 +114,8 @@ public final class VMConsoleRouter {
             screen != null ? screen.getWidth() : VMScreenConfig.DEFAULT_WIDTH);
         intent.putExtra(VMNativeDisplayActivity.EXTRA_HEIGHT,
             screen != null ? screen.getHeight() : VMScreenConfig.DEFAULT_HEIGHT);
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_REFRESH_RATE,
+            screen != null ? screen.getRefreshRate() : VMScreenConfig.DEFAULT_REFRESH_RATE);
         ctx.startActivity(intent);
     }
 

@@ -111,6 +111,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     public static final String EXTRA_INPUT_ENABLED = "input_enabled";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
+    public static final String EXTRA_REFRESH_RATE = "display_refresh_rate";
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     // Converts committed IME text into key events (handles Shift for upper-case/symbols).
@@ -157,6 +158,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private boolean screenInputEnabled = true;
     private int guestWidth = 1280;
     private int guestHeight = 720;
+    private long guestRefreshRate;
 
     private DisplaySource displaySource;
     private InputForwarder inputForwarder;
@@ -291,6 +293,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         screenInputEnabled = intent.getBooleanExtra(EXTRA_INPUT_ENABLED, true);
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
+        guestRefreshRate = intent.getLongExtra(EXTRA_REFRESH_RATE, 0);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
@@ -1114,9 +1117,39 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         });
     }
 
+    /**
+     * Ask the host panel to run at the rate this screen was configured with. The guest already
+     * knows the rate (crosvm puts it in the EDID), but nothing told Android: on a panel left at
+     * its default the scanout presents at that default no matter what the guest renders at.
+     * Picks the slowest supported mode at the current resolution that still meets the guest's
+     * rate, so a 60 Hz guest on a 120 Hz-capable panel does not force the panel's top mode.
+     */
+    private void requestRefreshRate(long hz) {
+        if (hz <= 0) return;
+        var display = getDisplay();
+        if (display == null) return;
+        android.view.Display.Mode current = display.getMode();
+        android.view.Display.Mode best = null;
+        for (android.view.Display.Mode m : display.getSupportedModes()) {
+            if (m.getPhysicalWidth() != current.getPhysicalWidth()
+                || m.getPhysicalHeight() != current.getPhysicalHeight()) continue;
+            if (m.getRefreshRate() + 0.01f < hz) continue;
+            if (best == null || m.getRefreshRate() < best.getRefreshRate()) best = m;
+        }
+        var lp = getWindow().getAttributes();
+        if (best != null)
+            lp.preferredDisplayModeId = best.getModeId();
+        else
+            // No mode at this resolution reaches it (e.g. a 120 Hz guest on a 60 Hz panel):
+            // vote the rate and let the system pick the closest one it has.
+            lp.preferredRefreshRate = hz;
+        getWindow().setAttributes(lp);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        requestRefreshRate(guestRefreshRate);
         // A VM display is on screen and rendering: tell the platform this is sustained heavy
         // gameplay so its power policy raises clocks (see GamePerfHint).
         GamePerfHint.enterGameplay(this);
