@@ -209,6 +209,29 @@ public final class BootConfig {
         return child(linux(), "image");
     }
 
+    /**
+     * The disk image to scan: the one at {@code preferred} when it has a path, else the first
+     * disk that has one; null when the VM has no disk with a path at all.
+     *
+     * <p>Mirrors {@code BootPlan.findImagePath}, which is what actually boots -- the UI asks the
+     * same question before the start, and has to get the same answer.</p>
+     */
+    @Nullable
+    public static String imagePath(@NonNull VMConfig config, int preferred) {
+        var disks = config.item.opt("disks", (DataItem) null);
+        if (disks == null || !disks.is(DataItem.Type.ARRAY)) return null;
+        var arr = disks.asArray();
+        if (preferred >= 0 && preferred < arr.size()) {
+            var path = arr.get(preferred).optString("path", "");
+            if (!path.isEmpty()) return path;
+        }
+        for (var disk : arr) {
+            var path = disk.optString("path", "");
+            if (!path.isEmpty()) return path;
+        }
+        return null;
+    }
+
     /** Index into the VM's "disks" array of the image to scan. */
     public int getImageDisk() {
         return (int) image().optLong("disk", 0);

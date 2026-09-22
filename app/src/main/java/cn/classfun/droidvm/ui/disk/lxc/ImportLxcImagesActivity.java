@@ -52,6 +52,7 @@ import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
 import com.google.android.material.progressindicator.CircularProgressIndicator;
 
@@ -61,8 +62,10 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -127,6 +130,8 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
     private static final String STATE_PENDING_LINUX_CPU = "pending_linux_cpu";
     private static final String STATE_PENDING_LINUX_MEMORY_MB = "pending_linux_memory_mb";
     private static final String STATE_PENDING_LINUX_DISK_BYTES = "pending_linux_disk_bytes";
+    private static final String STATE_LINUX_INCOMPLETE_STEPS = "linux_incomplete_steps";
+    private static final String STEP_RESIZE = "resize";
     private final Map<String, String> displayVersionToRelease = new LinkedHashMap<>();
     private Repos.Repo builtinLxcRepo;
     private Repos.Repo lxcRepo;
@@ -209,6 +214,8 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
     private long pendingLinuxCpu = 1;
     private long pendingLinuxMemoryMb = 512;
     private long pendingLinuxDiskBytes = 16L * 1024 * 1024 * 1024;
+    /** Preparation steps that did not complete; the VM is still created without them. */
+    private final Set<String> linuxIncompleteSteps = new LinkedHashSet<>();
     private long currentDownloadId = -1;
     private boolean activityStarted = false;
     private final Handler pollHandler = new Handler(Looper.getMainLooper());
@@ -269,15 +276,27 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
                 if (result.getResultCode() == RESULT_OK) launchLinuxResize();
                 else finishLinuxVmFlow(false);
             });
+        // Growing the disk and setting the root password only prepare the image: the
+        // download already succeeded, so a failure there costs the user a note, not the VM.
         linuxResizeLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result -> {
-                if (result.getResultCode() == RESULT_OK) launchLinuxMaintenance();
-                else finishLinuxVmFlow(false);
+                if (result.getResultCode() != RESULT_OK) linuxIncompleteSteps.add(STEP_RESIZE);
+                launchLinuxMaintenance();
             });
         linuxMaintenanceLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(), result -> {
-                if (result.getResultCode() == RESULT_OK) createPendingLinuxVm();
-                else finishLinuxVmFlow(false);
+                if (result.getResultCode() == RESULT_OK) {
+                    var data = result.getData();
+                    linuxIncompleteSteps.addAll(AgentOperationActivity.parseFailedActions(
+                        data == null ? null
+                            : data.getStringExtra(AgentOperationActivity.EXTRA_FAILED_ACTIONS)
+                    ).keySet());
+                } else {
+                    // A cancelled or crashed rescue VM says nothing about its actions.
+                    linuxIncompleteSteps.add(PasswordAction.TYPE);
+                    linuxIncompleteSteps.add(AutoGrowAction.TYPE);
+                }
+                createPendingLinuxVm();
             });
         if (savedInstanceState != null) {
             var diskId = savedInstanceState.getString(STATE_PENDING_PASSWORD_DISK_ID);
@@ -305,6 +324,8 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
                 STATE_PENDING_LINUX_MEMORY_MB, 512);
             pendingLinuxDiskBytes = savedInstanceState.getLong(
                 STATE_PENDING_LINUX_DISK_BYTES, 16L * 1024 * 1024 * 1024);
+            var steps = savedInstanceState.getStringArrayList(STATE_LINUX_INCOMPLETE_STEPS);
+            if (steps != null) linuxIncompleteSteps.addAll(steps);
         }
         initialize();
     }
@@ -578,6 +599,9 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         outState.putLong(STATE_PENDING_LINUX_CPU, pendingLinuxCpu);
         outState.putLong(STATE_PENDING_LINUX_MEMORY_MB, pendingLinuxMemoryMb);
         outState.putLong(STATE_PENDING_LINUX_DISK_BYTES, pendingLinuxDiskBytes);
+        if (!linuxIncompleteSteps.isEmpty())
+            outState.putStringArrayList(STATE_LINUX_INCOMPLETE_STEPS,
+                new ArrayList<>(linuxIncompleteSteps));
     }
 
     /** Re-attaches just the progress bar to the running download (no form state). */
@@ -1751,14 +1775,21 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             linuxResizeLauncher.launch(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start Linux VM disk resize", e);
-            finishLinuxVmFlow(false);
+            linuxIncompleteSteps.add(STEP_RESIZE);
+            launchLinuxMaintenance();
         }
     }
 
     private void launchLinuxMaintenance() {
         var diskId = pendingLinuxDiskId;
-        if (diskId == null || pendingLinuxRootPassword.isEmpty()) {
+        if (diskId == null) {
             finishLinuxVmFlow(false);
+            return;
+        }
+        if (pendingLinuxRootPassword.isEmpty()) {
+            linuxIncompleteSteps.add(PasswordAction.TYPE);
+            linuxIncompleteSteps.add(AutoGrowAction.TYPE);
+            createPendingLinuxVm();
             return;
         }
         try {
@@ -1771,7 +1802,9 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             var password = new PasswordAction(agentVM);
             password.setPassword(pendingLinuxRootPassword);
             password.setChangeNormalUsers(false);
-            new AutoGrowAction(agentVM);
+            password.setOptional(true);
+            var autoGrow = new AutoGrowAction(agentVM);
+            autoGrow.setOptional(true);
             agentVM.addDisk(disk);
             var intent = AgentOperationActivity.createIntent(this, agentVM);
             intent.putExtra(AgentOperationActivity.EXTRA_AUTOFINISH_ON_SUCCESS, true);
@@ -1779,7 +1812,9 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             linuxMaintenanceLauncher.launch(intent);
         } catch (Exception e) {
             Log.e(TAG, "Failed to start Linux VM maintenance", e);
-            finishLinuxVmFlow(false);
+            linuxIncompleteSteps.add(PasswordAction.TYPE);
+            linuxIncompleteSteps.add(AutoGrowAction.TYPE);
+            createPendingLinuxVm();
         }
     }
 
@@ -1822,6 +1857,10 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
             result.putExtra("result_vm_id", config.getId().toString());
             result.putExtra("result_disk_path", disk.getFullPath());
             setResult(RESULT_OK, result);
+            if (!linuxIncompleteSteps.isEmpty()) {
+                showLinuxIncompleteDialog(config.getName());
+                return;
+            }
             Toast.makeText(
                 this,
                 getString(R.string.linux_vm_create_success, config.getName()),
@@ -1834,11 +1873,45 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         }
     }
 
+    /**
+     * The VM exists, some of its preparation does not. Name the steps the user still has to
+     * do by hand: a toast is too easy to miss for "the root password was never set".
+     */
+    private void showLinuxIncompleteDialog(@NonNull String vmName) {
+        var steps = new StringBuilder();
+        for (var step : linuxIncompleteSteps) {
+            if (steps.length() > 0) steps.append('\n');
+            steps.append(describeLinuxStep(step));
+        }
+        new MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.linux_vm_create_partial_title)
+            .setMessage(getString(R.string.linux_vm_create_partial, vmName, steps.toString()))
+            .setCancelable(false)
+            .setPositiveButton(android.R.string.ok, (d, w) -> finishLinuxVmFlow(true))
+            .show();
+    }
+
+    @NonNull
+    private String describeLinuxStep(@NonNull String step) {
+        switch (step) {
+            case STEP_RESIZE:
+                return getString(R.string.linux_vm_step_resize);
+            case PasswordAction.TYPE:
+            case "passwd": // Early AgentVM prototype spelling.
+                return getString(R.string.agent_operation_action_password);
+            case AutoGrowAction.TYPE:
+                return getString(R.string.agent_operation_action_autogrow);
+            default:
+                return step;
+        }
+    }
+
     private void finishLinuxVmFlow(boolean success) {
         pendingLinuxDiskId = null;
         pendingLinuxVmName = "";
         pendingLinuxRootPassword = "";
         pendingLinuxNetworkId = "";
+        linuxIncompleteSteps.clear();
         if (!success && !isFinishing())
             Toast.makeText(this, R.string.linux_vm_create_failed, LENGTH_SHORT).show();
         finish();

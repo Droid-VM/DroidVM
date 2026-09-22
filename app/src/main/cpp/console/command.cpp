@@ -82,6 +82,7 @@ std::unique_ptr<CommandRegistry> create_command_registry() {
     command_register_resume(*r);
     command_register_powerbtn(*r);
     command_register_sleepbtn(*r);
+    command_register_usb(*r);
     command_register_version(*r);
     command_register_help(*r);
     return r;

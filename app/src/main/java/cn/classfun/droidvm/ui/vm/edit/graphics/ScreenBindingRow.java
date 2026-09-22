@@ -36,7 +36,6 @@ import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
-import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 
 /**
  * One screen's rows in the graphics tab: the switch that says the VM has the device, how big that
@@ -75,7 +74,6 @@ final class ScreenBindingRow {
     private final AutoCompleteTextView ddResolution;
     private final TextInputLayout tilRate;
     private final AutoCompleteTextView ddRate;
-    private final TextRowWidget rowWidthCpuFallback;
     private final View dpiOptions;
     private final TextInputEditText etDpiH;
     private final TextInputEditText etDpiV;
@@ -143,7 +141,6 @@ final class ScreenBindingRow {
         ddResolution = block.findViewById(R.id.dd_screen_resolution);
         tilRate = block.findViewById(R.id.til_screen_rate);
         ddRate = block.findViewById(R.id.dd_screen_rate);
-        rowWidthCpuFallback = block.findViewById(R.id.row_screen_width_cpu_fallback);
         dpiOptions = block.findViewById(R.id.screen_dpi_options);
         etDpiH = block.findViewById(R.id.et_screen_dpi_h);
         etDpiV = block.findViewById(R.id.et_screen_dpi_v);
@@ -574,14 +571,6 @@ final class ScreenBindingRow {
         vncOptions.setVisibility(
             enabled && exporter == DisplayExporter.VNC ? VISIBLE : GONE);
         passwordOptions.setVisibility(swPasswordAuth.isChecked() ? VISIBLE : GONE);
-        // The one thing the transport ceiling cannot promise: a width whose stride the blit's
-        // dma-buf import will not take settles a rung lower, silently, and the only clue is a line
-        // in the console. Say so beside the field that causes it. Nothing is refused and nothing is
-        // rounded -- the ceiling is honoured either way, it just lands on the CPU copy.
-        var transport = currentTransport();
-        rowWidthCpuFallback.setVisibility(
-            enabled && transport != null && DisplayTransportCap.cpuFallbackFromWidth(
-                screenId, exporter, transport, width) ? VISIBLE : GONE);
     }
 
     /**

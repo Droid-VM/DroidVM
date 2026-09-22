@@ -49,6 +49,11 @@ public final class Server {
                 Log.w(TAG, "Failed to broadcast VM event", e);
             }
         });
+        try {
+            context.getUsb().start(this::broadcastEvent);
+        } catch (Exception e) {
+            Log.w(TAG, "usb: manager failed to start", e);
+        }
     }
 
     @NonNull

@@ -2,6 +2,7 @@
 <resources>
 
     <style name="Theme.DroidVM" parent="Theme.Material3.DayNight">
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.DroidVM.AlertDialog</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
@@ -9,6 +10,7 @@
     </style>
 
     <style name="Theme.DroidVM.NoActionBar" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.DroidVM.AlertDialog</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
@@ -28,6 +30,18 @@
         <item name="android:navigationBarColor">?attr/colorPrimary</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
+    </style>
+
+    <!-- Dialog buttons say what they mean by where they sit: neutral (bottom left) goes
+         ahead changing nothing, positive (bottom right) goes ahead with the change that fixes
+         what the dialog is about, negative does not go ahead. Only the positive one alters
+         anything, so it is the one set in bold. -->
+    <style name="ThemeOverlay.DroidVM.AlertDialog" parent="ThemeOverlay.Material3.MaterialAlertDialog">
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.DroidVM.Button.TextButton.Dialog.Emphasized</item>
+    </style>
+
+    <style name="Widget.DroidVM.Button.TextButton.Dialog.Emphasized" parent="Widget.Material3.Button.TextButton.Dialog">
+        <item name="android:textStyle">bold</item>
     </style>
 
     <!-- Icon-only key: an ImageButton centres its drawable, which a Button's compound drawable

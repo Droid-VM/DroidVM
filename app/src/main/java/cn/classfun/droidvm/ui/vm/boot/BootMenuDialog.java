@@ -6,7 +6,6 @@ package cn.classfun.droidvm.ui.vm.boot;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
-import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
 
 import android.content.Context;
 import android.os.Handler;
@@ -27,8 +26,11 @@ import androidx.appcompat.app.AlertDialog;
 import com.google.android.material.color.MaterialColors;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import java.util.List;
+import java.util.function.Consumer;
+
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.ui.DialogTouch;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.store.vm.ProtectedVM;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -36,8 +38,13 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 /**
  * GRUB-style boot entry menu shown on a manual GUI start of a VM that
  * boots from a disk image: the resolved entry is preselected, a countdown
- * runs on the Boot button (touching the list stops it, like pressing a
+ * runs on the Boot button (touching the dialog stops it, like pressing a
  * key in GRUB), and the choice is one-shot unless "remember" is ticked.
+ *
+ * <p>Boot sits in the neutral slot, and the pseudo-unprotected offer -- when the selected
+ * entry needs it -- in the positive one, the way every guard prompt is laid out: the answer
+ * that changes something is the deliberate one, and the countdown settles on the one that
+ * changes nothing.</p>
  */
 public final class BootMenuDialog {
     /** RadioButton id of the fixed "DroidVM built-in kernel" entry, kept
@@ -58,10 +65,15 @@ public final class BootMenuDialog {
          * @param selected       image entry to pin when remembering (null otherwise)
          * @param builtinCmdline the cmdline the built-in kernel would use, for
          *                       persisting; non-null only for the built-in entry
+         * @param pseudoUnprotected start this once as {@link ProtectedVM#PSEUDO_UNPROTECTED}
+         *                       -- the offer made when the selected kernel has no restricted
+         *                       DMA pool. Never persisted, whatever "remember" says: that
+         *                       checkbox is about which entry boots, and downgrading how a
+         *                       VM's memory is protected is not something to inherit silently.
          */
         void proceed(@Nullable String bootEntry, boolean remember,
                      @Nullable BootConfig.ImageEntry selected,
-                     @Nullable String builtinCmdline);
+                     @Nullable String builtinCmdline, boolean pseudoUnprotected);
     }
 
     private BootMenuDialog() {
@@ -92,6 +104,8 @@ public final class BootMenuDialog {
         var state = new Object() {
             @Nullable
             BootEntries entries;
+            /** The Linux entries, in radio order: what a direct boot can start. */
+            List<BootEntries.Entry> bootable = List.of();
             long secondsLeft = Math.max(boot.getBootWait(), 1);
             boolean countdownActive = false;
             boolean done = false;
@@ -102,12 +116,16 @@ public final class BootMenuDialog {
             .setTitle(context.getString(
                 R.string.edit_vm_boot_menu_title, config.getName()))
             .setView(view)
-            .setPositiveButton(R.string.edit_vm_boot_menu_boot, null)
+            // Booting the selection changes nothing about the VM, so it is the neutral
+            // answer, and the countdown settles on it; the mode switch is the positive one,
+            // shown only while the selected entry carries the DMA warning (see updateFix).
+            .setNeutralButton(R.string.edit_vm_boot_menu_boot, null)
+            .setPositiveButton(R.string.edit_vm_boot_menu_pseudo, null)
             .setNegativeButton(android.R.string.cancel, null)
             .setCancelable(false)
             .create();
 
-        Runnable fire = () -> {
+        Consumer<Boolean> fire = pseudoUnprotected -> {
             if (state.done) return;
             state.done = true;
             dialog.dismiss();
@@ -115,27 +133,27 @@ public final class BootMenuDialog {
             int checkedId = group.getCheckedRadioButtonId();
             if (checkedId == BUILTIN_RADIO_ID) {
                 onProceed.proceed(BootConfig.BUILTIN_ENTRY_KEY, remember.isChecked(),
-                    null, builtinCmdline(boot, entries));
+                    null, builtinCmdline(boot, entries), pseudoUnprotected);
                 return;
             }
             // radio index 0 = auto; entry i sits at radio index i + 1
             int index = checkedId - 1;
             if (entries == null || index <= 0) {
-                onProceed.proceed(null, remember.isChecked(), null, null);
+                onProceed.proceed(null, remember.isChecked(), null, null, pseudoUnprotected);
                 return;
             }
-            var entry = entries.entries.get(index - 1);
-            onProceed.proceed(
-                entry.selectionKey(), remember.isChecked(), entry.toImageEntry(), null);
+            var entry = state.bootable.get(index - 1);
+            onProceed.proceed(entry.selectionKey(), remember.isChecked(),
+                entry.toImageEntry(), null, pseudoUnprotected);
         };
 
         var tick = new Runnable() {
             @Override
             public void run() {
                 if (state.done || !state.countdownActive) return;
-                var btn = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+                var btn = dialog.getButton(AlertDialog.BUTTON_NEUTRAL);
                 if (state.secondsLeft <= 0) {
-                    fire.run();
+                    fire.accept(false);
                     return;
                 }
                 btn.setText(context.getString(
@@ -148,7 +166,7 @@ public final class BootMenuDialog {
         Runnable stopCountdown = () -> {
             if (!state.countdownActive) return;
             state.countdownActive = false;
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
                 .setText(R.string.edit_vm_boot_menu_boot);
         };
 
@@ -159,8 +177,11 @@ public final class BootMenuDialog {
             context.getString(R.string.edit_vm_boot_entry_builtin), null, stopCountdown);
 
         dialog.setOnShowListener(d -> {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE)
-                .setOnClickListener(v -> fire.run());
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL)
+                .setOnClickListener(v -> fire.accept(false));
+            var fix = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            fix.setVisibility(GONE);
+            fix.setOnClickListener(v -> fire.accept(true));
             dialog.getButton(AlertDialog.BUTTON_NEGATIVE)
                 .setOnClickListener(v -> {
                     state.done = true;
@@ -169,6 +190,9 @@ public final class BootMenuDialog {
                 });
         });
         dialog.show();
+        // Reading the entry list, or a warning under it, stops the auto-boot -- pressing a key
+        // during GRUB's own countdown does the same thing.
+        DialogTouch.whenTouched(dialog, stopCountdown);
 
         // auto option is always present; entries arrive after the scan, and
         // the built-in entry is appended last so it stays at the bottom
@@ -178,7 +202,7 @@ public final class BootMenuDialog {
         summary.setVisibility(VISIBLE);
         summary.setText(R.string.edit_vm_boot_detect_scanning);
 
-        var image = firstImagePath(config, boot.getImageDisk());
+        var image = BootConfig.imagePath(config, boot.getImageDisk());
         if (image == null) {
             summary.setText(R.string.edit_vm_boot_detect_no_disk);
             addBuiltin.run();
@@ -193,11 +217,14 @@ public final class BootMenuDialog {
                 return;
             }
             state.entries = result;
+            // Windows entries are listed by lbx because the image boots them, but a direct
+            // kernel boot has no kernel to load there -- they are not offered here.
+            state.bootable = result.linuxEntries();
             var pinned = boot.getImageEntry();
             var resolved = result.resolve(pinned);
             boolean protectedVm = isProtectedVm(config);
-            for (int i = 0; i < result.entries.size(); i++) {
-                var entry = result.entries.get(i);
+            for (int i = 0; i < state.bootable.size(); i++) {
+                var entry = state.bootable.get(i);
                 addRadio(context, group, idFor(i + 1), entry.displayLabel(context),
                     entryWarning(context, protectedVm, entry), stopCountdown);
             }
@@ -211,7 +238,7 @@ public final class BootMenuDialog {
                 autoRadio.setText(warnedLabel(autoRadio,
                     context.getString(R.string.edit_vm_boot_entry_auto), autoWarn));
             if (resolved != null && pinned != null && !result.isFallback(pinned))
-                group.check(idFor(result.entries.indexOf(resolved) + 1));
+                group.check(idFor(state.bootable.indexOf(resolved) + 1));
             else
                 group.check(idFor(0));
             if (result.isFallback(pinned)) {
@@ -219,10 +246,20 @@ public final class BootMenuDialog {
                 warn.setText(context.getString(
                     R.string.edit_vm_boot_menu_fallback,
                     pinned.title != null ? pinned.title : pinned.id));
+            } else if (state.bootable.isEmpty() && result.hasWindows()) {
+                // The disk boots, just not this way: say which protocol would.
+                warn.setVisibility(VISIBLE);
+                warn.setText(R.string.edit_vm_boot_menu_windows_only);
             }
-            updateSummary(context, summary, boot, result, group);
-            group.setOnCheckedChangeListener((g, id) ->
-                updateSummary(context, summary, boot, result, group));
+            Runnable refresh = () -> {
+                updateSummary(context, summary, boot, result, state.bootable, group);
+                updateFix(dialog, boot, protectedVm, result, state.bootable, group);
+            };
+            refresh.run();
+            group.setOnCheckedChangeListener((g, id) -> refresh.run());
+            // Nothing here to auto-boot: leave the choice (built-in kernel, or cancel and
+            // change the protocol) to the user rather than counting down into a failure.
+            if (state.bootable.isEmpty()) return;
             // countdown only starts on a successful scan; a warned auto-boot
             // target buys the user a few extra seconds to react
             if (autoWarn != null) state.secondsLeft += WARNED_COUNTDOWN_GRACE;
@@ -236,6 +273,7 @@ public final class BootMenuDialog {
         @NonNull TextView summary,
         @NonNull BootConfig boot,
         @NonNull BootEntries entries,
+        @NonNull List<BootEntries.Entry> bootable,
         @NonNull RadioGroup group
     ) {
         int checkedId = group.getCheckedRadioButtonId();
@@ -247,10 +285,7 @@ public final class BootMenuDialog {
             summary.setText(line);
             return;
         }
-        int index = checkedId - 1;
-        var entry = index <= 0
-            ? entries.resolve(null)
-            : entries.entries.get(index - 1);
+        var entry = selectedEntry(boot, entries, bootable, group);
         if (entry == null) {
             summary.setVisibility(GONE);
             return;
@@ -281,6 +316,49 @@ public final class BootMenuDialog {
             }
         }
         return BootConfig.DEFAULT_MANUAL_CMDLINE;
+    }
+
+    /**
+     * The entry the current selection means: an entry row is itself, the Auto row is whatever
+     * the stored config resolves to now, and the built-in kernel is none of them.
+     */
+    @Nullable
+    private static BootEntries.Entry selectedEntry(
+        @NonNull BootConfig boot,
+        @NonNull BootEntries entries,
+        @NonNull List<BootEntries.Entry> bootable,
+        @NonNull RadioGroup group
+    ) {
+        int checkedId = group.getCheckedRadioButtonId();
+        if (checkedId == BUILTIN_RADIO_ID) return null;
+        int index = checkedId - 1;
+        if (index <= 0) return entries.resolve(boot.getImageEntry());
+        return index - 1 < bootable.size() ? bootable.get(index - 1) : null;
+    }
+
+    /**
+     * Offers "boot pseudo-unprotected" exactly while the selection is an entry the warning
+     * applies to -- a kernel with no restricted DMA pool on a VM whose memory is lent.
+     *
+     * <p>It is the third answer this menu never had: the warning could be read and ignored, or
+     * the start abandoned, but the thing that would actually make the kernel work was two
+     * screens away in the editor. The countdown still settles on Boot, unchanged: this button
+     * changes how the VM is started, and nothing that changes a user's configuration should
+     * happen because nobody was looking.</p>
+     */
+    private static void updateFix(
+        @NonNull AlertDialog dialog,
+        @NonNull BootConfig boot,
+        boolean protectedVm,
+        @NonNull BootEntries entries,
+        @NonNull List<BootEntries.Entry> bootable,
+        @NonNull RadioGroup group
+    ) {
+        var fix = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (fix == null) return;
+        var entry = selectedEntry(boot, entries, bootable, group);
+        var warned = protectedVm && entry != null && entry.lacksRestrictedDmaPool();
+        fix.setVisibility(warned ? VISIBLE : GONE);
     }
 
     private static int idFor(int index) {
@@ -335,10 +413,7 @@ public final class BootMenuDialog {
      * would be false there.
      */
     private static boolean isProtectedVm(@NonNull VMConfig config) {
-        var pvm = optEnum(config.item, "protected_vm",
-            ProtectedVM.PROTECTED_WITHOUT_FIRMWARE);
-        return pvm == ProtectedVM.PROTECTED_PROTECTED
-            || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+        return ProtectedVM.lendsGuestMemory(config.item);
     }
 
     /**
@@ -359,20 +434,4 @@ public final class BootMenuDialog {
         return null;
     }
 
-    @Nullable
-    private static String firstImagePath(@NonNull VMConfig config, int preferred) {
-        var disks = config.item.opt("disks", null);
-        if (disks == null || !disks.is(DataItem.Type.ARRAY))
-            return null;
-        var arr = disks.asArray();
-        if (preferred >= 0 && preferred < arr.size()) {
-            var p = arr.get(preferred).optString("path", "");
-            if (!p.isEmpty()) return p;
-        }
-        for (var d : arr) {
-            var p = d.optString("path", "");
-            if (!p.isEmpty()) return p;
-        }
-        return null;
-    }
 }

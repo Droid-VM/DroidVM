@@ -47,6 +47,11 @@ import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 final class NativeDisplayInputBridge {
     private static final String TAG = "NativeDisplayInput";
 
+    /** One virtio_input_event on the wire: type, code, value. */
+    private static final int STATUS_RECORD_BYTES = 8;
+    /** A status read is a lamp changing, not a stream; a small buffer is the whole of it. */
+    private static final int STATUS_READ_BYTES = 256;
+
     /**
      * One crosvm-facing input socket: the inode we bound, the accepted crosvm connection, and the
      * lock that keeps a write and a reconnect off each other. crosvm connects to OUR socket at
@@ -57,15 +62,32 @@ final class NativeDisplayInputBridge {
         final String key;
         final String path;
         final int serverFd;
+        /** Kept apart from {@link #key} because a status record has to say which screen it is. */
+        final String screenId;
+        final int channel;
         final Object lock = new Object();
         /** Volatile: accept threads, write threads and release() all touch it without one lock. */
         volatile FDSocket peer;
 
-        Slot(@NonNull String key, @NonNull String path, int serverFd) {
+        Slot(@NonNull String key, @NonNull String path, int serverFd,
+             @NonNull String screenId, int channel) {
             this.key = key;
             this.path = path;
             this.serverFd = serverFd;
+            this.screenId = screenId;
+            this.channel = channel;
         }
+    }
+
+    /**
+     * The guest talking back. virtio-input's status queue carries what the guest's driver decides
+     * about the device rather than what the user did: the keyboard LEDs (caps, num, scroll) and
+     * the auto-repeat settings. crosvm writes those onto the same socket we write events into, so
+     * this is the only place they can be read, and reading them is also what keeps them from
+     * piling up in a socket buffer nobody drains.
+     */
+    interface StatusListener {
+        void onGuestStatus(@NonNull String screenId, int channel, @NonNull byte[] records);
     }
 
     /**
@@ -74,6 +96,12 @@ final class NativeDisplayInputBridge {
      */
     private volatile Map<String, Slot> slots = null;
     private volatile boolean inputClosed = false;
+    /** Set before the sockets are bound; null means nobody wants what the guest says. */
+    @Nullable
+    private volatile StatusListener statusListener = null;
+    /** The VM these sockets belong to, for the listener; set by {@link #startListening}. */
+    @NonNull
+    private volatile String vmId = "";
 
     /**
      * Identity of one socket: the channel, plus the screen for the channels that have one per
@@ -116,6 +144,14 @@ final class NativeDisplayInputBridge {
      * something bound behind it: listening fds, inodes under run/, and an accept thread each --
      * parked in accept(2) forever, since only closing the fd it waits on ends one.</p>
      */
+    /**
+     * Who hears the guest's status events. Set before {@link #startListening}, because the reader
+     * that carries them starts with the first accepted connection.
+     */
+    void setStatusListener(@Nullable StatusListener listener) {
+        this.statusListener = listener;
+    }
+
     boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
                            @NonNull List<String> nativeScreens) {
         if (!UnixHelper.isLoaded()) {
@@ -123,6 +159,7 @@ final class NativeDisplayInputBridge {
             return false;
         }
         inputClosed = false;
+        this.vmId = vmId;
         var built = new LinkedHashMap<String, Slot>();
         boolean allListening;
         try {
@@ -161,7 +198,7 @@ final class NativeDisplayInputBridge {
                     continue;
                 }
                 Log.i(TAG, fmt("Pre-listening on input socket: %s (fd=%d)", path, fd));
-                var slot = new Slot(slotKey(screenId, ch), path, fd);
+                var slot = new Slot(slotKey(screenId, ch), path, fd, screenId, ch);
                 built.put(slot.key, slot);
                 // Accept crosvm's connection in the background. crosvm is the client and connects
                 // at its own startup, so a peer may not arrive until after start() execs it.
@@ -224,8 +261,48 @@ final class NativeDisplayInputBridge {
                     if (old != null) old.close();
                 }
                 Log.i(TAG, fmt("crosvm input connected: %s", slot.path));
+                startStatusReadThread(slot, peer);
             }
         }, fmt("CrosvmInputAccept-%s", slot.key));
+        t.setDaemon(true);
+        t.start();
+    }
+
+    /**
+     * Reads what the guest says back on one keyboard connection: 8-byte records, the same shape we
+     * write, carrying EV_LED (the caps/num/scroll lamps) and the guest's auto-repeat settings.
+     *
+     * <p>Only the keyboard channel has anything to say, and only while somebody is listening, so
+     * no thread is started otherwise. It ends when the connection does -- crosvm restarting
+     * replaces the peer and the accept loop starts a new reader with it.</p>
+     */
+    private void startStatusReadThread(@NonNull Slot slot, @NonNull FDSocket peer) {
+        var listener = statusListener;
+        if (listener == null || slot.channel != NativeDisplay.KEYBOARD) return;
+        var t = new Thread(() -> {
+            var buffer = new byte[STATUS_READ_BYTES];
+            // A read can split a record; what is left over waits for the rest rather than being
+            // decoded as a whole one.
+            int held = 0;
+            try {
+                var in = peer.getInputStream();
+                while (!inputClosed && peer.isOpen()) {
+                    int n = in.read(buffer, held, buffer.length - held);
+                    if (n < 0) break;
+                    int total = held + n;
+                    int whole = total - (total % STATUS_RECORD_BYTES);
+                    if (whole > 0)
+                        listener.onGuestStatus(slot.screenId, slot.channel,
+                            java.util.Arrays.copyOf(buffer, whole));
+                    held = total - whole;
+                    if (held > 0) System.arraycopy(buffer, whole, buffer, 0, held);
+                }
+            } catch (IOException e) {
+                // The peer going away is how this ends most of the time; nothing to report.
+                if (!inputClosed)
+                    Log.d(TAG, fmt("status reader for %s ended: %s", slot.path, e.getMessage()));
+            }
+        }, fmt("CrosvmInputStatus-%s", slot.key));
         t.setDaemon(true);
         t.start();
     }

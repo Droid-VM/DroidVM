@@ -70,6 +70,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
+import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -158,6 +159,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // diverge. The two lists differ: a VNC-exported screen's tablet and keyboard are crosvm's,
         // not ours.
         if (isInputBridgeNeeded()) {
+            // What the guest says back about its keyboard -- the caps/num lamps -- goes to the
+            // grab manager: it is what lights the lamp on the physical keyboard and what a
+            // console shows. Set before the sockets are bound, because the reader that carries it
+            // starts with crosvm's first connection.
+            inputBridge.setStatusListener((screenId, channel, records) ->
+                context.getKeyboard().onGuestStatus(
+                    config.getId().toString(), screenId, records));
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
                     touchscreenScreens(), nativeInputScreens())) {
@@ -427,7 +435,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             args.add("--no-rng");
         if (!item.optBoolean("smt", false))
             args.add("--no-smt");
-        if (!item.optBoolean("usb", false))
+        // crosvm emulates one xHCI with 8 USB2 and 8 USB3 root ports and takes no argument about
+        // it, so the only thing the config can decide here is whether the controller exists at
+        // all. The rest of what a controller entry says is reported as ignored, in
+        // buildPeripheralCommand.
+        if (!VMXhciConfig.isEnabled(item))
             args.add("--no-usb");
         if (!item.optBoolean("sandbox", false))
             args.add("--disable-sandbox");
@@ -1313,12 +1325,37 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * <p>INTEL_HDA is accepted by the model and skipped here: crosvm emulates no HDA controller,
      * and starting a VM that claims hardware nothing can serve is worse than starting without
      * it. The UI says the same thing on the row.</p>
+     *
+     * <p>An XHCI_USB peripheral emits nothing at all: whether the controller exists is decided by
+     * the --no-usb flag above, and crosvm's xHCI is one controller with a fixed 8/8 geometry that
+     * no argument reaches. What this loop does for it is name what it ignored -- a second
+     * controller, or port counts that are not the ones crosvm has -- which is the same thing the
+     * editor's red text says before the VM is ever started.</p>
      */
     private void buildPeripheralCommand(@NonNull List<String> args) {
         var peripherals = VMPeripheralConfig.listOf(config.item);
         int appUid = getAppUid();
+        int xhciSeen = 0;
         for (var peripheral : peripherals) {
             var type = peripheral.getType();
+            if (type == PeripheralType.XHCI_USB) {
+                // Nothing to emit: the controller is on unless --no-usb went out above. What the
+                // entry says beyond "exists" is out of reach of this VMM, so say what was dropped
+                // rather than start a VM that quietly differs from its config.
+                if (++xhciSeen > 1) {
+                    Log.w(TAG, fmt("xHCI %s skipped: crosvm emulates one USB controller",
+                        peripheral.getControllerId()));
+                    continue;
+                }
+                if (peripheral.getUsb2Ports() != VMXhciConfig.DEFAULT_PORTS
+                    || peripheral.getUsb3Ports() != VMXhciConfig.DEFAULT_PORTS)
+                    Log.w(TAG, fmt(
+                        "xHCI %s port counts %d/%d ignored: crosvm's xHCI is fixed at %d/%d",
+                        peripheral.getControllerId(), peripheral.getUsb2Ports(),
+                        peripheral.getUsb3Ports(), VMXhciConfig.DEFAULT_PORTS,
+                        VMXhciConfig.DEFAULT_PORTS));
+                continue;
+            }
             if (type != PeripheralType.VIRTIO_SOUND) {
                 Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
                 continue;
@@ -1627,6 +1664,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     @Override
     public boolean hasControlSocket() {
         return controlSocketPath != null;
+    }
+
+    @Nullable
+    @Override
+    public String getControlSocketPath() {
+        return controlSocketPath;
     }
 
     @Override

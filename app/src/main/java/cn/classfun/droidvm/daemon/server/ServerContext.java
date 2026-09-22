@@ -18,8 +18,10 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+import cn.classfun.droidvm.daemon.input.KeyboardGrabManager;
 import cn.classfun.droidvm.daemon.network.NetworkInstanceStore;
 import cn.classfun.droidvm.daemon.network.backend.DefaultRouterWatcher;
+import cn.classfun.droidvm.daemon.usb.UsbPassthroughManager;
 import cn.classfun.droidvm.daemon.vm.VMInstance;
 import cn.classfun.droidvm.daemon.vm.VMInstanceStore;
 import cn.classfun.droidvm.daemon.vm.pkg.VMExportTask;
@@ -31,6 +33,8 @@ public final class ServerContext {
     private final VMInstanceStore vms = new VMInstanceStore(this);
     private final NetworkInstanceStore networks = new NetworkInstanceStore(this);
     private final DefaultRouterWatcher routerWatcher = new DefaultRouterWatcher(this);
+    private final UsbPassthroughManager usb = new UsbPassthroughManager(this);
+    private final KeyboardGrabManager keyboard = new KeyboardGrabManager(this);
     private final Map<UUID, VMExportTask> exportTasks = new ConcurrentHashMap<>();
     private final Map<UUID, VMImportTask> importTasks = new ConcurrentHashMap<>();
     public DataItem appConfig = DataItem.newObject();
@@ -97,6 +101,16 @@ public final class ServerContext {
     @NonNull
     public DefaultRouterWatcher getRouterWatcher() {
         return routerWatcher;
+    }
+
+    @NonNull
+    public UsbPassthroughManager getUsb() {
+        return usb;
+    }
+
+    @NonNull
+    public KeyboardGrabManager getKeyboard() {
+        return keyboard;
     }
 
     @NonNull

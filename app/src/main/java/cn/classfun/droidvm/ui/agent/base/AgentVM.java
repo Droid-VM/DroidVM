@@ -208,7 +208,8 @@ public final class AgentVM implements JSONSerialize {
         vm.item.set("hugepages", false);
         vm.item.set("rng", false);
         vm.item.set("balloon", false);
-        vm.item.set("usb", false);
+        // And no peripherals at all, which is how a VM says it has no USB: an agent VM boots an
+        // initramfs over a serial console and has nothing to pass through.
         vm.item.set("audio_enabled", false);
         vm.item.set(LendMthpMode.KEY, LendMthpMode.DISABLED);
         var boot = BootConfig.of(vm);

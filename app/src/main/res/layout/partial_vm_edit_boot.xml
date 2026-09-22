@@ -55,17 +55,6 @@
             app:ti_iconButtonHint="@string/edit_vm_disk_browse"
             app:ti_iconButtonIcon="@drawable/ic_open_in" />
 
-        <TextView
-            android:id="@+id/tv_uefi_hint"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:paddingStart="72dp"
-            android:paddingEnd="16dp"
-            android:paddingBottom="8dp"
-            android:text="@string/edit_vm_uefi_firmware_hint"
-            android:textColor="?attr/colorOnSurfaceVariant"
-            android:textSize="13sp" />
-
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer

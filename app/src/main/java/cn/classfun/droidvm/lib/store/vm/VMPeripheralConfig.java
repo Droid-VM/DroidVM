@@ -54,6 +54,61 @@ public final class VMPeripheralConfig {
         return config;
     }
 
+    /**
+     * Creates an xHCI USB controller with the default root-port counts.
+     *
+     * <p>The id is passed in rather than minted here: {@link VMXhciConfig#addController} is the
+     * one place that hands one out, because handing one out is also what moves the VM's counter
+     * past it.</p>
+     */
+    @NonNull
+    public static VMPeripheralConfig createDefaultXhci(@NonNull String id) {
+        var config = new VMPeripheralConfig(DataItem.newObject());
+        config.setType(PeripheralType.XHCI_USB);
+        config.setControllerId(id);
+        config.setUsb2Ports(VMXhciConfig.DEFAULT_PORTS);
+        config.setUsb3Ports(VMXhciConfig.DEFAULT_PORTS);
+        return config;
+    }
+
+    // ---- xHCI USB controller ----
+
+    /**
+     * This controller's id inside its VM, or "" for an entry that has not been given one yet.
+     *
+     * <p>The only peripheral field anything outside the VM config points at: an automatic USB
+     * attach rule names it, and has to keep naming the same controller across an edit that moves
+     * the row. See {@link VMXhciConfig}.</p>
+     */
+    @NonNull
+    public String getControllerId() {
+        return str(VMXhciConfig.KEY_ID);
+    }
+
+    public void setControllerId(@NonNull String id) {
+        item.set(VMXhciConfig.KEY_ID, id);
+    }
+
+    /** USB 2.0 root ports the controller offers. Honoured by QEMU; crosvm's xHCI is fixed at 8. */
+    public int getUsb2Ports() {
+        return VMXhciConfig.clampPorts(
+            item.optLong(VMXhciConfig.KEY_USB2, VMXhciConfig.DEFAULT_PORTS));
+    }
+
+    public void setUsb2Ports(int ports) {
+        item.set(VMXhciConfig.KEY_USB2, VMXhciConfig.clampPorts(ports));
+    }
+
+    /** USB 3.0 root ports the controller offers. */
+    public int getUsb3Ports() {
+        return VMXhciConfig.clampPorts(
+            item.optLong(VMXhciConfig.KEY_USB3, VMXhciConfig.DEFAULT_PORTS));
+    }
+
+    public void setUsb3Ports(int ports) {
+        item.set(VMXhciConfig.KEY_USB3, VMXhciConfig.clampPorts(ports));
+    }
+
     // ---- virtio-snd ----
 
     /**
@@ -217,7 +272,7 @@ public final class VMPeripheralConfig {
     @NonNull
     public static List<VMPeripheralConfig> listOf(@NonNull DataItem config) {
         var out = new ArrayList<VMPeripheralConfig>();
-        var arr = config.opt("peripherals", null);
+        var arr = config.opt(VMXhciConfig.KEY_PERIPHERALS, null);
         if (arr == null || !arr.is(DataItem.Type.ARRAY)) return out;
         for (var iter : arr)
             out.add(new VMPeripheralConfig(iter.getValue()));
