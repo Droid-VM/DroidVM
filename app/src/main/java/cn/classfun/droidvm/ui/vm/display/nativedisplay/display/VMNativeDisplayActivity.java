@@ -182,6 +182,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // (or OEM's) right-click fallback, regardless of what source it claims - swallow it.
     private long lastMouseButtonMs;
     private static final long MOUSE_BACK_SUPPRESS_MS = 800;
+    /**
+     * Whether the Android pointer-capture lock is currently active. When true, physical mouse
+     * deltas arrive via {@link #onCapturedPointerEvent} rather than as hover events, and the
+     * host cursor is hidden by the system. Only meaningful in MOUSE mode; always false in other
+     * modes. Managed by {@link #applyPointerCapture} which is the single writer.
+     */
+    private boolean pointerCaptured = false;
+    // Last hover position (view pixels) for relative-delta computation in MOUSE mode. NaN means
+    // not yet primed; set on HOVER_ENTER so the very first HOVER_MOVE doesn't produce a huge jump.
+    private float hoverLastX = Float.NaN, hoverLastY = Float.NaN;
     // Single sources of truth for viewport geometry (fit/zoom/pan across display-area changes)
     // and chrome visibility (fullscreen / extra keys). See the controller classes for the rules.
     private DisplayViewportController viewport;
@@ -473,12 +483,20 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         displayContainer.setOnTouchListener(this::onContainerTouch);
         // Host mouse/stylus: scroll wheel + right/middle buttons come as generic-motion events,
         // hover comes as hover events; both feed the pointer device so right-click/scroll/hover
-        // pass through to the guest (tablet mode gives absolute hover).
+        // pass through to the guest (MOUSE mode = relative, TABLET mode = absolute hover).
         surfaceView.setOnGenericMotionListener(this::onSurfaceGenericMotion);
         // Also on the container: a right-click over the letterbox area (outside the surface) must
         // still be consumed or the framework synthesizes BACK from it.
         displayContainer.setOnGenericMotionListener(this::onSurfaceGenericMotion);
         surfaceView.setOnHoverListener(this::onSurfaceHover);
+        // Hover listener on the container too: physical mouse over the letterbox area still moves
+        // the guest cursor in MOUSE mode (keeps the cursor from freezing in zoomed/16:9 views).
+        displayContainer.setOnHoverListener(this::onContainerHover);
+        // Pointer-capture delivers raw relative deltas and hides the host cursor, giving the best
+        // possible MOUSE-mode feel. requestPointerCapture() requires the target view to hold focus.
+        surfaceView.setFocusable(true);
+        surfaceView.setFocusableInTouchMode(true);
+        surfaceView.setOnCapturedPointerListener(this::onCapturedPointerEvent);
         // Restore the persisted mode here rather than on the daemon attach: the FAB menu is
         // reachable before the binder arrives, and a menu built on a stale TOUCH would write that
         // back over the stored mode.
@@ -709,15 +727,146 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    // Host pointer hover (no button): TABLET mode only - absolute hover on the guest tablet.
-    // MOUSE/TOUCH modes deliberately ignore Android-side hover.
+    /**
+     * Host pointer hover on the surfaceView (no button held).
+     * <ul>
+     *   <li>MOUSE mode: converts consecutive hover positions into relative REL_X/REL_Y mouse
+     *       motion and forwards it to the guest. HOVER_ENTER primes the position without
+     *       generating a delta (prevents a huge jump from 0,0 on the first event). Also
+     *       requests pointer capture so subsequent motion arrives as true relative deltas via
+     *       {@link #onCapturedPointerEvent} with the host cursor hidden by the OS.</li>
+     *   <li>TABLET mode: forwards as absolute hover on the guest absolute-mouse device.</li>
+     *   <li>TOUCH mode: ignored (raw multi-touch is used instead).</li>
+     * </ul>
+     */
     private boolean onSurfaceHover(View v, MotionEvent event) {
-        if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        if (inputForwarder == null) return false;
+        if (inputMode == InputMode.MOUSE) {
+            return handleMouseHover(event, surfaceView.getWidth(), surfaceView.getHeight());
+        }
         if (inputMode != InputMode.TABLET) return false;
+        if (v.getWidth() <= 0 || v.getHeight() <= 0) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
             var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
             inputForwarder.sendHover(event.getX(), event.getY(), tf.scaleX, tf.scaleY);
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Hover listener on the displayContainer (covers the letterbox area outside the surfaceView).
+     * Only used in MOUSE mode -- when the mouse travels over the pillarbox/letterbox bars the
+     * guest cursor must keep moving, not freeze at the surface edge.
+     * Coordinates are remapped to surfaceView space before computing the relative delta so the
+     * scale factor (guest px / view px) remains correct regardless of container size.
+     */
+    private boolean onContainerHover(View v, MotionEvent event) {
+        if (inputForwarder == null || inputMode != InputMode.MOUSE) return false;
+        // Convert container-local coordinates to surfaceView-local coordinates.
+        float svX = event.getX() - surfaceView.getLeft() - surfaceView.getTranslationX();
+        float svY = event.getY() - surfaceView.getTop() - surfaceView.getTranslationY();
+        // Reuse the surface-view's dimensions for the scale factor (unchanged regardless of zoom).
+        return handleMouseHover(event, surfaceView.getWidth(), surfaceView.getHeight(), svX, svY);
+    }
+
+    /**
+     * Core MOUSE-mode hover logic. Called by both {@link #onSurfaceHover} (surfaceView coords) and
+     * {@link #onContainerHover} (container coords remapped to surfaceView space).
+     */
+    private boolean handleMouseHover(@NonNull MotionEvent event, int svW, int svH) {
+        return handleMouseHover(event, svW, svH, event.getX(), event.getY());
+    }
+
+    private boolean handleMouseHover(@NonNull MotionEvent event, int svW, int svH,
+                                     float x, float y) {
+        if (svW <= 0 || svH <= 0) return false;
+        int action = event.getActionMasked();
+        switch (action) {
+            case MotionEvent.ACTION_HOVER_ENTER:
+                // Prime the last position so the first HOVER_MOVE produces a clean delta.
+                hoverLastX = x;
+                hoverLastY = y;
+                // Request pointer capture: the OS hides the host cursor and delivers raw deltas.
+                applyPointerCapture(true);
+                return true;
+            case MotionEvent.ACTION_HOVER_MOVE: {
+                if (Float.isNaN(hoverLastX)) {
+                    // Primed via ENTER is the normal path; guard just in case ENTER was missed.
+                    hoverLastX = x;
+                    hoverLastY = y;
+                    return true;
+                }
+                // guestWidth / svW == guest-px per view-px (same ratio TouchScaleCalculator uses).
+                float scaleX = (float) guestWidth / svW;
+                float scaleY = (float) guestHeight / svH;
+                mouseRemX += (x - hoverLastX) * scaleX;
+                mouseRemY += (y - hoverLastY) * scaleY;
+                hoverLastX = x;
+                hoverLastY = y;
+                int dx = (int) mouseRemX, dy = (int) mouseRemY;
+                if (dx != 0 || dy != 0) {
+                    mouseRemX -= dx;
+                    mouseRemY -= dy;
+                    inputForwarder.sendMouseMove(dx, dy);
+                }
+                return true;
+            }
+            case MotionEvent.ACTION_HOVER_EXIT:
+                hoverLastX = Float.NaN;
+                hoverLastY = Float.NaN;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /**
+     * Requests or releases Android pointer capture on the surfaceView.
+     *
+     * <p>When captured the OS hides the system cursor and delivers raw relative mouse deltas to
+     * {@link #onCapturedPointerEvent}; hover events stop arriving. Capture is automatically
+     * dropped by the OS whenever the window loses focus, so {@link #pointerCaptured} is the
+     * authoritative in-process state.
+     *
+     * <p>Only meaningful in MOUSE mode; always released when switching away.
+     */
+    private void applyPointerCapture(boolean capture) {
+        if (pointerCaptured == capture) return;
+        pointerCaptured = capture;
+        if (capture) {
+            surfaceView.requestFocus();
+            surfaceView.requestPointerCapture();
+        } else {
+            surfaceView.releasePointerCapture();
+        }
+    }
+
+    /**
+     * Called by the OS while pointer capture is active (MOUSE mode only). The event carries true
+     * relative deltas (getX()/getY() == dx/dy) with the host cursor hidden, giving latency and
+     * accuracy superior to hover-based motion. Fractional-pixel accumulation (mouseRemX/Y) is
+     * shared with the hover and gesture paths so slow drags are not rounded away.
+     */
+    private boolean onCapturedPointerEvent(View v, MotionEvent event) {
+        if (inputForwarder == null || inputMode != InputMode.MOUSE) {
+            applyPointerCapture(false);
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE) {
+            // event.getX()/getY() are already relative deltas in captured mode (view pixels).
+            float scaleX = (float) guestWidth / Math.max(1, surfaceView.getWidth());
+            float scaleY = (float) guestHeight / Math.max(1, surfaceView.getHeight());
+            mouseRemX += event.getX() * scaleX;
+            mouseRemY += event.getY() * scaleY;
+            int dx = (int) mouseRemX, dy = (int) mouseRemY;
+            if (dx != 0 || dy != 0) {
+                mouseRemX -= dx;
+                mouseRemY -= dy;
+                inputForwarder.sendMouseMove(dx, dy);
+            }
             return true;
         }
         return false;
@@ -1005,6 +1154,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // one thing the switch does not touch, the relative pointer being the VM's.
         if (!screenInputEnabled && mode != InputMode.MOUSE)
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
+        // Leaving MOUSE mode: release pointer capture (hides the system cursor while in MOUSE,
+        // but must be restored when the user switches to a finger-based mode) and clear the last
+        // hover position so re-entering MOUSE mode doesn't start with a stale coordinate.
+        if (inputMode == InputMode.MOUSE) {
+            applyPointerCapture(false);
+            hoverLastX = Float.NaN;
+            hoverLastY = Float.NaN;
+        }
         inputMode = mode;
         getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
             .putInt(KEY_INPUT_MODE, inputMode.ordinal()).apply();
@@ -1132,6 +1289,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
+        // The OS automatically releases pointer capture when the window loses focus, but our flag
+        // must match: if we don't clear it here, applyPointerCapture(true) on the next resume
+        // sees pointerCaptured==true and skips the requestPointerCapture() call entirely.
+        pointerCaptured = false;
+        // Also invalidate the last hover position: after a pause/resume cycle the mouse may be
+        // anywhere, so the next HOVER_ENTER will re-prime it cleanly.
+        hoverLastX = Float.NaN;
+        hoverLastY = Float.NaN;
     }
 
     @Override
