@@ -164,7 +164,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private float mouseRemX;
     private float mouseRemY;
     private long lastMouseButtonMs;
-    private boolean pointerCaptured;
     private float hoverLastX = Float.NaN;
     private float hoverLastY = Float.NaN;
 
@@ -479,8 +478,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     /**
-     * 鼠标点击不走手指触摸或手势转换器。三个按键均通过鼠标 evdev 通道转发，
-     * 不受 TOUCH/MOUSE/TABLET 模式影响。
+     * 鼠标点击不走手指触摸或手势转换器，三个按键均直接转发。TABLET 模式使用
+     * 绝对指针设备以匹配 hover 位置，其余模式使用相对鼠标设备。
      */
     private boolean onSurfaceTouch(View v, MotionEvent event) {
         if (isPhysicalMouse(event)) {
@@ -525,8 +524,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         return gestureTranslator.onTouchEvent(event, displayRectInContainer(), unitW, unitH);
     }
 
-    private static boolean isPhysicalMouseSource(int source) {
-        return (source & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE;
+    static boolean isPhysicalMouseSource(int source) {
+        // Pointer capture changes SOURCE_MOUSE into SOURCE_MOUSE_RELATIVE. The two constants are
+        // different source classes, so SOURCE_MOUSE_RELATIVE does not pass a SOURCE_MOUSE mask.
+        return (source & InputDevice.SOURCE_MOUSE) == InputDevice.SOURCE_MOUSE
+            || (source & InputDevice.SOURCE_MOUSE_RELATIVE)
+                == InputDevice.SOURCE_MOUSE_RELATIVE;
     }
 
     private static boolean isPhysicalMouse(@NonNull MotionEvent event) {
@@ -543,23 +546,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void forwardPhysicalMouseButtons(@NonNull MotionEvent event) {
         if (!isPhysicalMouse(event)) return;
 
-        int buttons = event.getButtonState() & HOST_MOUSE_BUTTONS;
         int action = event.getActionMasked();
-        int actionButton = event.getActionButton() & HOST_MOUSE_BUTTONS;
-
-        if (action == MotionEvent.ACTION_BUTTON_PRESS) {
-            buttons |= actionButton;
-        } else if (action == MotionEvent.ACTION_BUTTON_RELEASE) {
-            buttons &= ~actionButton;
-        } else if (action == MotionEvent.ACTION_DOWN) {
-            // 部分设备在 DOWN 中尚未更新 buttonState。
-            if (buttons == 0 && actionButton == 0)
-                buttons |= MotionEvent.BUTTON_PRIMARY;
-        } else if (action == MotionEvent.ACTION_UP
-            || action == MotionEvent.ACTION_CANCEL) {
-            // UP/CANCEL 释放普通左键；右/中键仍由 BUTTON_RELEASE 或 buttonState 管理。
-            buttons &= ~MotionEvent.BUTTON_PRIMARY;
-        }
+        int buttons = physicalMouseButtonsForEvent(
+            action, event.getButtonState(), event.getActionButton());
 
         int changed = hostMouseButtons ^ buttons;
         hostMouseButtons = buttons;
@@ -583,6 +572,29 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             inputForwarder.sendPointerButton(EvdevEncoder.BTN_MIDDLE,
                 (buttons & MotionEvent.BUTTON_TERTIARY) != 0);
         }
+    }
+
+    static int physicalMouseButtonsForEvent(int action, int buttonState, int actionButton) {
+        int buttons = buttonState & HOST_MOUSE_BUTTONS;
+        actionButton &= HOST_MOUSE_BUTTONS;
+
+        if (action == MotionEvent.ACTION_BUTTON_PRESS) {
+            buttons |= actionButton;
+        } else if (action == MotionEvent.ACTION_BUTTON_RELEASE) {
+            buttons &= ~actionButton;
+        } else if (action == MotionEvent.ACTION_DOWN) {
+            // 部分设备在 DOWN 中尚未更新 buttonState。
+            if (buttons == 0 && actionButton == 0)
+                buttons |= MotionEvent.BUTTON_PRIMARY;
+        } else if (action == MotionEvent.ACTION_UP) {
+            // UP ends the primary-button touch stream. Right/middle remain governed by their
+            // BUTTON_RELEASE events and the event's complete buttonState.
+            buttons &= ~MotionEvent.BUTTON_PRIMARY;
+        } else if (action == MotionEvent.ACTION_CANCEL) {
+            // Cancellation terminates the entire pointer stream; no release event is guaranteed.
+            buttons = 0;
+        }
+        return buttons;
     }
 
     /** 失焦或销毁时释放 guest 中可能仍处于按下状态的鼠标键。 */
@@ -760,14 +772,27 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     private void applyPointerCapture(boolean capture) {
-        if (pointerCaptured == capture) return;
-        pointerCaptured = capture;
         if (capture) {
+            if (surfaceView.hasPointerCapture()) return;
             surfaceView.requestFocus();
             surfaceView.requestPointerCapture();
         } else {
+            pointerDriveActive = false;
             surfaceView.releasePointerCapture();
         }
+    }
+
+    @Override
+    public void onPointerCaptureChanged(boolean hasCapture) {
+        super.onPointerCaptureChanged(hasCapture);
+        if (hasCapture) return;
+
+        // Capture can disappear without a matching button-up when focus or the input device is
+        // lost. Do not leave a guest button held, and prime hover again before fallback motion.
+        releasePhysicalMouseButtons();
+        pointerDriveActive = false;
+        hoverLastX = Float.NaN;
+        hoverLastY = Float.NaN;
     }
 
     /**
@@ -801,6 +826,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
 
         if (action == MotionEvent.ACTION_MOVE) {
+            pointerDriveActive = true;
             float scaleX = (float) guestWidth / Math.max(1, surfaceView.getWidth());
             float scaleY = (float) guestHeight / Math.max(1, surfaceView.getHeight());
             mouseRemX += event.getX() * scaleX;
@@ -1092,6 +1118,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG)
                 .show();
 
+        // A press and release must use the same evdev device. Queue releases while the forwarder
+        // still points at the old mode, then switch the mode behind them.
+        releasePhysicalMouseButtons();
         if (inputMode == InputMode.MOUSE) {
             applyPointerCapture(false);
             hoverLastX = Float.NaN;
@@ -1195,7 +1224,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         keyboardGrab.setResumed(false);
 
         releasePhysicalMouseButtons();
-        pointerCaptured = false;
         pointerDriveActive = false;
         hoverLastX = Float.NaN;
         hoverLastY = Float.NaN;
