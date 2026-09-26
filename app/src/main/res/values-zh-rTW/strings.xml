@@ -1196,7 +1196,7 @@
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模組未安裝，請先下載並安裝。</string>
     <string name="hugepage_download">下載</string>
     <string name="hugepage_crash_warning">模組在上次啟動時發生了崩潰。</string>
-    <string name="hugepage_enable_module">啟用模組</string>
+    <string name="hugepage_enable_module">啟用模組（開機自動載入）</string>
     <string name="hugepage_dismiss_crash">消除警告</string>
     <string name="hugepage_crash_dismissed">崩潰警告已消除</string>
     <string name="hugepage_stat_state">狀態</string>
@@ -1208,8 +1208,8 @@
     <string name="hugepage_proc_cma_detail">空閒 %1$s、其他 App %2$s</string>
     <string name="hugepage_stat_pool_used">已使用: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_total">總共: %1$d (%2$s)</string>
-    <string name="hugepage_stat_pool_size">池大小: %1$d (%2$s)</string>
-    <string name="hugepage_stat_pool_size_cma">池大小:%1$d/%2$d(%3$s / %4$s)</string>
+    <string name="hugepage_stat_pool_size">VM 專用記憶體: %1$d (%2$s)</string>
+    <string name="hugepage_stat_pool_size_cma">VM 專用記憶體:%1$d/%2$d(%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">模組未載入</string>
     <string name="hugepage_advanced">進階設定</string>
     <string name="hugepage_adv_hint">右側為模組目前的讀回值;點一列可編輯 settings.prop 的設定。</string>
@@ -1221,7 +1221,7 @@
     <string name="hugepage_adv_save_failed">儲存失敗</string>
     <string name="hugepage_manual_refill">獲取大頁</string>
     <string name="hugepage_refill_triggered">獲取已觸發</string>
-    <string name="hugepage_save_pool_size">儲存</string>
+    <string name="hugepage_save_pool_size">儲存並執行</string>
     <string name="hugepage_proc_acquire">獲取</string>
     <string name="hugepage_proc_acquire_running">獲取大頁中…</string>
     <string name="hugepage_proc_acquire_done">獲取完成</string>
@@ -1242,12 +1242,12 @@
     <string name="hugepage_proc_acquire_userspace">模組不足,嘗試 userspace 協助…</string>
     <string name="hugepage_refill_failed">觸發獲取失敗</string>
     <string name="hugepage_acquire_pages_title">獲取大頁</string>
-    <string name="hugepage_pool_size">池大小</string>
-    <string name="hugepage_pool_size_saved">池大小已儲存（重啟後生效）</string>
-    <string name="hugepage_pool_size_applied">池大小已儲存並套用</string>
+    <string name="hugepage_pool_size">VM 專用記憶體</string>
+    <string name="hugepage_pool_size_saved">VM 專用記憶體已儲存（重啟後生效）</string>
+    <string name="hugepage_pool_size_applied">VM 專用記憶體已儲存並套用</string>
     <string name="hugepage_pool_shrink_busy">獲取中，無法縮小，請待獲取完成</string>
-    <string name="hugepage_pool_below_vms">池大小不可小於執行中 VM 的記憶體總和（%1$s）</string>
-    <string name="hugepage_pool_size_failed">儲存池大小失敗</string>
+    <string name="hugepage_pool_below_vms">VM 專用記憶體不可小於執行中 VM 的記憶體總和（%1$s）</string>
+    <string name="hugepage_pool_size_failed">儲存 VM 專用記憶體失敗</string>
     <string name="hugepage_module_now_enabled">模組已啟用（重啟後生效）</string>
     <string name="hugepage_module_now_disabled">模組已停用（重啟後生效）</string>
     <string name="hugepage_btn_install">安裝</string>
@@ -1279,8 +1279,8 @@
 
     <!-- v10 CMA 料場 -->
     <string name="hugepage_enable_cma">啟用 CMA</string>
-    <string name="hugepage_enable_cma_sub">閒置保留以 CMA 形式借給 App 使用,透過獲取取回</string>
-    <string name="hugepage_cma_pool_size">含 CMA 池大小</string>
+    <string name="hugepage_enable_cma_sub">預留部分記憶體，其他 APP 仍可透過 CMA 使用，亦可快速回收為 VM 專用</string>
+    <string name="hugepage_cma_pool_size">總 CMA 大小（含 VM 專用）</string>
     <string name="hugepage_cma_not_supported">模組未載入或不支援 CMA(需 v10+)</string>
     <string name="hugepage_cma_unavailable_title">CMA 不可用</string>
     <string name="hugepage_cma_unavailable_boot">本次開機模組已停用 CMA 功能(kernel 預檢/符號解析/首塊驗證未通過)。</string>
