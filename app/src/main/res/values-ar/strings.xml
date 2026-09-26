@@ -1242,7 +1242,8 @@
     <string name="hugepage_crash_warning">تعطلت وحدة حجز الصفحات الضخمة أثناء الإقلاع الأخير.</string>
     <string name="hugepage_dismiss_crash">تجاهل</string>
     <string name="hugepage_crash_dismissed">تم تجاهل تحذير التعطل</string>
-    <string name="hugepage_enable_module">تفعيل الوحدة</string>
+    <string name="hugepage_enable_module">تفعيل وحدة الـ Root</string>
+    <string name="hugepage_enable_module_sub">يُحمَّل تلقائيًا عند الإقلاع؛ الحجز يمنح أعلى معدل نجاح في الحصول على الذاكرة</string>
     <string name="hugepage_stat_state">الحالة</string>
     <string name="hugepage_stat_total_served">إجمالي الصفحات المخدومة</string>
     <string name="hugepage_stat_total_refilled">إجمالي الصفحات المستعادة</string>
@@ -1252,8 +1253,8 @@
     <string name="hugepage_proc_cma_detail">شاغر %1$s، تطبيقات أخرى %2$s</string>
     <string name="hugepage_stat_pool_used">المستخدم: %1$d (%2$s)</string>
     <string name="hugepage_stat_pool_total">الإجمالي: %1$d (%2$s)</string>
-    <string name="hugepage_stat_pool_size">حجم التجمع (Pool): %1$d (%2$s)</string>
-    <string name="hugepage_stat_pool_size_cma">حجم التجمع: %1$d/%2$d (%3$s / %4$s)</string>
+    <string name="hugepage_stat_pool_size">ذاكرة VM: %1$d (%2$s)</string>
+    <string name="hugepage_stat_pool_size_cma">ذاكرة VM: %1$d/%2$d (%3$s / %4$s)</string>
     <string name="hugepage_stats_unavailable">الوحدة غير محملة</string>
     <string name="hugepage_advanced">متقدم</string>
     <string name="hugepage_adv_hint">القيمة المعروضة على اليمين هي ما تشغّله الوحدة حاليًا؛ اضغط على أي صف لتعديل ما يطلبه ملف settings.prop.</string>
@@ -1266,7 +1267,7 @@
     <string name="hugepage_manual_refill">حيازة الصفحات (Acquire Pages)</string>
     <string name="hugepage_refill_triggered">تم إطلاق طلب الحيازة</string>
     <string name="hugepage_refill_failed">فشل إطلاق طلب الحيازة</string>
-    <string name="hugepage_save_pool_size">حفظ</string>
+    <string name="hugepage_save_pool_size">حفظ وتنفيذ</string>
     <string name="hugepage_proc_acquire">حيازة (Acquire)</string>
     <string name="hugepage_proc_acquire_v1_desc">حيازة v1 (مسح عبر دالة alloc_contig_pages)</string>
     <string name="hugepage_proc_acquire_v2_desc">حيازة v2 (ترحيل الذاكرة + استعادة موارد النظام)</string>
@@ -1286,17 +1287,17 @@
     <string name="hugepage_proc_acquire_partial_cma">توقفت الحيازة: التجمع %1$s من أصل %2$s، مع CMA بقيمة %3$s من أصل %4$s (لا يمكن للنظام ترحيل المزيد من الصفحات حاليًا)</string>
     <string name="hugepage_proc_acquire_userspace">الوحدة بحاجة لذاكرة إضافية؛ جارٍ طلب المساعدة من مساحة المستخدم (Userspace)...</string>
     <string name="hugepage_acquire_pages_title">حيازة الصفحات الضخمة</string>
-    <string name="hugepage_pool_size">حجم التجمع (Pool Size)</string>
-    <string name="hugepage_pool_size_saved">تم حفظ حجم التجمع (يسري المفعول بعد إعادة التشغيل)</string>
-    <string name="hugepage_pool_size_applied">تم حفظ حجم التجمع وتطبيقه</string>
+    <string name="hugepage_pool_size">ذاكرة مخصصة للأجهزة الافتراضية (VM)</string>
+    <string name="hugepage_pool_size_saved">تم حفظ ذاكرة VM (يسري المفعول بعد إعادة التشغيل)</string>
+    <string name="hugepage_pool_size_applied">تم حفظ ذاكرة VM وتطبيقه</string>
     <string name="hugepage_pool_shrink_busy">عملية الحيازة جارية — يتعذر تقليص الحجم الآن، انتظر حتى تنتهي</string>
-    <string name="hugepage_pool_below_vms">لا يمكن أن يكون التجمع أصغر من إجمالي ذاكرة الأجهزة الافتراضية قيد التشغيل (%1$s)</string>
-    <string name="hugepage_pool_size_failed">فشل حفظ حجم التجمع</string>
+    <string name="hugepage_pool_below_vms">لا يمكن أن تكون ذاكرة VM أصغر من إجمالي ذاكرة الأجهزة الافتراضية قيد التشغيل (%1$s)</string>
+    <string name="hugepage_pool_size_failed">فشل حفظ ذاكرة VM</string>
     <string name="hugepage_module_now_enabled">تم تفعيل الوحدة (يسري المفعول بعد إعادة التشغيل)</string>
     <string name="hugepage_module_now_disabled">تم تعطيل الوحدة (يسري المفعول بعد إعادة التشغيل)</string>
     <string name="hugepage_btn_install">تثبيت</string>
-    <string name="hugepage_btn_enable">تفعيل</string>
-    <string name="hugepage_btn_disable">تعطيل</string>
+    <string name="hugepage_btn_enable">تحميل وحدة النواة</string>
+    <string name="hugepage_btn_disable">تحرير الذاكرة المخصصة</string>
     <string name="hugepage_load">تحميل</string>
     <string name="hugepage_loaded">تم تحميل الوحدة</string>
     <string name="hugepage_load_failed">فشل تحميل الوحدة</string>
@@ -1323,8 +1324,8 @@
 
     <!-- v10 CMA reservoir -->
     <string name="hugepage_enable_cma">تفعيل تقنية CMA</string>
-    <string name="hugepage_enable_cma_sub">إعارة الحجز الشاغر للتطبيقات كذاكرة CMA متجاورة؛ تُستعاد لاحقًا عند الحيازة</string>
-    <string name="hugepage_cma_pool_size">حجم التجمع مع تفعيل CMA</string>
+    <string name="hugepage_enable_cma_sub">احجز جزءًا من الذاكرة لتستخدمه التطبيقات الأخرى عبر CMA؛ ويمكن استعادته بسرعة كذاكرة مخصصة للأجهزة الافتراضية</string>
+    <string name="hugepage_cma_pool_size">إجمالي حجم CMA (بما يشمل ذاكرة VM المخصصة)</string>
     <string name="hugepage_cma_not_supported">الوحدة غير محملة أو لا تدعم ميزة CMA (تتطلب الإصدار v10 وما بعده)</string>
     <string name="hugepage_cma_unavailable_title">ذاكرة CMA غير متاحة</string>
     <string name="hugepage_cma_unavailable_boot">عطّلت الوحدة ميزات CMA أثناء هذا الإقلاع (فشلت فحوصات الكيرنل التمهيدية / حل الرموز البرمجية / التحقق من الكتلة الأولى).</string>
