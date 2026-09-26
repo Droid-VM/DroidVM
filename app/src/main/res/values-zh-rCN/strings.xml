@@ -1196,7 +1196,8 @@
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模块未安装，请先下载并安装。</string>
     <string name="hugepage_download">下载</string>
     <string name="hugepage_crash_warning">模块在上次启动时发生了崩溃。</string>
-    <string name="hugepage_enable_module">启用模块（开机自动加载）</string>
+    <string name="hugepage_enable_module">启用模块</string>
+    <string name="hugepage_enable_module_sub">开机自动加载；预约、获取内存成功率最高</string>
     <string name="hugepage_dismiss_crash">消除警告</string>
     <string name="hugepage_crash_dismissed">崩溃警告已消除</string>
     <string name="hugepage_stat_state">状态</string>
@@ -1258,8 +1259,8 @@
     <string name="log_helper_unsupported_sandbox_message">crosvm的沙箱模式在此平台不可用，请禁用沙箱模式。</string>
 
     <string name="hugepage_already_loaded">模块已处于加载状态</string>
-    <string name="hugepage_btn_disable">停用</string>
-    <string name="hugepage_btn_enable">启用</string>
+    <string name="hugepage_btn_disable">释放专用内存</string>
+    <string name="hugepage_btn_enable">加载内核模块</string>
     <string name="hugepage_btn_install">安装</string>
     <string name="hugepage_load">加载</string>
     <string name="hugepage_load_failed">加载模块失败</string>

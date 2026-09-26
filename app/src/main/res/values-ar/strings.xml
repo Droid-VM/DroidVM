@@ -1242,7 +1242,8 @@
     <string name="hugepage_crash_warning">تعطلت وحدة حجز الصفحات الضخمة أثناء الإقلاع الأخير.</string>
     <string name="hugepage_dismiss_crash">تجاهل</string>
     <string name="hugepage_crash_dismissed">تم تجاهل تحذير التعطل</string>
-    <string name="hugepage_enable_module">تفعيل الوحدة (تحميل تلقائي عند الإقلاع)</string>
+    <string name="hugepage_enable_module">تفعيل الوحدة</string>
+    <string name="hugepage_enable_module_sub">يُحمَّل تلقائيًا عند الإقلاع؛ الحجز يمنح أعلى معدل نجاح في الحصول على الذاكرة</string>
     <string name="hugepage_stat_state">الحالة</string>
     <string name="hugepage_stat_total_served">إجمالي الصفحات المخدومة</string>
     <string name="hugepage_stat_total_refilled">إجمالي الصفحات المستعادة</string>
@@ -1295,8 +1296,8 @@
     <string name="hugepage_module_now_enabled">تم تفعيل الوحدة (يسري المفعول بعد إعادة التشغيل)</string>
     <string name="hugepage_module_now_disabled">تم تعطيل الوحدة (يسري المفعول بعد إعادة التشغيل)</string>
     <string name="hugepage_btn_install">تثبيت</string>
-    <string name="hugepage_btn_enable">تفعيل</string>
-    <string name="hugepage_btn_disable">تعطيل</string>
+    <string name="hugepage_btn_enable">تحميل وحدة النواة</string>
+    <string name="hugepage_btn_disable">تحرير الذاكرة المخصصة</string>
     <string name="hugepage_load">تحميل</string>
     <string name="hugepage_loaded">تم تحميل الوحدة</string>
     <string name="hugepage_load_failed">فشل تحميل الوحدة</string>

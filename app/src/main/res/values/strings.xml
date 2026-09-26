@@ -1236,7 +1236,8 @@
     <string name="hugepage_crash_warning">The hugepage reserve module crashed during last boot.</string>
     <string name="hugepage_dismiss_crash">Dismiss</string>
     <string name="hugepage_crash_dismissed">Crash warning dismissed</string>
-    <string name="hugepage_enable_module">Enable Module (auto-load at boot)</string>
+    <string name="hugepage_enable_module">Enable Module</string>
+    <string name="hugepage_enable_module_sub">Auto-loads at boot; reserving memory gives the highest acquisition success rate</string>
     <string name="hugepage_stat_state">State</string>
     <string name="hugepage_stat_total_served">Total Served</string>
     <string name="hugepage_stat_total_refilled">Total Refilled</string>
@@ -1289,8 +1290,8 @@
     <string name="hugepage_module_now_enabled">Module enabled (effective after reboot)</string>
     <string name="hugepage_module_now_disabled">Module disabled (effective after reboot)</string>
     <string name="hugepage_btn_install">Install</string>
-    <string name="hugepage_btn_enable">Enable</string>
-    <string name="hugepage_btn_disable">Disable</string>
+    <string name="hugepage_btn_enable">Load Kernel Module</string>
+    <string name="hugepage_btn_disable">Release Dedicated Memory</string>
     <string name="hugepage_load">Load</string>
     <string name="hugepage_loaded">Module loaded</string>
     <string name="hugepage_load_failed">Failed to load module</string>

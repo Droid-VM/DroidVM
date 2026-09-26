@@ -1196,7 +1196,8 @@
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模組未安裝，請先下載並安裝。</string>
     <string name="hugepage_download">下載</string>
     <string name="hugepage_crash_warning">模組在上次啟動時發生了崩潰。</string>
-    <string name="hugepage_enable_module">啟用模組（開機自動載入）</string>
+    <string name="hugepage_enable_module">啟用模組</string>
+    <string name="hugepage_enable_module_sub">開機自動載入；預約、取得記憶體成功率最高</string>
     <string name="hugepage_dismiss_crash">消除警告</string>
     <string name="hugepage_crash_dismissed">崩潰警告已消除</string>
     <string name="hugepage_stat_state">狀態</string>
@@ -1251,8 +1252,8 @@
     <string name="hugepage_module_now_enabled">模組已啟用（重啟後生效）</string>
     <string name="hugepage_module_now_disabled">模組已停用（重啟後生效）</string>
     <string name="hugepage_btn_install">安裝</string>
-    <string name="hugepage_btn_enable">啟用</string>
-    <string name="hugepage_btn_disable">停用</string>
+    <string name="hugepage_btn_enable">載入核心模組</string>
+    <string name="hugepage_btn_disable">釋放專用記憶體</string>
     <string name="hugepage_load">載入</string>
     <string name="hugepage_loaded">模組已載入</string>
     <string name="hugepage_load_failed">載入模組失敗</string>
