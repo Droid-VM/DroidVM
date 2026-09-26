@@ -1242,7 +1242,7 @@
     <string name="hugepage_crash_warning">تعطلت وحدة حجز الصفحات الضخمة أثناء الإقلاع الأخير.</string>
     <string name="hugepage_dismiss_crash">تجاهل</string>
     <string name="hugepage_crash_dismissed">تم تجاهل تحذير التعطل</string>
-    <string name="hugepage_enable_module">تفعيل الوحدة</string>
+    <string name="hugepage_enable_module">تفعيل وحدة الـ Root</string>
     <string name="hugepage_enable_module_sub">يُحمَّل تلقائيًا عند الإقلاع؛ الحجز يمنح أعلى معدل نجاح في الحصول على الذاكرة</string>
     <string name="hugepage_stat_state">الحالة</string>
     <string name="hugepage_stat_total_served">إجمالي الصفحات المخدومة</string>

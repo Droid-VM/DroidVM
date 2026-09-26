@@ -1236,7 +1236,7 @@
     <string name="hugepage_crash_warning">The hugepage reserve module crashed during last boot.</string>
     <string name="hugepage_dismiss_crash">Dismiss</string>
     <string name="hugepage_crash_dismissed">Crash warning dismissed</string>
-    <string name="hugepage_enable_module">Enable Module</string>
+    <string name="hugepage_enable_module">Enable Root Module</string>
     <string name="hugepage_enable_module_sub">Auto-loads at boot; reserving memory gives the highest acquisition success rate</string>
     <string name="hugepage_stat_state">State</string>
     <string name="hugepage_stat_total_served">Total Served</string>

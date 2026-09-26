@@ -1196,7 +1196,7 @@
     <string name="hugepage_not_installed_desc">gh-hugepage-reserve Magisk 模块未安装，请先下载并安装。</string>
     <string name="hugepage_download">下载</string>
     <string name="hugepage_crash_warning">模块在上次启动时发生了崩溃。</string>
-    <string name="hugepage_enable_module">启用模块</string>
+    <string name="hugepage_enable_module">启用 Root 模块</string>
     <string name="hugepage_enable_module_sub">开机自动加载；预约、获取内存成功率最高</string>
     <string name="hugepage_dismiss_crash">消除警告</string>
     <string name="hugepage_crash_dismissed">崩溃警告已消除</string>
