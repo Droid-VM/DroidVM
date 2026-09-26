@@ -112,12 +112,13 @@ public final class InputForwarder {
     }
 
     /**
-     * A pointer button ({@link EvdevEncoder#BTN_RIGHT}/{@link EvdevEncoder#BTN_MIDDLE}) press/release
-     * from a host mouse or stylus. Left-click still rides the touch/tap path. Routed to the tablet
-     * (absolute mouse) in TABLET mode, otherwise the relative mouse.
+     * A pointer button press/release from a host mouse, stylus, or translated gesture. Routed to
+     * the tablet (absolute mouse) in TABLET mode, otherwise the relative mouse. The channel is
+     * captured before queuing so a later mode change cannot split a press/release pair.
      */
     public void sendPointerButton(short button, boolean down) {
-        submit("pointerButton", () -> sink.write(pointerChannel(),
+        int channel = pointerChannel();
+        submit("pointerButton", () -> sink.write(channel,
             EvdevEncoder.encodeMouseButton(button, down)));
     }
 
@@ -160,9 +161,10 @@ public final class InputForwarder {
 
     /** Host scroll wheel (vertical, horizontal notches) routed to the active pointer device. */
     public void sendScroll(int vNotches, int hNotches) {
+        int channel = pointerChannel();
         submit("scroll", () -> {
             byte[] data = EvdevEncoder.encodeMouseWheel(vNotches, hNotches);
-            if (data != null) sink.write(pointerChannel(), data);
+            if (data != null) sink.write(channel, data);
         });
     }
 
@@ -434,9 +436,15 @@ public final class InputForwarder {
         });
     }
 
-    /** Shuts down the worker. Sockets are owned by the root process, not closed here. */
+    /** Drains queued state changes, then shuts down the worker. Sockets are not owned here. */
     public void close() {
-        worker.shutdownNow();
+        worker.shutdown();
+        try {
+            if (!worker.awaitTermination(250, TimeUnit.MILLISECONDS)) worker.shutdownNow();
+        } catch (InterruptedException e) {
+            worker.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
         var frame = pendingMove.getAndSet(null);
         if (frame != null) frame.event.recycle();
     }
