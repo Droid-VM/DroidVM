@@ -253,7 +253,9 @@ public final class BootMenuDialog {
             }
             Runnable refresh = () -> {
                 updateSummary(context, summary, boot, result, state.bootable, group);
-                updateFix(dialog, boot, protectedVm, result, state.bootable, group);
+                updateFix(dialog, boot,
+                    protectedVm && ProtectedVM.supportsPseudoUnprotected(config.item),
+                    result, state.bootable, group);
             };
             refresh.run();
             group.setOnCheckedChangeListener((g, id) -> refresh.run());
