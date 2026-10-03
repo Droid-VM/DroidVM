@@ -261,6 +261,9 @@ public final class VMActions {
             .setNegativeButton(android.R.string.cancel, null)
             .create();
         dialog.show();
+        if (!ProtectedVM.supportsPseudoUnprotected(config.item)) {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setVisibility(android.view.View.GONE);
+        }
         guardCountdown(ctx, dialog, R.string.vm_protected_guest_start_countdown,
             () -> proceed.accept(config));
     }
