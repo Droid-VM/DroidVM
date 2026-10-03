@@ -219,6 +219,7 @@
     <string name="create_vm_protected_protected">محمي</string>
     <string name="create_vm_protected_without_firmware">محمي بدون فيرموير</string>
     <string name="create_vm_protected_pseudo_unprotected">شبه غير محمي (Pseudo Unprotected)</string>
+    <string name="create_vm_pseudo_gunyah_only">يتطلب crosvm مع الواجهة الخلفية Gunyah</string>
     <string name="create_vm_category_extra_options">خيارات إضافية</string>
     <string name="create_vm_extra_option_hint">معطيات إضافية (معطى واحد في كل سطر)</string>
     <string name="create_vm_environment_variables_hint">متغيرات البيئة (KEY=VALUE، متغير واحد في كل سطر)</string>
