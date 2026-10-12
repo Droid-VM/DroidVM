@@ -413,7 +413,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 break;
             default:throw new IllegalArgumentException(fmt("Unsupported hypervisor: %s", hypervisor));
         }
-        var protectedVm = optEnum(item, "protected_vm", defProtectedMode);
+        var configuredProtection = optEnum(item, "protected_vm", defProtectedMode);
+        var protectedVm = ProtectedVM.resolveFor(configuredProtection, VMBackend.CROSVM, hypervisor);
+        if (protectedVm != configuredProtection) {
+            Log.w(TAG, fmt("Pseudo-unprotected requires Gunyah; using normal mode for %s", hypervisor));
+        }
         switch (protectedVm) {
             case PROTECTED_PROTECTED:
                 args.add("--protected-vm");
