@@ -147,9 +147,16 @@ public final class VMEditBasicTab extends VMEditBaseTab {
             LendMthpMode.class, LendMthpMode.defaultForDevice(parent));
         parent.put("backend", VMBackend.DEFAULT);
         parent.put("hypervisor", chooseHypervisor.getSelectedItem());
-        chooseBackend.setOnValueChangedListener((oldValue, newValue) -> parent.put("backend", newValue));
-        chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> parent.put("hypervisor", newValue));
+        chooseBackend.setOnValueChangedListener((oldValue, newValue) -> {
+            parent.put("backend", newValue);
+            updateProtectedModes();
+        });
+        chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> {
+            parent.put("hypervisor", newValue);
+            updateProtectedModes();
+        });
         chooseProtectedVm.setOnValueChangedListener((oldValue, newValue) -> updateProtectedVisibility());
+        updateProtectedModes();
         updateProtectedVisibility();
         initCpuTopology();
     }
@@ -188,13 +195,16 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swHugepages.setChecked(item.optBoolean("hugepages", false));
         swDebug.setChecked(item.optBoolean("strace", false));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
-        chooseProtectedVm.setSelectedItem(optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
         var backend = optEnum(item, "backend", VMBackend.DEFAULT);
         var configuredHypervisor = optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
         var hypervisor = VMHypervisor.resolveConfigured(backend, configuredHypervisor);
         chooseHypervisor.setSelectedItem(hypervisor != null
             ? hypervisor : VMHypervisor.defaultForNewVm(backend));
+        updateProtectedModes();
+        chooseProtectedVm.setSelectedItem(ProtectedVM.resolveFor(
+            optEnum(item, "protected_vm", PROTECTED_WITHOUT_FIRMWARE), backend,
+            chooseHypervisor.getSelectedItem()));
         var extraOpts = item.opt("extra_options", null);
         if (extraOpts != null && extraOpts.is(DataItem.Type.ARRAY)) {
             var sb = new StringBuilder();
@@ -216,6 +226,22 @@ public final class VMEditBasicTab extends VMEditBaseTab {
             etEnvironmentVariables.setText("");
         }
         loadCpuTopology(item);
+        updateProtectedModes();
+        updateProtectedVisibility();
+    }
+
+    private void updateProtectedModes() {
+        VMBackend backend = chooseBackend.getSelectedItem();
+        VMHypervisor hypervisor = chooseHypervisor.getSelectedItem();
+        ProtectedVM selected = chooseProtectedVm.getSelectedItem();
+        chooseProtectedVm.setDefaultItem(ProtectedVM.defaultFor(backend, hypervisor));
+        if (ProtectedVM.supportsPseudoUnprotected(backend, hypervisor)) {
+            chooseProtectedVm.setDisabledItems(null);
+        } else {
+            chooseProtectedVm.setDisabledItems(parent.getString(R.string.create_vm_pseudo_gunyah_only),
+                ProtectedVM.PSEUDO_UNPROTECTED);
+        }
+        chooseProtectedVm.setSelectedItem(ProtectedVM.resolveFor(selected, backend, hypervisor));
         updateProtectedVisibility();
     }
 

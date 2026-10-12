@@ -77,9 +77,10 @@ public class VMConfig extends DataConfig {
         item.set("strace", false);
         item.set("gpu_vram_folio_threshold_kb", 1024L);
         item.set(LendMthpMode.KEY, LendMthpMode.defaultForDevice(context));
-        item.set("protected_vm", NEW_VM_DEFAULT_PROTECTED_VM);
         item.set("backend", VMBackend.DEFAULT);
-        item.set("hypervisor", VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
+        var hypervisor = VMHypervisor.defaultForNewVm(VMBackend.DEFAULT);
+        item.set("hypervisor", hypervisor);
+        item.set("protected_vm", ProtectedVM.defaultFor(VMBackend.DEFAULT, hypervisor));
         item.set("extra_options", DataItem.newArray());
         item.set("environment_variables", DataItem.newArray());
         item.set(CpuPlacementPlan.KEY_AFFINITY, "");

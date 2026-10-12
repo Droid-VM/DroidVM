@@ -30,6 +30,26 @@ public enum ProtectedVM implements StringEnum {
     /** The config key every reader of this enum uses. */
     public static final String KEY = "protected_vm";
 
+    public static boolean supportsPseudoUnprotected(VMBackend backend, VMHypervisor hypervisor) {
+        return backend == VMBackend.CROSVM && hypervisor == VMHypervisor.GUNYAH;
+    }
+
+    public static boolean supportsPseudoUnprotected(@NonNull DataItem item) {
+        var backend = Enums.optEnum(item, "backend", VMBackend.DEFAULT);
+        var configured = Enums.optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
+        var hypervisor = VMHypervisor.resolveConfigured(backend, configured);
+        return supportsPseudoUnprotected(backend, hypervisor);
+    }
+
+    public static ProtectedVM defaultFor(VMBackend backend, VMHypervisor hypervisor) {
+        return supportsPseudoUnprotected(backend, hypervisor) ? PSEUDO_UNPROTECTED : PROTECTED_NORMAL;
+    }
+
+    public static ProtectedVM resolveFor(ProtectedVM mode, VMBackend backend, VMHypervisor hypervisor) {
+        return mode == PSEUDO_UNPROTECTED && !supportsPseudoUnprotected(backend, hypervisor)
+            ? PROTECTED_NORMAL : mode;
+    }
+
     /**
      * Is this VM's guest memory lent to the hypervisor -- i.e. out of the host's reach while it
      * runs? That is the property two guest-side limits follow from: virtio has to bounce through
