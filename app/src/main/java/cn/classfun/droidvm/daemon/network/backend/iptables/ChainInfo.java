@@ -41,24 +41,37 @@ final class ChainInfo {
         return ipv6 ? "ip6tables" : "iptables";
     }
 
-    public void init(boolean insert) {
+    public boolean init(boolean insert) {
         backend.iptablesCmd(binary(), table, "-N", chain);
-        backend.iptablesCmd(binary(), table, "-F", chain);
+        if (!backend.iptablesCmd(binary(), table, "-F", chain)) return false;
         if (parent != null && chain != null) {
+            // A daemon restart can leave multiple old jumps behind. Reattach
+            // exactly once, at the requested position (ahead of Android DROP).
+            if (!detach()) return false;
             if (insert)
-                backend.iptablesCmd(binary(), table, "-I", parent, "1", "-j", chain);
+                return backend.iptablesCmd(binary(), table, "-I", parent, "1", "-j", chain);
             else
-                backend.iptablesCmd(binary(), table, "-A", parent, "-j", chain);
+                return backend.iptablesCmd(binary(), table, "-A", parent, "-j", chain);
         }
+        return true;
     }
 
     public void deinit() {
         if (table != null && parent != null && chain != null)
-            backend.iptablesCmd(binary(), table, "-D", parent, "-j", chain);
+            if (!detach()) return;
         if (table != null && chain != null) {
             backend.iptablesCmd(binary(), table, "-F", chain);
             backend.iptablesCmd(binary(), table, "-X", chain);
         }
+    }
+
+    private boolean detach() {
+        while (backend.iptablesCmd(binary(), table, "-C", parent, "-j", chain)) {
+            // Abort on a real delete failure rather than spinning forever.
+            if (!backend.iptablesCmd(binary(), table, "-D", parent, "-j", chain))
+                return false;
+        }
+        return true;
     }
 
     private boolean rule(@NonNull String op, @Nullable String pos, @NonNull String... args) {

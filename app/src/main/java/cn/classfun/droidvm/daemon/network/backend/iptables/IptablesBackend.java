@@ -12,6 +12,7 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.function.Predicate;
 
 import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.network.backend.FirewallHelper;
@@ -70,7 +71,21 @@ public final class IptablesBackend extends FirewallHelper {
     // that watcher's HOST_IFACE_PREFIXES, which this list is meant to track.
     private static final String[] EXT_IFACES = {"wlan+", "eth+", "rmnet+", "tun+"};
 
+    private final Predicate<String[]> commandRunner;
+
+    public IptablesBackend() {
+        this(IptablesBackend::runIptables);
+    }
+
+    IptablesBackend(Predicate<String[]> commandRunner) {
+        this.commandRunner = commandRunner;
+    }
+
     synchronized boolean iptables(@NonNull String... args) {
+        return commandRunner.test(args);
+    }
+
+    private static boolean runIptables(@NonNull String[] args) {
         int retry = 0;
         while (true) {
             var result = RunUtils.runList(args);

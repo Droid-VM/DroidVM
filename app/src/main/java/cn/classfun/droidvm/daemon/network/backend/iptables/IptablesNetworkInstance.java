@@ -11,12 +11,13 @@ import cn.classfun.droidvm.daemon.network.NetworkInstance;
 import cn.classfun.droidvm.daemon.network.backend.LinuxNetwork;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
+import cn.classfun.droidvm.lib.store.network.UplinkMode;
 import cn.classfun.droidvm.lib.store.network.VlanConfig;
 
 /**
- * Per-network iptables/ip6tables chains for an L3-routed Linux bridge:
- * per-VLAN subnet accept rules, MASQUERADE for SNAT-enabled VLANs and the
- * per-bridge chains that hold DNAT port forwards.
+ * Per-network firewall chains for a Linux bridge. L2 needs only a scoped
+ * IPv4 FORWARD accept rule for bridge netfilter. L3 also installs per-VLAN
+ * subnet rules, MASQUERADE and chains for DNAT port forwards.
  */
 final class IptablesNetworkInstance {
     final IptablesBackend backend;
@@ -60,6 +61,18 @@ final class IptablesNetworkInstance {
     }
 
     void init() {
+        if (inst.getUplinkMode() == UplinkMode.L2) {
+            synchronized (backend) {
+                // Bridge netfilter uses the bridge as both logical interfaces.
+                // Exact names scope DHCP and ordinary NEW flows to this bridge.
+                if (!filFwd.init(false)
+                    || !filFwd.append("-i", br, "-o", br, "-j", "ACCEPT")) {
+                    filFwd.deinit();
+                    throw new IllegalStateException(fmt("Failed to allow L2 IPv4 forwarding on %s", br));
+                }
+            }
+            return;
+        }
         filIn.init(false);
         filOut.init(false);
         filFwd.init(false);
@@ -78,6 +91,10 @@ final class IptablesNetworkInstance {
     }
 
     void deinit() {
+        if (inst.getUplinkMode() == UplinkMode.L2) {
+            filFwd.deinit();
+            return;
+        }
         filIn.deinit();
         filOut.deinit();
         filFwd.deinit();
@@ -101,6 +118,7 @@ final class IptablesNetworkInstance {
     }
 
     void initBasic() {
+        if (inst.getUplinkMode() == UplinkMode.L2) return;
         var extnetIn = backend.FIL_NET_EXTNET_IN.chain;
         var extnetOut = backend.FIL_NET_EXTNET_OUT.chain;
         var extnetIn6 = backend.FIL6_NET_EXTNET_IN.chain;
