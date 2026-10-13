@@ -97,6 +97,9 @@ public final class LinuxBridgeBackend extends BridgeBackend {
         net.setStp(br, inst.isStp());
         switch (inst.getUplinkMode()) {
             case L2:
+                // bridge-nf-call-iptables may send even pure L2 IPv4 traffic
+                // through Android's FORWARD chain. Install before the uplink.
+                firewall.initNetwork(inst);
                 startL2();
                 break;
             case L3:
@@ -299,8 +302,9 @@ public final class LinuxBridgeBackend extends BridgeBackend {
             net.removeInterface(resolvedUplink);
             uplinkEnslaved = false;
         }
-        if (inst.getUplinkMode() == UplinkMode.L3) {
+        if (inst.getUplinkMode() == UplinkMode.L2 || inst.getUplinkMode() == UplinkMode.L3)
             firewall.deinitNetwork(inst);
+        if (inst.getUplinkMode() == UplinkMode.L3) {
             for (var vid : createdVlanBridges)
                 net.deleteVlanBridge(br, vid);
             createdVlanBridges.clear();
