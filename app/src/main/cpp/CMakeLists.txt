@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(droidvm LANGUAGES C CXX ASM)
 
+option(DROIDVM_BUILD_PLATFORM_PROBE "Build isolated native migration platform checks" OFF)
+if(DROIDVM_BUILD_PLATFORM_PROBE)
+    set(DROIDVM_JSONCPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp")
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon"
+        "${CMAKE_CURRENT_BINARY_DIR}/native-daemon")
+endif()
+
 set(SHARED_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp/include
 )

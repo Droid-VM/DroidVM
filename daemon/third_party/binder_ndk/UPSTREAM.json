@@ -1,0 +1,14 @@
+{
+  "project": "AOSP frameworks/native",
+  "version": "android-14.0.0_r1",
+  "commit": "bfcf75076e562945bae131a4929f29a90d0d2481",
+  "path": "libs/binder/ndk/include_cpp/android",
+  "license": "Apache-2.0",
+  "git_blobs": {
+    "binder_auto_utils.h": "d6937c2c52652f08afb0e0bb6146343a6a404f43",
+    "binder_interface_utils.h": "9949de2aac39e2d6180853563e06f2d57877c454",
+    "binder_internal_logging.h": "88c6443f71790c461dc4928624b1fe4676cf4a47",
+    "binder_parcel_utils.h": "95eee26eedc767d3bbf1eb53ccf79655ff33627b"
+  },
+  "local_changes": []
+}
