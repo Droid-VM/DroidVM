@@ -15,6 +15,7 @@
 #include <memory>
 #include <stdexcept>
 #include <thread>
+#include "service_manager.h"
 
 void run_audio_probe(Json::Value& report);
 
@@ -64,9 +65,9 @@ void run_audio_watch(const std::string& directory, unsigned seconds, Json::Value
     if (!resolved || directory != resolved.get() || !directory.starts_with("/data/local/tmp/droidvm-audio-"))
         throw std::runtime_error("watch requires an existing canonical /data/local/tmp/droidvm-audio-* test directory");
     Fd dir(open(directory.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC));
-    auto check_service = reinterpret_cast<AIBinder* (*)(const char*)>(dlsym(RTLD_DEFAULT, "AServiceManager_checkService"));
+    ServiceManager manager;
     auto start_pool = reinterpret_cast<void (*)()>(dlsym(RTLD_DEFAULT, "ABinderProcess_startThreadPool"));
-    if (!check_service || !start_pool) throw std::runtime_error("native Binder service APIs unavailable");
+    if (!manager.available() || !start_pool) throw std::runtime_error("native Binder service APIs unavailable");
     start_pool();
     struct sigaction handler{};
     handler.sa_handler = stop;
@@ -86,7 +87,7 @@ void run_audio_watch(const std::string& directory, unsigned seconds, Json::Value
     const std::string defaults = "0\tout\tDEFAULT|system default\t0\t0\t1\n0\tin\tDEFAULT|system default\t0\t0\t6\n";
     while (!stopped && std::chrono::steady_clock::now() < deadline) {
         ++polls;
-        ndk::SpAIBinder service(check_service("media.audio_policy"));
+        auto service = manager.find("media.audio_policy");
         const bool service_changed = service.get() && service.get() != previous_service.get();
         if (service_changed) ++instances;
         Json::Value snapshot(Json::objectValue);

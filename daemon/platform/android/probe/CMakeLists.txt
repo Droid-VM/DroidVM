@@ -62,6 +62,9 @@ add_executable(droidvm_platform_probe
     broadcast_probe.cpp
     audio_probe.cpp
     audio_watch.cpp
+    audio_stream_test.cpp
+    service_manager.cpp
+    service_lookup_test.cpp
 )
 
 set(profile_file "${CMAKE_CURRENT_SOURCE_DIR}/profiles/warsaw-api37.json")
@@ -79,4 +82,4 @@ configure_file(audio_policy.h.in "${GENERATED_DIR}/audio_policy.h" @ONLY)
 target_compile_options(droidvm_platform_probe PRIVATE -Wall -Wextra -Werror)
 target_include_directories(droidvm_platform_probe SYSTEM PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/android_audio/include")
-target_link_libraries(droidvm_platform_probe PRIVATE droidvm_probe_aidl droidvm_daemon_json dl)
+target_link_libraries(droidvm_platform_probe PRIVATE droidvm_probe_aidl droidvm_daemon_json dl aaudio)

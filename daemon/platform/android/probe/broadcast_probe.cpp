@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include "broadcast_profile.h"
+#include "service_manager.h"
 
 namespace {
 using namespace aidl::cn::classfun::droidvm::display;
@@ -65,13 +66,14 @@ struct State {
     std::atomic<bool> input_checked{false};
     std::atomic<bool> echo_sent{false};
     std::atomic<int> caller_uid{-1};
+    std::atomic<bool> real_display_returned{false};
 };
 
 // All methods operate on synthetic data, never keyboards, VMs or user settings.
 class RemoteFixture final : public BnNativeDisplayRootService {
 public:
-    RemoteFixture(std::string nonce, std::shared_ptr<State> state)
-        : nonce_(std::move(nonce)), state_(std::move(state)), death_(AIBinder_DeathRecipient_new(
+    RemoteFixture(std::string nonce, std::shared_ptr<State> state, std::string display_service)
+        : nonce_(std::move(nonce)), state_(std::move(state)), display_service_(std::move(display_service)), death_(AIBinder_DeathRecipient_new(
             [](void* cookie) {
                 (*static_cast<std::shared_ptr<State>*>(cookie))->client_died = true;
             })) {
@@ -84,6 +86,10 @@ public:
                                            ndk::SpAIBinder* result) override {
         state_->caller_uid = static_cast<int>(AIBinder_getCallingUid());
         *result = name == nonce_ ? asBinder() : ndk::SpAIBinder();
+        if (!display_service_.empty() && name == display_service_) {
+            *result = manager_.wait(name.c_str(), 5s);
+            state_->real_display_returned = result->get() != nullptr;
+        }
         return ndk::ScopedAStatus::ok();
     }
     ndk::ScopedAStatus writeInput(const std::string& vm, const std::string& screen,
@@ -141,6 +147,8 @@ public:
 private:
     std::string nonce_;
     std::shared_ptr<State> state_;
+    std::string display_service_;
+    ServiceManager manager_;
     std::mutex token_mutex_;
     ndk::SpAIBinder token_;
     void* cookie_ = nullptr; // opaque unlink identity; never dereferenced after link
@@ -211,7 +219,7 @@ void send_broadcast(AIBinder* activity, AIBinder* broker, const std::string& non
 }
 }
 
-void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Value& report) {
+void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std::string& display_service, Json::Value& report) {
     Json::Value profile;
     std::istringstream input(kBroadcastProfile);
     input >> profile;
@@ -237,7 +245,7 @@ void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Val
         throw std::runtime_error("native Binder thread pool unavailable");
     start_threads();
     auto state = std::make_shared<State>();
-    auto broker = ndk::SharedRefBase::make<RemoteFixture>(nonce, state);
+    auto broker = ndk::SharedRefBase::make<RemoteFixture>(nonce, state, display_service);
     send_broadcast(activity, broker->asBinder().get(), nonce, profile, report);
     std::unique_lock lock(state->mutex);
     if (!state->changed.wait_for(lock, 30s, [&] { return state->finished; }))
@@ -247,7 +255,11 @@ void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Val
     report["echo_sent"] = state->echo_sent.load();
     report["client_death_received"] = state->client_died.load();
     report["cross_process_tested"] = true;
-    report["synthetic_fixture_only"] = true;
+    report["synthetic_fixture_only"] = display_service.empty();
+    report["synthetic_input_fixture"] = true;
+    report["real_display_returned"] = state->real_display_returned.load();
+    if (!display_service.empty() && !state->real_display_returned)
+        throw std::runtime_error("real display service was not returned");
     if (!state->input_checked || !state->echo_sent || !state->client_died || state->caller_uid < 10000)
         throw std::runtime_error("incomplete cross-process checks");
 }
