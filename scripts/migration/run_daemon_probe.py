@@ -216,6 +216,21 @@ def main():
             assert responses[5]["response"] == "PONG" and responses[6]["response"] == "HELLO"
             assert responses[7]["message"] == "command handler 不存在-迁移 not found"
             report["framing_auth_version_passed"] = True
+            assert "task_subscribe" in responses[3]["commands"]
+            sock.sendall(frame(request("task_snapshot")))
+            snapshot = receive(sock)
+            assert snapshot["success"] and snapshot["items"] == [] and snapshot["cursor"] == "0"
+            assert snapshot["epoch"] == responses[3]["epoch"]
+            task_commands = [request("task_subscribe", epoch=snapshot["epoch"], cursor=snapshot["cursor"]),
+                             request("ping", request="PING"), request("task_unsubscribe"),
+                             request("task_snapshot_release", snapshot_id=snapshot["snapshot_id"]),
+                             request("task_get", epoch=snapshot["epoch"], task_id=str(uuid.uuid4()))]
+            sock.sendall(b"".join(frame(value) for value in task_commands))
+            task_responses = [receive(sock) for _ in task_commands]
+            assert [value["request_id"] for value in task_responses] == [value["request_id"] for value in task_commands]
+            assert all(value["success"] for value in task_responses[:4])
+            assert task_responses[-1]["error"]["code"] == "TASK_NOT_FOUND"
+            report["production_entry_task_services_shared_epoch"] = True
         with connect() as sock:
             boundary = json.dumps(request("ping", request="PING")).encode()
             boundary += b" " * ((8 << 20) - len(boundary))
