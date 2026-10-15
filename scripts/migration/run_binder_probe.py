@@ -16,10 +16,13 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
+    parser.add_argument("--display-service", help="Optional real isolated crosvm display service to exercise")
     parser.add_argument("--probe", type=Path, default=root / "build/migration/standalone-arm64-v8a/platform/android/probe/droidvm_platform_probe")
     parser.add_argument("--apk", type=Path, default=root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk")
     parser.add_argument("--output", type=Path, default=root / "build/migration/binder-device")
     args = parser.parse_args()
+    if args.display_service and any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-." for c in args.display_service):
+        parser.error("Display service must contain only letters, digits, underscore, dot or hyphen")
     for path in (args.probe, args.apk):
         if not path.is_file():
             parser.error(f"Build the test artifacts first: {path}")
@@ -36,6 +39,8 @@ def main():
         command = adb + ["shell", "am", "instrument", "-w", "-r", "-e", "probe_nonce", nonce,
                          "-e", "class", "cn.classfun.droidvm.migration.NativeBinderContractTest",
                          "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"]
+        if args.display_service:
+            command[-1:-1] = ["-e", "display_service", args.display_service]
         test = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace")
         lines = queue.Queue()
@@ -66,7 +71,10 @@ def main():
                 test_out.flush()
                 print(line, end="", flush=True)
                 if line.strip() == f"INSTRUMENTATION_STATUS: probe_ready={nonce}" and native is None:
-                    native = subprocess.Popen(adb + ["shell", remote, "--broadcast-self-test", nonce],
+                    native_args = ["shell", remote, "--broadcast-self-test", nonce]
+                    if args.display_service:
+                        native_args.append(args.display_service)
+                    native = subprocess.Popen(adb + native_args,
                                               stdout=native_out, stderr=native_err)
             test.wait(timeout=5)
             if native is not None:
@@ -79,6 +87,12 @@ def main():
         for key in ("input_checked", "echo_sent", "client_death_received", "cross_process_tested"):
             if report.get(key) is not True:
                 raise RuntimeError(f"Missing native check {key}; see {output}")
+        if args.display_service and report.get("real_display_returned") is not True:
+            raise RuntimeError(f"Real crosvm display Binder not returned; see {output}")
+        if args.display_service:
+            for key in ("real_display_frame_received", "real_display_transactions_passed"):
+                if f"INSTRUMENTATION_STATUS: {key}=true" not in "".join(log):
+                    raise RuntimeError(f"Missing Java display check {key}; see {output}")
         print(f"PASS: native broadcast, Java/NDK calls, callbacks and both death notifications. Results: {output}")
     finally:
         for process in (test, native):

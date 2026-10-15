@@ -104,6 +104,8 @@ public final class NativeBinderContractTest {
             var broker = INativeDisplayRootService.Stub.asInterface(binder);
             assertEquals(binder, broker.waitForDisplayBinder(nonce));
             assertNull(broker.waitForDisplayBinder("missing"));
+            var realDisplay = InstrumentationRegistry.getArguments().getString("display_service");
+            if (realDisplay != null) CrosvmDisplayContract.verify(broker.waitForDisplayBinder(realDisplay));
             assertTrue(broker.writeInput(nonce, SCREEN, 3, INPUT));
             assertFalse(broker.writeInput(nonce, "other-screen", 3, INPUT));
             assertFalse(broker.writeInput(nonce, SCREEN, -1, new byte[0]));
