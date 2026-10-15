@@ -5,7 +5,6 @@ package cn.classfun.droidvm.lib.daemon;
 
 import static java.nio.ByteOrder.LITTLE_ENDIAN;
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -17,6 +16,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.Locale;
 
 public final class Protocol {
     public static final int IPC_MAX_PAYLOAD = 8 << 20; // 8 MiB
@@ -37,7 +37,7 @@ public final class Protocol {
         header.order(LITTLE_ENDIAN);
         int len = header.getInt();
         if (len <= 0 || len > IPC_MAX_PAYLOAD)
-            throw new IOException(fmt("Invalid payload length: %d", len));
+            throw new IOException(String.format(Locale.ROOT, "Invalid payload length: %d", len));
         var data = readExact(len);
         if (data == null) return null;
         int strLen = len;

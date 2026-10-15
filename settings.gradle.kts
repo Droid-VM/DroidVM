@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "DroidVM"
 include(":app")
+include(":migration-tests")

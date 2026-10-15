@@ -1,0 +1,62 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+abstract class ContractSourceTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sourceFile: RegularFileProperty
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun copySource() {
+        val source = sourceFile.get().asFile
+        val output = outputDirectory.get().asFile
+        output.mkdirs()
+        source.copyTo(output.resolve(source.name), overwrite = true)
+    }
+}
+
+val protocolSources = tasks.register<ContractSourceTask>("syncProtocolSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/daemon/Protocol.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/protocol/main"))
+}
+val contractSources = tasks.register<ContractSourceTask>("syncContractSources") {
+    sourceFile.set(rootProject.file("app/src/androidTest/java/cn/classfun/droidvm/lib/daemon/ProtocolContractTest.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/protocol/androidTest"))
+}
+
+// A library's instrumentation APK targets itself. Device contract checks can run
+// without replacing DroidVM or starting its Application, daemon or VM stores.
+android {
+    namespace = "cn.classfun.droidvm.migration"
+    compileSdk = 37
+    defaultConfig {
+        minSdk = 33
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+    sourceSets {
+        getByName("androidTest") {
+            assets.directories.add(rootProject.file("app/src/androidTest/assets").path)
+        }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.java?.addGeneratedSourceDirectory(protocolSources, ContractSourceTask::outputDirectory)
+        variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
+    }
+}
+
+dependencies {
+    implementation(libs.annotation.jvm)
+    androidTestImplementation(libs.ext.junit)
+    androidTestImplementation(libs.espresso.core)
+}
