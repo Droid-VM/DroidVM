@@ -112,6 +112,8 @@ android {
     }
     sourceSets {
         getByName("main") {
+            // The daemon owns the shared Binder contract; generate both sides from one source.
+            aidl.srcDir(rootProject.file("daemon/api/aidl"))
             // Third-party source kept in the tree rather than pulled as an artifact, in its own
             // root so that "not ours, and under its own licence" is structural. See its README.
             kotlin.srcDir("src/main/vendor")
