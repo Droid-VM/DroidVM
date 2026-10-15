@@ -119,11 +119,61 @@ def main():
         port, token, _ = start()
         with connect(False) as sock:
             assert exchange(sock, "network_create", config=config("unauthorized"), authenticated=True, administrator=True)["message"] == "client is not authorized to perform this action"
+            assert not exchange(sock, "network_list_interfaces", authenticated=True)["success"]
             assert exchange(sock, "auth", token=token)["success"]
             cap = exchange(sock, "capabilities")
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
             assert "network_delete" not in cap["commands"] and "network_start" not in cap["commands"]
+            assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]
+            # Missing tool must surface an error, not a successful empty list.
+            assert exchange(sock, "network_list_interfaces")["error"]["code"] == "IO_ERROR"
+            shell(["mkdir", data + "/bin"], check=True)
+            shell(["cp", "/data/user/0/cn.classfun.droidvm/bin/netbox", data + "/bin/netbox"], check=True)
+            shell(["chmod", "700", data + "/bin/netbox"], check=True)
+            raw_links = json.loads(shell([data + "/bin/netbox", "link-list"], check=True).stdout)
+            expected_names = {row["ifname"] for row in raw_links if row["ifname"] != "lo" and row["kind"] != "bridge"}
+            interfaces = exchange(sock, "network_list_interfaces")["data"]
+            assert {row["name"] for row in interfaces} == expected_names
+            assert all(set(row) == {"name", "state", "master"} and row["state"] == row["state"].upper() for row in interfaces)
+            report["real_host_interface_enumeration_auth_and_tool_failure"] = True
+            # Exercise a slow real child through this new command's dispatch
+            # path. Only the isolated test directory's netbox is replaced.
+            sleeper = output / "slow-netbox"
+            sleeper.write_bytes(b"#!/system/bin/sh\nexec /system/bin/sleep 12\n")
+            subprocess.run(adb + ["push", str(sleeper), data + "/bin/slow-netbox"], check=True, timeout=20)
+            shell(["chmod", "700", data + "/bin/slow-netbox"], check=True)
+            shell(["mv", data + "/bin/netbox", data + "/bin/real-netbox"], check=True)
+            shell(["mv", data + "/bin/slow-netbox", data + "/bin/netbox"], check=True)
+            def slow_query():
+                with connect() as slow:
+                    slow.settimeout(20)
+                    return exchange(slow, "network_list_interfaces")
+            # Native steady-clock budgets exclude deep suspend, whereas the
+            # Windows client's deadline includes it. Hold only our bounded test
+            # wake lock during this comparison; restore without changing display
+            # or global stay-awake settings. The kernel expires it in 30 seconds.
+            wake_name = "droidvm-netprobe-" + nonce
+            shell(["sh", "-c", 'printf "%s" "$1" > /sys/power/wake_lock', "sh", wake_name + " 30000000000"], check=True)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    started = time.monotonic()
+                    pending = pool.submit(slow_query)
+                    time.sleep(0.2)
+                    ping_start = time.monotonic()
+                    assert exchange(sock, "ping", request="PING")["response"] == "PONG"
+                    latency = time.monotonic() - ping_start
+                    assert latency < 1
+                    assert not pending.done(), pending.result()
+                    timed_out = pending.result(timeout=15)
+                    assert timed_out["error"]["code"] == "UNAVAILABLE", timed_out
+                    assert time.monotonic() - started < 13
+            finally:
+                shell(["sh", "-c", 'printf "%s" "$1" > /sys/power/wake_unlock', "sh", wake_name], check=True)
+            shell(["mv", data + "/bin/real-netbox", data + "/bin/netbox"], check=True)
+            assert exchange(sock, "network_list_interfaces")["success"]
+            report["tool_timeout_ping_seconds"] = latency
+            report["tool_timeout_releases_worker_and_query_recovers"] = True
             rows = exchange(sock, "network_list")["data"]
             assert [row["name"] for row in rows] == ["existing", "legacy"] and all(row["state"] == "stopped" for row in rows)
             assert exchange(sock, "network_info", network_id=existing["id"])["data"]["state"] == "STOPPED"
@@ -260,9 +310,10 @@ def main():
         print("Results:", output)
         if report.get("passed"):
             shell(["rm", "-f", data + "/run/droidvmd.lock", data + "/cache/daemon.log",
+                   data + "/bin/netbox",
                    data + "/files/networks.json", data + "/files/networks.json.bak", data + "/files/networks.json.corrupt",
                    binary_dir + "/droidvmd", binary_dir + "/fixture", binary_dir + "/contract", binary_dir + "/seed.json"], check=True)
-            shell(["rmdir", data + "/run", data + "/cache", data + "/files", data, binary_dir], check=True)
+            shell(["rmdir", data + "/run", data + "/cache", data + "/files", data + "/bin", data, binary_dir], check=True)
     print("PASS: persistent network configuration, legacy TCP and bounded asynchronous dispatch")
 
 
