@@ -406,7 +406,7 @@ def main():
             shell(["rmdir", directory], check=True)
             if args.data_layout:
                 shell(["rm", "-f", daemon_log], check=True)
-                shell(["rmdir", data_directory + "/cache", data_directory], check=True)
+                shell(["rmdir", data_directory + "/cache", data_directory + "/files", data_directory], check=True)
             shell(["rmdir", binary_directory], check=True)
     print("PASS: native daemon protocol, Java lock interoperability, lifecycle and recovery")
 
