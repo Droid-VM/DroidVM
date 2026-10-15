@@ -1,0 +1,2 @@
+// Generated from the device-verified test profile. Not a general Android ABI.
+inline constexpr char kBroadcastProfile[] = R"json(@BROADCAST_PROFILE_JSON@)json";

@@ -33,6 +33,7 @@ val contractSources = tasks.register<ContractSourceTask>("syncContractSources") 
 android {
     namespace = "cn.classfun.droidvm.migration"
     compileSdk = 37
+    buildFeatures { aidl = true }
     defaultConfig {
         minSdk = 33
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -42,8 +43,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     sourceSets {
+        getByName("main") {
+            aidl.directories.add(rootProject.file("daemon/api/aidl").path)
+        }
         getByName("androidTest") {
             assets.directories.add(rootProject.file("app/src/androidTest/assets").path)
+            assets.directories.add(rootProject.file("daemon/platform/android/probe/profiles").path)
         }
     }
 }

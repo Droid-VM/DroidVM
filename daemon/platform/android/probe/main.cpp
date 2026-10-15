@@ -15,6 +15,7 @@
 #include <json/json.h>
 
 void run_binder_wire_test(Json::Value& report);
+void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Value& report);
 
 namespace {
 std::string property(const char* key) {
@@ -36,6 +37,11 @@ public:
     ServiceManager& operator=(const ServiceManager&) = delete;
 
     bool available() const { return check_ != nullptr; }
+
+    ndk::SpAIBinder find(const char* name) const {
+        if (!check_) throw std::runtime_error("ServiceManager checkService unavailable");
+        return ndk::SpAIBinder(check_(name));
+    }
 
     Json::Value inspect(const char* name, const char* descriptor,
                         const char* alternate_descriptor = nullptr) const {
@@ -97,13 +103,20 @@ int main(int argc, char** argv) {
         if (mode == "--help" && argc <= 2) {
             std::cout << "Usage: droidvm_platform_probe --inspect [display-service]\n"
                          "       droidvm_platform_probe --wire-self-test\n"
+                         "       droidvm_platform_probe --broadcast-self-test <nonce>\n"
                          "Inspect is read-only; wire tests use local synthetic Binders.\n"
-                         "Neither mode proves UI delivery, remote death, or audio enumeration.\n";
+                         "Broadcast requires the paired Java test on the profiled firmware.\n"
+                         "Synthetic checks do not prove real display/input or audio support.\n";
             return 0;
         }
         if (mode == "--wire-self-test" && argc == 2) {
             report["scope"] = "local_ndk_binder_wire_contract";
             run_binder_wire_test(report);
+        } else if (mode == "--broadcast-self-test" && argc == 3) {
+            report["scope"] = "synthetic_cross_process_binder_contract";
+            ServiceManager manager;
+            auto activity = manager.find("activity");
+            run_broadcast_probe(activity.get(), argv[2], report);
         } else if (mode == "--inspect" && argc <= 3) {
             report["scope"] = "platform_prerequisites_only";
             report["sdk"] = android_get_device_api_level();

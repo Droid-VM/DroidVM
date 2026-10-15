@@ -15,6 +15,29 @@ import org.junit.Assume;
 
 /** Development-only inspection of the ROM's private wire contract. No daemon uses this helper. */
 public final class PlatformProfileTest {
+    static String toHex(byte[] bytes) {
+        var hex = new StringBuilder();
+        for (byte value : bytes) hex.append(String.format("%02x", value & 255));
+        return hex.toString();
+    }
+
+    static Bundle nestedSample() {
+        var nested = new Bundle();
+        nested.putBinder("binder", null);
+        nested.putString("nonce", "0123456789abcdef0123456789abcdef");
+        return nested;
+    }
+
+    static String bundleTrailer() {
+        var parcel = Parcel.obtain();
+        try {
+            nestedSample().writeToParcel(parcel, 0);
+            byte[] bytes = parcel.marshall();
+            parcel.setDataPosition(0);
+            int end = 8 + parcel.readInt();
+            return toHex(java.util.Arrays.copyOfRange(bytes, end, bytes.length));
+        } finally { parcel.recycle(); }
+    }
     @Test public void reportBroadcastProfile() throws Exception {
         Assume.assumeTrue("Only run explicitly with --no-hidden-api-checks",
             "true".equals(InstrumentationRegistry.getArguments().getString("inspect_private_profile")));
@@ -25,6 +48,7 @@ public final class PlatformProfileTest {
         report.putInt("broadcast_transaction", transaction.getInt(null));
         report.putInt("sdk", Build.VERSION.SDK_INT);
         report.putString("fingerprint", Build.FINGERPRINT);
+        report.putString("bundle_trailer_hex", bundleTrailer());
         for (var method : Class.forName("android.app.IActivityManager").getDeclaredMethods()) {
             if (method.getName().equals("broadcastIntentWithFeature"))
                 report.putString("broadcast_signature", method.toString());
@@ -49,9 +73,31 @@ public final class PlatformProfileTest {
         var parcel = Parcel.obtain();
         try {
             intent.writeToParcel(parcel, 0);
+            byte[] empty = parcel.marshall();
             var hex = new StringBuilder();
-            for (byte value : parcel.marshall()) hex.append(String.format("%02x", value & 255));
+            for (byte value : empty) hex.append(String.format("%02x", value & 255));
             report.putString("empty_intent_hex", hex.toString());
+            // Derive the Bundle slot from this ROM, not an AOSP field count.
+            // Vendor Intent fields may be inserted before extras.
+            intent.putExtra("profile_marker", "extras");
+            parcel.setDataPosition(0);
+            parcel.setDataSize(0);
+            intent.writeToParcel(parcel, 0);
+            byte[] withExtras = parcel.marshall();
+            int offset = 0;
+            while (offset < empty.length && empty[offset] == withExtras[offset]) offset++;
+            report.putInt("extras_offset", offset & ~3);
+            hex.setLength(0);
+            for (byte value : withExtras) hex.append(String.format("%02x", value & 255));
+            report.putString("marker_intent_hex", hex.toString());
+            intent.removeExtra("profile_marker");
+            intent.putExtra("extra.bundle", nestedSample());
+            parcel.setDataPosition(0);
+            parcel.setDataSize(0);
+            intent.writeToParcel(parcel, 0);
+            hex.setLength(0);
+            for (byte value : parcel.marshall()) hex.append(String.format("%02x", value & 255));
+            report.putString("nested_intent_hex", hex.toString());
         } finally {
             parcel.recycle();
         }

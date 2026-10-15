@@ -59,6 +59,12 @@ target_link_libraries(droidvm_probe_aidl PUBLIC binder_ndk)
 add_executable(droidvm_platform_probe
     main.cpp
     binder_wire_test.cpp
+    broadcast_probe.cpp
 )
+
+set(profile_file "${CMAKE_CURRENT_SOURCE_DIR}/profiles/warsaw-api37.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${profile_file}")
+file(READ "${profile_file}" BROADCAST_PROFILE_JSON)
+configure_file(broadcast_profile.h.in "${GENERATED_DIR}/broadcast_profile.h" @ONLY)
 target_compile_options(droidvm_platform_probe PRIVATE -Wall -Wextra -Werror)
 target_link_libraries(droidvm_platform_probe PRIVATE droidvm_probe_aidl droidvm_daemon_json dl)
