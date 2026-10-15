@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--variant", choices=("debug", "release"), default="debug")
     parser.add_argument("--serial", help="Also run the packaged daemon and launcher on this arm64 device")
+    parser.add_argument("--data-layout", action="store_true", help="Exercise the app-owned data layout in device checks")
     args = parser.parse_args()
     directory = root / "app/build/outputs/apk" / args.variant
     metadata_file = directory / "output-metadata.json"
@@ -43,7 +44,7 @@ def main():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
                 report["binaries"][asset] = {"size": len(content), "sha256": hashlib.sha256(content).hexdigest()}
-        forbidden = ("droidvm_platform_probe", "ipc_client_contract", "droidvm_task_contract", "droidvm_event_contract", "droidvm_service_fixture", "droidvm_process_contract")
+        forbidden = ("droidvm_platform_probe", "ipc_client_contract", "droidvm_task_contract", "droidvm_event_contract", "droidvm_service_fixture", "droidvm_process_contract", "droidvm_runtime_contract")
         if any(Path(name).name in forbidden for name in names):
             raise RuntimeError("A migration-only test executable was packaged")
     report["apk_assets_passed"] = True
@@ -51,7 +52,7 @@ def main():
         subprocess.run([sys.executable, str(root / "scripts/migration/run_daemon_probe.py"),
             "--serial", args.serial, "--daemon", str(output / "bin/arm64-v8a/droidvmd"),
             "--launcher", str(output / "bin/arm64-v8a/daemon"), "--app-metadata", str(metadata_file),
-            "--hash-apk", str(apk)], check=True)
+            "--hash-apk", str(apk)] + (["--data-layout"] if args.data_layout else []), check=True)
         report["packaged_arm64_device_checks_passed"] = True
     (output / "result.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
     print(f"PASS: APK contains all six current native executables with correct ELF ABIs. Results: {output}")

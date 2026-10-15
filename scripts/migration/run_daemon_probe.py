@@ -48,11 +48,16 @@ def main():
     parser.add_argument("--app-metadata", type=Path, help="AGP output-metadata.json for a packaged daemon")
     parser.add_argument("--launcher", type=Path, help="Optional existing double-fork launcher to verify")
     parser.add_argument("--hash-apk", type=Path, help="Copy this APK into the isolated directory and verify its hash without installing it")
+    parser.add_argument("--data-layout", action="store_true", help="Verify app-owned run/cache layout and bounded native log entry")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/daemon-device" / nonce
     output.mkdir(parents=True)
     directory = "/data/user/0/cn.classfun.droidvm.migration.test/cache/native-" + nonce
+    data_directory = directory
+    if args.data_layout:
+        directory += "/run"
+    daemon_log = data_directory + "/cache/daemon.log"
     binary_directory = "/data/local/tmp/droidvm-runtime-" + nonce
     adb = ["adb", "-s", args.serial]
     executable = binary_directory + "/droidvmd"
@@ -109,7 +114,7 @@ def main():
 
     try:
         subprocess.run(adb + ["install", "-r", "-t", str(test_apk)], check=True, timeout=60)
-        shell(["run-as", "cn.classfun.droidvm.migration.test", "mkdir", "-p", directory], check=True)
+        shell(["run-as", "cn.classfun.droidvm.migration.test", "mkdir", "-p", data_directory], check=True)
         shell(["mkdir", binary_directory], check=True)
         subprocess.run(adb + ["push", str(daemon), executable], check=True, timeout=30)
         shell(["chmod", "755", executable], check=True)
@@ -130,7 +135,15 @@ def main():
             assert apk.startswith("package:") and "\n" not in apk
             apk = apk.removeprefix("package:")
             expected_hash = shell(["sha256sum", apk], check=True, capture_output=True).stdout.split()[0]
-        command = [executable, "--run-dir", directory, "--apk", apk]
+        command = [executable, "--data-dir" if args.data_layout else "--run-dir", data_directory, "--apk", apk]
+        if args.data_layout:
+            # First startup creates run/cache itself, then fails before discovery.
+            failed = shell(command[:-1] + [binary_directory + "/absent.apk"], capture_output=True)
+            assert failed.returncode == 1 and "open APK" in failed.stderr
+            assert shell(["test", "-e", directory + "/droidvmd-port.txt"]).returncode != 0
+            log_text = shell(["run-as", "cn.classfun.droidvm.migration.test", "cat", daemon_log], check=True, capture_output=True).stdout
+            assert "ERROR" in log_text and "open APK" in log_text
+            report["startup_failure_logged_without_discovery"] = True
 
         # Converse interop: Java owns the same inode first; native must refuse.
         java_command = instrument("javaOwnsLock", {"lock_path": directory + "/droidvmd.lock"})
@@ -172,6 +185,17 @@ def main():
 
         first = start()
         pid, port, token = ready(first)
+        if args.data_layout:
+            uid = shell(["stat", "-c", "%u", data_directory], check=True, capture_output=True).stdout.strip()
+            for name in ("droidvmd.lock", "droidvmd.pid", "droidvmd-token.txt", "droidvmd-port.txt"):
+                info = shell(["stat", "-c", "%u:%g:%a", directory + "/" + name], check=True, capture_output=True).stdout.strip()
+                assert info == f"{uid}:{uid}:600", (name, info)
+                shell(["run-as", "cn.classfun.droidvm.migration.test", "cat", directory + "/" + name], check=True, capture_output=True)
+            for path, mode in ((directory, "700"), (data_directory + "/cache", "700"), (daemon_log, "600")):
+                assert shell(["stat", "-c", "%u:%g:%a", path], check=True, capture_output=True).stdout.strip() == f"{uid}:{uid}:{mode}"
+            assert shell(["getenforce"], check=True, capture_output=True).stdout.strip() == "Enforcing"
+            assert shell(["cat", f"/proc/{pid}/comm"], check=True, capture_output=True).stdout.strip() == "droidvmd"
+            report["app_uid_files_readable_selinux_enforcing"] = True
         forward = subprocess.run(adb + ["forward", "tcp:0", "tcp:" + str(port)], check=True,
                                  capture_output=True, text=True, timeout=10)
         local_port = int(forward.stdout.strip())
@@ -262,8 +286,12 @@ def main():
         assert "/libart.so" not in maps and "/libjvm.so" not in maps
         report["art_or_jvm_loaded"] = False
         original = {name: read(name) for name in ("droidvmd.pid", "droidvmd-port.txt", "droidvmd-token.txt")}
+        log_before = shell(["cat", daemon_log], check=True, capture_output=True).stdout if args.data_layout else None
         duplicate = shell(command, capture_output=True)
         assert duplicate.returncode == 1 and original == {name: read(name) for name in original}
+        if args.data_layout:
+            assert shell(["cat", daemon_log], check=True, capture_output=True).stdout == log_before
+            report["duplicate_preserves_log"] = True
         # A forged PID in the lock file must not change the replacement target.
         shell(["sh", "-c", 'printf 1 > "$1"', "migration-lock", directory + "/droidvmd.lock"], check=True)
         replacement = start(True)
@@ -280,6 +308,45 @@ def main():
         assert all(shell(["test", "-e", directory + "/" + name]).returncode != 0 for name in original)
         assert shell(["test", "-f", directory + "/droidvmd.lock"]).returncode == 0
         report["sigkill_recovery_and_term_cleanup"] = True
+        if args.data_layout:
+            log_text = shell(["run-as", "cn.classfun.droidvm.migration.test", "cat", daemon_log], check=True, capture_output=True).stdout
+            assert "stopped exit=130" in log_text and "stopped exit=143" in log_text
+            assert all(secret not in log_text for secret in (token, new_token))
+            (output / "native-daemon.log").write_text(log_text, encoding="utf-8")
+            report["native_lifecycle_log_without_tokens"] = True
+            # Attack only paths in this stopped, isolated test instance. Reject
+            # aliases before truncating/chowning their target; restore each path.
+            for path in (directory, data_directory + "/cache", daemon_log, directory + "/droidvmd.lock"):
+                saved = path + ".saved"
+                shell(["mv", path, saved], check=True)
+                try:
+                    shell(["ln", "-s", saved, path], check=True)
+                    rejected = shell(command, capture_output=True)
+                    assert rejected.returncode == 1, (path, rejected.stdout, rejected.stderr)
+                finally:
+                    shell(["rm", "-f", path], check=True)
+                    shell(["mv", saved, path], check=True)
+            for path in (daemon_log, directory + "/droidvmd.lock"):
+                saved = path + ".saved"
+                original_text = shell(["cat", path], check=True, capture_output=True).stdout
+                original_mode = shell(["stat", "-c", "%u:%g:%a", path], check=True, capture_output=True).stdout
+                shell(["ln", path, saved], check=True)
+                try:
+                    rejected = shell(command, capture_output=True)
+                    assert rejected.returncode == 1, (path, rejected.stdout, rejected.stderr)
+                    assert shell(["cat", saved], check=True, capture_output=True).stdout == original_text
+                    assert shell(["stat", "-c", "%u:%g:%a", saved], check=True, capture_output=True).stdout == original_mode
+                finally:
+                    shell(["rm", "-f", saved], check=True)
+            shell(["mv", daemon_log, daemon_log + ".saved"], check=True)
+            try:
+                shell(["mkfifo", daemon_log], check=True)
+                rejected = shell(command, capture_output=True)
+                assert rejected.returncode == 1
+            finally:
+                shell(["rm", "-f", daemon_log], check=True)
+                shell(["mv", daemon_log + ".saved", daemon_log], check=True)
+            report["directory_file_symlinks_hardlinks_fifo_rejected"] = True
         if args.launcher:
             launch_command = shlex.join([binary_directory + "/launcher"] + command)
             launch_command += " >" + shlex.quote(binary_directory + "/detached.log") + " 2>&1 </dev/null"
@@ -337,6 +404,9 @@ def main():
                    binary_directory + "/source.apk",
                    directory + "/droidvmd.lock", directory + "/release-java-lock"], check=True)
             shell(["rmdir", directory], check=True)
+            if args.data_layout:
+                shell(["rm", "-f", daemon_log], check=True)
+                shell(["rmdir", data_directory + "/cache", data_directory], check=True)
             shell(["rmdir", binary_directory], check=True)
     print("PASS: native daemon protocol, Java lock interoperability, lifecycle and recovery")
 
