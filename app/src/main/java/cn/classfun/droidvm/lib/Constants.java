@@ -25,10 +25,10 @@ public final class Constants {
     /** crosvm arm64 pflash window: AARCH64_PLATFORM_MMIO_SIZE (8 MiB). */
     public static final long PFLASH_MAX_SIZE = 8L * 1024 * 1024;
     public static final String GITHUB_ISSUE_URL = "https://github.com/Droid-VM/DroidVM/issues";
-    // droidvm + daemon are CMake-built and shipped as APK assets. The
+    // droidvm + daemon launcher + native droidvmd are CMake-built APK assets. The
     // third-party daemons (gvswitch/pbridge/bridgedhcp/netbox) and lbx now
     // arrive via the prebuilt tar.xz, extracted to DATA/bin/<name>.
-    public static final String[] BINARIES_BUILT = {"droidvm", "daemon"};
+    public static final String[] BINARIES_BUILT = {"droidvm", "daemon", "droidvmd"};
     /**
      * IFA_RT_PRIORITY magic that pbridge tags its ND/ARP-offload proxy
      * addresses with (its --offload-workaround-magic). Host-IP discovery
