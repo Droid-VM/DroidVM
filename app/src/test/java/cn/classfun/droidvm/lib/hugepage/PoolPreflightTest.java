@@ -9,6 +9,9 @@ import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -19,6 +22,61 @@ import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
  * pseudo-unprotected VM with a 1 GB guest pool needs 5 GB, because that mode gets no pool.
  */
 public final class PoolPreflightTest {
+    @Test
+    public void waitOnlySucceedsAfterActualPagesArrive() {
+        var reads = new AtomicInteger();
+        var acquireCalls = new AtomicInteger();
+        boolean ready = PoolPreflight.waitForPool(
+            () -> new PoolPreflight.Status(true, reads.incrementAndGet() >= 4 ? 256 : 0, 256),
+            5, 0, 2, () -> false, acquireCalls::incrementAndGet);
+        assertTrue(ready);
+        assertEquals(4, reads.get());
+        assertEquals(1, acquireCalls.get());
+    }
+
+    @Test
+    public void timeoutDoesNotAllowStartingWithInsufficientPages() {
+        var reads = new AtomicInteger();
+        assertFalse(PoolPreflight.waitForPool(() -> {
+            reads.incrementAndGet();
+            return new PoolPreflight.Status(true, 255, 256);
+        }, 3, 0, 2, () -> false, () -> {}));
+        assertEquals(4, reads.get());
+    }
+
+    @Test
+    public void unreadablePoolCannotCountAsReady() {
+        assertFalse(PoolPreflight.waitForPool(
+            () -> new PoolPreflight.Status(true, -1, 256),
+            3, 0, 2, () -> false, () -> {}));
+    }
+
+    @Test
+    public void cancellationBeforeWaitingSkipsPoolReadsAndAcquire() {
+        assertFalse(PoolPreflight.waitForPool(
+            () -> { throw new AssertionError("Pool should not be read after cancellation"); },
+            3, 0, 2, () -> true,
+            () -> { throw new AssertionError("Should not acquire after cancellation"); }));
+    }
+
+    @Test
+    public void cancellationDuringAcquireCannotTurnIntoASuccessfulStart() {
+        var cancelled = new AtomicBoolean();
+        var reads = new AtomicInteger();
+        assertFalse(PoolPreflight.waitForPool(
+            () -> new PoolPreflight.Status(true, reads.incrementAndGet() > 1 ? 256 : 0, 256),
+            3, 0, 1, cancelled::get, () -> cancelled.set(true)));
+        assertEquals(1, reads.get());
+    }
+
+    @Test
+    public void readyPoolDoesNotTriggerAcquire() {
+        assertTrue(PoolPreflight.waitForPool(
+            () -> new PoolPreflight.Status(true, 256, 256),
+            3, 0, 1, () -> false,
+            () -> { throw new AssertionError("Already ready: no acquire needed"); }));
+    }
+
     private static DataItem vm(String protectedVm, String backend, String mode, boolean gpu) {
         var item = VMConfig.createWithCustomizeDefaults(null).item;
         item.set("memory_mb", 5120L);

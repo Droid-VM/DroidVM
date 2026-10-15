@@ -431,9 +431,9 @@ public final class VMActions {
      * it outright. The pool refills a couple of seconds after a VM exits, so the usual cause is
      * simply starting again too soon, and the usual fix is to wait a moment and retry.
      *
-     * <p>Foreground starts ask rather than wait: someone is looking at the screen, and they may
-     * well know something we do not (a smaller VM about to be shut down, a deliberate
-     * experiment). Background starts wait instead -- see {@code PoolPreflight.waitForPool}.
+     * <p>Resizable pools are prepared by the daemon after the start is committed. Checking
+     * them here would warn on every start after the last VM released the target to zero.
+     * Older modules still use this prompt; they cannot grow their target at runtime.
      */
     private static void guardHugePagePool(
         @NonNull VMConfig config,
@@ -442,6 +442,10 @@ public final class VMActions {
         @NonNull Runnable proceed
     ) {
         runOnPool(() -> {
+            if (PoolPreflight.canResize(config.item)) {
+                mainHandler.post(proceed);
+                return;
+            }
             var status = PoolPreflight.check(config.item);
             if (status.isEnough()) {
                 mainHandler.post(proceed);

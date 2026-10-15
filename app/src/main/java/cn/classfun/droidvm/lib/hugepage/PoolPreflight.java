@@ -15,6 +15,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
@@ -34,7 +35,8 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
  *
  * <p>The pool refills within a couple of seconds of a VM exiting, so the common way to hit this
  * is simply starting the next VM too soon. That makes the fix cheap: look before starting, and
- * either wait (background starts) or say so (foreground starts).
+ * wait after sizing the target. Foreground starts on older, non-resizable modules also
+ * offer a warning before committing the start.
  *
  * <p>Asked only of the VMs it is about. A VM on any other hypervisor is not served from the reserve
  * and cannot be delayed by it, so {@link #appliesTo} answers no before anything is read and every
@@ -50,22 +52,12 @@ public final class PoolPreflight {
     public static final long PAGE_MB = 2;
 
     /**
-     * The waiting policy for a start nobody is watching -- auto-start at daemon boot, and the
-     * relaunch that follows a guest reboot. Ten looks a second apart, asking the module to fetch
-     * more half way through, and start anyway at the end. See {@link #waitForPool}.
+     * CMA reclamation can take minutes. Allow five minutes of one-second polls after sizing
+     * the reservation, with one acquire request early in the wait. A timeout fails the start.
      */
-    public static final int BACKGROUND_ATTEMPTS = 10;
-    public static final long BACKGROUND_INTERVAL_MS = 1000;
-    public static final int BACKGROUND_ACQUIRE_AT = 5;
-
-    /**
-     * The same policy, with more room, for the relaunch after a guest reboot. That start races
-     * the reserve taking back the memory the same VM has only just released, and measured on
-     * device that takes about ten seconds (drm2kgsl: enough again at ~9 s, full at ~16 s; venus:
-     * enough at ~9 s, full at ~13 s) -- too close to the ten of a plain background start to leave
-     * it there. Twice the measured worst case, and still bounded.
-     */
-    public static final int RELAUNCH_ATTEMPTS = 20;
+    private static final int WAIT_ATTEMPTS = 300;
+    private static final long WAIT_INTERVAL_MS = 1000;
+    private static final int ACQUIRE_AT = 5;
 
     private PoolPreflight() {
     }
@@ -133,6 +125,31 @@ public final class PoolPreflight {
         return VMHypervisor.resolveConfigured(backend, configured) == VMHypervisor.GUNYAH;
     }
 
+    /** The daemon can size this pool at start; older modules retain the GUI preflight. */
+    public static boolean canResize(@NonNull DataItem item) {
+        if (!appliesTo(item)) return false;
+        try {
+            return shellCheckExists(pathJoin(SYSFS_PARAMS, "pool_want"));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Live non-CMA target only. Never persist it or write the CMA reservoir knobs. */
+    public static boolean setReservedPages(long pages) {
+        try {
+            if (writeKnob("pool_want", Long.toString(pages))) {
+                long actual = readPages("pool_want", -1);
+                // Kernels may round a nonzero target up to pageblock alignment.
+                if (actual == pages || (pages > 0 && actual > pages)) return true;
+            }
+            Log.w(TAG, fmt("Could not set huge-page reserve to %d pages", pages));
+        } catch (Exception e) {
+            Log.w(TAG, "Could not resize huge-page reserve", e);
+        }
+        return false;
+    }
+
     /** Reads the reserve and sizes this VM against it. Never throws. */
     @NonNull
     public static Status check(@NonNull DataItem item) {
@@ -168,40 +185,32 @@ public final class PoolPreflight {
     }
 
     /**
-     * Waits for the reserve to cover this VM, for background starts (auto-start, and the daemon
-     * re-launching VMs after a reboot) where there is nobody to ask.
-     *
-     * <p>One second between looks, because a normal refill lands in about two. Half way through
-     * it asks the module to go and get more; that is worth one shot and no more, since a reserve
-     * that cannot be filled will not be filled by asking twice. If the wait runs out we start
-     * anyway: refusing to boot a VM the user asked to auto-start is worse than a boot that may
-     * be slow, and the VMM has its own guard at the point where it actually hands memory over.
-     *
-     * @return true if the pool covered the VM before the attempts ran out
+     * Waits for actual free pages before starting, including on reboot. False forbids startup.
+     * A registered reservation requires the module even if it disappears before the first poll.
+     * Cancellation and daemon shutdown are checked each second.
      */
-    /** {@link #waitForPool} with the shared background policy. */
-    public static boolean waitForPool(@NonNull DataItem item) {
-        return waitForPool(item, BACKGROUND_ATTEMPTS, BACKGROUND_INTERVAL_MS, BACKGROUND_ACQUIRE_AT);
+    public static boolean waitForPool(@NonNull DataItem item, boolean required,
+                                      @NonNull BooleanSupplier abort) {
+        if (!appliesTo(item)) return true;
+        try {
+            if (!required && !shellCheckExists(SYSFS_PARAMS)) return true;
+        } catch (Exception e) {
+            Log.w(TAG, "Could not check huge-page reserve", e);
+            return false;
+        }
+        long needed = neededPages(item);
+        // Once the module is present, a failed read or module removal is not readiness.
+        return waitForPool(() -> new Status(true, readPages("pool_avail", -1), needed),
+            WAIT_ATTEMPTS, WAIT_INTERVAL_MS, ACQUIRE_AT, abort, PoolPreflight::acquire);
     }
 
-    /** {@link #waitForPool} for a caller with nothing that would call the wait off. */
-    public static boolean waitForPool(@NonNull DataItem item, int attempts, long sleepMs,
-                                      int acquireAt) {
-        return waitForPool(item, attempts, sleepMs, acquireAt, () -> false);
-    }
-
-    /**
-     * The same wait, with [abort] read once a second so a caller can call it off.
-     *
-     * <p>Ten seconds is a long time to be inside when the daemon is going down, and the thing the
-     * wait is for -- a VM that has not started yet -- is exactly what a shutdown no longer wants
-     * started. Read between looks rather than by interrupting the thread, because an interrupt
-     * would also land on whatever the caller does after this returns.</p>
-     */
-    public static boolean waitForPool(@NonNull DataItem item, int attempts, long sleepMs,
-                                      int acquireAt, @NonNull BooleanSupplier abort) {
-        var status = check(item);
-        if (!status.applicable || status.isEnough())
+    /** Polling policy separated from sysfs I/O so delayed refill and failures can be tested. */
+    static boolean waitForPool(@NonNull Supplier<Status> readStatus, int attempts, long sleepMs,
+                               int acquireAt, @NonNull BooleanSupplier abort,
+                               @NonNull Runnable acquirePages) {
+        if (abort.getAsBoolean() || Thread.currentThread().isInterrupted()) return false;
+        var status = readStatus.get();
+        if (status.isEnough())
             return true;
         Log.i(TAG, fmt("waiting for the huge-page reserve: %s", status));
         for (int i = 1; i <= attempts; i++) {
@@ -211,7 +220,7 @@ public final class PoolPreflight {
             }
             if (i == acquireAt) {
                 Log.i(TAG, fmt("reserve still short at attempt %d; asking it to acquire", i));
-                acquire(2);
+                acquirePages.run();
             }
             try {
                 Thread.sleep(sleepMs);
@@ -219,25 +228,21 @@ public final class PoolPreflight {
                 Thread.currentThread().interrupt();
                 return false;
             }
-            status = check(item);
+            if (abort.getAsBoolean()) return false;
+            status = readStatus.get();
             if (status.isEnough()) {
                 Log.i(TAG, fmt("reserve recovered after %d attempt(s): %s", i, status));
                 return true;
             }
         }
-        Log.w(TAG, fmt("reserve still short after %d attempt(s): %s -- starting anyway",
+        Log.w(TAG, fmt("reserve not ready after %d attempt(s): %s -- refusing to start",
             attempts, status));
         return false;
     }
 
-    /**
-     * Asks the module to grow the reserve ({@code acquire=<mode>}), falling back to the older
-     * {@code manual_refill} knob. Best-effort: the caller carries on either way.
-     */
-    public static boolean acquire(int mode) {
-        if (writeKnob("acquire", Integer.toString(mode)))
-            return true;
-        return writeKnob("manual_refill", "1");
+    /** Request refill once, with a fallback for older modules. */
+    private static void acquire() {
+        if (!writeKnob("acquire", "2")) writeKnob("manual_refill", "1");
     }
 
     private static boolean writeKnob(@NonNull String knob, @NonNull String value) {

@@ -31,6 +31,8 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     /** How long {@link #stopAll} gives the auto-start sweep to stand down. */
     private static final long AUTO_UP_JOIN_MS = 3000;
     public final ServerContext context;
+    // Access through context.getVMs(): loaded instances retain a temporary parsing store.
+    final PoolReservations poolReservations = new PoolReservations(PoolPreflight::setReservedPages);
     NetworkInstanceStore networkStore;
     /**
      * Set once the daemon is going down, and never cleared: the sweep reads it to decide whether
@@ -139,7 +141,7 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
 
     public void stopAll() {
         Log.i(TAG, "Stopping all VMs...");
-        // Before anything is collected. The sweep reads this between VMs and inside its wait, so
+        // Before anything is collected. The sweep and workers read this before starting, so
         // setting it first is what stops it handing us a VM to stop after we have looked.
         shuttingDown = true;
         joinAutoUp();
@@ -148,7 +150,7 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
             var state = inst.getState();
             if (state == VMState.RUNNING ||
                 state == VMState.STARTING ||
-                state == VMState.SUSPENDED) {
+                state == VMState.SUSPENDED || state == VMState.REBOOTING) {
                 toStop.add(inst);
             }
         });
@@ -158,11 +160,15 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
         clear();
     }
 
+    boolean isShuttingDown() {
+        return shuttingDown;
+    }
+
     /**
      * Runs {@link #autoUp} on a thread of its own.
      *
-     * <p>The sweep waits -- up to ten seconds a VM for the huge-page reserve -- and it used to do
-     * that inside the {@code ServerContext} constructor, which is before the daemon has bound its
+     * <p>The sweep used to wait for the huge-page reserve inside the
+     * {@code ServerContext} constructor, which is before the daemon has bound its
      * socket, installed its signal handlers or wired up VM events. Every one of those was held
      * behind VMs that had not started yet: no RPC, no clean answer to SIGTERM, and the state
      * changes of the VMs it did start fired into a callback nobody had set. Behind the socket
@@ -185,8 +191,8 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
         if (sweep == null || !sweep.isAlive()) return;
         Log.i(TAG, "waiting for the auto-start sweep to stand down");
         try {
-            // Generous: the flag is read once a second in the wait and again before each start, and
-            // start() itself only sets up taps and hands off to a thread. A sweep still inside
+            // Generous: the flag is read before each start, and
+            // start() sets up taps, registers its budget and hands off to a thread. A sweep still inside
             // start() when this runs out is caught by the collection below, which sees STARTING.
             sweep.join(AUTO_UP_JOIN_MS);
         } catch (InterruptedException e) {
@@ -195,24 +201,18 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
     }
 
     /**
-     * Starts every VM marked auto_up, one at a time, waiting for the reserve before each.
+     * Requests a start for every VM marked auto_up. Each worker prepares its reserve first.
      *
      * <p>The list is taken first and started afterwards, rather than started from inside the
-     * iteration. The wait is seconds long and the daemon is answering RPC by the time this runs, so
+     * iteration. The daemon is answering RPC by the time this runs, so
      * iterating across it would hold a plain {@code ArrayList} open for that whole time against
      * clients creating and deleting VMs -- and one {@code vm_delete} landing in the middle of it is
      * a {@code ConcurrentModificationException} that ends the sweep and leaves the rest of the VMs
      * down. A snapshot narrows that to the moment it takes to collect.</p>
      *
-     * <p>Nobody is watching a background start, so instead of asking (which is what the GUI does)
-     * it waits for the huge-page reserve to cover each VM: a pool that is short only because the
-     * previous VM has just exited recovers in about two seconds, and starting into the gap is what
-     * makes the hypervisor migrate memory out of CMA -- observed to stall the whole host for
-     * minutes, or reset the phone. That is the ordinary case here rather than a rare one, because
-     * the context reaps the previous daemon's VMs immediately before this runs. Half way through
-     * the wait the module is asked to go and fetch more. If it never gets there the VM starts
-     * regardless: an auto-start that silently does not happen is worse than a slow one, and the VMM
-     * checks again at the point where it actually hands the memory over.</p>
+     * <p>Reserve sizing and waiting live in VMInstance so manual, RPC and automatic starts all
+     * grow the target before waiting for pages. Waiting here would wait against a zero target
+     * after the last VM stopped.</p>
      */
     public void autoUp() {
         var pending = new ArrayList<VMInstance>();
@@ -221,15 +221,6 @@ public final class VMInstanceStore extends DataStore<VMInstance> {
                 pending.add(inst);
         });
         for (var inst : pending) {
-            if (shuttingDown) {
-                Log.i(TAG, "the daemon is going down; abandoning the rest of the auto-start sweep");
-                return;
-            }
-            PoolPreflight.waitForPool(inst.item, PoolPreflight.BACKGROUND_ATTEMPTS,
-                PoolPreflight.BACKGROUND_INTERVAL_MS, PoolPreflight.BACKGROUND_ACQUIRE_AT,
-                () -> shuttingDown);
-            // Read again: the VM may have been started by a client, or deleted, while we waited,
-            // and the daemon may have begun going down inside the wait itself.
             if (shuttingDown) {
                 Log.i(TAG, "the daemon is going down; abandoning the rest of the auto-start sweep");
                 return;

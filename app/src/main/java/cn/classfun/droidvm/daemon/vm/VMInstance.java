@@ -52,8 +52,8 @@ public final class VMInstance extends VMConfig {
     private volatile VMState state = VMState.STOPPED;
     /** Serialises the run-up to STARTING against a second caller; see {@link #start}. */
     private final Object startLock = new Object();
-    private NativeProcess process;
-    private boolean stoppedByUser = false;
+    private volatile NativeProcess process;
+    private volatile boolean stoppedByUser = false;
     private int exitCode = -1;
     private BackendBase backend;
     private VMBackendInstance backendInstance;
@@ -140,6 +140,10 @@ public final class VMInstance extends VMConfig {
     }
 
     private void setState(@NonNull VMState newState) {
+        // Release before publishing STOPPED, so a new start cannot lose its reservation to
+        // this exit. REBOOTING deliberately keeps the same reservation and target.
+        if (newState == VMState.STOPPED)
+            store.context.getVMs().poolReservations.release(getId());
         this.state = newState;
         Log.i(TAG, fmt("VM %s [%s] -> %s", getName(), getId().toString(), newState.name()));
         fireEvent("state", null);
@@ -217,6 +221,7 @@ public final class VMInstance extends VMConfig {
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean start() {
         synchronized (startLock) {
+            if (store.context.getVMs().isShuttingDown()) return false;
             // REBOOTING is accepted too: the reboot relaunch calls start() from that
             // transient state (process already gone) and goes straight to STARTING.
             if (state != VMState.STOPPED && state != VMState.REBOOTING) {
@@ -224,19 +229,31 @@ public final class VMInstance extends VMConfig {
                     getId(), state.name()));
                 return false;
             }
-            joinThreads(1000);
-            if (!setupTaps()) return false;
-            resolveVncConfig();
-            stoppedByUser = false;
-            exitCode = -1;
-            setState(VMState.STARTING);
-            var vmIdStr = getId().toString();
-            workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
-            workerThread.setDaemon(true);
-            workerThread.start();
+            boolean relaunch = state == VMState.REBOOTING;
+            try {
+                joinThreads(1000);
+                if (!setupTaps()) return false;
+                resolveVncConfig();
+                if (!relaunch) rebootRequested = false;
+                stoppedByUser = false;
+                exitCode = -1;
+                if (!relaunch && PoolPreflight.canResize(item)
+                    && !store.context.getVMs().poolReservations.reserve(getId(), PoolPreflight.neededPages(item)))
+                    throw new IllegalStateException("Could not set huge-page reserve target");
+                setState(VMState.STARTING);
+                var vmIdStr = getId().toString();
+                workerThread = new Thread(this::runVM, fmt("VM-%s", vmIdStr));
+                workerThread.setDaemon(true);
+                workerThread.start();
+            } catch (Exception e) {
+                Log.e(TAG, fmt("Cannot start VM %s", getName()), e);
+                cleanupStoppedBackend();
+                setState(VMState.STOPPED);
+                return false;
+            }
             Log.i(TAG, fmt(
                 "Start requested for VM: %s [%s] via %s",
-                getName(), vmIdStr, getBackend().name()
+                getName(), getId(), getBackend().name()
             ));
             return true;
         }
@@ -350,23 +367,35 @@ public final class VMInstance extends VMConfig {
     }
 
     public boolean stop() {
-        if (state != VMState.RUNNING && state != VMState.STARTING && state != VMState.SUSPENDED) {
-            Log.w(TAG, fmt("Cannot stop VM %s: state=%s", getId(), state.name()));
-            return false;
+        synchronized (startLock) {
+            // A relaunch has no live process. Cancel it and release its retained budget.
+            if (state == VMState.REBOOTING) {
+                stoppedByUser = true;
+                exitCode = 0;
+                setState(VMState.STOPPED);
+                fireEvent("exited", null);
+                return true;
+            }
+            if (state != VMState.RUNNING && state != VMState.STARTING && state != VMState.SUSPENDED) {
+                Log.w(TAG, fmt("Cannot stop VM %s: state=%s", getId(), state.name()));
+                return false;
+            }
+            stoppedByUser = true;
+            setState(VMState.STOPPING);
+            // The worker may still be preparing the reserve. It observes stoppedByUser and exits.
+            if (process == null) return true;
+            if (getBackendInstance().hasControlSocket()) {
+                Log.i(TAG, fmt("Stopping VM %s via control socket", getName()));
+                if (runControlCommand("stop")) return true;
+                Log.w(TAG, fmt("Control stop failed for VM %s, falling back to destroy", getName()));
+            }
+            if (process != null && process.isAlive()) {
+                Log.i(TAG, fmt("Destroying VM %s process", getName()));
+                process.destroy();
+                shellKillProcess(process.pid());
+            }
+            return true;
         }
-        stoppedByUser = true;
-        setState(VMState.STOPPING);
-        if (getBackendInstance().hasControlSocket()) {
-            Log.i(TAG, fmt("Stopping VM %s via control socket", getName()));
-            if (runControlCommand("stop")) return true;
-            Log.w(TAG, fmt("Control stop failed for VM %s, falling back to destroy", getName()));
-        }
-        if (process != null && process.isAlive()) {
-            Log.i(TAG, fmt("Destroying VM %s process", getName()));
-            process.destroy();
-            shellKillProcess(process.pid());
-        }
-        return true;
     }
 
     public boolean reboot() {
@@ -452,6 +481,22 @@ public final class VMInstance extends VMConfig {
     }
 
     private void runVM() {
+        try {
+            runVMProcess();
+        } catch (Exception e) {
+            Log.e(TAG, fmt("VM %s worker failed", getName()), e);
+            // Do not release the pool while a partially started backend still owns memory.
+            if (process != null) {
+                process.destroy();
+                shellKillProcess(process.pid());
+                process.waitFor();
+                process = null;
+            }
+            finishStopped(-1);
+        }
+    }
+
+    private void runVMProcess() {
         var inst = getBackendInstance();
         var vmId = getId().toString();
         try {
@@ -463,36 +508,47 @@ public final class VMInstance extends VMConfig {
             var sio = getStream("stdio");
             if (sio != null)
                 sio.appendBuffer(fmt("boot resolution failed: %s\n", e.getMessage()));
-            exitCode = -1;
-            setState(VMState.STOPPED);
-            fireEvent("exited", null);
+            finishStopped(-1);
             return;
         } finally {
             bootEntryOverride = null;
         }
         if (bootPlan.entryFallback)
             fireEvent("boot_entry_fallback", null);
-        VMStartResult result;
-        try {
-            result = inst.start();
-        } catch (Exception e) {
-            Log.e(TAG, fmt("VM %s: exception during start vm", getName()), e);
-            result = new VMStartResult();
-            result.setProcess(null);
+        // start() has already registered the cold-start budget. Reboots retain that budget
+        // and only wait for the pages released by the previous process to become available.
+        boolean poolReady = PoolPreflight.waitForPool(item,
+            store.context.getVMs().poolReservations.contains(getId()),
+            () -> stoppedByUser || store.context.getVMs().isShuttingDown());
+        if (stoppedByUser || store.context.getVMs().isShuttingDown()) {
+            finishStopped(0);
+            return;
         }
+        if (!poolReady) {
+            var message = "Huge-page reserve is not ready; VM start cancelled.\n";
+            Log.e(TAG, fmt("VM %s: %s", getName(), message.trim()));
+            var sio = getStream("stdio");
+            if (sio != null) sio.appendBuffer(message);
+            finishStopped(-1);
+            return;
+        }
+        var result = inst.start();
         if (!result.isSuccess()) {
-            exitCode = -1;
-            setState(VMState.STOPPED);
-            fireEvent("exited", null);
+            finishStopped(-1);
             return;
         }
         process = result.getProcess();
+        // A stop may have arrived inside inst.start(), before the process was published.
+        if (stoppedByUser) {
+            process.destroy();
+            shellKillProcess(process.pid());
+        }
         for (var entry : inst.streams.entrySet()) {
             var stream = entry.getValue();
             if (stream.isReadable() && stream.getInputStream() != null)
                 startReaderThread(vmId, stream);
         }
-        setState(VMState.RUNNING);
+        if (!stoppedByUser) setState(VMState.RUNNING);
         long ranFrom = System.currentTimeMillis();
         int code = process.waitFor();
         long ranForMs = System.currentTimeMillis() - ranFrom;
@@ -542,21 +598,43 @@ public final class VMInstance extends VMConfig {
         }
         cleanupTap();
         inst.cleanup();
-        if (wantRestart) {
-            rebootRequested = false;
-            exitCode = -1;
-            // Broadcast REBOOTING (not STOPPED) so clients render "rebooting" for the
-            // whole relaunch window instead of flickering to a stopped row/button.
-            // start() accepts REBOOTING, so the next transition is straight to STARTING.
-            setState(VMState.REBOOTING);
-            fireEvent("rebooting", null);
-            Log.i(TAG, fmt("VM %s rebooting (exit code %d)", getName(), code));
-            scheduleRelaunch();
-            return;
+        synchronized (startLock) {
+            if (wantRestart && !stoppedByUser && !store.context.getVMs().isShuttingDown()) {
+                rebootRequested = false;
+                exitCode = -1;
+                // Keep REBOOTING throughout the relaunch, retaining the pool reservation.
+                setState(VMState.REBOOTING);
+                fireEvent("rebooting", null);
+                Log.i(TAG, fmt("VM %s rebooting (exit code %d)", getName(), code));
+                scheduleRelaunch();
+                return;
+            }
+            nprocGuardResetBestEffort();
+            setState(VMState.STOPPED);
+            fireEvent("exited", null);
         }
-        nprocGuardResetBestEffort();
+    }
+
+    /** Called only after the process is gone, or when startup never created one. */
+    private void finishStopped(int code) {
+        exitCode = code;
+        cleanupStoppedBackend();
         setState(VMState.STOPPED);
         fireEvent("exited", null);
+    }
+
+    /** Failed/cancelled starts must drop their resources before publishing STOPPED. */
+    private void cleanupStoppedBackend() {
+        try {
+            cleanupTap();
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to clean up VM TAPs", e);
+        }
+        try {
+            if (backendInstance != null) backendInstance.cleanup();
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to clean up VM backend", e);
+        }
     }
 
     /**
@@ -605,26 +683,14 @@ public final class VMInstance extends VMConfig {
             } catch (InterruptedException ignored) {
                 return;
             }
-            if (state != VMState.REBOOTING) return; // user changed state meanwhile
-            // The VM we are relaunching has only just let go of its memory, and the huge-page
-            // reserve takes a few seconds to get it back. Relaunching into that gap is the one
-            // way a reboot turns into a dead VM: the pages come from ordinary movable memory
-            // instead, the VMM refuses to hand memory it cannot pin to the hypervisor, and the
-            // relaunch exits with ENOMEM (measured: reserve at 526 of 2542 pages when the
-            // relaunch started, full again nine seconds later). Nobody is watching a reboot, so
-            // it waits like any other background start -- see PoolPreflight.waitForPool.
-            if (!PoolPreflight.waitForPool(item, PoolPreflight.RELAUNCH_ATTEMPTS,
-                PoolPreflight.BACKGROUND_INTERVAL_MS, PoolPreflight.BACKGROUND_ACQUIRE_AT))
-                Log.w(TAG, fmt("VM %s relaunching with the reserve still short", getName()));
-            if (state != VMState.REBOOTING) return; // stopped while we waited
-            if (!start()) {
-                Log.w(TAG, fmt("VM %s relaunch failed", getName()));
-                // Surface the failure as a real exit so attached consoles / UI stop
-                // waiting for the reboot to come back. start() left us in REBOOTING,
-                // so settle to STOPPED before the exit fires the correct final state.
-                exitCode = -1;
-                setState(VMState.STOPPED);
-                fireEvent("exited", null);
+            // Serialise the state test with stop(), so cancelling a reboot cannot be followed
+            // by this thread accidentally treating the now-STOPPED VM as a fresh start.
+            synchronized (startLock) {
+                if (state != VMState.REBOOTING) return;
+                if (!start()) {
+                    Log.w(TAG, fmt("VM %s relaunch failed", getName()));
+                    finishStopped(-1);
+                }
             }
         }, fmt("VM-relaunch-%s", getId()));
         t.setDaemon(true);
