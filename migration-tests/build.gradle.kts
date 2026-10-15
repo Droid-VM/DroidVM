@@ -31,6 +31,10 @@ val audioTypeSources = tasks.register<ContractSourceTask>("syncAudioTypeSources"
     sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/data/HostAudioDeviceTypes.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/audio/main"))
 }
+val evdevSources = tasks.register<ContractSourceTask>("syncEvdevSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/ui/vm/display/nativedisplay/input/EvdevEncoder.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/evdev/main"))
+}
 
 // A library's instrumentation APK targets itself. Device contract checks can run
 // without replacing DroidVM or starting its Application, daemon or VM stores.
@@ -62,6 +66,7 @@ androidComponents {
     onVariants { variant ->
         variant.sources.java?.addGeneratedSourceDirectory(protocolSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(audioTypeSources, ContractSourceTask::outputDirectory)
+        variant.sources.java?.addGeneratedSourceDirectory(evdevSources, ContractSourceTask::outputDirectory)
         variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
     }
 }

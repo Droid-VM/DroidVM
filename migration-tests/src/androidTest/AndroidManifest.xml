@@ -2,6 +2,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <service android:name="cn.classfun.droidvm.migration.DeathTokenService"
-            android:process=":death_token" android:exported="false" />
+            android:process=":death_token" android:isolatedProcess="true" android:exported="false" />
     </application>
 </manifest>

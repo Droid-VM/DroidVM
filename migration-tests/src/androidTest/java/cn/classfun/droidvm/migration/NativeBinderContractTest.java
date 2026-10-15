@@ -106,6 +106,8 @@ public final class NativeBinderContractTest {
             assertNull(broker.waitForDisplayBinder("missing"));
             var realDisplay = InstrumentationRegistry.getArguments().getString("display_service");
             if (realDisplay != null) CrosvmDisplayContract.verify(broker.waitForDisplayBinder(realDisplay));
+            if (InstrumentationRegistry.getArguments().getString("input_directory") != null)
+                CrosvmInputContract.verify(broker, realDisplay);
             assertTrue(broker.writeInput(nonce, SCREEN, 3, INPUT));
             assertFalse(broker.writeInput(nonce, "other-screen", 3, INPUT));
             assertFalse(broker.writeInput(nonce, SCREEN, -1, new byte[0]));
@@ -129,8 +131,9 @@ public final class NativeBinderContractTest {
             assertArrayEquals(new int[]{7, 2}, leds.get());
             broker.setKeyEcho(nonce, SCREEN, null);
 
-            bound = context.bindService(new Intent(context, DeathTokenService.class), connection, Context.BIND_AUTO_CREATE);
-            assertTrue(bound);
+            bound = context.bindIsolatedService(new Intent(context, DeathTokenService.class),
+                Context.BIND_AUTO_CREATE, nonce, context.getMainExecutor(), connection);
+            assertTrue("Disposable isolated token service did not bind", bound);
             var token = tokenQueue.poll(5, TimeUnit.SECONDS);
             assertNotNull("Disposable token service did not bind", token);
             assertEquals(2, broker.setKeyboardGrab(nonce, SCREEN, true, token));

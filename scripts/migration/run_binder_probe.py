@@ -17,12 +17,18 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--display-service", help="Optional real isolated crosvm display service to exercise")
+    parser.add_argument("--input-directory", help="Isolated display test directory for real guest input")
     parser.add_argument("--probe", type=Path, default=root / "build/migration/standalone-arm64-v8a/platform/android/probe/droidvm_platform_probe")
     parser.add_argument("--apk", type=Path, default=root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk")
     parser.add_argument("--output", type=Path, default=root / "build/migration/binder-device")
     args = parser.parse_args()
     if args.display_service and any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-." for c in args.display_service):
         parser.error("Display service must contain only letters, digits, underscore, dot or hyphen")
+    if args.input_directory:
+        prefix = "/data/local/tmp/droidvm-display-"
+        suffix = args.input_directory.removeprefix(prefix)
+        if not args.display_service or not args.input_directory.startswith(prefix) or len(suffix) != 32 or any(c not in "0123456789abcdef" for c in suffix):
+            parser.error("Input requires --display-service and a display directory with a 32-digit hex nonce")
     for path in (args.probe, args.apk):
         if not path.is_file():
             parser.error(f"Build the test artifacts first: {path}")
@@ -41,6 +47,8 @@ def main():
                          "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"]
         if args.display_service:
             command[-1:-1] = ["-e", "display_service", args.display_service]
+        if args.input_directory:
+            command[-1:-1] = ["-e", "input_directory", args.input_directory]
         test = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 text=True, encoding="utf-8", errors="replace")
         lines = queue.Queue()
@@ -74,6 +82,8 @@ def main():
                     native_args = ["shell", remote, "--broadcast-self-test", nonce]
                     if args.display_service:
                         native_args.append(args.display_service)
+                    if args.input_directory:
+                        native_args.append(args.input_directory)
                     native = subprocess.Popen(adb + native_args,
                                               stdout=native_out, stderr=native_err)
             test.wait(timeout=5)
@@ -93,6 +103,10 @@ def main():
             for key in ("real_display_frame_received", "real_display_transactions_passed"):
                 if f"INSTRUMENTATION_STATUS: {key}=true" not in "".join(log):
                     raise RuntimeError(f"Missing Java display check {key}; see {output}")
+        if args.input_directory:
+            routes = report.get("real_input_routes", [])
+            if len(routes) != 7 or any(route["bytes_written"] <= 0 for route in routes) or "INSTRUMENTATION_STATUS: real_input_submitted=true" not in "".join(log):
+                raise RuntimeError(f"Real input routes were not all exercised; see {output}")
         print(f"PASS: native broadcast, Java/NDK calls, callbacks and both death notifications. Results: {output}")
     finally:
         for process in (test, native):
