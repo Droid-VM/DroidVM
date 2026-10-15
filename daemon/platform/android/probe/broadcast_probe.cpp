@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include "broadcast_profile.h"
 #include "service_manager.h"
+#include "input_probe.h"
 
 namespace {
 using namespace aidl::cn::classfun::droidvm::display;
@@ -69,11 +70,11 @@ struct State {
     std::atomic<bool> real_display_returned{false};
 };
 
-// All methods operate on synthetic data, never keyboards, VMs or user settings.
+// Synthetic protocol checks may additionally target the explicitly isolated VM.
 class RemoteFixture final : public BnNativeDisplayRootService {
 public:
-    RemoteFixture(std::string nonce, std::shared_ptr<State> state, std::string display_service)
-        : nonce_(std::move(nonce)), state_(std::move(state)), display_service_(std::move(display_service)), death_(AIBinder_DeathRecipient_new(
+    RemoteFixture(std::string nonce, std::shared_ptr<State> state, std::string display_service, std::shared_ptr<InputProbe> input)
+        : nonce_(std::move(nonce)), state_(std::move(state)), display_service_(std::move(display_service)), input_(std::move(input)), death_(AIBinder_DeathRecipient_new(
             [](void* cookie) {
                 (*static_cast<std::shared_ptr<State>*>(cookie))->client_died = true;
             })) {
@@ -96,6 +97,10 @@ public:
                                  int32_t channel, const std::vector<uint8_t>& bytes,
                                  bool* result) override {
         *result = false;
+        if (input_ && vm == display_service_) {
+            *result = input_->write(screen, channel, bytes);
+            return ndk::ScopedAStatus::ok();
+        }
         if (vm != nonce_) return ndk::ScopedAStatus::ok();
         if (channel == -10) {
             *result = state_->client_died;
@@ -149,6 +154,7 @@ private:
     std::shared_ptr<State> state_;
     std::string display_service_;
     ServiceManager manager_;
+    std::shared_ptr<InputProbe> input_;
     std::mutex token_mutex_;
     ndk::SpAIBinder token_;
     void* cookie_ = nullptr; // opaque unlink identity; never dereferenced after link
@@ -219,7 +225,8 @@ void send_broadcast(AIBinder* activity, AIBinder* broker, const std::string& non
 }
 }
 
-void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std::string& display_service, Json::Value& report) {
+void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std::string& display_service,
+                         const std::string& input_directory, Json::Value& report) {
     Json::Value profile;
     std::istringstream input(kBroadcastProfile);
     input >> profile;
@@ -244,8 +251,14 @@ void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std
     if (!set_threads || !start_threads || !set_threads(2))
         throw std::runtime_error("native Binder thread pool unavailable");
     start_threads();
+    std::shared_ptr<InputProbe> input_probe;
+    if (!input_directory.empty()) {
+        if (display_service.empty()) throw std::runtime_error("input probe requires isolated display service");
+        input_probe = std::make_shared<InputProbe>(input_directory);
+        input_probe->wait_for_guest();
+    }
     auto state = std::make_shared<State>();
-    auto broker = ndk::SharedRefBase::make<RemoteFixture>(nonce, state, display_service);
+    auto broker = ndk::SharedRefBase::make<RemoteFixture>(nonce, state, display_service, input_probe);
     send_broadcast(activity, broker->asBinder().get(), nonce, profile, report);
     std::unique_lock lock(state->mutex);
     if (!state->changed.wait_for(lock, 30s, [&] { return state->finished; }))
@@ -258,6 +271,7 @@ void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std
     report["synthetic_fixture_only"] = display_service.empty();
     report["synthetic_input_fixture"] = true;
     report["real_display_returned"] = state->real_display_returned.load();
+    if (input_probe) input_probe->report(report);
     if (!display_service.empty() && !state->real_display_returned)
         throw std::runtime_error("real display service was not returned");
     if (!state->input_checked || !state->echo_sent || !state->client_died || state->caller_uid < 10000)

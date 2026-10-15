@@ -20,7 +20,8 @@ void run_service_lookup_test(Json::Value& report);
 void run_audio_probe(Json::Value& report);
 void run_audio_stream_test(Json::Value& report);
 void run_audio_watch(const std::string& directory, unsigned seconds, Json::Value& report);
-void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std::string& display_service, Json::Value& report);
+void run_broadcast_probe(AIBinder* activity, const std::string& nonce, const std::string& display_service,
+                         const std::string& input_directory, Json::Value& report);
 
 namespace {
 std::string property(const char* key) {
@@ -46,7 +47,7 @@ int main(int argc, char** argv) {
                          "       droidvm_platform_probe --audio-snapshot\n"
                          "       droidvm_platform_probe --audio-streams-self-test\n"
                          "       droidvm_platform_probe --audio-watch <test-directory> <seconds>\n"
-                         "       droidvm_platform_probe --broadcast-self-test <nonce> [display-service]\n"
+                         "       droidvm_platform_probe --broadcast-self-test <nonce> [display-service [input-directory]]\n"
                          "Inspect is read-only; wire tests use local synthetic Binders.\n"
                          "Broadcast requires the paired Java test on the profiled firmware.\n"
                          "Synthetic checks do not prove real display/input or audio support.\n";
@@ -71,11 +72,11 @@ int main(int argc, char** argv) {
             if (duration.empty() || duration.size() > 4 || duration.find_first_not_of("0123456789") != std::string::npos)
                 throw std::runtime_error("invalid watch duration");
             run_audio_watch(argv[2], static_cast<unsigned>(std::stoul(duration)), report);
-        } else if (mode == "--broadcast-self-test" && (argc == 3 || argc == 4)) {
+        } else if (mode == "--broadcast-self-test" && argc >= 3 && argc <= 5) {
             report["scope"] = "synthetic_cross_process_binder_contract";
             ServiceManager manager;
             auto activity = manager.find("activity");
-            run_broadcast_probe(activity.get(), argv[2], argc == 4 ? argv[3] : "", report);
+            run_broadcast_probe(activity.get(), argv[2], argc >= 4 ? argv[3] : "", argc == 5 ? argv[4] : "", report);
         } else if (mode == "--inspect" && argc <= 3) {
             report["scope"] = "platform_prerequisites_only";
             report["sdk"] = android_get_device_api_level();

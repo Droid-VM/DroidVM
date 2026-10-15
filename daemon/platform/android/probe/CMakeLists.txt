@@ -65,6 +65,7 @@ add_executable(droidvm_platform_probe
     audio_stream_test.cpp
     service_manager.cpp
     service_lookup_test.cpp
+    input_probe.cpp
 )
 
 set(profile_file "${CMAKE_CURRENT_SOURCE_DIR}/profiles/warsaw-api37.json")
