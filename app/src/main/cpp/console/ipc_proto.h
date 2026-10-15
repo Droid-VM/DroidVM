@@ -6,8 +6,9 @@
 #include <memory>
 #include <list>
 #include <json/json.h>
+#include "common/wire.h"
 
-#define IPC_MAX_PAYLOAD (8u << 20)
+#define IPC_MAX_PAYLOAD (droidvm::wire::max_payload)
 
 struct ipc_packet_header {
     uint32_t len;
@@ -16,6 +17,9 @@ struct ipc_packet_header {
 class IPCClient {
 public:
     IPCClient();
+    // Explicit endpoint for isolated contract tests and future embedding. The
+    // default CLI constructor still uses the production discovery files.
+    IPCClient(int port, const std::string& token);
 
     ~IPCClient();
 
@@ -56,6 +60,7 @@ public:
     std::list<Json::Value> messages{};
 
 private:
+    void connect_port(int port);
     int fd = -1;
 
 };

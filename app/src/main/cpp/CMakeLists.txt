@@ -42,14 +42,28 @@ set(CONSOLE_SOURCES
 add_executable(droidvm
     ${CONSOLE_SOURCES}
     ${JSONCPP_SOURCES}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon/common/wire.cpp"
 )
 
 target_include_directories(droidvm PRIVATE
     ${SHARED_INCLUDE_DIRS}
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon"
     ${CMAKE_CURRENT_SOURCE_DIR}/src/console
 )
 
 target_link_libraries(droidvm log)
+
+option(DROIDVM_BUILD_CONTRACT_TESTS "Build isolated C++ IPC client contracts" OFF)
+if(DROIDVM_BUILD_CONTRACT_TESTS)
+    add_executable(ipc_client_contract
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../androidTest/cpp/ipc_client_contract.cpp"
+        console/ipc_proto.cpp
+        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon/common/wire.cpp"
+        ${JSONCPP_SOURCES})
+    target_include_directories(ipc_client_contract PRIVATE ${SHARED_INCLUDE_DIRS}
+        "${CMAKE_CURRENT_SOURCE_DIR}/console" "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon")
+    target_compile_features(ipc_client_contract PRIVATE cxx_std_20)
+endif()
 
 if(NOT DEFINED DROIDVM_VERSION)
     error("DROIDVM_VERSION is not defined.")
