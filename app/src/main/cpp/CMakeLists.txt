@@ -2,11 +2,9 @@ cmake_minimum_required(VERSION 3.22.1)
 project(droidvm LANGUAGES C CXX ASM)
 
 option(DROIDVM_BUILD_PLATFORM_PROBE "Build isolated native migration platform checks" OFF)
-if(DROIDVM_BUILD_PLATFORM_PROBE)
-    set(DROIDVM_JSONCPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp")
-    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon"
-        "${CMAKE_CURRENT_BINARY_DIR}/native-daemon")
-endif()
+set(DROIDVM_JSONCPP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp")
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon"
+    "${CMAKE_CURRENT_BINARY_DIR}/native-daemon")
 
 set(SHARED_INCLUDE_DIRS
     ${CMAKE_CURRENT_SOURCE_DIR}/jsoncpp/include
@@ -41,8 +39,6 @@ set(CONSOLE_SOURCES
 
 add_executable(droidvm
     ${CONSOLE_SOURCES}
-    ${JSONCPP_SOURCES}
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon/common/wire.cpp"
 )
 
 target_include_directories(droidvm PRIVATE
@@ -51,18 +47,17 @@ target_include_directories(droidvm PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src/console
 )
 
-target_link_libraries(droidvm log)
+target_link_libraries(droidvm PRIVATE log droidvm_wire)
 
 option(DROIDVM_BUILD_CONTRACT_TESTS "Build isolated C++ IPC client contracts" OFF)
 if(DROIDVM_BUILD_CONTRACT_TESTS)
     add_executable(ipc_client_contract
         "${CMAKE_CURRENT_SOURCE_DIR}/../../androidTest/cpp/ipc_client_contract.cpp"
-        console/ipc_proto.cpp
-        "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon/common/wire.cpp"
-        ${JSONCPP_SOURCES})
+        console/ipc_proto.cpp)
     target_include_directories(ipc_client_contract PRIVATE ${SHARED_INCLUDE_DIRS}
         "${CMAKE_CURRENT_SOURCE_DIR}/console" "${CMAKE_CURRENT_SOURCE_DIR}/../../../../daemon")
     target_compile_features(ipc_client_contract PRIVATE cxx_std_20)
+    target_link_libraries(ipc_client_contract PRIVATE droidvm_wire)
 endif()
 
 if(NOT DEFINED DROIDVM_VERSION)
@@ -153,3 +148,12 @@ target_compile_options(vkprobe PRIVATE -Wall -Wextra -O2)
 
 add_executable(daemon unixhelper/daemon.c)
 target_compile_options(daemon PRIVATE -Wall -Wextra -O2)
+
+# AGP's hashed .cxx output paths change with configuration. Export only the
+# intended executables to a stable variant/ABI directory for the asset task.
+if(DEFINED DROIDVM_BIN_OUTPUT_ROOT)
+    foreach(binary droidvm daemon droidvmd)
+        set_target_properties(${binary} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+            "${DROIDVM_BIN_OUTPUT_ROOT}/${DROIDVM_BUILD_TYPE}/${ANDROID_ABI}")
+    endforeach()
+endif()

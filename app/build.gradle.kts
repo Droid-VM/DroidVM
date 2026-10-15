@@ -76,6 +76,10 @@ android {
                 cppFlags += "-std=c++20"
                 arguments += "-DANDROID_STL=c++_static"
                 arguments += "-DDROIDVM_VERSION=${versionName}"
+                arguments += "-DDROIDVM_VERSION_NAME=${versionName}"
+                arguments += "-DDROIDVM_VERSION_CODE=${versionCode}"
+                arguments += "-DDROIDVM_PACKAGE_NAME=${applicationId}"
+                arguments += "-DDROIDVM_BIN_OUTPUT_ROOT=${layout.buildDirectory.dir("intermediates/native_binaries").get().asFile.invariantSeparatorsPath}"
             }
         }
     }
@@ -88,7 +92,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            externalNativeBuild.cmake.arguments += "-DDROIDVM_BUILD_TYPE=debug"
+        }
         release {
+            externalNativeBuild.cmake.arguments += "-DDROIDVM_BUILD_TYPE=release"
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -154,21 +162,22 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
 
+    @get:Input
+    abstract val expectedAbis: ListProperty<String>
+
     @TaskAction
     fun copy() {
         val outDir = outputDir.get().asFile
-        outDir.deleteRecursively()
         val cmakeDir = cmakeOutputDir.get().asFile
-        if (!cmakeDir.exists()) return
-        val binaries = setOf("droidvm", "daemon")
-        cmakeDir.walkTopDown()
-            .filter { it.name in binaries && it.isFile }
-            .forEach { src ->
-                val abi = src.parentFile.name
-                val dest = File(outDir, "bin/$abi/${src.name}")
-                dest.parentFile.mkdirs()
-                src.copyTo(dest, overwrite = true)
-            }
+        val binaries = setOf("droidvm", "daemon", "droidvmd")
+        val inputs = expectedAbis.get().flatMap { abi -> binaries.map { name -> File(cmakeDir, "$abi/$name") } }
+        inputs.forEach { require(it.isFile && it.length() > 0) { "Missing native binary: $it" } }
+        outDir.deleteRecursively()
+        inputs.forEach { src ->
+            val dest = File(outDir, "bin/${src.parentFile.name}/${src.name}")
+            dest.parentFile.mkdirs()
+            src.copyTo(dest, overwrite = true)
+        }
     }
 }
 
@@ -361,9 +370,10 @@ androidComponents {
             dependsOn("externalNativeBuild${variantName}")
             cmakeOutputDir.set(
                 layout.buildDirectory.dir(
-                    "intermediates/cmake/${variant.name}/obj"
+                    "intermediates/native_binaries/${variant.buildType}"
                 )
             )
+            expectedAbis.set(android.defaultConfig.ndk.abiFilters.sorted())
             outputDir.set(
                 layout.buildDirectory.dir(
                     "generated/droidvm_assets/${variant.name}"

@@ -2,6 +2,7 @@
 """Exercise the native daemon in an isolated directory, never production runtime files."""
 import argparse
 import concurrent.futures
+import hashlib
 import json
 from pathlib import Path
 import queue
@@ -43,6 +44,10 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
+    parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
+    parser.add_argument("--app-metadata", type=Path, help="AGP output-metadata.json for a packaged daemon")
+    parser.add_argument("--launcher", type=Path, help="Optional existing double-fork launcher to verify")
+    parser.add_argument("--hash-apk", type=Path, help="Copy this APK into the isolated directory and verify its hash without installing it")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/daemon-device" / nonce
@@ -52,11 +57,18 @@ def main():
     adb = ["adb", "-s", args.serial]
     executable = binary_directory + "/droidvmd"
     test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
-    daemon = root / "build/migration/standalone-arm64-v8a/droidvmd"
+    daemon = args.daemon
+    expected_version = {"version": "development", "version_code": 0, "pkg_name": "cn.classfun.droidvm", "build_type": "development"}
+    if args.app_metadata:
+        metadata = json.loads(args.app_metadata.read_text(encoding="utf-8"))
+        expected_version = {"version": metadata["elements"][0]["versionName"],
+                            "version_code": metadata["elements"][0]["versionCode"],
+                            "pkg_name": metadata["applicationId"], "build_type": metadata["variantName"]}
     cpp_client = root / "build/migration/app-client-arm64/ipc_client_contract"
     runner = "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"
     processes, logs, forwards = [], [], []
     report = {}
+    detached_pid = None
 
     def shell(argv, **kwargs):
         return subprocess.run(adb + ["shell", shlex.join(argv)], text=True, encoding="utf-8",
@@ -101,14 +113,23 @@ def main():
         shell(["mkdir", binary_directory], check=True)
         subprocess.run(adb + ["push", str(daemon), executable], check=True, timeout=30)
         shell(["chmod", "755", executable], check=True)
+        if args.launcher:
+            subprocess.run(adb + ["push", str(args.launcher), binary_directory + "/launcher"], check=True, timeout=30)
+            shell(["chmod", "755", binary_directory + "/launcher"], check=True)
         subprocess.run(adb + ["push", str(cpp_client), binary_directory + "/client"], check=True, timeout=30)
         shell(["chmod", "755", binary_directory + "/client"], check=True)
         subprocess.run(adb + ["push", str(root / "app/src/androidTest/assets/migration/protocol-frames.json"),
                                binary_directory + "/frames.json"], check=True, timeout=10)
-        apk = shell(["pm", "path", "cn.classfun.droidvm"], check=True, capture_output=True).stdout.strip()
-        assert apk.startswith("package:") and "\n" not in apk
-        apk = apk.removeprefix("package:")
-        expected_hash = shell(["sha256sum", apk], check=True, capture_output=True).stdout.split()[0]
+        if args.hash_apk:
+            apk = binary_directory + "/source.apk"
+            subprocess.run(adb + ["push", str(args.hash_apk), apk], check=True, timeout=120)
+            with args.hash_apk.open("rb") as source:
+                expected_hash = hashlib.file_digest(source, "sha256").hexdigest()
+        else:
+            apk = shell(["pm", "path", "cn.classfun.droidvm"], check=True, capture_output=True).stdout.strip()
+            assert apk.startswith("package:") and "\n" not in apk
+            apk = apk.removeprefix("package:")
+            expected_hash = shell(["sha256sum", apk], check=True, capture_output=True).stdout.split()[0]
         command = [executable, "--run-dir", directory, "--apk", apk]
 
         # Converse interop: Java owns the same inode first; native must refuse.
@@ -189,7 +210,9 @@ def main():
             assert responses[0]["message"] == "client is not authorized to perform this action"
             assert responses[1]["message"] == "Token mismatch"
             assert responses[2]["success"] and responses[3]["production_ready"] is False
-            assert responses[4]["daemon_hash"] == expected_hash and responses[4]["version_code"] == 0
+            assert responses[4]["daemon_hash"] == expected_hash
+            assert {key: responses[4][key] for key in expected_version} == expected_version
+            report["version"] = expected_version
             assert responses[5]["response"] == "PONG" and responses[6]["response"] == "HELLO"
             assert responses[7]["message"] == "command handler 不存在-迁移 not found"
             report["framing_auth_version_passed"] = True
@@ -242,8 +265,39 @@ def main():
         assert all(shell(["test", "-e", directory + "/" + name]).returncode != 0 for name in original)
         assert shell(["test", "-f", directory + "/droidvmd.lock"]).returncode == 0
         report["sigkill_recovery_and_term_cleanup"] = True
+        if args.launcher:
+            launch_command = shlex.join([binary_directory + "/launcher"] + command)
+            launch_command += " >" + shlex.quote(binary_directory + "/detached.log") + " 2>&1 </dev/null"
+            launched = shell(["sh", "-c", launch_command], capture_output=True)
+            assert launched.returncode == 0
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                candidate, candidate_port = read("droidvmd.pid"), read("droidvmd-port.txt")
+                if candidate.isdecimal() and candidate_port.isdecimal():
+                    detached_pid = candidate
+                    break
+                time.sleep(0.05)
+            assert detached_pid is not None, "Double-fork launcher did not start native daemon"
+            forwarded = subprocess.run(adb + ["forward", "tcp:0", "tcp:" + candidate_port], check=True,
+                                       capture_output=True, text=True, timeout=10)
+            detached_port = int(forwarded.stdout.strip())
+            forwards.append(detached_port)
+            with socket.create_connection(("127.0.0.1", detached_port), timeout=5) as sock:
+                sock.sendall(frame(request("ping", request="PING")))
+                assert receive(sock)["response"] == "PONG"
+            shell(["kill", "-15", detached_pid], check=True)
+            deadline = time.monotonic() + 5
+            while shell(["test", "-e", directory + "/droidvmd.pid"]).returncode == 0 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            assert shell(["test", "-e", directory + "/droidvmd.pid"]).returncode != 0
+            detached_pid = None
+            report["existing_double_fork_launcher"] = True
         report["passed"] = True
     finally:
+        if detached_pid is not None:
+            identity = shell(["readlink", f"/proc/{detached_pid}/exe"], capture_output=True).stdout.strip()
+            if identity == executable:
+                shell(["kill", "-15", detached_pid], capture_output=True)
         for process in processes:
             if process.poll() is None:
                 # This PID comes from our dedicated runtime file, and the held
@@ -264,6 +318,8 @@ def main():
         print(f"Results: {output}")
         if report.get("passed"):
             shell(["rm", "-f", executable, binary_directory + "/client", binary_directory + "/frames.json",
+                   binary_directory + "/launcher", binary_directory + "/detached.log",
+                   binary_directory + "/source.apk",
                    directory + "/droidvmd.lock", directory + "/release-java-lock"], check=True)
             shell(["rmdir", directory], check=True)
             shell(["rmdir", binary_directory], check=True)

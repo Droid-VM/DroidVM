@@ -202,7 +202,7 @@ public final class AssetUtils {
     }
 
     public static void extractBinaries(@NonNull Context context) {
-        // Only the CMake-built binaries (droidvm, daemon) ship as APK assets.
+        // Only CMake-built droidvm, daemon (launcher), and droidvmd ship as APK assets.
         // The third-party daemons and lbx now arrive via the prebuilt tar.xz
         // (extracted to DATA/bin/<name>), and 7za has been removed entirely.
         extractAsset(context, "bin", BINARIES_BUILT, false);
