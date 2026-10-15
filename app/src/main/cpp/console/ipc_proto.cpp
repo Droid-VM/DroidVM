@@ -50,24 +50,15 @@ void IPCClient::write_exact(const void *buf, size_t n) {
 Json::Value IPCClient::recv_packet() {
     ipc_packet_header hdr{};
     read_exact(&hdr, sizeof(hdr));
-    uint32_t len = le32toh(hdr.len);
-    if (len == 0)
-        throw std::runtime_error("empty payload");
-    if (len > IPC_MAX_PAYLOAD)
-        throw std::runtime_error(std::format("payload too large: {}", len));
+    uint32_t len = droidvm::wire::payload_size(&hdr);
     std::string data(len, 0);
     read_exact(data.data(), len);
-    if (data.ends_with((char) 0))
-        data.pop_back();
     return parse_json(data);
 }
 
 void IPCClient::send_packet(const std::string &json) {
-    auto len = json.size();
-    ipc_packet_header hdr{};
-    hdr.len = htole32(len);
-    write_exact(&hdr, sizeof(hdr));
-    write_exact(json.data(), len);
+    const auto frame = droidvm::wire::frame(json);
+    write_exact(frame.data(), frame.size());
 }
 
 void IPCClient::send_packet(const Json::Value &json) {
@@ -153,7 +144,26 @@ int IPCClient::read_port() {
 }
 
 IPCClient::IPCClient() {
-    int port = read_port();
+    connect_port(read_port());
+    authenticate();
+}
+
+IPCClient::IPCClient(int port, const std::string& token) {
+    connect_port(port);
+    try {
+        Json::Value request;
+        request["command"] = "auth";
+        request["token"] = token;
+        send_request(request);
+    } catch (...) {
+        close(fd);
+        fd = -1;
+        throw;
+    }
+}
+
+void IPCClient::connect_port(int port) {
+    if (port <= 0 || port > 65535) throw std::runtime_error("invalid IPC port");
     if ((fd = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)) < 0)
         throw std::runtime_error(std::format("socket error: {}", strerror(errno)));
     sockaddr_in addr{};
@@ -164,23 +174,14 @@ IPCClient::IPCClient() {
         close(fd);
         throw std::runtime_error(std::format("connect error: {}", strerror(errno)));
     }
-    authenticate();
 }
 
 std::string IPCClient::json_to_string(const Json::Value &val, bool pretty) {
-    Json::StreamWriterBuilder builder;
-    builder["indentation"] = pretty ? "  " : "";
-    return Json::writeString(builder, val);
+    return droidvm::wire::stringify(val, pretty);
 }
 
 Json::Value IPCClient::parse_json(const std::string &str) {
-    Json::Value root;
-    Json::CharReaderBuilder builder;
-    std::string errs;
-    std::istringstream stream(str);
-    if (!Json::parseFromStream(builder, stream, &root, &errs))
-        throw std::runtime_error(std::format("JSON parse error: {}", errs));
-    return root;
+    return droidvm::wire::parse(str);
 }
 
 IPCClient::~IPCClient() {
