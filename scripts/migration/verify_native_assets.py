@@ -43,7 +43,7 @@ def main():
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(content)
                 report["binaries"][asset] = {"size": len(content), "sha256": hashlib.sha256(content).hexdigest()}
-        forbidden = ("droidvm_platform_probe", "ipc_client_contract", "droidvm_task_contract", "droidvm_event_contract", "droidvm_service_fixture")
+        forbidden = ("droidvm_platform_probe", "ipc_client_contract", "droidvm_task_contract", "droidvm_event_contract", "droidvm_service_fixture", "droidvm_process_contract")
         if any(Path(name).name in forbidden for name in names):
             raise RuntimeError("A migration-only test executable was packaged")
     report["apk_assets_passed"] = True
