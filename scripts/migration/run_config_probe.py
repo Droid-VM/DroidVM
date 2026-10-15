@@ -92,6 +92,35 @@ def fixtures():
             case(f"legacy_{key}_{i}", [key], value, legacy, "migrate")
     for value in (0, 1, 4094):
         tests.append({"name": f"default_vlan_{value}", "op": "default_vlan", "vlan_id": value})
+    helper = copy.deepcopy(base)
+    helper["bridge_type"] = "gvisor"
+    helper["l3"]["mac_address"] = "02:00:00:12:34:56"
+    for families in range(4):
+        for flags in range(16):
+            changed = copy.deepcopy(helper)
+            entry = changed["l3"]["vlans"][0]
+            entry["ipv4"]["cidr"] = "192.0.2.17/24" if families & 1 else None
+            entry["ipv6"]["cidr"] = "2001:db8:1234:5678::abcd/64" if families & 2 else None
+            entry["ipv4"]["snat"] = bool(flags & 1)
+            entry["ipv6"]["snat"] = bool(flags & 2)
+            entry["ipv4"]["dhcp"]["enabled"] = bool(flags & 4)
+            entry["ipv6"]["dhcp"] = {"enabled": bool(flags & 8)}
+            tests.append({"name": f"gvswitch_families_{families}_flags_{flags}", "op": "gvswitch", "config": changed})
+    for index, entries in enumerate([
+        [], None, [None, "ignored", {}],
+        [{"vlan_id": 0}],
+        [{"vlan_id": 4094, "ipv4": {"cidr": "192.0.2.1/24", "snat": True},
+          "ipv6": {"cidr": "[2001:db8::42]/64", "dhcp": {"enabled": True, "offset_start": 1, "offset_end": 9223372036854775807}},
+          "dns_servers": ["", None, "1.1.1.1", "2001:4860:4860::8888"]}],
+        [{"vlan_id": 0, "ipv4": {"cidr": "+192.000.2.01/+24"}}, {"vlan_id": 257, "ipv6": {"cidr": "fe80::1%none/64", "slaac": {"enabled": True}}}],
+        [{"ipv6": {"cidr": "fd00::1/126", "dhcp": {"enabled": True}}}],
+        [{"ipv6": {"cidr": "fd00::1/126", "dhcp": {"enabled": True, "offset_start": 1, "offset_end": 3}}}],
+        [{"ipv6": {"cidr": "fd00::1/0", "snat": True, "dhcp": {"enabled": True}}}],
+        [{"ipv4": {"cidr": "192.0.2.1/0", "snat": True, "dhcp": {"enabled": True, "offset_start": 1, "offset_end": 4294967294}}}],
+    ]):
+        changed = copy.deepcopy(helper)
+        changed["l3"]["vlans"] = entries
+        tests.append({"name": f"gvswitch_special_{index}", "op": "gvswitch", "config": changed})
     return tests
 
 

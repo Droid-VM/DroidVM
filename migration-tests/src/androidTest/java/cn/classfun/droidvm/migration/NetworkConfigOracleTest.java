@@ -55,6 +55,14 @@ public class NetworkConfigOracleTest {
                     }
                     var config = configType.getConstructor(JSONObject.class).newInstance(value);
                     validator.getMethod("validate", configType).invoke(null, config);
+                    if (test.getString("op").equals("gvswitch")) {
+                        var builder = loader.loadClass("cn.classfun.droidvm.daemon.network.backend.gvisor.GvswitchConfigBuilder");
+                        var build = builder.getDeclaredMethod("build", configType);
+                        build.setAccessible(true);
+                        row.put("helper", build.invoke(null, config)).put("status", "ok");
+                        report.put(row);
+                        continue;
+                    }
                     var view = new JSONObject();
                     view.put("id", invoke(config, "getId").toString());
                     view.put("name", invoke(config, "getName"));
