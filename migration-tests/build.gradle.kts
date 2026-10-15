@@ -27,6 +27,10 @@ val contractSources = tasks.register<ContractSourceTask>("syncContractSources") 
     sourceFile.set(rootProject.file("app/src/androidTest/java/cn/classfun/droidvm/lib/daemon/ProtocolContractTest.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/protocol/androidTest"))
 }
+val audioTypeSources = tasks.register<ContractSourceTask>("syncAudioTypeSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/data/HostAudioDeviceTypes.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/audio/main"))
+}
 
 // A library's instrumentation APK targets itself. Device contract checks can run
 // without replacing DroidVM or starting its Application, daemon or VM stores.
@@ -49,6 +53,7 @@ android {
         getByName("androidTest") {
             assets.directories.add(rootProject.file("app/src/androidTest/assets").path)
             assets.directories.add(rootProject.file("daemon/platform/android/probe/profiles").path)
+            assets.directories.add(rootProject.file("daemon/api/contracts").path)
         }
     }
 }
@@ -56,6 +61,7 @@ android {
 androidComponents {
     onVariants { variant ->
         variant.sources.java?.addGeneratedSourceDirectory(protocolSources, ContractSourceTask::outputDirectory)
+        variant.sources.java?.addGeneratedSourceDirectory(audioTypeSources, ContractSourceTask::outputDirectory)
         variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
     }
 }

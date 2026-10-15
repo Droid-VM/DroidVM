@@ -16,6 +16,7 @@
 
 void run_binder_wire_test(Json::Value& report);
 void run_audio_probe(Json::Value& report);
+void run_audio_watch(const std::string& directory, unsigned seconds, Json::Value& report);
 void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Value& report);
 
 namespace {
@@ -99,12 +100,14 @@ int main(int argc, char** argv) {
     report["schema_version"] = 1;
     report["p1_complete"] = false;
     int exit_code = 0;
+    bool streaming = false;
     try {
         const std::string mode = argc > 1 ? argv[1] : "--help";
         if (mode == "--help" && argc <= 2) {
             std::cout << "Usage: droidvm_platform_probe --inspect [display-service]\n"
                          "       droidvm_platform_probe --wire-self-test\n"
                          "       droidvm_platform_probe --audio-snapshot\n"
+                         "       droidvm_platform_probe --audio-watch <test-directory> <seconds>\n"
                          "       droidvm_platform_probe --broadcast-self-test <nonce>\n"
                          "Inspect is read-only; wire tests use local synthetic Binders.\n"
                          "Broadcast requires the paired Java test on the profiled firmware.\n"
@@ -117,6 +120,13 @@ int main(int argc, char** argv) {
         } else if (mode == "--audio-snapshot" && argc == 2) {
             report["scope"] = "native_audio_device_enumeration";
             run_audio_probe(report);
+        } else if (mode == "--audio-watch" && argc == 4) {
+            streaming = true;
+            report["scope"] = "native_audio_table_watch";
+            std::string duration = argv[3];
+            if (duration.empty() || duration.size() > 4 || duration.find_first_not_of("0123456789") != std::string::npos)
+                throw std::runtime_error("invalid watch duration");
+            run_audio_watch(argv[2], static_cast<unsigned>(std::stoul(duration)), report);
         } else if (mode == "--broadcast-self-test" && argc == 3) {
             report["scope"] = "synthetic_cross_process_binder_contract";
             ServiceManager manager;
@@ -159,7 +169,7 @@ int main(int argc, char** argv) {
     }
     report["exit_code"] = exit_code;
     Json::StreamWriterBuilder writer;
-    writer["indentation"] = "  ";
+    writer["indentation"] = streaming ? "" : "  ";
     std::cout << Json::writeString(writer, report) << '\n';
     return exit_code;
 }

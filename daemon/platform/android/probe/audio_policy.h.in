@@ -1,0 +1,2 @@
+// Snapshot of the legacy Java audio policy, verified by AudioSnapshotTest.
+inline constexpr char kAudioPolicy[] = R"json(@AUDIO_POLICY_JSON@)json";

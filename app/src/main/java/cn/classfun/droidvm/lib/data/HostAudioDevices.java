@@ -142,32 +142,7 @@ public final class HostAudioDevices {
      * approximate answer is still much better than none.</p>
      */
     public static int kindOf(@NonNull AudioDeviceInfo device, boolean input) {
-        switch (device.getType()) {
-            case AudioDeviceInfo.TYPE_TELEPHONY:
-                return 7;
-            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES:
-                return 2;
-            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
-            case AudioDeviceInfo.TYPE_USB_HEADSET:
-            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
-            case AudioDeviceInfo.TYPE_BLE_HEADSET:
-                return 3;
-            case AudioDeviceInfo.TYPE_LINE_ANALOG:
-            case AudioDeviceInfo.TYPE_AUX_LINE:
-                return 4;
-            case AudioDeviceInfo.TYPE_HDMI:
-            case AudioDeviceInfo.TYPE_HDMI_ARC:
-            case AudioDeviceInfo.TYPE_LINE_DIGITAL:
-            case AudioDeviceInfo.TYPE_USB_DEVICE:
-            case AudioDeviceInfo.TYPE_USB_ACCESSORY:
-            case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
-            case AudioDeviceInfo.TYPE_BLE_SPEAKER:
-                return 5;
-            default:
-                // Everything left is a built-in transducer of one kind or the other, and which
-                // one is decided by the direction rather than by the type.
-                return input ? 6 : 1;
-        }
+        return HostAudioDeviceTypes.kindOf(device.getType(), input);
     }
 
     /**
@@ -285,64 +260,15 @@ public final class HostAudioDevices {
         }
     }
 
-    /**
-     * The echo reference: the output mix, fed back so a capture path can subtract it. Android
-     * exposes it in the device list but only opens it for system callers, so an endpoint pinned
-     * to it appears in the guest and never produces a sample -- measured: PREPARE comes back
-     * VIRTIO_SND_S_IO_ERR, "Failed to open stream".
-     *
-     * <p>By number because there is no public constant for it -- the SDK's list goes 25, 26, 27,
-     * 29 -- and a name that does not exist cannot be compiled against.</p>
-     */
-    private static final int TYPE_ECHO_REFERENCE = 28;
-
-    /** Endpoints that make no sense as a VM's speaker or microphone. */
+    /** Endpoints that make sense as a VM speaker or microphone in this direction. */
     private static boolean isSelectable(@NonNull AudioDeviceInfo device, boolean input) {
-        switch (device.getType()) {
-            case TYPE_ECHO_REFERENCE:
-            case AudioDeviceInfo.TYPE_TELEPHONY:
-            case AudioDeviceInfo.TYPE_REMOTE_SUBMIX:
-            case AudioDeviceInfo.TYPE_FM:
-            case AudioDeviceInfo.TYPE_FM_TUNER:
-            case AudioDeviceInfo.TYPE_TV_TUNER:
-                return false;
-            default:
-                return input ? device.isSource() : device.isSink();
-        }
+        return HostAudioDeviceTypes.isSelectable(device.getType())
+            && (input ? device.isSource() : device.isSink());
     }
 
-    /** Stable, config-visible name for an AudioDeviceInfo type constant. */
     @NonNull
     private static String typeName(int type) {
-        switch (type) {
-            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE: return "BUILTIN_EARPIECE";
-            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER: return "BUILTIN_SPEAKER";
-            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE: return "BUILTIN_SPEAKER_SAFE";
-            case AudioDeviceInfo.TYPE_WIRED_HEADSET: return "WIRED_HEADSET";
-            case AudioDeviceInfo.TYPE_WIRED_HEADPHONES: return "WIRED_HEADPHONES";
-            case AudioDeviceInfo.TYPE_LINE_ANALOG: return "LINE_ANALOG";
-            case AudioDeviceInfo.TYPE_LINE_DIGITAL: return "LINE_DIGITAL";
-            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO: return "BLUETOOTH_SCO";
-            case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP: return "BLUETOOTH_A2DP";
-            case AudioDeviceInfo.TYPE_BLE_HEADSET: return "BLE_HEADSET";
-            case AudioDeviceInfo.TYPE_BLE_SPEAKER: return "BLE_SPEAKER";
-            case AudioDeviceInfo.TYPE_HDMI: return "HDMI";
-            case AudioDeviceInfo.TYPE_HDMI_ARC: return "HDMI_ARC";
-            case AudioDeviceInfo.TYPE_USB_DEVICE: return "USB_DEVICE";
-            case AudioDeviceInfo.TYPE_USB_ACCESSORY: return "USB_ACCESSORY";
-            case AudioDeviceInfo.TYPE_USB_HEADSET: return "USB_HEADSET";
-            case AudioDeviceInfo.TYPE_DOCK: return "DOCK";
-            case AudioDeviceInfo.TYPE_AUX_LINE: return "AUX_LINE";
-            case AudioDeviceInfo.TYPE_IP: return "IP";
-            case AudioDeviceInfo.TYPE_BUS: return "BUS";
-            case AudioDeviceInfo.TYPE_BUILTIN_MIC: return "BUILTIN_MIC";
-            case AudioDeviceInfo.TYPE_REMOTE_SUBMIX: return "REMOTE_SUBMIX";
-            case AudioDeviceInfo.TYPE_TELEPHONY: return "TELEPHONY";
-            case AudioDeviceInfo.TYPE_FM: return "FM";
-            case AudioDeviceInfo.TYPE_FM_TUNER: return "FM_TUNER";
-            case AudioDeviceInfo.TYPE_TV_TUNER: return "TV_TUNER";
-            default: return fmt("TYPE_%d", type);
-        }
+        return HostAudioDeviceTypes.typeName(type);
     }
 
     /** Localized name for the picker; unlisted types fall back to the stable name. */

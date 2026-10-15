@@ -1,0 +1,401 @@
+{
+  "source": "app/src/main/java/cn/classfun/droidvm/lib/data/HostAudioDeviceTypes.java",
+  "types": {
+    "0": {
+      "name": "TYPE_0",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "1": {
+      "name": "BUILTIN_EARPIECE",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "2": {
+      "name": "BUILTIN_SPEAKER",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "3": {
+      "name": "WIRED_HEADSET",
+      "selectable": true,
+      "input_kind": 3,
+      "output_kind": 3
+    },
+    "4": {
+      "name": "WIRED_HEADPHONES",
+      "selectable": true,
+      "input_kind": 2,
+      "output_kind": 2
+    },
+    "5": {
+      "name": "LINE_ANALOG",
+      "selectable": true,
+      "input_kind": 4,
+      "output_kind": 4
+    },
+    "6": {
+      "name": "LINE_DIGITAL",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "7": {
+      "name": "BLUETOOTH_SCO",
+      "selectable": true,
+      "input_kind": 3,
+      "output_kind": 3
+    },
+    "8": {
+      "name": "BLUETOOTH_A2DP",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "9": {
+      "name": "HDMI",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "10": {
+      "name": "HDMI_ARC",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "11": {
+      "name": "USB_DEVICE",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "12": {
+      "name": "USB_ACCESSORY",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "13": {
+      "name": "DOCK",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "14": {
+      "name": "FM",
+      "selectable": false,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "15": {
+      "name": "BUILTIN_MIC",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "16": {
+      "name": "FM_TUNER",
+      "selectable": false,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "17": {
+      "name": "TV_TUNER",
+      "selectable": false,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "18": {
+      "name": "TELEPHONY",
+      "selectable": false,
+      "input_kind": 7,
+      "output_kind": 7
+    },
+    "19": {
+      "name": "AUX_LINE",
+      "selectable": true,
+      "input_kind": 4,
+      "output_kind": 4
+    },
+    "20": {
+      "name": "IP",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "21": {
+      "name": "BUS",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "22": {
+      "name": "USB_HEADSET",
+      "selectable": true,
+      "input_kind": 3,
+      "output_kind": 3
+    },
+    "23": {
+      "name": "TYPE_23",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "24": {
+      "name": "BUILTIN_SPEAKER_SAFE",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "25": {
+      "name": "REMOTE_SUBMIX",
+      "selectable": false,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "26": {
+      "name": "BLE_HEADSET",
+      "selectable": true,
+      "input_kind": 3,
+      "output_kind": 3
+    },
+    "27": {
+      "name": "BLE_SPEAKER",
+      "selectable": true,
+      "input_kind": 5,
+      "output_kind": 5
+    },
+    "28": {
+      "name": "TYPE_28",
+      "selectable": false,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "29": {
+      "name": "TYPE_29",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "30": {
+      "name": "TYPE_30",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "31": {
+      "name": "TYPE_31",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "32": {
+      "name": "TYPE_32",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "33": {
+      "name": "TYPE_33",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "34": {
+      "name": "TYPE_34",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "35": {
+      "name": "TYPE_35",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "36": {
+      "name": "TYPE_36",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "37": {
+      "name": "TYPE_37",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "38": {
+      "name": "TYPE_38",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "39": {
+      "name": "TYPE_39",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "40": {
+      "name": "TYPE_40",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "41": {
+      "name": "TYPE_41",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "42": {
+      "name": "TYPE_42",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "43": {
+      "name": "TYPE_43",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "44": {
+      "name": "TYPE_44",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "45": {
+      "name": "TYPE_45",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "46": {
+      "name": "TYPE_46",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "47": {
+      "name": "TYPE_47",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "48": {
+      "name": "TYPE_48",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "49": {
+      "name": "TYPE_49",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "50": {
+      "name": "TYPE_50",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "51": {
+      "name": "TYPE_51",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "52": {
+      "name": "TYPE_52",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "53": {
+      "name": "TYPE_53",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "54": {
+      "name": "TYPE_54",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "55": {
+      "name": "TYPE_55",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "56": {
+      "name": "TYPE_56",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "57": {
+      "name": "TYPE_57",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "58": {
+      "name": "TYPE_58",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "59": {
+      "name": "TYPE_59",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "60": {
+      "name": "TYPE_60",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "61": {
+      "name": "TYPE_61",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "62": {
+      "name": "TYPE_62",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "63": {
+      "name": "TYPE_63",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    },
+    "64": {
+      "name": "TYPE_64",
+      "selectable": true,
+      "input_kind": 6,
+      "output_kind": 1
+    }
+  },
+  "default": {
+    "name_prefix": "TYPE_",
+    "selectable": true,
+    "input_kind": 6,
+    "output_kind": 1
+  }
+}

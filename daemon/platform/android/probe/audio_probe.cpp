@@ -11,6 +11,7 @@
 #include <sstream>
 #include <stdexcept>
 #include "audio_profile.h"
+#include "audio_policy.h"
 
 namespace {
 // Private C++ ABI, scoped to the inspected firmware. This version returns a
@@ -31,12 +32,40 @@ Json::Value unsigned_array(const std::set<unsigned>& values) {
     for (auto value : values) result.append(value);
     return result;
 }
+
+std::string audio_table(const Json::Value& devices) {
+    std::ostringstream table;
+    for (bool input : {false, true}) {
+        const auto* direction = input ? "in" : "out";
+        table << "0\t" << direction << "\tDEFAULT|system default\t0\t0\t" << (input ? 6 : 1) << '\n';
+        std::set<std::string> keys;
+        for (const auto& device : devices) {
+            if (device["input"].asBool() != input || !device["selectable"].asBool()) continue;
+            const auto key = device["key"].asString();
+            if (!keys.insert(key).second) continue;
+            // HostAudioTable has no escaping format. Refuse to publish a corrupt
+            // row instead of allowing a device address to inject table columns.
+            if (key.find_first_of("\t\r\n") != std::string::npos || key.find('\0') != std::string::npos)
+                throw std::runtime_error("audio key contains a table delimiter");
+            const auto& rates = device["sample_rates"];
+            const auto& channels = device["channel_counts"];
+            table << device["id"].asInt() << '\t' << direction << '\t' << key << '\t'
+                  << (rates.size() == 1 ? rates[0].asUInt() : 0) << '\t'
+                  << (channels.size() == 1 ? channels[0].asUInt() : 0) << '\t'
+                  << device["kind"].asInt() << '\n';
+        }
+    }
+    return table.str();
+}
 }
 
 void run_audio_probe(Json::Value& report) {
     Json::Value profile;
     std::istringstream input(kAudioProfile);
     input >> profile;
+    Json::Value policy;
+    std::istringstream policy_input(kAudioPolicy);
+    policy_input >> policy;
     char fingerprint[PROP_VALUE_MAX]{};
     __system_property_get("ro.build.fingerprint", fingerprint);
     if (android_get_device_api_level() != profile["sdk"].asInt() ||
@@ -78,8 +107,20 @@ void run_audio_probe(Json::Value& report) {
         const bool is_input = port.role == AUDIO_PORT_ROLE_SOURCE;
         device["input"] = is_input;
         device["internal_type"] = static_cast<Json::UInt>(port.ext.device.type);
+        const int type = profile["internal_to_external"].get(
+            std::to_string(static_cast<uint32_t>(port.ext.device.type)), 0).asInt();
+        device["type"] = type;
         device["address"] = bounded_string(port.ext.device.address);
         device["name"] = bounded_string(port.name);
+        const auto key = std::to_string(type);
+        const auto& rules = policy["types"].isMember(key) ? policy["types"][key] : policy["default"];
+        const auto type_name = rules.isMember("name") ? rules["name"].asString()
+            : rules["name_prefix"].asString() + key;
+        device["key"] = type_name + "|" + device["address"].asString();
+        // AudioManager hides unmapped native types (TYPE_UNKNOWN) before the
+        // legacy daemon's selectable-type filter runs.
+        device["selectable"] = type != 0 && rules["selectable"].asBool();
+        device["kind"] = rules[is_input ? "input_kind" : "output_kind"];
         std::set<unsigned> rates, counts;
         for (unsigned i = 0; i < port.num_audio_profiles; ++i) {
             const auto& caps = port.audio_profiles[i];
@@ -97,6 +138,7 @@ void run_audio_probe(Json::Value& report) {
         device["channel_counts"] = unsigned_array(counts);
         devices.append(std::move(device));
     }
+    report["audio_table"] = audio_table(devices);
     std::ifstream maps("/proc/self/maps");
     if (!maps) throw std::runtime_error("cannot inspect native process maps");
     std::string line;
