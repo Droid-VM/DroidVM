@@ -1,0 +1,2 @@
+// Private audio ABI observed on this firmware. Not a general Android ABI.
+inline constexpr char kAudioProfile[] = R"json(@AUDIO_PROFILE_JSON@)json";

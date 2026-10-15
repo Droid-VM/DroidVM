@@ -1,0 +1,15 @@
+{
+  "project": "AOSP system/media",
+  "version": "android-16.0.0_r1",
+  "commit": "f01e84b958fb6a887dc0e74e4b5ebd159f03860a",
+  "path": "audio/include/system",
+  "license": "Apache-2.0",
+  "git_blobs": {
+    "audio.h": "edceb49b8b4de30e59da9c4296b7d10953fd744e",
+    "audio-base.h": "ab806469830faff19748a049492badd7981a9d19",
+    "audio-base-utils.h": "3afbb5e5cc50f999aad20f686828d2124fa421a3",
+    "audio_common-base.h": "830e0f712fbf69f4c14554d4abfff462e46caa41",
+    "audio-hal-enums.h": "e258b450ab53d8d65ec1fb1a6a4d3bf46a2041c0"
+  },
+  "local_changes": []
+}

@@ -1,0 +1,9 @@
+{
+  "sdk": 37,
+  "fingerprint": "Redmi/warsaw/warsaw:17/CP2A.260605.016/OS4.0.0.7.XHPCNXM:user/release-keys",
+  "library": "libaudiobase.so",
+  "list_audio_ports_symbol": "_ZN7android11AudioSystem14listAudioPortsE17audio_port_role_t17audio_port_type_tRNSt3__16vectorI13audio_port_v7NS3_9allocatorIS5_EEEEPj",
+  "audio_port_v7_size": 11044,
+  "vector_size": 24,
+  "verified_runtime_abi": "arm64-v8a"
+}

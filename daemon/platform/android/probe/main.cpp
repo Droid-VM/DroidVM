@@ -15,6 +15,7 @@
 #include <json/json.h>
 
 void run_binder_wire_test(Json::Value& report);
+void run_audio_probe(Json::Value& report);
 void run_broadcast_probe(AIBinder* activity, const std::string& nonce, Json::Value& report);
 
 namespace {
@@ -103,6 +104,7 @@ int main(int argc, char** argv) {
         if (mode == "--help" && argc <= 2) {
             std::cout << "Usage: droidvm_platform_probe --inspect [display-service]\n"
                          "       droidvm_platform_probe --wire-self-test\n"
+                         "       droidvm_platform_probe --audio-snapshot\n"
                          "       droidvm_platform_probe --broadcast-self-test <nonce>\n"
                          "Inspect is read-only; wire tests use local synthetic Binders.\n"
                          "Broadcast requires the paired Java test on the profiled firmware.\n"
@@ -112,6 +114,9 @@ int main(int argc, char** argv) {
         if (mode == "--wire-self-test" && argc == 2) {
             report["scope"] = "local_ndk_binder_wire_contract";
             run_binder_wire_test(report);
+        } else if (mode == "--audio-snapshot" && argc == 2) {
+            report["scope"] = "native_audio_device_enumeration";
+            run_audio_probe(report);
         } else if (mode == "--broadcast-self-test" && argc == 3) {
             report["scope"] = "synthetic_cross_process_binder_contract";
             ServiceManager manager;

@@ -60,11 +60,18 @@ add_executable(droidvm_platform_probe
     main.cpp
     binder_wire_test.cpp
     broadcast_probe.cpp
+    audio_probe.cpp
 )
 
 set(profile_file "${CMAKE_CURRENT_SOURCE_DIR}/profiles/warsaw-api37.json")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${profile_file}")
 file(READ "${profile_file}" BROADCAST_PROFILE_JSON)
 configure_file(broadcast_profile.h.in "${GENERATED_DIR}/broadcast_profile.h" @ONLY)
+set(audio_profile_file "${CMAKE_CURRENT_SOURCE_DIR}/profiles/audio-warsaw-api37.json")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${audio_profile_file}")
+file(READ "${audio_profile_file}" AUDIO_PROFILE_JSON)
+configure_file(audio_profile.h.in "${GENERATED_DIR}/audio_profile.h" @ONLY)
 target_compile_options(droidvm_platform_probe PRIVATE -Wall -Wextra -Werror)
+target_include_directories(droidvm_platform_probe SYSTEM PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../third_party/android_audio/include")
 target_link_libraries(droidvm_platform_probe PRIVATE droidvm_probe_aidl droidvm_daemon_json dl)
