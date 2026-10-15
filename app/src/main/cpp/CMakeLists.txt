@@ -135,7 +135,7 @@ target_link_libraries(vnc_jni
 target_compile_options(vnc_jni PRIVATE -Wall -Wextra -O2)
 
 add_library(unixhelper SHARED unixhelper/unixhelper.c unixhelper/native_process.c)
-target_link_libraries(unixhelper log)
+target_link_libraries(unixhelper log droidvm_process)
 target_compile_options(unixhelper PRIVATE -Wall -Wextra -O2)
 
 # Capability probe for the native-display GPU-blit provider (GpuBlitProvider.SYSTEM). Loads the
