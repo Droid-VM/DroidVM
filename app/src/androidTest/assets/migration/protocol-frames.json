@@ -1,0 +1,35 @@
+{
+  "source": "Synthetic wire fixtures derived from Protocol.java and console/ipc_proto.cpp at 676662d; not device captures",
+  "cases": [
+    {
+      "name": "pong",
+      "json": "{\"response\":\"PONG\"}",
+      "cpp_frame_hex": "130000007b22726573706f6e7365223a22504f4e47227d",
+      "java_frame_hex": "140000007b22726573706f6e7365223a22504f4e47227d00"
+    },
+    {
+      "name": "unicode",
+      "json": "{\"text\":\"\u8fc1\u79fb\ud83d\ude00\"}",
+      "cpp_frame_hex": "150000007b2274657874223a22e8bf81e7a7bbf09f9880227d",
+      "java_frame_hex": "160000007b2274657874223a22e8bf81e7a7bbf09f9880227d00"
+    },
+    {
+      "name": "int64",
+      "json": "{\"value\":9223372036854775807}",
+      "cpp_frame_hex": "1d0000007b2276616c7565223a393232333337323033363835343737353830377d",
+      "java_frame_hex": "1e0000007b2276616c7565223a393232333337323033363835343737353830377d00"
+    },
+    {
+      "name": "explicit_null",
+      "json": "{\"value\":null}",
+      "cpp_frame_hex": "0e0000007b2276616c7565223a6e756c6c7d",
+      "java_frame_hex": "0f0000007b2276616c7565223a6e756c6c7d00"
+    },
+    {
+      "name": "empty_array",
+      "json": "{\"value\":[]}",
+      "cpp_frame_hex": "0c0000007b2276616c7565223a5b5d7d",
+      "java_frame_hex": "0d0000007b2276616c7565223a5b5d7d00"
+    }
+  ]
+}
