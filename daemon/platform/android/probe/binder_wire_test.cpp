@@ -99,14 +99,16 @@ void run_binder_wire_test(Json::Value& report) {
     broker->display = echo->asBinder();
     // Explicit Bp forces parcels even for a local Bn. fromBinder would return the
     // local object and silently bypass the very wire format we need to test.
-    BpNativeDisplayRootService proxy(broker->asBinder());
-    BpPhysicalKeyEcho echo_proxy(echo->asBinder());
+    // Bp classes also inherit SharedRefBase and must participate in its ownership
+    // model; stack construction aborts in the base destructor on Android.
+    auto proxy = ndk::SharedRefBase::make<BpNativeDisplayRootService>(broker->asBinder());
+    auto echo_proxy = ndk::SharedRefBase::make<BpPhysicalKeyEcho>(echo->asBinder());
     auto& checks = report["passed_checks"] = Json::Value(Json::arrayValue);
 
     ndk::SpAIBinder returned;
-    require_ok(proxy.waitForDisplayBinder("fixture", &returned));
+    require_ok(proxy->waitForDisplayBinder("fixture", &returned));
     require(returned.get() == echo->asBinder().get(), "Binder handle did not round-trip");
-    require_ok(proxy.waitForDisplayBinder("missing", &returned));
+    require_ok(proxy->waitForDisplayBinder("missing", &returned));
     require(!returned.get(), "null display Binder did not round-trip");
     checks.append("display_binder_and_null");
 
@@ -114,33 +116,33 @@ void run_binder_wire_test(Json::Value& report) {
     const std::string screen = "screen-\xe8\xbf\x81\xe7\xa7\xbb";
     const std::vector<uint8_t> bytes{0, 1, 0x7f, 0x80, 0xff, 0, 0, 1};
     bool delivered = false;
-    require_ok(proxy.writeInput(vm, screen, 3, bytes, &delivered));
+    require_ok(proxy->writeInput(vm, screen, 3, bytes, &delivered));
     require(delivered && broker->vm == vm && broker->screen == screen &&
             broker->channel == 3 && broker->bytes == bytes, "input parcel fields differ");
-    require_ok(proxy.writeInput(vm, "", -1, {}, &delivered));
+    require_ok(proxy->writeInput(vm, "", -1, {}, &delivered));
     require(!delivered && broker->screen.empty() && broker->channel == -1 &&
             broker->bytes.empty(), "empty input did not round-trip");
     checks.append("input_bytes_screen_channel_and_result");
 
     int32_t count = -1;
-    require_ok(proxy.setKeyboardGrab(vm, screen, true, echo->asBinder(), &count));
+    require_ok(proxy->setKeyboardGrab(vm, screen, true, echo->asBinder(), &count));
     require(count == 2 && broker->grab && broker->vm == vm && broker->screen == screen &&
             broker->token.get() == echo->asBinder().get(), "keyboard token did not round-trip");
-    require_ok(proxy.setKeyboardGrab(vm, "", false, {}, &count));
+    require_ok(proxy->setKeyboardGrab(vm, "", false, {}, &count));
     require(count == 0 && !broker->grab && !broker->token.get(), "null keyboard token rejected");
     checks.append("keyboard_grab_and_nullable_token");
 
-    require_ok(proxy.setKeyEcho(vm, screen, echo));
+    require_ok(proxy->setKeyEcho(vm, screen, echo));
     require(broker->echo && broker->vm == vm && broker->screen == screen,
             "key echo interface did not round-trip");
-    require_ok(proxy.setKeyEcho(vm, screen, nullptr));
+    require_ok(proxy->setKeyEcho(vm, screen, nullptr));
     require(!broker->echo, "clearing key echo with null failed");
     checks.append("key_echo_registration_and_null");
 
-    require_ok(echo_proxy.onKeys({1, 30, 125}, {1, 0, 1}));
+    require_ok(echo_proxy->onKeys({1, 30, 125}, {1, 0, 1}));
     require(echo->codes == std::vector<int32_t>({1, 30, 125}) &&
             echo->values == std::vector<int32_t>({1, 0, 1}), "key arrays differ");
-    require_ok(echo_proxy.onLeds(7, 2));
+    require_ok(echo_proxy->onLeds(7, 2));
     require(echo->known == 7 && echo->on == 2, "LED masks differ");
     checks.append("oneway_key_and_led_parcels");
     report["wire_contract_passed"] = true;

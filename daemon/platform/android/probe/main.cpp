@@ -37,10 +37,12 @@ public:
 
     bool available() const { return check_ != nullptr; }
 
-    Json::Value inspect(const char* name, const char* descriptor) const {
+    Json::Value inspect(const char* name, const char* descriptor,
+                        const char* alternate_descriptor = nullptr) const {
         Json::Value result(Json::objectValue);
         result["service"] = name;
         result["expected_descriptor"] = descriptor;
+        if (alternate_descriptor) result["alternate_descriptor"] = alternate_descriptor;
         if (!check_) {
             result["status"] = "service_manager_api_unavailable";
             return result;
@@ -62,7 +64,17 @@ public:
             [](AIBinder*, transaction_code_t, const AParcel*, AParcel*) -> binder_status_t {
                 return STATUS_UNKNOWN_TRANSACTION;
             });
-        const bool matches = AIBinder_associateClass(binder.get(), clazz);
+        bool matches = AIBinder_associateClass(binder.get(), clazz);
+        if (matches) result["matched_descriptor"] = descriptor;
+        if (!matches && alternate_descriptor) {
+            auto* alternate = AIBinder_Class_define(alternate_descriptor,
+                [](void* args) -> void* { return args; }, [](void*) {},
+                [](AIBinder*, transaction_code_t, const AParcel*, AParcel*) -> binder_status_t {
+                    return STATUS_UNKNOWN_TRANSACTION;
+                });
+            matches = AIBinder_associateClass(binder.get(), alternate);
+            if (matches) result["matched_descriptor"] = alternate_descriptor;
+        }
         result["descriptor_matches"] = matches;
         result["status"] = ping == STATUS_OK && matches ? "reachable" : "interface_check_failed";
         return result;
@@ -106,7 +118,10 @@ int main(int argc, char** argv) {
             auto& services = report["services"] = Json::Value(Json::arrayValue);
             services.append(manager.inspect("activity", "android.app.IActivityManager"));
             services.append(manager.inspect("media.audio_policy", "android.media.IAudioPolicyService"));
-            services.append(manager.inspect("media.audio_flinger", "android.media.IAudioFlinger"));
+            // Newer Android releases expose the generated AIDL service name.
+            // Descriptor reachability alone does not establish method compatibility.
+            services.append(manager.inspect("media.audio_flinger", "android.media.IAudioFlingerService",
+                                            "android.media.IAudioFlinger"));
             if (argc == 3)
                 services.append(manager.inspect(argv[2], "android.crosvm.ICrosvmAndroidDisplayService"));
             for (const auto& service : services)

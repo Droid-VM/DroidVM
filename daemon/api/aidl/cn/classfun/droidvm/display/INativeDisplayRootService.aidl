@@ -15,7 +15,7 @@ interface INativeDisplayRootService {
      * Calls ServiceManager.waitForService(serviceName) inside the daemon (root) and returns the
      * ICrosvmAndroidDisplayService binder, or null if not found. serviceName is the per-VM key.
      */
-    IBinder waitForDisplayBinder(String serviceName);
+    @nullable IBinder waitForDisplayBinder(String serviceName);
 
     /**
      * Forwards pre-encoded evdev [data] (8-byte records) for [channel] straight to the crosvm input
@@ -46,7 +46,7 @@ interface INativeDisplayRootService {
      * many keyboards are held (0 when the feature is off, the VM is not running, or none is
      * attached -- the console stays armed for one that appears later).
      */
-    int setKeyboardGrab(String vmId, String screenId, boolean grab, IBinder token);
+    int setKeyboardGrab(String vmId, String screenId, boolean grab, @nullable IBinder token);
 
     /**
      * Registers (or clears, with null) the console's copy of the grabbed keyboard's keys and the
@@ -54,5 +54,5 @@ interface INativeDisplayRootService {
      * grab is heard, and only while it has something to show -- the laptop-keyboard mode lights
      * the pressed key on the drawn keyboard, and nothing else needs the traffic.
      */
-    void setKeyEcho(String vmId, String screenId, IPhysicalKeyEcho echo);
+    void setKeyEcho(String vmId, String screenId, @nullable IPhysicalKeyEcho echo);
 }
