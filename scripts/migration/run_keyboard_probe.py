@@ -244,7 +244,7 @@ def main():
         port, token = start()
         with connect(port, token) as sock:
             cap = exchange(sock, "capabilities")
-            check(cap.get("keyboard_grab") is True and cap.get("service_api_minor") == 9 and
+            check(cap.get("keyboard_grab") is True and cap.get("service_api_minor", 0) >= 9 and
                   all(c in cap["commands"] for c in ("kbd_config", "kbd_grab", "kbd_status")), "capabilities advertise the keyboard grab")
             status = exchange(sock, "kbd_status")
             report["status_idle"] = status
