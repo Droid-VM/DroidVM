@@ -298,6 +298,32 @@ def main():
                 assert info["state"] == "RUNNING" and info["tools"][0]["key"] == "gvswitch"
                 assert isinstance(exchange(sock, "network_tool_log", network_id=switch["id"], tool="gvswitch")["lines"], list)
                 assert exchange(sock, "network_tool_log", network_id=switch["id"], tool="unknown")["error"]["code"] == "NOT_FOUND"
+                # Keep the real helper alive but make its private API socket
+                # unavailable. The watchdog must inspect the control plane,
+                # retain the config lease on failure, then recover after backoff.
+                unavailable = runtime_directory()
+                shell(["mv", unavailable + "/s", unavailable + "/s-unavailable"], check=True)
+                try:
+                    deadline = time.monotonic() + 12
+                    while True:
+                        degraded = status(sock)
+                        if degraded["runtime_state"] == "FAILED":
+                            break
+                        assert time.monotonic() < deadline, degraded
+                        time.sleep(0.05)
+                    assert degraded["desired_running"] and degraded["runtime_error"] and degraded["tools"][0]["running"], degraded
+                    started = time.monotonic()
+                    assert exchange(sock, "ping", request="PING")["response"] == "PONG"
+                    report["refresh_failure_ping_seconds"] = time.monotonic() - started
+                    assert report["refresh_failure_ping_seconds"] < 1
+                    assert exchange(sock, "network_modify", config=switch)["error"]["code"] == "CONFLICT"
+                finally:
+                    shell(["mv", unavailable + "/s-unavailable", unavailable + "/s"], check=True)
+                refreshed = running(sock, int(degraded["runtime_generation"]))
+                assert int(refreshed["tools"][0]["generation"]) > int(first["tools"][0]["generation"])
+                assert runtime_directory() != unavailable
+                first = refreshed
+                report["live_helper_api_loss_detected_and_recovered_by_watchdog"] = True
                 old_directory = runtime_directory()
                 # Native fixture verifies inherited marker and uses pidfd. Never
                 # signal a helper using a PID read by the Python test runner.
