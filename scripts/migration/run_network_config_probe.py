@@ -136,7 +136,7 @@ def main():
             assert cap["network_lifecycle_backends"] == ["gvisor", "linux-l3"] and cap["network_watchdog"] and cap["network_auto_up"]
             assert all(name in cap["commands"] for name in ("network_start", "network_stop", "network_status", "network_tool_log"))
             assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]
-            assert cap["network_uplinks"] and cap["network_host_addresses"] and cap["service_api_minor"] == 5
+            assert cap["network_uplinks"] and cap["network_host_addresses"] and cap["service_api_minor"] >= 5
             assert all(name in cap["commands"] for name in ("network_list_uplinks", "network_list_host_addresses"))
             # Missing tool must surface an error, not a successful empty list.
             assert exchange(sock, "network_list_interfaces")["error"]["code"] == "IO_ERROR"

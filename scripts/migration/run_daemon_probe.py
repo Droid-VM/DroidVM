@@ -402,7 +402,9 @@ def main():
             shell(["rm", "-f", executable, binary_directory + "/client", binary_directory + "/frames.json",
                    binary_directory + "/launcher", binary_directory + "/detached.log",
                    binary_directory + "/source.apk",
-                   directory + "/droidvmd.lock", directory + "/release-java-lock"], check=True)
+                   directory + "/droidvmd.lock", directory + "/release-java-lock",
+                   # A data-layout daemon keeps its (empty) helper identity journal.
+                   directory + "/network-runtime.json", directory + "/network-runtime.json.bak"], check=True)
             shell(["rmdir", directory], check=True)
             if args.data_layout:
                 shell(["rm", "-f", daemon_log], check=True)
