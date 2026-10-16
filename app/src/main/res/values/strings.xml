@@ -978,6 +978,8 @@
     <string name="vm_info_sleepbtn">Sleep</string>
 
     <string name="settings_category_daemon">Daemon Service</string>
+    <string name="settings_native_daemon_title">Native service (preview)</string>
+    <string name="settings_native_daemon_summary">Run the native droidvmd service instead of the Java one; applies the next time the service starts</string>
     <string name="settings_daemon_status_title">Service Status</string>
     <string name="settings_daemon_running">Running</string>
     <string name="settings_daemon_stopped">Stopped</string>

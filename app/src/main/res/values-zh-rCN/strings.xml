@@ -940,6 +940,8 @@
     <string name="vm_info_sleepbtn">睡眠</string>
 
     <string name="settings_category_daemon">守护进程服务</string>
+    <string name="settings_native_daemon_title">原生服务（预览）</string>
+    <string name="settings_native_daemon_summary">使用原生 droidvmd 服务替代 Java 服务；下次启动服务时生效</string>
     <string name="settings_daemon_status_title">服务状态</string>
     <string name="settings_daemon_running">运行中</string>
     <string name="settings_daemon_stopped">已停止</string>
