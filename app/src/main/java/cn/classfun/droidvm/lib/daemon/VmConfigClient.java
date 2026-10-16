@@ -90,16 +90,30 @@ public final class VmConfigClient {
         }
         public synchronized boolean requiresReload() { return reloadRequired; }
         public synchronized void saveVm(JSONObject config, boolean create) throws IOException, JSONException {
+            saveVms(new JSONArray().put(config), create);
+        }
+        /** Atomically replaces several existing VMs, preserving every other entry. */
+        public synchronized void saveVms(JSONArray configs) throws IOException, JSONException {
+            saveVms(configs, false);
+        }
+        private void saveVms(JSONArray configs, boolean create) throws IOException, JSONException {
             if (reloadRequired) throw new IOException("Reload configuration before saving again");
+            if (configs.length() == 0) return;
             JSONObject next = document();
             JSONArray vms = next.getJSONArray("vms");
-            String id = config.getString("id");
-            int index = -1;
+            var positions = new java.util.HashMap<String, Integer>();
             for (int i = 0; i < vms.length(); i++)
-                if (id.equals(vms.getJSONObject(i).getString("id"))) { index = i; break; }
-            if (create == (index >= 0)) throw new IOException("VM no longer matches the editor baseline");
-            // Detach caller-owned objects and preserve every untouched VM/root field.
-            vms.put(create ? vms.length() : index, new JSONObject(config.toString()));
+                positions.put(vms.getJSONObject(i).getString("id"), i);
+            var targets = new java.util.HashSet<String>();
+            for (int i = 0; i < configs.length(); i++) {
+                JSONObject config = configs.getJSONObject(i);
+                String id = config.getString("id");
+                Integer index = positions.get(id);
+                if (!targets.add(id)) throw new IOException("Repeated VM in configuration update");
+                if (create == (index != null)) throw new IOException("VM no longer matches the editor baseline");
+                // Detach caller-owned objects; large batches use the existing chunk upload.
+                vms.put(create ? vms.length() : index, new JSONObject(config.toString()));
+            }
             commitEdit(next, () -> replace(revision, next));
         }
         public synchronized void deleteVm(String id) throws IOException, JSONException {

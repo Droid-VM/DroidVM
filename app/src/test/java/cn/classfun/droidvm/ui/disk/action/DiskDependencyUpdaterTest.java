@@ -128,4 +128,31 @@ public final class DiskDependencyUpdaterTest {
         assertEquals("/r.qcow2", disks.get(0).optString("path", ""));
         assertTrue(disks.get(0).optBoolean("readonly", false));
     }
+
+    @Test
+    public void persistedPlanRejectsAnyStaleSlotBeforeWritingOtherSlots() {
+        var disks = DataItem.newArray();
+        disks.append(slot("/c.qcow2", false));
+        disks.append(slot("/moved.qcow2", false));
+        var before = chain();
+        var plan = CursorPlan.reconcile(
+            List.of(at(0, before, C, false), at(1, before, D, false)),
+            List.of(), before, before.without(before.subtreeOf(C)));
+        assertFalse(DiskDependencyUpdater.matchesPlan(disks, plan.persistedChanges()));
+        assertEquals("/c.qcow2", disks.get(0).optString("path", ""));
+        disks.get(1).set("path", "/d.qcow2");
+        assertTrue(DiskDependencyUpdater.matchesPlan(disks, plan.persistedChanges()));
+        disks.remove(1);
+        assertFalse(DiskDependencyUpdater.matchesPlan(disks, plan.persistedChanges()));
+    }
+
+    @Test
+    public void duplicateSlotCannotBeRedirectedTwice() {
+        var disks = DataItem.newArray();
+        disks.append(slot("/c.qcow2", false));
+        var before = chain();
+        var from = at(0, before, C, false);
+        var change = new CursorPlan.Change(from, from.at(R, "/r.qcow2", true));
+        assertFalse(DiskDependencyUpdater.matchesPlan(disks, List.of(change, change)));
+    }
 }

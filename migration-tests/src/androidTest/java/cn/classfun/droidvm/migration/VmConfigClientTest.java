@@ -132,6 +132,28 @@ public final class VmConfigClientTest {
             catch (IOException expected) { assertEquals(committedRevision, client.status().revision); }
             assertEquals("saved with lost response", client.read().document().getJSONArray("vms").getJSONObject(1).getString("name"));
 
+            var batch = client.edit();
+            var staleBatch = competing.edit();
+            var batchRows = batch.document().getJSONArray("vms");
+            batchRows.getJSONObject(0).put("name", "batch first");
+            batchRows.getJSONObject(1).put("name", "batch second");
+            String beforeBatch = client.status().revision;
+            try {
+                batch.saveVms(new JSONArray().put(batchRows.getJSONObject(0)).put(batchRows.getJSONObject(0)));
+                fail("Duplicate batch targets must not partly commit");
+            } catch (IOException expected) { assertEquals(beforeBatch, client.status().revision); }
+            batch.saveVms(batchRows);
+            var committedBatch = client.read().document();
+            assertEquals("batch first", committedBatch.getJSONArray("vms").getJSONObject(0).getString("name"));
+            assertEquals("batch second", committedBatch.getJSONArray("vms").getJSONObject(1).getString("name"));
+            assertTrue(committedBatch.getBoolean("concurrent_root"));
+            batchRows.getJSONObject(0).put("name", "stale first");
+            batchRows.getJSONObject(1).put("name", "stale second");
+            try { staleBatch.saveVms(batchRows); fail("Stale batch cannot partly update either VM"); }
+            catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
+            assertEquals("batch first", client.read().document().getJSONArray("vms").getJSONObject(0).getString("name"));
+            assertEquals("batch second", client.read().document().getJSONArray("vms").getJSONObject(1).getString("name"));
+
             var deletion = client.edit();
             var changed = competing.edit();
             created.put("name", "changed during delete confirmation");

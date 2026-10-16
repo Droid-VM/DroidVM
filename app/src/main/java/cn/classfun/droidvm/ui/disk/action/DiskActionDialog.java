@@ -176,7 +176,7 @@ public final class DiskActionDialog {
      */
     private final class Family {
         final DiskStore disks = new DiskStore();
-        final VMStore vms = new VMStore();
+        final VMStore vms;
         final DiskConfig self;
         final TreeShape shape;
         final Set<UUID> ids;
@@ -191,7 +191,7 @@ public final class DiskActionDialog {
                 throw new IllegalStateException(
                     context.getString(R.string.disk_tree_not_registered));
             self = found;
-            vms.load(vms, context); // a missing store just means no VMs yet
+            vms = DiskDependencyUpdater.loadForPlanning(context);
             shape = TreeShape.of(disks);
             ids = shape.familyOf(self.getId());
             var inUse = VmRunningQuery.inUseAmong(

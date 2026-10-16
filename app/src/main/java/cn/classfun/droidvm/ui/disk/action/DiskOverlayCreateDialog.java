@@ -38,7 +38,6 @@ import java.util.regex.Pattern;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
-import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.disk.create.DiskFormat;
 import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors;
@@ -159,7 +158,10 @@ public final class DiskOverlayCreateDialog {
         runOnPool(() -> {
             try {
                 var store = new DiskStore();
-                store.load(context);
+                if (!store.load(context)) {
+                    fail(context.getString(R.string.disk_dependency_update_failed));
+                    return;
+                }
                 if (store.findByName(name) != null || new File(overlayPath).exists()) {
                     fail(context.getString(R.string.disk_create_error_exists));
                     return;
@@ -169,8 +171,7 @@ public final class DiskOverlayCreateDialog {
                         R.string.disk_overlay_depth_error, DiskTree.MAX_DEPTH));
                     return;
                 }
-                var vmStore = new VMStore();
-                vmStore.load(vmStore, context);
+                var vmStore = DiskDependencyUpdater.loadForPlanning(context);
                 var shape = TreeShape.of(store);
                 var family = shape.familyOf(parent.getId());
                 var inUse = VmRunningQuery.inUseAmong(
@@ -239,15 +240,20 @@ public final class DiskOverlayCreateDialog {
                 return;
             }
             var store = new DiskStore();
-            store.load(context);
+            if (!store.load(context)) {
+                fail(context.getString(R.string.disk_dependency_update_failed));
+                return;
+            }
             var overlay = new DiskConfig();
             overlay.setName(name);
             overlay.item.set("folder", parent.item.optString("folder", ""));
             overlay.setParentId(parent.getId());
             store.add(overlay);
-            store.save(context);
-            if (!DiskDependencyUpdater.applyPlan(context, vmPlan(plan, switchVmsToOverlay)))
-                Log.e(TAG, "overlay created but VM attachments could not be updated");
+            if (!store.save(context) || !DiskDependencyUpdater.applyPlan(context, vmPlan(plan, switchVmsToOverlay))) {
+                Log.e(TAG, "overlay file retained after registry or VM dependency save failure");
+                fail(context.getString(R.string.disk_dependency_update_failed));
+                return;
+            }
             mainLooper.post(() -> {
                 Toast.makeText(context,
                     context.getString(R.string.disk_overlay_created, name),
