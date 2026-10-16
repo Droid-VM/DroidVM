@@ -168,6 +168,18 @@ def main():
             for view in (baseline, updated):
                 assert exchange(sock, "resource_snapshot_release", snapshot_id=view["snapshot_id"])["success"]
             report["network_snapshot_replay_reconnect_large_config_task_filter"] = True
+            assert cap["network_config_update"] == "compare-config-v1" and cap["service_api_minor"] >= 17
+            observed = exchange(sock, "network_config_get", network_id=existing["id"])
+            assert observed["success"] and "state" not in observed["config"]
+            edited = dict(observed["config"], name="conditional-edit")
+            saved = exchange(sock, "network_config_update", expected=observed["config"], config=edited)
+            assert saved["success"] and saved["network_id"] == existing["id"]
+            stale = exchange(sock, "network_config_update", expected=observed["config"], config=observed["config"])
+            assert stale["error"]["code"] == "CONFLICT"
+            assert exchange(sock, "network_config_get", network_id=existing["id"])["config"] == edited
+            assert exchange(sock, "network_config_update", config=edited)["error"]["code"] == "INVALID_ARGUMENT"
+            assert exchange(sock, "network_config_update", expected=edited, config=observed["config"])["success"]
+            report["conditional_network_edit"] = True
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
             assert "network_delete" in cap["commands"] and cap["network_delete"] and cap["network_live_details"]
