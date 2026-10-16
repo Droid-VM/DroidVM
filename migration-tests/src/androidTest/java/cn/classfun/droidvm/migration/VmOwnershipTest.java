@@ -15,6 +15,9 @@ public final class VmOwnershipTest {
         File directory = directory();
         VmConfigOwnership.requireLegacy(directory);
         VmConfigOwnership.legacyWrite(directory, () -> {
+            VmConfigOwnership.legacyWrite(directory, () ->
+                Files.writeString(new File(directory, "vms.json").toPath(), "nested save"));
+            // Native must still be excluded after the nested DataStore-style save.
             Bundle ready = new Bundle(); ready.putBoolean("ownership_ready", true);
             InstrumentationRegistry.getInstrumentation().sendStatus(2, ready);
             File release = new File(directory, "release");

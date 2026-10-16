@@ -156,16 +156,9 @@ public final class MainVMFragment
         }
     }
 
-    private void deleteVM(@NonNull VMConfig config, boolean deleteDisks) {
-        var ctx = requireContext();
-        adapter.items.removeById(config.getId());
-        boolean saved = adapter.items.save(ctx);
-        refreshView();
-        VMDeletion.releaseDaemonAndMaybeDeleteDisks(ctx, config, deleteDisks, saved);
-    }
-
     private void confirmDeleteVM(@NonNull VMConfig config) {
-        VMDeletion.confirm(requireContext(), config,
-            deleteDisks -> deleteVM(config, deleteDisks));
+        VMDeletion.confirm(requireContext(), config, () -> {
+            if (isAdded()) refreshView();
+        });
     }
 }

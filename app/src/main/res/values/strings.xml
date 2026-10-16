@@ -1733,4 +1733,5 @@
     <string name="usb_devices_idle_kept">%1$s stays with the host: a driver of its would not let go, so it goes idle only when it is unplugged</string>
     <string name="vm_config_reload_required">The configuration changed, or the save result could not be confirmed. Your edits are still on this page. Cancel to keep them visible, or close the editor and reopen the VM from the list to check its current configuration before editing again. Closing discards unsaved edits and USB rules.</string>
     <string name="vm_config_close_editor">Close editor</string>
+    <string name="vm_delete_error">Deletion failed or could not be confirmed. Disk files were kept. Reload the VM list before trying again.</string>
 </resources>

@@ -3,10 +3,10 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm;
 
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.Context;
+import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -19,6 +19,7 @@ import androidx.annotation.NonNull;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,6 +28,9 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
+import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
+import org.json.JSONObject;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -39,24 +43,57 @@ public final class VMDeletion {
     private VMDeletion() {
     }
 
-    /**
-     * Shows the same delete options from both the VM list and VM details page. The disk option
-     * counts what deleting this VM would leave dangling - its writable attachments that no other
-     * VM references - so a disk the cleanup would keep is never offered in the first place;
-     * counted off the main thread because it reads the VM store. {@link #cleanupDisks} checks
-     * that again against the saved store, and keeps a base other overlays still build on.
-     */
+    /** Prepare the confirmation baseline off-thread, then report success only after deletion. */
     public static void confirm(
         @NonNull Context context,
         @NonNull VMConfig config,
-        @NonNull Consumer<Boolean> onConfirmed
+        @NonNull Runnable onDeleted
     ) {
         var appContext = context.getApplicationContext();
         runOnPool(() -> {
-            int count = danglingWritablePaths(appContext, config).size();
-            new Handler(Looper.getMainLooper()).post(
-                () -> show(context, config, count, onConfirmed));
+            try {
+                var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+                var session = client.supported() ? client.edit() : null;
+                var store = session == null ? new VMStore() : new VMStore(session.document());
+                if (session == null && !store.load(appContext)) throw new IOException("Cannot read VM configuration");
+                var current = store.findById(config.getId());
+                if (current == null) throw new IOException("VM no longer exists");
+                var paths = VmDiskSharing.attachedPaths(current, true);
+                paths.removeAll(VmDiskSharing.pathsAttachedByOthers(store, current.getId()));
+                new Handler(Looper.getMainLooper()).post(() ->
+                    show(context, current, paths.size(), deleteDisks -> runOnPool(() -> {
+                        try {
+                            if (session != null) session.deleteVm(current.getId().toString());
+                            else deleteLegacy(appContext, current);
+                            if (deleteDisks) cleanupDisks(appContext, current.getId(), VmDiskSharing.attachedPaths(current, true));
+                            new Handler(Looper.getMainLooper()).post(onDeleted);
+                        } catch (Exception error) { showDeleteError(appContext, error); }
+                    })));
+            } catch (Exception error) { showDeleteError(appContext, error); }
         });
+    }
+
+    private static void deleteLegacy(Context context, VMConfig confirmed) throws Exception {
+        // An acknowledgement precedes any persistent removal. Losing it retains
+        // both the configuration and disks, even if the daemon actually deleted.
+        var response = DaemonConnection.getInstance().request(new JSONObject()
+            .put("command", "vm_delete").put("vm_id", confirmed.getId().toString()));
+        if (!response.getBoolean("success")) throw new IOException(response.optString("message", "Deletion refused"));
+        VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+            var fresh = new VMStore();
+            if (!fresh.load(context)) throw new IOException("Cannot read VM configuration");
+            var current = fresh.findById(confirmed.getId());
+            if (current == null || !current.toJson().toString().equals(confirmed.toJson().toString()))
+                throw new IOException("VM changed since deletion was confirmed");
+            fresh.removeById(confirmed.getId());
+            if (!fresh.save(context)) throw new IOException("Cannot save VM deletion");
+        });
+    }
+
+    private static void showDeleteError(Context context, Exception error) {
+        Log.w(TAG, "VM deletion failed or its result is uncertain; retaining disks", error);
+        new Handler(Looper.getMainLooper()).post(() ->
+            Toast.makeText(context, R.string.vm_delete_error, Toast.LENGTH_LONG).show());
     }
 
     private static void show(
@@ -65,6 +102,10 @@ public final class VMDeletion {
         int diskCount,
         @NonNull Consumer<Boolean> onConfirmed
     ) {
+        if (context instanceof Activity) {
+            var activity = (Activity) context;
+            if (activity.isFinishing() || activity.isDestroyed()) return;
+        }
         var layout = new LinearLayout(context);
         var deleteDisks = new CheckBox(context);
         deleteDisks.setText(context.getString(R.string.vm_delete_writable_disks, diskCount));
@@ -81,74 +122,6 @@ public final class VMDeletion {
                 (dialog, which) -> onConfirmed.accept(deleteDisks.isChecked()))
             .setNegativeButton(android.R.string.cancel, null)
             .show();
-    }
-
-    /**
-     * Releases the VM from the daemon, then optionally removes the disk registry entries and
-     * files that belonged to writable attachments. The caller must remove and save the VM store
-     * first so a fresh-store scan can reliably identify references from other VMs.
-     *
-     * <p>{@code vm_delete} is idempotent on the daemon side: a VM it never managed (created but
-     * never started) is a successful no-op. Both a refusal and an unavailable response keep the
-     * files: a disconnected native daemon may still own a running VM.
-     */
-    public static void releaseDaemonAndMaybeDeleteDisks(
-        @NonNull Context context,
-        @NonNull VMConfig config,
-        boolean deleteDisks,
-        boolean vmStoreSaved
-    ) {
-        var appContext = context.getApplicationContext();
-        var paths = VmDiskSharing.attachedPaths(config, true);
-        var vmId = config.getId();
-        Runnable cleanup = () -> runOnPool(() -> cleanupDisks(appContext, vmId, paths));
-        Runnable skipped = () -> showResult(appContext, new Outcome(0, 0, 0, paths.size()));
-
-        var request = DaemonConnection.getInstance().buildRequest("vm_delete")
-            .put("vm_id", config.getId().toString());
-        if (deleteDisks && !paths.isEmpty()) {
-            if (!vmStoreSaved) {
-                skipped.run();
-            } else {
-                // A successful response means DeleteHandler has stopped and removed the VM (or
-                // never had it). Only that acknowledgement permits disk cleanup; a connection
-                // failure does not establish whether the independent native VM has stopped.
-                request
-                    .onResponse(response -> cleanup.run())
-                    .onUnsuccessful(response -> {
-                        Log.w(TAG, fmt("daemon refused vm_delete; keeping disk files: %s",
-                            response.optString("message", "")));
-                        skipped.run();
-                    })
-                    .onError(error -> {
-                        Log.w(TAG, "vm_delete acknowledgement unavailable; keeping disk files", error);
-                        skipped.run();
-                    });
-            }
-        }
-        request.invoke();
-    }
-
-    /**
-     * The writable attachments nothing else would reference once this VM is gone. A store that
-     * will not load answers with the unfiltered set: {@link #cleanupDisks} re-checks against the
-     * saved store before anything is removed, so the only cost is an offer that turns out to
-     * keep a file.
-     */
-    @NonNull
-    private static LinkedHashSet<String> danglingWritablePaths(
-        @NonNull Context context,
-        @NonNull VMConfig config
-    ) {
-        var paths = VmDiskSharing.attachedPaths(config, true);
-        try {
-            var vmStore = new VMStore();
-            if (vmStore.load(context))
-                paths.removeAll(VmDiskSharing.pathsAttachedByOthers(vmStore, config.getId()));
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to check disks against the other VMs", e);
-        }
-        return paths;
     }
 
     /** What happened to the requested files, by reason, for the one toast at the end. */
@@ -173,15 +146,27 @@ public final class VMDeletion {
     ) {
         if (requestedPaths.isEmpty()) return;
         try {
+            // Config attachments cannot change or transition to native ownership
+            // between the reference scan and file removal. Native cleanup needs
+            // its own service transaction; the persistent gate refuses it here.
+            VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> cleanupLegacyDisks(context, vmId, requestedPaths));
+        } catch (Exception error) {
+            Log.w(TAG, "Disk cleanup requires confirmed configuration ownership", error);
+            showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
+        }
+    }
+
+    private static void cleanupLegacyDisks(Context context, UUID vmId, LinkedHashSet<String> requestedPaths) {
+        try {
             var vmStore = new VMStore();
-            if (!vmStore.load(context)) {
+            if (!vmStore.load(context) || vmStore.findById(vmId) != null) {
                 showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
                 return;
             }
 
             // A writable disk must still be retained when any remaining VM references it,
             // including through a read-only attachment. The deleted VM is out of the saved store
-            // by now; excluding its id as well keeps this right if that save ever races.
+            // by now; a recreated VM with the same id was rejected above.
             var referencedPaths = VmDiskSharing.pathsAttachedByOthers(vmStore, vmId);
             var candidates = new LinkedHashSet<String>();
             int attachedByOthers = 0;

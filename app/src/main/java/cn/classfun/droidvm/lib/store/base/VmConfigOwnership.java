@@ -15,11 +15,19 @@ import java.util.Set;
  * prevents another Java channel close from releasing this process's POSIX lock. */
 public final class VmConfigOwnership {
     public static final String FILE_NAME = "vms.config-owner";
+    private static java.nio.file.Path activeGate;
     private VmConfigOwnership() {}
     public interface Write { void run() throws Exception; }
 
     public static synchronized void legacyWrite(File directory, Write action) throws Exception {
-        var path = new File(directory, FILE_NAME).toPath();
+        var path = new File(directory.getCanonicalFile(), FILE_NAME).toPath();
+        // A legacy read/modify/save transaction may invoke DataStore.save under
+        // this same lock. Never open/close a second channel: POSIX would drop it.
+        if (activeGate != null) {
+            if (!activeGate.equals(path)) throw new IOException("Nested VM ownership transaction uses another directory");
+            action.run();
+            return;
+        }
         try (var channel = FileChannel.open(path,
                 Set.of(StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS),
                 PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))) {
@@ -27,7 +35,9 @@ public final class VmConfigOwnership {
             try (var lock = channel.tryLock()) {
                 if (lock == null) throw new IOException("VM configuration ownership is changing");
                 if (channel.size() != 0) throw new IOException("VM configuration belongs to the native service");
-                action.run();
+                activeGate = path;
+                try { action.run(); }
+                finally { activeGate = null; }
             }
         }
     }
