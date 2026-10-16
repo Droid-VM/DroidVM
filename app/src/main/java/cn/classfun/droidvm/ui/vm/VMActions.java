@@ -169,8 +169,10 @@ public final class VMActions {
             .setMessage(R.string.vm_lend_mthp_refused_message)
             .setPositiveButton(R.string.vm_lend_mthp_refused_fix, (d, w) ->
                 runOnPool(() -> {
-                    applySingleLendMthp(appContext, config);
-                    mainHandler.post(proceed);
+                    try {
+                        applySingleLendMthp(appContext, config);
+                        mainHandler.post(proceed);
+                    } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
                 }))
             .setNeutralButton(R.string.vm_lend_mthp_refused_start_anyway, (d, w) -> proceed.run())
             .setNegativeButton(android.R.string.cancel, null)
@@ -188,21 +190,9 @@ public final class VMActions {
     private static void applySingleLendMthp(
         @NonNull Context context,
         @NonNull VMConfig config
-    ) {
-        config.item.set(LendMthpMode.KEY, LendMthpMode.SINGLE);
-        try {
-            var store = new VMStore();
-            if (store.load(context)) {
-                var stored = store.findById(config.getId());
-                if (stored != null) {
-                    stored.item.set(LendMthpMode.KEY, LendMthpMode.SINGLE);
-                    store.save(context);
-                }
-            }
-        } catch (Exception e) {
-            // The start still gets the corrected config; only the remembering failed.
-            Log.w(TAG, "failed to persist the LEND mode correction", e);
-        }
+    ) throws Exception {
+        VMStore.updatePersistedField(context, config, LendMthpMode.KEY,
+            changed -> changed.item.set(LendMthpMode.KEY, LendMthpMode.SINGLE));
     }
 
     /**
@@ -489,20 +479,24 @@ public final class VMActions {
             BootMenuDialog.show(
                 ui.getContext(), config,
                 (bootEntry, remember, selected, builtinCmdline, pseudoUnprotected) -> {
-                    var startEntry = remember
-                        ? rememberChoice(ui.getContext(), config, bootEntry,
-                            selected, builtinCmdline)
-                        : bootEntry;
-                    if (!pseudoUnprotected) {
-                        doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
-                        return;
-                    }
-                    // The module guard ran before the menu, on a mode this start no longer
-                    // uses: pseudo-unprotected RAM is SHARE'd through gunyah_host_share, so
-                    // ask that question again against what is actually about to start.
-                    var session = pseudoUnprotectedSession(config);
-                    guardKernelModules(session, mainHandler, ui, () -> doCreateAndStart(
-                        session, mainHandler, ui, wantOpenConsole, startEntry));
+                    var appContext = ui.getContext().getApplicationContext();
+                    runOnPool(() -> {
+                        try {
+                            var startEntry = remember
+                                ? rememberChoice(appContext, config, bootEntry, selected, builtinCmdline)
+                                : bootEntry;
+                            mainHandler.post(() -> {
+                                if (!pseudoUnprotected) {
+                                    doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
+                                    return;
+                                }
+                                // Recheck the module required by this session's protection mode.
+                                var session = pseudoUnprotectedSession(config);
+                                guardKernelModules(session, mainHandler, ui, () -> doCreateAndStart(
+                                    session, mainHandler, ui, wantOpenConsole, startEntry));
+                            });
+                        } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
+                    });
                 },
                 () -> { /* cancelled: do not start */ }
             );
@@ -561,8 +555,10 @@ public final class VMActions {
                     .setMessage(ctx.getString(R.string.vm_locked_disk_message, files))
                     .setPositiveButton(R.string.vm_locked_disk_readonly_start, (d, w) ->
                         runOnPool(() -> {
-                            applyReadonly(appContext, config, lockedPaths);
-                            mainHandler.post(proceed);
+                            try {
+                                applyReadonly(appContext, config, lockedPaths);
+                                mainHandler.post(proceed);
+                            } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
                         }))
                     .setNegativeButton(android.R.string.cancel, null)
                     .show();
@@ -685,20 +681,8 @@ public final class VMActions {
         @NonNull Context context,
         @NonNull VMConfig config,
         @NonNull List<String> paths
-    ) {
-        setReadonlyOnDisks(config, paths);
-        try {
-            var store = new VMStore();
-            if (store.load(store, context)) {
-                var stored = store.findById(config.getId());
-                if (stored != null) {
-                    setReadonlyOnDisks(stored, paths);
-                    store.save(context);
-                }
-            }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to persist read-only flip", e);
-        }
+    ) throws Exception {
+        VMStore.updatePersistedField(context, config, "disks", changed -> setReadonlyOnDisks(changed, paths));
     }
 
     private static void setReadonlyOnDisks(@NonNull VMConfig config, @NonNull List<String> paths) {
@@ -934,17 +918,10 @@ public final class VMActions {
         @Nullable String bootEntry,
         @Nullable BootConfig.ImageEntry selected,
         @Nullable String builtinCmdline
-    ) {
+    ) throws Exception {
         boolean builtin = BootConfig.BUILTIN_ENTRY_KEY.equals(bootEntry);
-        applyChoice(BootConfig.of(config), builtin, selected, builtinCmdline);
-        var store = new VMStore();
-        if (store.load(context)) {
-            var stored = store.findById(config.getId());
-            if (stored != null) {
-                applyChoice(BootConfig.of(stored), builtin, selected, builtinCmdline);
-                store.save(context);
-            }
-        }
+        VMStore.updatePersistedField(context, config, "boot",
+            changed -> applyChoice(BootConfig.of(changed), builtin, selected, builtinCmdline));
         // built-in now boots as a plain manual config -- no one-shot override
         return builtin ? null : bootEntry;
     }
