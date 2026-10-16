@@ -33,6 +33,10 @@ public final class VmConfigClient {
     public static final class CommitUnknown extends IOException {
         CommitUnknown(Exception cause) { super("Configuration commit result unknown; reload before retrying", cause); }
     }
+    /** A start might already have been admitted. Query runtime state; never auto-retry. */
+    public static final class StartUnknown extends IOException {
+        StartUnknown(Exception cause) { super("VM start result unknown; reload state before retrying", cause); }
+    }
     public static class Version {
         public final String revision;
         public final boolean persisted, recovered, durabilityUncertain;
@@ -74,6 +78,39 @@ public final class VmConfigClient {
         return supported;
     }
     public Version status() throws IOException, JSONException { return new Version(call("vm_config_status", new JSONObject())); }
+
+    public boolean startSupported() throws IOException, JSONException {
+        var capabilities = call("capabilities", new JSONObject());
+        if (!capabilities.has("vm_config_start")) return false;
+        if (!"revisioned-session-v1".equals(capabilities.optString("vm_config_start")))
+            throw new IOException("Unsupported configured VM start API");
+        return true;
+    }
+
+    /** Uses the caller's observed revision. Never reloads or replaces configuration to start. */
+    public void start(Snapshot snapshot, String vmId, JSONObject overrides, String bootEntry, boolean clearLogs)
+        throws IOException, JSONException {
+        if (snapshot.durabilityUncertain) throw new IOException("VM configuration durability is uncertain");
+        if (vmId == null || vmId.isEmpty() || vmId.length() > 128) throw new IOException("Invalid VM ID");
+        boolean found = false;
+        JSONArray rows = snapshot.document().getJSONArray("vms");
+        for (int i = 0; i < rows.length(); i++)
+            if (vmId.equals(rows.getJSONObject(i).getString("id"))) { found = true; break; }
+        if (!found) throw new IOException("VM is not in the observed configuration snapshot");
+        String boot = bootEntry == null ? "" : bootEntry;
+        if (boot.getBytes(StandardCharsets.UTF_8).length > (64 << 10)) throw new IOException("Boot entry exceeds start request limit");
+        JSONObject request = new JSONObject().put("revision", snapshot.revision).put("vm_id", vmId)
+            .put("boot_entry", boot).put("clear_logs_before_start", clearLogs)
+            .put("overrides", overrides == null ? new JSONObject() : new JSONObject(overrides.toString()));
+        try {
+            JSONObject response = call("vm_start_configured", request);
+            if (!vmId.equals(response.getString("vm_id")) || !snapshot.revision.equals(response.getString("revision")))
+                throw new IOException("Mismatched configured start response");
+        } catch (RemoteFailure failure) {
+            if ("INTERNAL".equals(failure.code) || "UNKNOWN".equals(failure.code)) throw new StartUnknown(failure);
+            throw failure;
+        } catch (IOException | JSONException failure) { throw new StartUnknown(failure); }
+    }
 
     /** One editor's baseline. Conflicts/uncertain commits require an explicit new session,
      * never a silent refresh followed by an overwrite of somebody else's changes. */

@@ -59,11 +59,31 @@ public final class VmConfigClientTest {
             var saved = client.replace(initial.revision, document);
             assertTrue(saved.persisted); assertFalse(saved.durabilityUncertain);
             var base = client.read();
+            assertTrue(client.startSupported());
+            try { client.start(base, id, null, "x".repeat(64 << 10), true); fail("Fixture must refuse VMM admission"); }
+            catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
+            int[] starts = {0};
+            var lostStart = new VmConfigClient(request -> {
+                starts[0]++;
+                assertEquals("vm_start_configured", request.getString("command"));
+                assertEquals(base.revision, request.getString("revision"));
+                assertFalse(request.has("config"));
+                throw new IOException("lost start response");
+            });
+            try { lostStart.start(base, id, null, "", false); fail("Lost response is unknown"); }
+            catch (VmConfigClient.StartUnknown expected) { assertEquals(1, starts[0]); }
+            try { lostStart.start(base, id, null, "\u4e2d".repeat(22000), false); fail("Byte limit must reject before sending"); }
+            catch (IOException expected) { assertFalse(expected instanceof VmConfigClient.StartUnknown); assertEquals(1, starts[0]); }
+            var malformedStart = new VmConfigClient(request -> new JSONObject().put("success", true).put("vm_id", "wrong").put("revision", base.revision));
+            try { malformedStart.start(base, id, null, "", false); fail("Mismatched response is unknown"); }
+            catch (VmConfigClient.StartUnknown expected) { }
             assertEquals(9007199254740993L, base.document().getJSONObject("future_root").getLong("integer"));
             var privateCopy = base.document(); privateCopy.put("future_root", false);
             assertTrue(base.document().get("future_root") instanceof JSONObject);
             var edited = base.document().getJSONArray("vms").getJSONObject(0); edited.put("name", "winner");
             competing.apply(base.revision, new JSONArray().put(new JSONObject().put("op", "replace").put("config", edited)));
+            try { client.start(base, id, null, "", false); fail("Stale start must conflict"); }
+            catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
             try { client.replace(base.revision, base.document()); fail("Stale editor must conflict"); }
             catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
             assertEquals("Java 配置", base.document().getJSONArray("vms").getJSONObject(0).getString("name"));
