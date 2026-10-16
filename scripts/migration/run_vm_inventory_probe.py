@@ -121,7 +121,7 @@ def main():
         with connect(port, token) as sock:
             cap = exchange(sock, "capabilities")
             check(all(name in cap["commands"] for name in ("vm_create", "vm_modify", "vm_delete", "vm_list", "vm_get", "vm_exists", "vm_status"))
-                  and cap["vm_inventory"] is True and cap["vm_runtime"] is False, "capabilities advertise inventory only")
+                  and cap["vm_inventory"] is True and cap["vm_runtime"] is True, "capabilities advertise inventory and runtime")
             rows = exchange(sock, "vm_list")["data"]
             check([row["id"] for row in rows] == [legacy_id, current_id], "file order and raw stored ids preserved")
             old = rows[0]
