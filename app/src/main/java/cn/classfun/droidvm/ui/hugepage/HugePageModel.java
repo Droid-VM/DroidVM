@@ -684,60 +684,36 @@ final class HugePageModel {
 
     /**
      * Persist pool target and with-CMA total in ONE settings.prop rewrite, then
-     * apply both live knobs ({@code pool_want} first - a value above the old
-     * with-CMA total drags it up, and the second write then pins it exact).
-     * {@code withCma < 0} leaves the CMA keys untouched and only sets the pool
-     * target (persisted under both {@code pool_want} and legacy
+     * apply both live knobs best-effort ({@code pool_want} first - a value above
+     * the old with-CMA total drags it up, and the second write then pins it
+     * exact). {@code withCma < 0} leaves the CMA keys untouched and only sets the
+     * pool target (persisted under both {@code pool_want} and legacy
      * {@code pool_target}; on v6 only the persist takes effect). Does <b>not</b>
      * fire an acquire -- the caller drives that from {@link Snapshot#deficit}.
      */
     @NonNull
     Result saveTargets(long pages, long withCma) {
-        // Persist the EFFECTIVE targets, not the raw input. The module is the
-        // single source of truth for clamping (to pool_size_max), coupling
-        // (pool_want <= pool_want_with_cma, sec. 4) and S-alignment. So when it is
-        // loaded: write the user's values to sysfs, read the pair BACK, and
-        // persist what actually stuck. settings.prop, the running pool and the
-        // UI then all agree, and the coupling/clamp/align rules are never
-        // reimplemented here (they drift - this once did its own Math.max yet
-        // still missed size_max and S-alignment).
-        if (existsSticky(pathJoin(SYSFS_PARAMS, "pool_want"))) {
-            var live = writeKnob("pool_want", Long.toString(pages));
-            boolean liveOk = live.ok();
-            if (withCma >= 0)
-                liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
-            long effWant = readKnobLong("pool_want", pages);
-            long effCma = withCma >= 0 ? readKnobLong("pool_want_with_cma", withCma) : -1;
-            var changes = new LinkedHashMap<String, String>();
-            changes.put("pool_want", Long.toString(effWant));
-            changes.put("pool_target", Long.toString(effWant));
-            if (effCma >= 0) changes.putAll(cmaTargetChanges(effCma));
-            var persisted = updateSettings(changes);
-            if (!persisted.ok()) return Result.failed("settings", persisted.error);
-            return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
-        }
-        // Not loaded: no sysfs to clamp against. Persist the raw values (with the
-        // minimal want<=with_cma coupling so the prop is self-consistent); insmod
-        // clamps/aligns them next boot, and the UI reads the effective pair back
-        // once the module is up.
-        if (withCma >= 0) withCma = Math.max(withCma, pages);
+        // Persist the USER's request - the master. Never the kernel readback: a
+        // live write the module clamps (pool_size_max), couples (W, sec. 4) or
+        // refuses (-EBUSY while a run is in flight) must not rewrite what the
+        // user configured, nor the size inputs. The module re-clamps on every
+        // insmod anyway, and the effective values are reported by the pool stat
+        // rows and the bar - the UI mirrors the config, not the live pool.
         var changes = new LinkedHashMap<String, String>();
         changes.put("pool_want", Long.toString(pages));
         changes.put("pool_target", Long.toString(pages));
         if (withCma >= 0) changes.putAll(cmaTargetChanges(withCma));
         var persisted = updateSettings(changes);
         if (!persisted.ok()) return Result.failed("settings", persisted.error);
-        return Result.ok("settings", false);   // saved for next boot, not applied now
-    }
-
-    /** Read a single-value sysfs knob as a long; fallback if absent/unparseable. */
-    private static long readKnobLong(@NonNull String knob, long fallback) {
-        var t = safeRead(pathJoin(SYSFS_PARAMS, knob)).trim();
-        if (!t.isEmpty()) try {
-            return Long.parseLong(t);
-        } catch (NumberFormatException ignored) {
-        }
-        return fallback;
+        // Best-effort live apply (v7+). A refusal only parks the running pool
+        // short of the saved target until the next save / re-enable - the config
+        // stands either way.
+        if (!existsSticky(pathJoin(SYSFS_PARAMS, "pool_want")))
+            return Result.ok("settings", false);   // v6: read-only target, next boot
+        boolean liveOk = writeKnob("pool_want", Long.toString(pages)).ok();
+        if (withCma >= 0)
+            liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
+        return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
     }
 
     @NonNull

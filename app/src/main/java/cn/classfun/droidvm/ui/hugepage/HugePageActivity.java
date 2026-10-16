@@ -113,7 +113,6 @@ public final class HugePageActivity extends AppCompatActivity {
     private TextInputRowWidget inputCmaSize;
     private SwitchRowWidget rowCmaEnable;
     private boolean cmaSwitchSyncing = false;   // programmatic setChecked guard
-    private boolean cmaInputLoaded = false;     // seed the CMA size input once per show
     private boolean cmaBusy = false;            // an enable/disable flow is in flight
     // Two-way size link (pool_want <= pool_want_with_cma): which input the
     // user touched last decides who yields when they cross.
@@ -235,7 +234,7 @@ public final class HugePageActivity extends AppCompatActivity {
         progressAcquireV3.setOnClickListener(stopAcquire);
         applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
-        loadPoolSize();
+        loadSavedSizes();
         // One-time migration: drop a stale cma_probe_result from the removed
         // probe, which the shipped boot script would otherwise treat as a denial
         // and keep the module's CMA side cold.
@@ -668,24 +667,10 @@ public final class HugePageActivity extends AppCompatActivity {
                 rowCmaEnable.setChecked(cmaActive);
                 cmaSwitchSyncing = false;
             }
-            // Two stacked size rows: the with-CMA total is editable only while
-            // the reservoir is on, greyed and non-editable otherwise. Seed it
-            // from pool_want_with_cma once each time CMA turns on.
+            // The with-CMA total is editable only while the reservoir is on,
+            // greyed otherwise. Its value is seeded from settings.prop by
+            // loadSavedSizes(), never from the live knob.
             inputCmaSize.setEnabled(cmaActive);
-            if (cmaActive) {
-                if (!cmaInputLoaded) {
-                    sizeLinkSyncing = true;
-                    try {
-                        inputCmaSize.setBigValue(
-                            BigInteger.valueOf(snap.wantWithCma * PAGE_SIZE));
-                    } finally {
-                        sizeLinkSyncing = false;
-                    }
-                    cmaInputLoaded = true;
-                }
-            } else {
-                cmaInputLoaded = false;
-            }
         }
     }
 
@@ -758,16 +743,17 @@ public final class HugePageActivity extends AppCompatActivity {
         }
     }
 
-    private void loadPoolSize() {
+    private void loadSavedSizes() {
         runOnPool(() -> {
-            // Seed from settings.prop, the persisted target - the same thing
-            // "Enable" restores, and the app's own source of truth. It must be
-            // the seed (not the live pool_want) because it survives a release:
-            // reading the live knob would seed a released pool as 0 and leave
-            // nothing for "Save & Apply" to re-collect with. The live effective
-            // value - e.g. after the kernel clamps an oversized write to
-            // pool_size_max - is already reported by the pool stat rows and the
-            // bar, so the input does not need to mirror it.
+            // Seed BOTH size inputs from settings.prop, the persisted targets -
+            // the app's own source of truth (the master). The live kernel values
+            // are the slave: the module clamps them (pool_size_max), couples them
+            // (W) and refuses some writes (-EBUSY mid-run), and none of that may
+            // feed back into what the user configured. The effective values are
+            // reported by the pool stat rows and the bar instead. Seeding from
+            // the config (not the live knob) also survives a release: a released
+            // pool reads 0 live, which would leave nothing for "Save & Apply" to
+            // re-collect with.
             Map<String, String> settings;
             try {
                 var result = shellReadFile(SETTINGS_PROP);
@@ -776,7 +762,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 Log.w(TAG, "Failed to read settings.prop", e);
                 return;
             }
-            // Prefer pool_want; fall back to legacy pool_target.
+            // Pool target: pool_want; fall back to legacy pool_target.
             var cur = settings.getOrDefault("pool_want",
                 settings.getOrDefault("pool_target", "1024"));
             if (cur == null || cur.isEmpty()) cur = "1024";
@@ -787,18 +773,36 @@ public final class HugePageActivity extends AppCompatActivity {
                 Log.w(TAG, "Failed to parse pool_want", e);
                 return;
             }
-            var bytes = BigInteger.valueOf(pages * PAGE_SIZE);
+            // With-CMA total: a saved (positive) target wins; 0 or absent means
+            // "no total configured", so fall back to the live value. That covers
+            // a reservoir built live-only, or one just re-enabled before the user
+            // saved the target - seeding 0 beside a live reservoir would make the
+            // next Save & Apply switch CMA off.
+            long cma = 0;
+            var cmaRaw = settings.get("pool_want_with_cma");
+            if (cmaRaw != null) try {
+                cma = Long.parseLong(cmaRaw.trim());
+            } catch (NumberFormatException ignored) {
+            }
+            final long cmaPages = cma > 0 ? cma : liveCmaPages();
             runOnUiThread(() -> {
                 // Programmatic seed - don't count it as a user edit for
                 // the pool<->with-CMA size link.
                 sizeLinkSyncing = true;
                 try {
-                    inputPoolSize.setBigValue(bytes);
+                    inputPoolSize.setBigValue(BigInteger.valueOf(pages * PAGE_SIZE));
+                    inputCmaSize.setBigValue(BigInteger.valueOf(cmaPages * PAGE_SIZE));
                 } finally {
                     sizeLinkSyncing = false;
                 }
             });
         });
+    }
+
+    /** Live {@code pool_want_with_cma} in pages; 0 when the module is down. */
+    private long liveCmaPages() {
+        var snap = model.state();
+        return snap.loaded && snap.hasCma ? snap.wantWithCma : 0;
     }
 
     /**
@@ -906,15 +910,12 @@ public final class HugePageActivity extends AppCompatActivity {
                     : appliedNow ? R.string.hugepage_pool_size_applied
                     : R.string.hugepage_pool_size_saved;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
-                // Re-seed BOTH inputs from the module's readback, because the
-                // pair is coupled (sec. 4): the kernel clamps each to pool_size_max
-                // AND links them - writing pool_want up drags pool_want_with_cma
-                // up with it; a with-CMA total below the pool is lifted back to
-                // it; both round up to a multiple of S. So one save can move the
-                // OTHER field too - show what actually stuck on each.
-                cmaInputLoaded = false;   // updateUI reseeds the CMA total from
-                refreshStatus();          //   snap.wantWithCma on its next pass
-                loadPoolSize();           // reseed the pool input (clamped want)
+                // Re-seed both inputs from the saved config (the master), not
+                // from the live pool: the module may clamp, couple or refuse the
+                // apply (e.g. -EBUSY while a shrink run is in flight), and that
+                // must not rewrite what the user just typed.
+                refreshStatus();
+                loadSavedSizes();
             });
         });
     }
@@ -1074,7 +1075,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 Toast.makeText(this, fOk ? R.string.hugepage_cma_enabled
                     : R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
                 if (!fOk) setCmaSwitch(false);
-                cmaInputLoaded = false;   // reseed the CMA size input
+                loadSavedSizes();   // the saved target just changed
                 refreshStatus();
             });
         });
@@ -1137,7 +1138,7 @@ public final class HugePageActivity extends AppCompatActivity {
             if (s2.loaded && s2.deficit > 0) model.acquire(3);
         }
         runOnUiThread(() -> {
-            cmaInputLoaded = false;
+            loadSavedSizes();
             refreshStatus();
             if (isFinishing()) {
                 cmaBusy = false;
@@ -1194,7 +1195,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 cmaBusy = false;
                 setCmaSwitch(true);
                 Toast.makeText(this, R.string.hugepage_cma_enabled, LENGTH_SHORT).show();
-                cmaInputLoaded = false;
+                loadSavedSizes();
                 refreshStatus();
             });
         });
