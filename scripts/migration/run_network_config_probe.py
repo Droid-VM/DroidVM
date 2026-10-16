@@ -132,7 +132,7 @@ def main():
             cap = exchange(sock, "capabilities")
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
-            assert "network_delete" not in cap["commands"]
+            assert "network_delete" in cap["commands"] and cap["network_delete"] and cap["network_live_details"]
             assert cap["network_lifecycle_backends"] == ["gvisor", "linux-l3"] and cap["network_watchdog"] and cap["network_auto_up"]
             assert all(name in cap["commands"] for name in ("network_start", "network_stop", "network_status", "network_tool_log"))
             assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]

@@ -111,6 +111,9 @@ public final class RootOracle {
                     case "crosvm":
                         CrosvmOracle.evaluate(test, row);
                         break;
+                    case "qemu":
+                        QemuOracle.evaluate(test, row);
+                        break;
                     case "nic":
                         nic(test, row);
                         break;
