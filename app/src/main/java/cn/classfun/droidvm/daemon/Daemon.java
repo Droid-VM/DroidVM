@@ -272,6 +272,7 @@ public final class Daemon {
     public static void main(String... args) {
         try {
             cn.classfun.droidvm.lib.store.base.VmConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
+            cn.classfun.droidvm.lib.store.base.NetworkConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
         } catch (Exception error) {
             System.err.println("Legacy daemon refused: " + error.getMessage());
             System.exit(1);
@@ -293,6 +294,7 @@ public final class Daemon {
         }
         try {
             cn.classfun.droidvm.lib.store.base.VmConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
+            cn.classfun.droidvm.lib.store.base.NetworkConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
         } catch (Exception error) {
             System.err.println("Legacy daemon refused: " + error.getMessage());
             System.exit(1);

@@ -20,21 +20,25 @@ public final class VmConfigOwnership {
     public interface Write { void run() throws Exception; }
 
     public static synchronized void legacyWrite(File directory, Write action) throws Exception {
-        var path = new File(directory.getCanonicalFile(), FILE_NAME).toPath();
+        legacyWrite(directory, FILE_NAME, action);
+    }
+
+    static synchronized void legacyWrite(File directory, String fileName, Write action) throws Exception {
+        var path = new File(directory.getCanonicalFile(), fileName).toPath();
         // A legacy read/modify/save transaction may invoke DataStore.save under
         // this same lock. Never open/close a second channel: POSIX would drop it.
         if (activeGate != null) {
-            if (!activeGate.equals(path)) throw new IOException("Nested VM ownership transaction uses another directory");
+            if (!activeGate.equals(path)) throw new IOException("Nested ownership transaction uses another gate");
             action.run();
             return;
         }
         try (var channel = FileChannel.open(path,
                 Set.of(StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS),
                 PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))) {
-            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Invalid VM ownership gate");
+            if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) throw new IOException("Invalid configuration ownership gate");
             try (var lock = channel.tryLock()) {
-                if (lock == null) throw new IOException("VM configuration ownership is changing");
-                if (channel.size() != 0) throw new IOException("VM configuration belongs to the native service");
+                if (lock == null) throw new IOException("Configuration ownership is changing");
+                if (channel.size() != 0) throw new IOException("Configuration belongs to the native service: " + fileName);
                 activeGate = path;
                 try { action.run(); }
                 finally { activeGate = null; }
@@ -45,7 +49,11 @@ public final class VmConfigOwnership {
     /** Startup check before --force can stop a native daemon, and again after
      * taking the shared daemon Instance lock. Does not create a root-owned gate. */
     public static synchronized void requireLegacy(File directory) throws Exception {
-        if (Files.notExists(new File(directory, FILE_NAME).toPath(), LinkOption.NOFOLLOW_LINKS)) return;
-        legacyWrite(directory, () -> {});
+        requireLegacy(directory, FILE_NAME);
+    }
+
+    static synchronized void requireLegacy(File directory, String fileName) throws Exception {
+        if (Files.notExists(new File(directory, fileName).toPath(), LinkOption.NOFOLLOW_LINKS)) return;
+        legacyWrite(directory, fileName, () -> {});
     }
 }
