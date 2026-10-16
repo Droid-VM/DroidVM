@@ -1818,59 +1818,73 @@ public class ImportLxcImagesActivity extends AppCompatActivity {
         }
     }
 
+    private boolean creatingLinuxVm;
+
     private void createPendingLinuxVm() {
+        if (creatingLinuxVm) return;
         var diskId = pendingLinuxDiskId;
         if (diskId == null || pendingLinuxVmName.isEmpty()) {
             finishLinuxVmFlow(false);
             return;
         }
-        try {
-            var diskStore = new DiskStore();
-            diskStore.load(this);
-            var disk = diskStore.findById(diskId);
-            if (disk == null) throw new IllegalStateException("Downloaded disk is not registered");
-            var config = VMConfig.createWithCustomizeDefaults(this);
-            config.setName(pendingLinuxVmName);
-            config.item.set("cpu_count", pendingLinuxCpu);
-            config.item.set("memory_mb", pendingLinuxMemoryMb);
-            var disks = DataItem.newArray();
-            var diskItem = DataItem.newObject();
-            diskItem.set("path", disk.getFullPath());
-            diskItem.set("bus", DiskBus.VIRTIO);
-            diskItem.set("readonly", false);
-            disks.append(diskItem);
-            config.item.set("disks", disks);
-            var networks = DataItem.newArray();
-            if (!pendingLinuxNetworkId.isEmpty()) {
-                var network = DataItem.newObject();
-                network.set("network_id", pendingLinuxNetworkId);
-                network.set("mac_address", generateRandomMac());
-                networks.append(network);
+        creatingLinuxVm = true;
+        // Capture UI-owned inputs before entering the worker. The generated VM ID
+        // is used once; a lost response must not trigger another creation attempt.
+        var vmName = pendingLinuxVmName;
+        var cpu = pendingLinuxCpu;
+        var memoryMb = pendingLinuxMemoryMb;
+        var networkId = pendingLinuxNetworkId;
+        var appContext = getApplicationContext();
+        runOnPool(() -> {
+            try {
+                var config = VMConfig.createWithCustomizeDefaults(appContext);
+                config.setName(vmName);
+                config.item.set("cpu_count", cpu);
+                config.item.set("memory_mb", memoryMb);
+                var diskStore = new DiskStore();
+                if (!diskStore.load(appContext)) throw new IllegalStateException("Cannot read downloaded disk registry");
+                var disk = diskStore.findById(diskId);
+                if (disk == null) throw new IllegalStateException("Downloaded disk is not registered");
+                var disks = DataItem.newArray();
+                var diskItem = DataItem.newObject();
+                diskItem.set("path", disk.getFullPath());
+                diskItem.set("bus", DiskBus.VIRTIO);
+                diskItem.set("readonly", false);
+                disks.append(diskItem);
+                config.item.set("disks", disks);
+                var networks = DataItem.newArray();
+                if (!networkId.isEmpty()) {
+                    var network = DataItem.newObject();
+                    network.set("network_id", networkId);
+                    network.set("mac_address", generateRandomMac());
+                    networks.append(network);
+                }
+                config.item.set("networks", networks);
+                VMStore.createPersisted(appContext, config);
+                runOnUiThread(() -> completeLinuxVmCreation(config, disk.getFullPath()));
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to create Linux VM", e);
+                runOnUiThread(() -> {
+                    creatingLinuxVm = false;
+                    if (!isFinishing() && !isDestroyed()) finishLinuxVmFlow(false);
+                });
             }
-            config.item.set("networks", networks);
-            var vmStore = new VMStore();
-            vmStore.load(this);
-            vmStore.add(config);
-            if (!vmStore.save(this))
-                throw new IllegalStateException("Failed to save VM configuration");
-            var result = new Intent();
-            result.putExtra("result_vm_id", config.getId().toString());
-            result.putExtra("result_disk_path", disk.getFullPath());
-            setResult(RESULT_OK, result);
-            if (!linuxIncompleteSteps.isEmpty()) {
-                showLinuxIncompleteDialog(config.getName());
-                return;
-            }
-            Toast.makeText(
-                this,
-                getString(R.string.linux_vm_create_success, config.getName()),
-                LENGTH_SHORT
-            ).show();
-            finishLinuxVmFlow(true);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to create Linux VM", e);
-            finishLinuxVmFlow(false);
+        });
+    }
+
+    private void completeLinuxVmCreation(VMConfig config, String diskPath) {
+        creatingLinuxVm = false;
+        if (isFinishing() || isDestroyed()) return;
+        var result = new Intent();
+        result.putExtra("result_vm_id", config.getId().toString());
+        result.putExtra("result_disk_path", diskPath);
+        setResult(RESULT_OK, result);
+        if (!linuxIncompleteSteps.isEmpty()) {
+            showLinuxIncompleteDialog(config.getName());
+            return;
         }
+        Toast.makeText(this, getString(R.string.linux_vm_create_success, config.getName()), LENGTH_SHORT).show();
+        finishLinuxVmFlow(true);
     }
 
     /**
