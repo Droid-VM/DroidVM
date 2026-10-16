@@ -47,7 +47,6 @@ import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
-import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
 import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors;
 import cn.classfun.droidvm.ui.disk.tree.CursorPlan;
@@ -367,8 +366,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             // children were re-linked above, so their slots stay exactly where they are). A slot
             // landing on a base that still has overlays, or joining another VM on the same
             // disk, becomes read-only - the same rule the branch panel showed beforehand.
-            var vmStore = new VMStore();
-            vmStore.load(vmStore, this);
+            var vmStore = DiskDependencyUpdater.loadForPlanning(this);
             var shape = TreeShape.of(store);
             var cursors = AttachmentCursors.collectPersisted(
                 store, vmStore, shape.familyOf(overlay.getId()), null, java.util.List.of());

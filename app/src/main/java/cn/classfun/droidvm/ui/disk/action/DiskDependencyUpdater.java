@@ -14,8 +14,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
+import java.util.HashSet;
+import java.io.IOException;
+import org.json.JSONArray;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.ui.disk.tree.CursorPlan;
 
@@ -30,35 +36,80 @@ public final class DiskDependencyUpdater {
     private DiskDependencyUpdater() {
     }
 
+    /** Worker-only planning read; a failed read must never mean "no VM references". */
+    public static VMStore loadForPlanning(@NonNull Context context) {
+        try {
+            var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+            if (client.supported()) return new VMStore(client.read().document());
+            var store = new VMStore();
+            if (!store.load(context)) throw new IOException("Cannot read VM disk dependencies");
+            return store;
+        } catch (Exception error) {
+            throw new IllegalStateException("Cannot read VM disk dependencies", error);
+        }
+    }
+
     /**
-     * Returns only after the updated VMStore is durably saved; failures are fail-closed so the
-     * caller never deletes a file a slot still points at.
+     * Call on a worker. Returns true only after all planned slots were matched and saved.
+     * This is the configuration commit, not a lease over subsequent disk file operations.
      */
     public static boolean applyPlan(@NonNull Context context, @NonNull CursorPlan plan) {
         var changes = plan.persistedChanges();
         if (changes.isEmpty()) return true;
-        var vmStore = new VMStore();
-        if (!vmStore.load(vmStore, context)) {
-            Log.e(TAG, "Failed to load VM store before updating disk dependencies");
+        try {
+            var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+            if (client.supported()) {
+                var session = client.edit();
+                var vmStore = new VMStore(session.document());
+                var updates = applyChanges(vmStore, changes);
+                session.saveVms(updates);
+            } else {
+                VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                    var vmStore = new VMStore();
+                    if (!vmStore.load(context)) throw new IOException("Cannot read VM disk dependencies");
+                    var updates = applyChanges(vmStore, changes);
+                    if (updates.length() != 0 && !vmStore.save(context))
+                        throw new IOException("Cannot save VM disk dependencies");
+                });
+            }
+            return true;
+        } catch (Exception error) {
+            Log.e(TAG, "Failed to commit VM disk dependencies; keeping disk files", error);
             return false;
         }
+    }
+
+    private static JSONArray applyChanges(VMStore vmStore, List<CursorPlan.Change> changes) throws Exception {
         var byVm = new HashMap<UUID, List<CursorPlan.Change>>();
         for (var c : changes) {
-            if (c.from.vmId == null) continue;
+            if (c.from.vmId == null) throw new IOException("Persisted disk change has no VM ID");
             byVm.computeIfAbsent(c.from.vmId, k -> new ArrayList<>()).add(c);
         }
-        boolean changed = false;
+        // Validate the complete plan before mutating any of its VM copies.
         for (var e : byVm.entrySet()) {
             var vm = vmStore.findById(e.getKey());
-            if (vm == null) continue;
+            if (vm == null) throw new IOException("VM disappeared since disk planning");
             var disks = vm.item.opt("disks", null);
-            if (disks == null || !disks.is(DataItem.Type.ARRAY)) continue;
-            changed |= applyToDisks(disks, e.getValue());
+            if (disks == null || !matchesPlan(disks, e.getValue()))
+                throw new IOException("VM disk slots changed since planning");
         }
-        if (!changed) return true;
-        if (vmStore.save(context)) return true;
-        Log.e(TAG, "Failed to save redirected VM disk dependencies");
-        return false;
+        var updates = new JSONArray();
+        for (var e : byVm.entrySet()) {
+            var vm = vmStore.findById(e.getKey());
+            if (applyToDisks(vm.item.opt("disks", null), e.getValue())) updates.put(vm.toJson());
+        }
+        return updates;
+    }
+
+    static boolean matchesPlan(DataItem disks, List<CursorPlan.Change> changes) {
+        if (!disks.is(DataItem.Type.ARRAY)) return false;
+        var slots = new HashSet<Integer>();
+        for (var change : changes) {
+            int slot = change.from.slot;
+            if (!slots.add(slot) || slot < 0 || slot >= disks.size() || change.from.path == null
+                || !change.from.path.equals(disks.get(slot).optString("path", ""))) return false;
+        }
+        return true;
     }
 
     /**
