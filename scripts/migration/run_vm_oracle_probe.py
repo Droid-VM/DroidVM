@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compare native VM runtime planning (NIC, boot plan, crosvm argv) to the production Java code run as root."""
+"""Compare native VM runtime planning (NIC, boot plan, crosvm and QEMU argv) to the production Java code run as root."""
 import argparse
 import copy
 import hashlib
@@ -89,7 +89,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("nic", "boot", "crosvm", "all"), default="all")
+    parser.add_argument("--suite", choices=("nic", "boot", "crosvm", "qemu", "all"), default="all")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/vm-oracle-device" / nonce
@@ -113,6 +113,9 @@ def main():
     if args.suite in ("crosvm", "all"):
         import vm_crosvm_fixtures
         samples += vm_crosvm_fixtures.fixtures()
+    if args.suite in ("qemu", "all"):
+        import vm_qemu_fixtures
+        samples += vm_qemu_fixtures.fixtures()
     (output / "fixtures.json").write_text(json.dumps(samples, ensure_ascii=False, indent=1), encoding="utf-8")
     passed = False
     # The Java code raises udmabuf limits and caches the app groups as the legacy

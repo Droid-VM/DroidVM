@@ -169,6 +169,14 @@ def main():
                 tail = text[text.rfind("udhcpc -i eth0"):]
                 check("lease of 10.78.0.10 obtained" in tail.lower(), "guest DHCP receives its gvswitch static lease")
                 check("GATEWAY-42-OK" in tail, "guest reaches the gvswitch gateway through AF_XDP")
+                live = exchange(sock, "network_info", network_id=network_id)["data"]
+                report["live_info"] = {key: live.get(key) for key in ("live_addresses", "address_entries", "pd", "live_interfaces", "neighbors", "dhcp_leases", "gvswitch_exit_code")}
+                check(live.get("live_addresses") == ["10.78.0.1/24"] and live.get("address_entries") == [
+                    {"addr": "10.78.0.1/24", "family": 4, "vlan": 0, "bound": True, "source": "configured"}] and live.get("pd") == [], "gVisor live addresses")
+                ports = [row for row in live.get("live_interfaces", []) if row.get("name") == tap]
+                check(ports and ports[0].get("vm_id") == vm_id and ports[0].get("vm_name") == name and ports[0].get("vlan") == 4095, "gvswitch port listed with its VM")
+                check(any(row.get("lladdr") == "02:78:00:00:00:0a" and row.get("dev") == tap and row.get("state") == ["LEARNED"] for row in live.get("neighbors", [])), "gvswitch FDB learned the guest")
+                check(any(row.get("ip") == "10.78.0.10" and row.get("mac") == "02:78:00:00:00:0a" and row.get("vlan") == 0 for row in live.get("dhcp_leases", [])), "gvswitch DHCP lease listed")
                 # The range expands to two local forwards; the duplicate bind is recorded, not fatal.
                 report["daemon_log_running"] = root_shell(f"cat {data}/cache/daemon.log").stdout[-2000:]
                 guest_nc = "/nc" in tail.split("GATEWAY-42-OK")[-1] or "busybox" in tail.split("GATEWAY-42-OK")[-1]
@@ -205,6 +213,8 @@ def main():
                 check(not inside(f"ip -o link show {tap}"), "TAP removed after VM exit")
                 check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "gVisor network keeps running after the VM")
                 check(exchange(sock, "network_stop", network_id=network_id)["success"], "gVisor network stops once unused")
+                check(exchange(sock, "network_delete", network_id=network_id)["success"], "delete the gVisor network")
+                check(exchange(sock, "vm_get", vm_id=vm_id)["data"]["networks"] == [] and not exchange(sock, "network_exists", network_id=network_id)["exists"], "delete drops the VM NIC and the network")
             root_shell(f"kill -15 {daemon_pid}")
             daemon.wait(timeout=60)
             report["daemon_log"] = root_shell(f"cat {data}/cache/daemon.log").stdout[-3000:]
@@ -280,6 +290,19 @@ def main():
             report["dhcp_client"] = "udhcpc" in tail.split("DHCP-")[0].split("\n", 1)[-1]
             if report["dhcp_client"]:
                 check("lease of 10.77.0.10 obtained" in tail.lower(), "guest DHCP receives its static lease")
+            live = exchange(sock, "network_info", network_id=network_id)["data"]
+            report["live_info"] = {key: live.get(key) for key in ("live_addresses", "address_entries", "pd", "live_interfaces", "neighbors", "dhcp_leases")}
+            check("10.77.0.1/24" in live.get("live_addresses", []) and
+                  {"addr": "10.77.0.1/24", "family": 4, "vlan": 0, "bound": True, "source": "configured"} in live.get("address_entries", []) and
+                  live.get("pd") == [], "Linux live addresses")
+            ports = [row for row in live.get("live_interfaces", []) if row.get("name") == tap]
+            check(ports and ports[0].get("vm_id") == vm_id and ports[0].get("vm_name") == name, "bridge port listed with its VM")
+            check(any(row.get("dst") == "10.77.0.10" and row.get("lladdr") == "02:77:00:00:00:0a" for row in live.get("neighbors", [])), "bridge neighbor of the guest")
+            if report["dhcp_client"]:
+                check(any(row.get("ip") == "10.77.0.10" and row.get("mac") == "02:77:00:00:00:0a" and row.get("expires", 0) > time.time()
+                          for row in live.get("dhcp_leases", [])), "bridgedhcp lease listed")
+            check(exchange(sock, "network_pd_renew", network_id=network_id, vlan_id=0)["message"] == "failed to renew PD delegation", "PD renew without a PD client")
+            check(exchange(sock, "network_pd_release", network_id=network_id)["message"] == "missing vlan_id", "PD release without a VLAN")
             check(exchange(sock, "vm_stop", vm_id=vm_id)["success"], "stop VM")
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "stopped":
@@ -309,6 +332,16 @@ def main():
             check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "auto_up network is running")
             check(f"master {bridge}" in inside(f"ip -o link show {tap}"), "auto-started VM is attached to the auto-started network")
             check(not exchange(sock, "network_stop", network_id=network_id)["success"], "the auto-started VM holds its network")
+            check(exchange(sock, "network_delete", network_id=network_id).get("message") == "network is in use by running VM: " + name, "delete refused while a VM runs on it")
+            check(exchange(sock, "vm_stop", vm_id=vm_id)["success"], "stop the auto-started VM")
+            deadline = time.monotonic() + 60
+            while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "stopped":
+                time.sleep(0.25)
+            # The network is still running: delete stops it, then drops it and the VM's NIC.
+            check(exchange(sock, "network_delete", network_id=network_id)["success"], "delete stops and removes the network")
+            check(exchange(sock, "vm_get", vm_id=vm_id)["data"]["networks"] == [] and not exchange(sock, "network_exists", network_id=network_id)["exists"], "delete drops the VM NIC and the network")
+            check(network_id not in root_shell(f"cat {data}/files/networks.json").stdout and not inside(f"ip -o link show {bridge}"), "deleted network leaves no config or bridge")
+            check(exchange(sock, "network_delete", network_id=network_id)["message"] == f"network {network_id} not found", "delete of an unknown network")
         # SIGTERM: VMs leave before their networks.
         root_shell(f"kill -15 {daemon_pid}")
         daemon.wait(timeout=90)
