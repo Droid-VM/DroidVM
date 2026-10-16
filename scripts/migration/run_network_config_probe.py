@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Exercise the real native network configuration service through existing TCP commands."""
 import argparse
+import base64
 import concurrent.futures
 import json
 import re
@@ -180,6 +181,20 @@ def main():
             assert exchange(sock, "network_config_update", config=edited)["error"]["code"] == "INVALID_ARGUMENT"
             assert exchange(sock, "network_config_update", expected=edited, config=observed["config"])["success"]
             report["conditional_network_edit"] = True
+            assert cap["network_config_import"] == "conditional-chunks-v1" and cap["service_api_minor"] >= 18
+            batch = json.dumps({"operations": [{"expected": observed["config"], "config": edited}]}).encode()
+            staged = exchange(sock, "network_config_import_begin", bytes=len(batch))
+            assert staged["success"] and staged["chunk_bytes"] == 48 << 10
+            for offset in range(0, len(batch), staged["chunk_bytes"]):
+                chunk = batch[offset:offset + staged["chunk_bytes"]]
+                assert exchange(sock, "network_config_import_append", upload_id=staged["upload_id"],
+                                offset=offset, data=base64.b64encode(chunk).decode())["received"] == offset + len(chunk)
+            imported = exchange(sock, "network_config_import_commit", upload_id=staged["upload_id"])
+            assert imported["success"] and imported["network_ids"] == [existing["id"]]
+            assert exchange(sock, "network_config_import_commit", upload_id=staged["upload_id"])["error"]["code"] == "NOT_FOUND"
+            assert exchange(sock, "network_config_get", network_id=existing["id"])["config"] == edited
+            assert exchange(sock, "network_config_update", expected=edited, config=observed["config"])["success"]
+            report["chunked_network_import"] = True
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
             assert "network_delete" in cap["commands"] and cap["network_delete"] and cap["network_live_details"]
