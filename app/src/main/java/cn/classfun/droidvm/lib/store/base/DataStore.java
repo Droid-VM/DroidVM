@@ -144,7 +144,9 @@ public abstract class DataStore<T extends DataConfig> implements JSONSerialize {
         try {
             var data = dump();
             if (data == null) return false;
-            saveJSONFile(file, data);
+            if ("vms".equals(getTypeName())) {
+                VmConfigOwnership.legacyWrite(file.getAbsoluteFile().getParentFile(), () -> saveJSONFile(file, data));
+            } else saveJSONFile(file, data);
             return true;
         } catch (Exception e) {
             Log.e(TAG, fmt("Failed to save store to %s", file.getAbsolutePath()), e);
