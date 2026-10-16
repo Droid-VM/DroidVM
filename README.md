@@ -41,7 +41,7 @@ Create and manage lightweight VMs directly on your device with near-native perfo
 - **Android 14** (API 34) or newer
 - **Root access** (Magisk, KernelSU, APatch, or similar)
 - A supported ARM64 device with hardware virtualization enabled by firmware and kernel:
-  - Qualcomm: **Snapdragon 7s(+) Gen 3/4 or newer SoC, **Snapdragon 8 Elite** (SM8750) recommended, with Gunyah enabled
+  - Qualcomm: **Snapdragon 7s(+) Gen 3/4** or newer SoC, **Snapdragon 8 Elite** (SM8750) recommended, with Gunyah enabled
   - MediaTek: **Dimensity 9000** or newer SoC with GenieZone enabled
   - Other ARM64 devices: booted with EL2 and Linux KVM enabled
 - An available virtualization device node: `/dev/gunyah`, `/dev/gzvm`, or `/dev/kvm`
