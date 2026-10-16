@@ -89,7 +89,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
     /** Start the native droidvmd instead of the Java daemon (read by DaemonHelper). */
     public static final String KEY_NATIVE_DAEMON = "native_daemon";
-    public static final boolean DEFAULT_NATIVE_DAEMON = false;
+    public static final boolean DEFAULT_NATIVE_DAEMON = true;
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;

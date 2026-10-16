@@ -112,6 +112,8 @@ def main():
             deadline = time.monotonic() + 120
             while time.monotonic() < deadline and state(sock, running_vm) != "running":
                 time.sleep(0.25)
+            report["startup_status"] = exchange(sock, "vm_status", vm_id=running_vm)
+            report["startup_console"] = exchange(sock, "vm_console_history", vm_id=running_vm, stream="stdio")
             check(state(sock, running_vm) == "running", "VM reaches RUNNING")
             instrument = adb + ["shell", "am", "instrument", "-w", "-r", "-e", "broker_nonce", nonce, "-e", "running_vm", running_vm,
                                 "-e", "stopped_vm", stopped_vm, "-e", "class", "cn.classfun.droidvm.migration.DaemonDisplayBrokerTest",
