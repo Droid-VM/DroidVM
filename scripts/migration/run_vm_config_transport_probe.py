@@ -19,7 +19,9 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--coordinated", action="store_true", help="Exercise coordinated network deletion and recovery")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--coordinated", action="store_true", help="Exercise coordinated network deletion and recovery")
+    mode.add_argument("--coordinated-java", action="store_true", help="Exercise production Java deletion client over TCP")
     parser.add_argument("--fixture", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvm_vm_config_fixture")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
@@ -105,6 +107,7 @@ def main():
     try:
         report["fingerprint"] = shell(["getprop", "ro.build.fingerprint"], check=True).stdout.strip()
         report["coordinated"] = args.coordinated
+        report["coordinated_java"] = args.coordinated_java
         if not args.coordinated:
             test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
             report["test_apk_sha256"] = hashlib.sha256(test_apk.read_bytes()).hexdigest()
@@ -114,6 +117,35 @@ def main():
         shell(["chmod", "755", executable], check=True)
         apk = shell(["pm", "path", "cn.classfun.droidvm"], check=True).stdout.strip().removeprefix("package:")
         assert apk.startswith("/") and "\n" not in apk
+        if args.coordinated_java:
+            for scenario in ("normal", "uncertain"):
+                options = ["--coordinated"]
+                if scenario == "uncertain":
+                    options += ["--fail-once", "participant_synced"]
+                process, pid, local, remote, token = start(*options)
+                java = shell(["am", "instrument", "-w", "-r", "-e", "class",
+                              "cn.classfun.droidvm.migration.NetworkConfigDeleteTcpTest",
+                              "-e", "port", remote, "-e", "token", token, "-e", "deletion_mode", scenario,
+                              "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"], timeout=120)
+                (output / f"java-delete-{scenario}.txt").write_text(java.stdout + java.stderr, encoding="utf-8")
+                check(java.returncode == 0 and "OK (1 test)" in java.stdout,
+                      f"production Java coordinated deletion TCP: {scenario}")
+                with connect(local, token) as sock:
+                    _, _, document = snapshot(sock)
+                    _, _, network_document = snapshot(sock, "network_config_document")
+                    check(network_document == {"networks": []} and
+                          len(document["vms"]) == (2 if scenario == "normal" else 3) and
+                          all(row["networks"] == [] and row["extension"] == 9007199254740993
+                              for row in document["vms"]),
+                          f"Python independently confirms Java deletion: {scenario}")
+                check(json.loads(read("vms.json")) == document and
+                      json.loads(read("networks.json"))["networks"] == [],
+                      f"persistent files agree with Java/Python snapshots: {scenario}")
+                maps = shell(["cat", f"/proc/{pid}/maps"], check=True).stdout
+                check("libart.so" not in maps and "libjvm" not in maps, f"native fixture has no ART/JVM: {scenario}")
+                stop(process, pid)
+            report["passed"] = True
+            return
         if args.coordinated:
             from coordinated_config_probe import run
             run(start, stop, connect, exchange, snapshot, check, shell, directory)

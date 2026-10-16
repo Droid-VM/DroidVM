@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.UUID;
 
 public final class VmConfigClientTest {
-    private static final class Connection implements AutoCloseable {
+    static final class Connection implements AutoCloseable {
         final Socket socket;
         final Protocol protocol;
         final List<JSONObject> events = new ArrayList<>();
@@ -34,7 +34,8 @@ public final class VmConfigClientTest {
                 if ("event".equals(response.optString("type"))) { events.add(response); continue; }
                 assertEquals(id, response.getString("request_id"));
                 if (loseCommitReply && ("vm_config_upload_commit".equals(request.getString("command"))
-                    || "vm_config_apply".equals(request.getString("command")))) {
+                    || "vm_config_apply".equals(request.getString("command"))
+                    || "network_config_delete_commit".equals(request.getString("command")))) {
                     loseCommitReply = false;
                     throw new IOException("Simulated lost successful commit reply");
                 }
