@@ -122,7 +122,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private DaemonHelper daemon;
     private ActivityResultLauncher<String> exportConfigLauncher;
     private ActivityResultLauncher<String[]> importConfigLauncher;
-    private boolean importingConfig;
+    // Survives Fragment recreation while a worker still commits configuration.
+    private static final java.util.concurrent.atomic.AtomicBoolean importingConfig =
+        new java.util.concurrent.atomic.AtomicBoolean();
 
     @Override
     protected int getLayoutResId() {
@@ -601,11 +603,11 @@ public final class MainSettingsFragment extends MainBaseFragment {
             .show();
     }
 
-    private <T extends DataConfig> void loadStore(
+    private static <T extends DataConfig> void loadStore(
+        @NonNull Context ctx,
         @NonNull Class<? extends DataStore<T>> store,
         @NonNull JSONObject json
     ) throws Exception {
-        var ctx = requireContext().getApplicationContext();
         var ctor = store.getDeclaredConstructor();
         if (VMStore.class.equals(store)) {
             VMStore.importPersisted(ctx, json);
@@ -631,9 +633,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     @SuppressWarnings("unused")
     private void onImportFileSelected(Uri uri) {
-        if (uri == null || importingConfig) return;
-        importingConfig = true;
+        if (uri == null) return;
         var ctx = requireContext().getApplicationContext();
+        if (!importingConfig.compareAndSet(false, true)) return;
         runOnPool(() -> {
             var completed = new java.util.ArrayList<String>();
             try {
@@ -647,20 +649,26 @@ public final class MainSettingsFragment extends MainBaseFragment {
                     }
                 }
                 var importJson = new JSONObject(sb.toString());
+                // Check all category shapes before the first persistent change.
+                for (String key : new String[]{"networks", "disks", "vms"})
+                    if (importJson.has(key)) importJson.getJSONArray(key);
                 int count = 0;
-                if (importJson.has("vms")) {
-                    loadStore(VMStore.class, importJson);
-                    completed.add("VM");
+                // Dependencies must exist before the VM service validates NICs.
+                // These remain separate commits; report completed categories if
+                // a later category conflicts or has an unknown result.
+                if (importJson.has("networks")) {
+                    loadStore(ctx, NetworkStore.class, importJson);
+                    completed.add("networks");
                     count++;
                 }
                 if (importJson.has("disks")) {
-                    loadStore(DiskStore.class, importJson);
+                    loadStore(ctx, DiskStore.class, importJson);
                     completed.add("disks");
                     count++;
                 }
-                if (importJson.has("networks")) {
-                    loadStore(NetworkStore.class, importJson);
-                    completed.add("networks");
+                if (importJson.has("vms")) {
+                    loadStore(ctx, VMStore.class, importJson);
+                    completed.add("VM");
                     count++;
                 }
                 final int imported = count;
@@ -677,7 +685,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
                 final String message = detail;
                 mainHandler.post(() -> Toast.makeText(ctx, message, LENGTH_LONG).show());
             } finally {
-                mainHandler.post(() -> importingConfig = false);
+                importingConfig.set(false);
             }
         });
     }
