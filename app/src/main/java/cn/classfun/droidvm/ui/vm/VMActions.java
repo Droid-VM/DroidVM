@@ -45,6 +45,7 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
@@ -89,6 +90,18 @@ public final class VMActions {
         @NonNull AtomicBoolean wantOpenConsole,
         @Nullable ConvertLauncher convertLauncher
     ) {
+        runOnPool(() -> {
+            try {
+                var selected = new VMConfig(config.toJson());
+                var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+                var startSession = VmStartSession.open(client, selected);
+                mainHandler.post(() -> runStartGuards(startSession, selected, mainHandler, ui, wantOpenConsole, convertLauncher));
+            } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
+        });
+    }
+
+    private static void runStartGuards(VmStartSession startSession, VMConfig config, Handler mainHandler,
+        UIContext ui, AtomicBoolean wantOpenConsole, ConvertLauncher convertLauncher) {
         // Pre-start guards, in order: internal snapshots (crosvm refuses the disk), a base
         // image attached writable (writing would corrupt its overlays - any backend), a disk a
         // running VM already holds, compressed clusters (crosvm boots to I/O errors), a guest
@@ -103,14 +116,14 @@ public final class VMActions {
         // protected-guest guard comes before the module one deliberately: pseudo-unprotected
         // RAM needs gunyah_host_share, and choosing it here has to be checked for that.
         guardSnapshotDisks(config, mainHandler, ui, convertLauncher,
-            () -> guardLockedParents(config, mainHandler, ui,
+            () -> guardLockedParents(startSession, config, mainHandler, ui,
                 () -> guardSharedRunning(config, mainHandler, ui,
                     started -> guardCompressedDisks(started, mainHandler, ui, convertLauncher,
                         () -> guardProtectedGuest(started, mainHandler, ui,
                             chosen -> guardKernelModules(chosen, mainHandler, ui,
-                                () -> guardLendMthp(chosen, mainHandler, ui,
+                                () -> guardLendMthp(startSession, chosen, mainHandler, ui,
                                     () -> guardHugePagePool(chosen, mainHandler, ui,
-                                        () -> startAfterGuard(chosen, mainHandler, ui,
+                                        () -> startAfterGuard(startSession, chosen, mainHandler, ui,
                                             wantOpenConsole)))))))));
     }
 
@@ -130,6 +143,7 @@ public final class VMActions {
      * start is a worse answer than the failure it would avoid.</p>
      */
     private static void guardLendMthp(
+        VmStartSession startSession,
         @NonNull VMConfig config,
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
@@ -148,11 +162,12 @@ public final class VMActions {
                 mainHandler.post(proceed);
                 return;
             }
-            mainHandler.post(() -> promptLendMthp(config, appContext, mainHandler, ui, proceed));
+            mainHandler.post(() -> promptLendMthp(startSession, config, appContext, mainHandler, ui, proceed));
         });
     }
 
     private static void promptLendMthp(
+        VmStartSession startSession,
         @NonNull VMConfig config,
         @NonNull Context appContext,
         @NonNull Handler mainHandler,
@@ -171,6 +186,7 @@ public final class VMActions {
                 runOnPool(() -> {
                     try {
                         applySingleLendMthp(appContext, config);
+                        startSession.savedField(config, LendMthpMode.KEY);
                         mainHandler.post(proceed);
                     } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
                 }))
@@ -468,6 +484,7 @@ public final class VMActions {
     }
 
     private static void startAfterGuard(
+        VmStartSession startSession,
         @NonNull VMConfig config,
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
@@ -485,15 +502,16 @@ public final class VMActions {
                             var startEntry = remember
                                 ? rememberChoice(appContext, config, bootEntry, selected, builtinCmdline)
                                 : bootEntry;
+                            if (remember) startSession.savedField(config, "boot");
                             mainHandler.post(() -> {
                                 if (!pseudoUnprotected) {
-                                    doCreateAndStart(config, mainHandler, ui, wantOpenConsole, startEntry);
+                                    doCreateAndStart(startSession, config, mainHandler, ui, wantOpenConsole, startEntry);
                                     return;
                                 }
                                 // Recheck the module required by this session's protection mode.
                                 var session = pseudoUnprotectedSession(config);
                                 guardKernelModules(session, mainHandler, ui, () -> doCreateAndStart(
-                                    session, mainHandler, ui, wantOpenConsole, startEntry));
+                                    startSession, session, mainHandler, ui, wantOpenConsole, startEntry));
                             });
                         } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
                     });
@@ -502,7 +520,7 @@ public final class VMActions {
             );
             return;
         }
-        doCreateAndStart(config, mainHandler, ui, wantOpenConsole, null);
+        doCreateAndStart(startSession, config, mainHandler, ui, wantOpenConsole, null);
     }
 
     /**
@@ -513,6 +531,7 @@ public final class VMActions {
      * created elsewhere), which is why the disk editor's forced-readonly alone isn't enough.
      */
     private static void guardLockedParents(
+        VmStartSession startSession,
         @NonNull VMConfig config,
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
@@ -557,6 +576,7 @@ public final class VMActions {
                         runOnPool(() -> {
                             try {
                                 applyReadonly(appContext, config, lockedPaths);
+                                startSession.savedField(config, "disks");
                                 mainHandler.post(proceed);
                             } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
                         }))
@@ -944,6 +964,7 @@ public final class VMActions {
     }
 
     private static void doCreateAndStart(
+        VmStartSession startSession,
         @NonNull VMConfig config,
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
@@ -954,6 +975,11 @@ public final class VMActions {
         runOnPool(() -> {
             try {
                 NicLeaseAllocator.resolveAndPersist(config, appContext);
+                startSession.savedField(config, "networks");
+                if (startSession.start(config, bootEntry, isClearLogsBeforeStartEnabled(appContext))) {
+                    if (isAutoConsoleEnabled(appContext)) wantOpenConsole.set(true);
+                    return;
+                }
                 mainHandler.post(() -> pushAndStart(config, mainHandler, ui, wantOpenConsole, bootEntry));
             } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
         });
