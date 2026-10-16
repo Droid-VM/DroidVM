@@ -126,6 +126,8 @@ def main():
         with connect(False) as sock:
             assert exchange(sock, "network_create", config=config("unauthorized"), authenticated=True, administrator=True)["message"] == "client is not authorized to perform this action"
             assert not exchange(sock, "network_list_interfaces", authenticated=True)["success"]
+            assert not exchange(sock, "network_list_uplinks", authenticated=True)["success"]
+            assert not exchange(sock, "network_list_host_addresses", authenticated=True)["success"]
             assert exchange(sock, "auth", token=token)["success"]
             cap = exchange(sock, "capabilities")
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
@@ -134,8 +136,12 @@ def main():
             assert cap["network_lifecycle_backends"] == ["gvisor"] and cap["network_watchdog"] and cap["network_auto_up"]
             assert all(name in cap["commands"] for name in ("network_start", "network_stop", "network_status", "network_tool_log"))
             assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]
+            assert cap["network_uplinks"] and cap["network_host_addresses"] and cap["service_api_minor"] == 5
+            assert all(name in cap["commands"] for name in ("network_list_uplinks", "network_list_host_addresses"))
             # Missing tool must surface an error, not a successful empty list.
             assert exchange(sock, "network_list_interfaces")["error"]["code"] == "IO_ERROR"
+            assert exchange(sock, "network_list_host_addresses")["error"]["code"] == "IO_ERROR"
+            assert exchange(sock, "network_list_uplinks")["success"]  # sysfs discovery is independent of netbox
             shell(["mkdir", data + "/bin"], check=True)
             shell(["cp", "/data/user/0/cn.classfun.droidvm/bin/netbox", data + "/bin/netbox"], check=True)
             shell(["chmod", "700", data + "/bin/netbox"], check=True)
@@ -144,6 +150,24 @@ def main():
             interfaces = exchange(sock, "network_list_interfaces")["data"]
             assert {row["name"] for row in interfaces} == expected_names
             assert all(set(row) == {"name", "state", "master"} and row["state"] == row["state"].upper() for row in interfaces)
+            uplinks = exchange(sock, "network_list_uplinks")["data"]
+            assert [row["id"] for row in uplinks["identifiers"]] == ["WiFi", "Ethernet", "Tethering"]
+            assert [row["bridgeable"] for row in uplinks["identifiers"]] == [False, True, True]
+            names = {row["ifname"] for row in raw_links}
+            assert all(set(row) == {"id", "name", "bridgeable"} and (not row["name"] or row["name"] in names) for row in uplinks["identifiers"])
+            assert all(set(row) == {"name", "bridgeable"} and row["name"] in names for row in uplinks["devices"])
+            raw_addresses = json.loads(shell([data + "/bin/netbox", "addr-list"], check=True).stdout)
+            bridges = {row["ifname"] for row in raw_links if row["kind"] == "bridge"}
+            prefixes = ("wlan", "rmnet_data", "tun", "eth", "ap", "swlan", "softap", "rndis", "usb", "bt-pan")
+            expected_addresses = [dict(addr=row["local"], ifname=row["ifname"], family=row["family"])
+                for row in raw_addresses if row.get("local") and row.get("ifname", "").startswith(prefixes)
+                and row.get("scope") == "global" and row["ifname"] not in bridges
+                and row.get("metric") != 4243672773 and row.get("family") in (4, 6) and not row.get("temporary", False)
+                and not (row.get("noprefixroute", False) and row.get("prefixlen") == (32 if row["family"] == 4 else 128))]
+            host_addresses = exchange(sock, "network_list_host_addresses")["data"]
+            assert host_addresses == expected_addresses, (host_addresses, expected_addresses)
+            (output / "host-discovery.json").write_text(json.dumps(dict(uplinks=uplinks, addresses=host_addresses, raw_addresses=raw_addresses), indent=2), encoding="utf-8")
+            report["uplink_and_host_address_commands_match_live_kernel_snapshot"] = True
             report["real_host_interface_enumeration_auth_and_tool_failure"] = True
             # Exercise a slow real child through this new command's dispatch
             # path. Only the isolated test directory's netbox is replaced.
@@ -156,7 +180,7 @@ def main():
             def slow_query():
                 with connect() as slow:
                     slow.settimeout(20)
-                    return exchange(slow, "network_list_interfaces")
+                    return exchange(slow, "network_list_host_addresses")
             # Native steady-clock budgets exclude deep suspend, whereas the
             # Windows client's deadline includes it. Hold only our bounded test
             # wake lock during this comparison; restore without changing display
@@ -180,6 +204,7 @@ def main():
                 shell(["sh", "-c", 'printf "%s" "$1" > /sys/power/wake_unlock', "sh", wake_name], check=True)
             shell(["mv", data + "/bin/real-netbox", data + "/bin/netbox"], check=True)
             assert exchange(sock, "network_list_interfaces")["success"]
+            assert exchange(sock, "network_list_host_addresses")["success"]
             report["tool_timeout_ping_seconds"] = latency
             report["tool_timeout_releases_worker_and_query_recovers"] = True
             rows = exchange(sock, "network_list")["data"]
