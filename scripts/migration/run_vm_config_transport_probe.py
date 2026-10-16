@@ -114,7 +114,7 @@ def main():
                 assert exchange(sock, command)["error"]["code"] == "UNAUTHENTICATED"
         with connect(local, token) as sock:
             caps = exchange(sock, "capabilities")
-            check(caps["service_api_minor"] == 15, "optional config API advertised over TCP")
+            check(caps["service_api_minor"] == 16 and caps["vm_config_start"] == "revisioned-session-v1", "optional config and session start APIs advertised over TCP")
             first, metadata, document = snapshot(sock)
             check(document == {"vms": []}, "initial fixed document snapshot")
             begin = exchange(sock, "vm_config_upload_begin", revision=metadata["revision"], bytes=10)
