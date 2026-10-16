@@ -195,7 +195,9 @@ def main():
             check(exchange(sock, "network_stop", network_id=network_id)["success"], "network stops once unused")
         root_shell(f"kill -15 {daemon_pid}")
         daemon.wait(timeout=60)
-        check(root_shell("cat /sys/module/gh_hugepage_reserve/parameters/pool_want").stdout.strip() == before_want, "reserve target restored")
+        report["pool_want_before"] = before_want
+        report["pool_want_after"] = root_shell("cat /sys/module/gh_hugepage_reserve/parameters/pool_want").stdout.strip()
+        check(report["pool_want_after"] == before_want, "reserve target restored")
         report["passed"] = True
     finally:
         if daemon_pid:
