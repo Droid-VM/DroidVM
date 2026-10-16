@@ -23,6 +23,10 @@ val protocolSources = tasks.register<ContractSourceTask>("syncProtocolSources") 
     sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/daemon/Protocol.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/protocol/main"))
 }
+val vmConfigSources = tasks.register<ContractSourceTask>("syncVmConfigSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/daemon/VmConfigClient.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/vmconfig/main"))
+}
 val contractSources = tasks.register<ContractSourceTask>("syncContractSources") {
     sourceFile.set(rootProject.file("app/src/androidTest/java/cn/classfun/droidvm/lib/daemon/ProtocolContractTest.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/protocol/androidTest"))
@@ -70,6 +74,7 @@ android {
 androidComponents {
     onVariants { variant ->
         variant.sources.java?.addGeneratedSourceDirectory(protocolSources, ContractSourceTask::outputDirectory)
+        variant.sources.java?.addGeneratedSourceDirectory(vmConfigSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(audioTypeSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(evdevSources, ContractSourceTask::outputDirectory)
         variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
