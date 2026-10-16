@@ -33,7 +33,8 @@ public final class VmConfigClientTest {
                 if (response == null) throw new IOException("Connection closed");
                 if ("event".equals(response.optString("type"))) { events.add(response); continue; }
                 assertEquals(id, response.getString("request_id"));
-                if (loseCommitReply && "vm_config_upload_commit".equals(request.getString("command"))) {
+                if (loseCommitReply && ("vm_config_upload_commit".equals(request.getString("command"))
+                    || "vm_config_apply".equals(request.getString("command")))) {
                     loseCommitReply = false;
                     throw new IOException("Simulated lost successful commit reply");
                 }
@@ -130,6 +131,27 @@ public final class VmConfigClientTest {
             try { uncertain.saveVm(created, true); fail("Must not recreate after unknown save"); }
             catch (IOException expected) { assertEquals(committedRevision, client.status().revision); }
             assertEquals("saved with lost response", client.read().document().getJSONArray("vms").getJSONObject(1).getString("name"));
+
+            var deletion = client.edit();
+            var changed = competing.edit();
+            created.put("name", "changed during delete confirmation");
+            changed.saveVm(created, false);
+            try { deletion.deleteVm(created.getString("id")); fail("Stale confirmation cannot delete changed VM"); }
+            catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
+            assertTrue(deletion.requiresReload());
+            assertEquals(2, client.read().document().getJSONArray("vms").length());
+            var confirmedDelete = client.edit();
+            confirmedDelete.deleteVm(created.getString("id"));
+            assertEquals(1, client.read().document().getJSONArray("vms").length());
+            assertTrue(client.read().document().getBoolean("concurrent_root"));
+            var lostDelete = client.edit();
+            connection.loseCommitReply = true;
+            try { lostDelete.deleteVm(id); fail("Lost delete response must be uncertain"); }
+            catch (VmConfigClient.CommitUnknown expected) { assertTrue(lostDelete.requiresReload()); }
+            assertEquals(0, client.read().document().getJSONArray("vms").length());
+            String deletionRevision = client.status().revision;
+            try { lostDelete.deleteVm(id); fail("Uncertain deletion cannot be retried blindly"); }
+            catch (IOException expected) { assertEquals(deletionRevision, client.status().revision); }
         }
         // Fresh Java socket reconstructs the same persistent state.
         try (var reopened = new Connection(port, token)) {

@@ -472,23 +472,11 @@ public final class VMInfoActivity extends AppCompatActivity implements Foregroun
     }
 
     private void doDelete() {
-        VMDeletion.confirm(this, config, deleteDisks -> {
-            store.removeById(vmId);
-            var appContext = getApplicationContext();
-            runOnPool(() -> {
-                boolean saved = store.save(appContext);
-                VMDeletion.releaseDaemonAndMaybeDeleteDisks(
-                    appContext, config, deleteDisks, saved);
-                mainHandler.post(() -> {
-                    Toast.makeText(
-                        this,
-                        R.string.vm_info_delete_success,
-                        LENGTH_SHORT
-                    ).show();
-                    setResult(RESULT_OK);
-                    finish();
-                });
-            });
+        VMDeletion.confirm(this, config, () -> {
+            if (isFinishing() || isDestroyed()) return;
+            Toast.makeText(this, R.string.vm_info_delete_success, LENGTH_SHORT).show();
+            setResult(RESULT_OK);
+            finish();
         });
     }
 }

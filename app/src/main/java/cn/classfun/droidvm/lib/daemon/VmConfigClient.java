@@ -100,8 +100,23 @@ public final class VmConfigClient {
             if (create == (index >= 0)) throw new IOException("VM no longer matches the editor baseline");
             // Detach caller-owned objects and preserve every untouched VM/root field.
             vms.put(create ? vms.length() : index, new JSONObject(config.toString()));
+            commitEdit(next, () -> replace(revision, next));
+        }
+        public synchronized void deleteVm(String id) throws IOException, JSONException {
+            if (reloadRequired) throw new IOException("Reload configuration before deleting again");
+            JSONObject next = document();
+            JSONArray rows = next.getJSONArray("vms");
+            int index = -1;
+            for (int i = 0; i < rows.length(); i++)
+                if (id.equals(rows.getJSONObject(i).getString("id"))) { index = i; break; }
+            if (index < 0) throw new IOException("VM is not in the confirmation snapshot");
+            rows.remove(index);
+            JSONArray operations = new JSONArray().put(new JSONObject().put("op", "delete").put("id", id));
+            commitEdit(next, () -> apply(revision, operations));
+        }
+        private void commitEdit(JSONObject next, Commit action) throws IOException, JSONException {
             try {
-                Version saved = replace(revision, next);
+                Version saved = action.run();
                 revision = saved.revision;
                 baseline = next;
                 reloadRequired = saved.durabilityUncertain;
@@ -116,6 +131,7 @@ public final class VmConfigClient {
             }
         }
     }
+    private interface Commit { Version run() throws IOException, JSONException; }
     public EditSession edit() throws IOException, JSONException { return new EditSession(read()); }
 
     public Snapshot read() throws IOException, JSONException {
