@@ -1673,4 +1673,6 @@
     <string name="usb_devices_action_failed_title">设备没有移动</string>
     <string name="usb_devices_target_claimed">被其他程序占用</string>
     <string name="usb_devices_idle_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到 Idle</string>
+    <string name="vm_config_reload_required">配置已变更，或无法确认保存结果。当前编辑内容仍保留在此页面。取消可保留查看；也可关闭编辑器，从列表重新打开虚拟机，核对当前配置后再编辑。关闭将丢弃未保存的编辑内容和 USB 规则。</string>
+    <string name="vm_config_close_editor">关闭编辑器</string>
 </resources>

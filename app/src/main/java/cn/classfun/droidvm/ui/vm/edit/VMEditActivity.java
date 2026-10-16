@@ -30,8 +30,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.io.IOException;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.CameraPermission;
 import cn.classfun.droidvm.lib.ui.RecordAudioPermission;
@@ -62,6 +65,9 @@ public final class VMEditActivity extends SwipeableTabActivity {
     private boolean micPermissionHandled = false;
     private boolean saving = false;
     private AlertDialog savingDialog;
+    private final VmConfigClient configClient = new VmConfigClient(
+        request -> DaemonConnection.getInstance().request(request));
+    private VmConfigClient.EditSession configSession;
     private final Map<String, Object> sharedData = new HashMap<>();
 
 
@@ -203,19 +209,37 @@ public final class VMEditActivity extends SwipeableTabActivity {
         // VM missing that key. They had already drifted: the DRM pool offered 1024 in the form
         // while the code said 8, and nothing could notice, because each is only reachable from
         // a path the other never takes.
-        if (editMode) loadExistingConfig();
-        else tabs.forEach(tab -> tab.loadConfig(VMConfig.createWithCustomizeDefaults(this)));
+        loadEditor();
     }
 
-    private void loadExistingConfig() {
-        var store = new VMStore();
-        store.load(this);
-        var config = store.findById(editVMId);
-        if (config == null) {
-            finish();
-            return;
-        }
-        tabs.forEach(tab -> tab.loadConfig(config));
+    private void loadEditor() {
+        beginSaving();
+        var appContext = getApplicationContext();
+        runOnPool(() -> {
+            try {
+                // An unavailable capability response is not permission to write a local file.
+                var session = configClient.supported() ? configClient.edit() : null;
+                var store = session == null ? new VMStore() : new VMStore(session.document());
+                if (session == null && !store.load(appContext)) throw new IOException("Cannot read VM configuration");
+                var config = editMode ? store.findById(editVMId) : null;
+                if (editMode && config == null) throw new IOException("VM no longer exists");
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    configSession = session;
+                    var displayed = config != null ? config : VMConfig.createWithCustomizeDefaults(this);
+                    tabs.forEach(tab -> tab.loadConfig(displayed));
+                    endSaving();
+                });
+            } catch (Exception error) {
+                Log.w(TAG, "Failed to open VM editor", error);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    endSaving();
+                    Toast.makeText(this, R.string.vm_daemon_error, Toast.LENGTH_LONG).show();
+                    finish();
+                });
+            }
+        });
     }
 
     @NonNull
@@ -228,6 +252,10 @@ public final class VMEditActivity extends SwipeableTabActivity {
 
     private void doSave() {
         if (saving) return;
+        if (configSession != null && configSession.requiresReload()) {
+            showReloadRequired();
+            return;
+        }
         var peripheralTab = getTab(VMEditTab.TAB_PERIPHERAL);
         if (!micPermissionHandled
             && peripheralTab instanceof VMEditPeripheralTab
@@ -241,7 +269,11 @@ public final class VMEditActivity extends SwipeableTabActivity {
         var focused = getCurrentFocus();
         if (focused != null) focused.clearFocus();
         var store = new VMStore();
-        if (!store.load(this)) {
+        try {
+            boolean loaded = configSession != null ? store.load(configSession.document()) : store.load(this);
+            if (!loaded) throw new IOException("Cannot read editor baseline");
+        } catch (Exception error) {
+            Log.w(TAG, "Failed to read editor baseline", error);
             Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
             return;
         }
@@ -296,25 +328,48 @@ public final class VMEditActivity extends SwipeableTabActivity {
         } else {
             store.add(config);
         }
+        boolean creating = !editMode;
+        beginSaving();
+        var appContext = getApplicationContext();
+        runOnPool(() -> {
+            try {
+                if (configSession != null) configSession.saveVm(config.toJson(), creating);
+                else {
+                    // Refuse a legacy save if this daemon now advertises configuration ownership.
+                    // Production activation still requires a process-wide persistent ownership gate.
+                    if (configClient.supported()) throw new IOException("Configuration ownership changed; reopen editor");
+                    if (!store.save(appContext)) throw new IOException("Cannot save VM configuration");
+                }
+                runOnUiThread(() -> {
+                    if (!isFinishing() && !isDestroyed()) onConfigSaved(config, peripheralTab);
+                });
+            } catch (Exception error) {
+                Log.w(TAG, "Failed to save VM configuration", error);
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    endSaving();
+                    if (configSession != null && configSession.requiresReload()) showReloadRequired();
+                    else Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
+                });
+            }
+        });
+    }
+
+    private void showReloadRequired() {
+        new MaterialAlertDialogBuilder(this)
+            .setMessage(R.string.vm_config_reload_required)
+            .setPositiveButton(R.string.vm_config_close_editor, (dialog, which) -> finish())
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    private void beginSaving() {
         saving = true;
         fab.setEnabled(false);
         savingDialog = new MaterialAlertDialogBuilder(this)
             .setMessage(R.string.home_card_loading)
             .setCancelable(false)
             .show();
-        var appContext = getApplicationContext();
-        runOnPool(() -> {
-            boolean saved = store.save(appContext);
-            runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                if (!saved) {
-                    endSaving();
-                    Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                onConfigSaved(config, peripheralTab);
-            });
-        });
     }
 
     private void onConfigSaved(@NonNull VMConfig config, @NonNull VMEditBaseTab peripheralTab) {

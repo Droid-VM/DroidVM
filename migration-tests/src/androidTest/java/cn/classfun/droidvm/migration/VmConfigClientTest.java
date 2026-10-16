@@ -93,11 +93,66 @@ public final class VmConfigClientTest {
             assertTrue(connection.events.stream().anyMatch(event -> event.toString().contains("vm.config.invalidated")));
             connection.request(new JSONObject().put("command", "resource_unsubscribe"));
             assertEquals("STOPPED", connection.request(new JSONObject().put("command", "vm_list")).getJSONArray("data").getJSONObject(0).getString("state"));
+
+            // The actual editor session retains its opening revision and preserves unrelated
+            // entries/root extensions, including when USB failure keeps an editor open to retry.
+            var session = client.edit();
+            var detached = session.document(); detached.remove("future_root");
+            assertTrue(session.document().has("future_root"));
+            String original = session.document().getJSONArray("vms").getJSONObject(0).toString();
+            var created = new JSONObject().put("id", UUID.randomUUID().toString()).put("name", "editor created")
+                .put("extension", new JSONObject().put("large_integer", 9007199254740993L));
+            session.saveVm(created, true);
+            created.put("name", "editor retry after USB failure");
+            session.saveVm(created, false);
+            var afterEditor = client.read().document();
+            assertEquals(2, afterEditor.getJSONArray("vms").length());
+            assertEquals(original, afterEditor.getJSONArray("vms").getJSONObject(0).toString());
+            assertEquals("editor retry after USB failure", afterEditor.getJSONArray("vms").getJSONObject(1).getString("name"));
+            assertEquals(9007199254740993L, afterEditor.getJSONObject("future_root").getLong("integer"));
+            var otherBase = competing.read();
+            var other = otherBase.document(); other.put("concurrent_root", true);
+            competing.replace(otherBase.revision, other);
+            created.put("name", "stale editor must not overwrite");
+            try { session.saveVm(created, false); fail("Opening revision must conflict"); }
+            catch (VmConfigClient.RemoteFailure failure) { assertEquals("CONFLICT", failure.code); }
+            assertTrue(session.requiresReload());
+            try { session.saveVm(created, false); fail("Cannot silently rebase stale edits"); }
+            catch (IOException expected) { /* retained edits require an explicit new session */ }
+            assertEquals("editor retry after USB failure", client.read().document().getJSONArray("vms").getJSONObject(1).getString("name"));
+
+            var uncertain = client.edit();
+            connection.loseCommitReply = true;
+            created.put("name", "saved with lost response");
+            try { uncertain.saveVm(created, false); fail("Missing commit response must block retries"); }
+            catch (VmConfigClient.CommitUnknown expected) { assertTrue(uncertain.requiresReload()); }
+            String committedRevision = client.status().revision;
+            try { uncertain.saveVm(created, true); fail("Must not recreate after unknown save"); }
+            catch (IOException expected) { assertEquals(committedRevision, client.status().revision); }
+            assertEquals("saved with lost response", client.read().document().getJSONArray("vms").getJSONObject(1).getString("name"));
         }
         // Fresh Java socket reconstructs the same persistent state.
         try (var reopened = new Connection(port, token)) {
             assertTrue(new VmConfigClient(reopened::request).read().document().getBoolean("lost_reply"));
         }
+    }
+
+    @Test public void capabilityFailuresNeverAuthorizeLocalWrites() throws Exception {
+        assertFalse(new VmConfigClient(request -> new JSONObject().put("success", true)).supported());
+        for (String key : new String[]{"vm_config_updates", "vm_config_snapshot", "vm_config_upload", "vm_config_future"}) {
+            try {
+                new VmConfigClient(request -> new JSONObject().put("success", true).put(key, "unknown-version")).supported();
+                fail("Partial or unknown native ownership must not select local writes");
+            } catch (IOException expected) { /* unsupported is not legacy */ }
+        }
+        try {
+            new VmConfigClient(request -> { throw new IOException("Disconnected"); }).supported();
+            fail("Disconnect must not select local writes");
+        } catch (IOException expected) { /* keep the failure */ }
+        try {
+            new VmConfigClient(request -> new JSONObject().put("success", false)).supported();
+            fail("Rejected capability request must not select local writes");
+        } catch (VmConfigClient.RemoteFailure expected) { /* keep the failure */ }
     }
 
     @Test public void malformedPageIsRejectedAndReleased() throws Exception {
