@@ -101,6 +101,13 @@ public final class NetworkConfigDeleteTcpTest {
                             assertEquals(0, row.getJSONArray("networks").length());
                             assertEquals(9007199254740993L, row.getLong("extension"));
                             assertEquals("changed during confirmation", row.getString("name"));
+                            var currentVms = new VmConfigClient(reopened::request);
+                            String revision = currentVms.status().revision;
+                            row.getJSONArray("networks").put(new JSONObject().put("network_id", id));
+                            var staleReference = currentVms.edit();
+                            assertEquals("CONFLICT", assertThrows(VmConfigClient.RemoteFailure.class,
+                                () -> staleReference.saveVm(row, false)).code);
+                            assertEquals(revision, currentVms.status().revision);
                         }
                     }
                     assertTrue(found);
