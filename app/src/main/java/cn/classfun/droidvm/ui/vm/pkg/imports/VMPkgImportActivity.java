@@ -59,6 +59,8 @@ import java.util.List;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
+import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
 import cn.classfun.droidvm.lib.pkg.NetworkImportPlan;
 import cn.classfun.droidvm.lib.pkg.PackageConstants;
 import cn.classfun.droidvm.lib.pkg.PackageInput;
@@ -78,6 +80,7 @@ import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
 
 public final class VMPkgImportActivity extends AppCompatActivity
     implements DaemonConnection.EventListener {
+    private final java.util.concurrent.atomic.AtomicBoolean finalizingImport = new java.util.concurrent.atomic.AtomicBoolean();
     private static final String TAG = "VMPkgImport";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final String defaultPath = pathJoin(externalPath(), "DroidVM");
@@ -373,6 +376,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
             showError(getString(R.string.vmpkg_import_failed, e.getMessage()));
             return;
         }
+        finalizingImport.set(false);
         setImporting(true);
         tvError.setVisibility(GONE);
         tvStatus.setText(R.string.vmpkg_import_running);
@@ -471,28 +475,37 @@ public final class VMPkgImportActivity extends AppCompatActivity
         @NonNull JSONArray disks,
         @NonNull JSONArray networks
     ) {
-        DaemonConnection.getInstance().buildRequest("vm_get")
-            .put("vm_id", vmId)
-            .onResponse(resp -> persistImport(resp.optJSONObject("data"), disks, networks))
-            .onUnsuccessful(resp -> onImportFailure(resp.optString("message", "request failed")))
-            .onError(e -> onImportFailure(e.getMessage()))
-            .invoke();
+        if (!finalizingImport.compareAndSet(false, true)) return;
+        runOnPool(() -> {
+            try {
+                var connection = DaemonConnection.getInstance();
+                var client = new VmConfigClient(connection::request);
+                boolean nativeConfig = client.supported();
+                final VMConfig vm;
+                if (nativeConfig) {
+                    // A native import must already have committed. Use the paged
+                    // document, not vm_get's bounded runtime projection.
+                    vm = new VMStore(client.read().document()).findById(vmId);
+                    if (vm == null) throw new IOException("Imported VM is not persisted by the native service");
+                } else {
+                    var response = connection.request(new JSONObject().put("command", "vm_get").put("vm_id", vmId));
+                    if (!response.getBoolean("success")) throw new IOException(response.optString("message", "request failed"));
+                    vm = new VMConfig(response.getJSONObject("data"));
+                }
+                persistImport(vm, disks, networks, nativeConfig);
+            } catch (Exception error) { onImportFailure(error.getMessage()); }
+        });
     }
 
     private void persistImport(
-        @Nullable JSONObject vmJson,
+        @NonNull VMConfig vm,
         @NonNull JSONArray disks,
-        @NonNull JSONArray networks
+        @NonNull JSONArray networks,
+        boolean nativeConfig
     ) {
         try {
-            if (vmJson == null) throw new IllegalArgumentException("missing VM config");
-            var vm = new VMConfig(vmJson);
-            var vmStore = new VMStore();
-            vmStore.load(this);
-            if (vmStore.findById(vm.getId()) == null) vmStore.add(vm);
-            else vmStore.update(vm);
             var diskStore = new DiskStore();
-            diskStore.load(this);
+            if (!diskStore.load(this)) throw new IOException("Cannot read imported disk registry");
             var pathByArchive = new HashMap<String, String>();
             for (int i = 0; i < disks.length(); i++) {
                 var diskJson = disks.optJSONObject(i);
@@ -515,18 +528,33 @@ public final class VMPkgImportActivity extends AppCompatActivity
                 diskStore.add(disk);
             }
             linkImportedChains(diskStore, disks, pathByArchive);
-            var networkStore = new NetworkStore();
-            networkStore.load(this);
-            for (int i = 0; i < networks.length(); i++) {
-                var netJson = networks.optJSONObject(i);
-                if (netJson == null) continue;
-                var net = new NetworkConfig(netJson);
-                if (networkStore.findById(net.getId()) == null) networkStore.add(net);
+            // Native import creates networks through its persistent network service.
+            // The legacy Java path still requires the UI to persist that result.
+            if (!nativeConfig) {
+                var networkStore = new NetworkStore();
+                if (!networkStore.load(this)) throw new IOException("Cannot read imported networks");
+                for (int i = 0; i < networks.length(); i++) {
+                    var netJson = networks.optJSONObject(i);
+                    if (netJson == null) continue;
+                    var net = new NetworkConfig(netJson);
+                    if (networkStore.findById(net.getId()) == null) networkStore.add(net);
+                }
+                if (!networkStore.save(this)) throw new IOException("Cannot save imported networks");
             }
-            vmStore.save(this);
-            diskStore.save(this);
-            networkStore.save(this);
+            if (!diskStore.save(this)) throw new IOException("Cannot save imported disk registry");
+            if (!nativeConfig) {
+                VmConfigOwnership.legacyWrite(getFilesDir(), () -> {
+                    var vmStore = new VMStore();
+                    if (!vmStore.load(this)) throw new IOException("Cannot read VM configuration");
+                    // Replayed completion must not overwrite later edits to an existing VM.
+                    if (vmStore.findById(vm.getId()) == null) {
+                        vmStore.add(vm);
+                        if (!vmStore.save(this)) throw new IOException("Cannot save imported VM");
+                    }
+                });
+            }
             mainHandler.post(() -> {
+                if (isFinishing() || isDestroyed()) return;
                 setImporting(false);
                 pendingTaskId = null;
                 tvStatus.setText(getString(R.string.vmpkg_import_success, vm.getName()));
@@ -570,6 +598,7 @@ public final class VMPkgImportActivity extends AppCompatActivity
     private void onImportFailure(@Nullable String msg) {
         var message = msg == null ? "Unknown error" : msg;
         mainHandler.post(() -> {
+            if (isFinishing() || isDestroyed()) return;
             setImporting(false);
             pendingTaskId = null;
             tvStatus.setText(getString(R.string.vmpkg_import_failed, message));

@@ -11,10 +11,29 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 
 import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 
 public final class VMStore extends DataStore<VMConfig> {
+    /** Worker-only creation. Never retries with a new ID/revision after an uncertain commit. */
+    public static void createPersisted(@NonNull Context context, @NonNull VMConfig config) throws Exception {
+        var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+        if (client.supported()) {
+            client.edit().saveVm(config.toJson(), true);
+        } else {
+            VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                var store = new VMStore();
+                if (!store.load(context)) throw new IOException("Cannot read VM configuration");
+                store.add(config);
+                if (!store.save(context)) throw new IOException("Cannot save VM configuration");
+            });
+        }
+    }
+
     public VMStore() {
         super();
     }
