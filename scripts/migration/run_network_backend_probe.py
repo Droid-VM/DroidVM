@@ -59,26 +59,49 @@ def main():
         subprocess.run(adb + ["push", str(daemon), directory + "/daemon"], check=True, timeout=30)
         shell(["chmod", "700", directory + "/daemon"], check=True)
         command.append(directory + "/daemon")
+        # The full network set exceeds one adb shell budget: run both native
+        # parts separately, each with its own timeout, and require the union.
+        parts = ["--part-a", "--part-b"] if args.suite == "all" and not args.control_tools else [None]
+        merged = {"checks": [], "timings_ms": {}, "passed": True}
+        report["parts"] = []
+        stderr = ""
         started = time.monotonic()
         try:
-            result = shell(command)
-        except subprocess.TimeoutExpired as error:
-            report["timed_out"] = True
-            for name, value in (("stdout", error.stdout), ("stderr", error.stderr)):
-                if isinstance(value, bytes):
-                    value = value.decode("utf-8", errors="replace")
-                (output / (name + ".txt")).write_text(value or "", encoding="utf-8")
-            raise
+            for part in parts:
+                part_started = time.monotonic()
+                suffix = "" if part is None else "-" + part.lstrip("-")
+                try:
+                    result = shell(command if part is None else command[:1] + [part] + command[1:])
+                except subprocess.TimeoutExpired as error:
+                    report["timed_out"] = part or True
+                    for name, value in (("stdout", error.stdout), ("stderr", error.stderr)):
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8", errors="replace")
+                        (output / (name + suffix + ".txt")).write_text(value or "", encoding="utf-8")
+                    raise
+                stderr += result.stderr
+                if part is not None:
+                    (output / ("stdout" + suffix + ".txt")).write_text(result.stdout, encoding="utf-8")
+                contracts = json.loads(result.stdout)
+                report["parts"].append({"part": part, "seconds": time.monotonic() - part_started, "exit_code": result.returncode})
+                merged["checks"] += contracts.get("checks", [])
+                merged["timings_ms"].update(contracts.get("timings_ms", {}))
+                for key in ("current", "error"):
+                    if key in contracts:
+                        merged[key] = contracts[key]
+                if result.returncode != 0 or contracts.get("passed") is not True:
+                    merged["passed"] = False
+                    break
         finally:
             report["contract_seconds"] = time.monotonic() - started
-        (output / "stdout.txt").write_text(result.stdout, encoding="utf-8")
-        (output / "stderr.txt").write_text(result.stderr, encoding="utf-8")
-        report["exit_code"] = result.returncode
-        report["contracts"] = json.loads(result.stdout)
+        (output / "stdout.txt").write_text(json.dumps(merged, indent=2), encoding="utf-8")
+        (output / "stderr.txt").write_text(stderr, encoding="utf-8")
+        report["exit_code"] = 0 if merged["passed"] else 1
+        report["contracts"] = merged
         after = json.loads(shell([args.netbox, "link-list"], check=True).stdout)
         (output / "links-after.json").write_text(json.dumps(after, indent=2), encoding="utf-8")
         report["same_interface_names"] = {r["ifname"] for r in before} == {r["ifname"] for r in after}
-        report["passed"] = result.returncode == 0 and report["contracts"].get("passed") is True and report["same_interface_names"]
+        report["passed"] = report["exit_code"] == 0 and report["contracts"].get("passed") is True and report["same_interface_names"]
         if not report["passed"]:
             subprocess.run(adb + ["pull", directory, str(output / "retained-device-state")], timeout=30, check=False)
             raise RuntimeError("Network backend contract failed; retain journal at " + directory)
