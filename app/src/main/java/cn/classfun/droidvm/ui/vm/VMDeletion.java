@@ -89,8 +89,8 @@ public final class VMDeletion {
      * first so a fresh-store scan can reliably identify references from other VMs.
      *
      * <p>{@code vm_delete} is idempotent on the daemon side: a VM it never managed (created but
-     * never started) is a successful no-op, so the only failure that keeps the files is a VM it
-     * could not stop.
+     * never started) is a successful no-op. Both a refusal and an unavailable response keep the
+     * files: a disconnected native daemon may still own a running VM.
      */
     public static void releaseDaemonAndMaybeDeleteDisks(
         @NonNull Context context,
@@ -111,9 +111,8 @@ public final class VMDeletion {
                 skipped.run();
             } else {
                 // A successful response means DeleteHandler has stopped and removed the VM (or
-                // never had it). If the daemon cannot be reached, its owned VM processes cannot
-                // still be running either, matching the disk-operation run-state guard's
-                // semantics.
+                // never had it). Only that acknowledgement permits disk cleanup; a connection
+                // failure does not establish whether the independent native VM has stopped.
                 request
                     .onResponse(response -> cleanup.run())
                     .onUnsuccessful(response -> {
@@ -121,7 +120,10 @@ public final class VMDeletion {
                             response.optString("message", "")));
                         skipped.run();
                     })
-                    .onError(error -> cleanup.run());
+                    .onError(error -> {
+                        Log.w(TAG, "vm_delete acknowledgement unavailable; keeping disk files", error);
+                        skipped.run();
+                    });
             }
         }
         request.invoke();
