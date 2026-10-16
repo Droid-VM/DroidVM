@@ -133,7 +133,12 @@ public final class VmConfigClient {
         public synchronized void saveVms(JSONArray configs) throws IOException, JSONException {
             saveVms(configs, false);
         }
-        private void saveVms(JSONArray configs, boolean create) throws IOException, JSONException {
+        /** Import replaces matching IDs and appends new IDs in one conditional commit. */
+        public synchronized void mergeVms(JSONArray configs) throws IOException, JSONException {
+            saveVms(configs, null);
+        }
+        // null is the explicit mixed create/replace import mode.
+        private void saveVms(JSONArray configs, Boolean create) throws IOException, JSONException {
             if (reloadRequired) throw new IOException("Reload configuration before saving again");
             if (configs.length() == 0) return;
             JSONObject next = document();
@@ -147,9 +152,9 @@ public final class VmConfigClient {
                 String id = config.getString("id");
                 Integer index = positions.get(id);
                 if (!targets.add(id)) throw new IOException("Repeated VM in configuration update");
-                if (create == (index != null)) throw new IOException("VM no longer matches the editor baseline");
+                if (create != null && create == (index != null)) throw new IOException("VM no longer matches the editor baseline");
                 // Detach caller-owned objects; large batches use the existing chunk upload.
-                vms.put(create ? vms.length() : index, new JSONObject(config.toString()));
+                vms.put(index == null ? vms.length() : index, new JSONObject(config.toString()));
             }
             commitEdit(next, () -> replace(revision, next));
         }

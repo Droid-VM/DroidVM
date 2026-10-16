@@ -94,6 +94,29 @@ public final class VMStore extends DataStore<VMConfig> {
         super();
     }
 
+    /** Worker-only settings import; preserve unrelated VMs and root extensions. */
+    public static void importPersisted(@NonNull Context context, @NonNull JSONObject document) throws Exception {
+        document.getJSONArray("vms");
+        var imported = new VMStore();
+        if (!imported.load(document)) throw new IOException("Cannot read imported VM configuration");
+        var rows = new org.json.JSONArray();
+        // Validate/migrate through the same VMConfig parser used by legacy import.
+        var configs = new java.util.ArrayList<VMConfig>();
+        imported.forEach((id, vm) -> configs.add(vm));
+        for (var vm : configs) rows.put(vm.toJson());
+        var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
+        if (client.supported()) client.edit().mergeVms(rows);
+        else VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+            var current = new VMStore();
+            if (!current.load(context)) throw new IOException("Cannot read current VM configuration");
+            imported.forEach((id, vm) -> {
+                if (current.findById(id) == null) current.add(vm);
+                else current.update(vm);
+            });
+            if (!current.save(context)) throw new IOException("Cannot save imported VM configuration");
+        });
+    }
+
     @SuppressWarnings("unused")
     public VMStore(@NonNull JSONObject obj) {
         super(obj);

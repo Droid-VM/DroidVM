@@ -480,6 +480,7 @@
     <string name="settings_import_confirm_message">This will overwrite your existing VM, disk, and network configurations with the data from the selected file. Are you sure you want to continue?</string>
     <string name="settings_import_success">Successfully imported %1$d configuration file(s).</string>
     <string name="settings_import_failed">Import failed: %1$s</string>
+    <string name="settings_import_partial">%1$s\nAlready saved %2$d configuration sections. Reload to check the current state.</string>
     <string name="settings_import_invalid_json">The selected file is not a valid configuration backup.</string>
     <string name="settings_category_vm">Virtual Machine</string>
     <string name="settings_vm_auto_console_title">Open console on start</string>

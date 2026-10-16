@@ -122,6 +122,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private DaemonHelper daemon;
     private ActivityResultLauncher<String> exportConfigLauncher;
     private ActivityResultLauncher<String[]> importConfigLauncher;
+    private boolean importingConfig;
 
     @Override
     protected int getLayoutResId() {
@@ -606,6 +607,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
     ) throws Exception {
         var ctx = requireContext().getApplicationContext();
         var ctor = store.getDeclaredConstructor();
+        if (VMStore.class.equals(store)) {
+            VMStore.importPersisted(ctx, json);
+            return;
+        }
         ctor.setAccessible(true);
         var oldStore = ctor.newInstance();
         var newStore = ctor.newInstance();
@@ -622,9 +627,11 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     @SuppressWarnings("unused")
     private void onImportFileSelected(Uri uri) {
-        if (uri == null) return;
+        if (uri == null || importingConfig) return;
+        importingConfig = true;
         var ctx = requireContext().getApplicationContext();
         runOnPool(() -> {
+            var completed = new java.util.ArrayList<String>();
             try {
                 StringBuilder sb = new StringBuilder();
                 try (var is = ctx.getContentResolver().openInputStream(uri)) {
@@ -639,25 +646,34 @@ public final class MainSettingsFragment extends MainBaseFragment {
                 int count = 0;
                 if (importJson.has("vms")) {
                     loadStore(VMStore.class, importJson);
+                    completed.add("VM");
                     count++;
                 }
                 if (importJson.has("disks")) {
                     loadStore(DiskStore.class, importJson);
+                    completed.add("disks");
                     count++;
                 }
                 if (importJson.has("networks")) {
                     loadStore(NetworkStore.class, importJson);
+                    completed.add("networks");
                     count++;
                 }
                 final int imported = count;
-                mainHandler.post(() -> Toast.makeText(requireContext(),
-                    getString(R.string.settings_import_success, imported), LENGTH_SHORT).show());
+                mainHandler.post(() -> Toast.makeText(ctx,
+                    ctx.getString(R.string.settings_import_success, imported), LENGTH_SHORT).show());
             } catch (JSONException e) {
-                mainHandler.post(() -> Toast.makeText(requireContext(),
-                    R.string.settings_import_invalid_json, LENGTH_LONG).show());
+                String detail = ctx.getString(R.string.settings_import_invalid_json);
+                if (!completed.isEmpty()) detail = ctx.getString(R.string.settings_import_partial, detail, completed.size());
+                final String message = detail;
+                mainHandler.post(() -> Toast.makeText(ctx, message, LENGTH_LONG).show());
             } catch (Exception e) {
-                mainHandler.post(() -> Toast.makeText(requireContext(),
-                    getString(R.string.settings_import_failed, e.getMessage()), LENGTH_LONG).show());
+                String detail = ctx.getString(R.string.settings_import_failed, e.getMessage());
+                if (!completed.isEmpty()) detail = ctx.getString(R.string.settings_import_partial, detail, completed.size());
+                final String message = detail;
+                mainHandler.post(() -> Toast.makeText(ctx, message, LENGTH_LONG).show());
+            } finally {
+                mainHandler.post(() -> importingConfig = false);
             }
         });
     }

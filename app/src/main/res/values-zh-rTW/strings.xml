@@ -476,6 +476,7 @@
     <string name="settings_import_confirm_message">這將用選定檔案中的資料覆蓋您現有的虛擬機器、磁碟和網路設定。確定要繼續嗎？</string>
     <string name="settings_import_success">成功匯入 %1$d 個設定檔。</string>
     <string name="settings_import_failed">匯入失敗：%1$s</string>
+    <string name="settings_import_partial">%1$s\n已儲存 %2$d 類設定，請重新載入以查看目前狀態。</string>
     <string name="settings_import_invalid_json">選定檔案不是有效的設定備份檔案。</string>
     <string name="settings_category_vm">虛擬機器</string>
     <string name="settings_vm_auto_console_title">啟動時開啟控制台</string>
