@@ -83,12 +83,11 @@ android {
                 // droidvmd's Binder/audio services need the AOSP 14 aidl generator.
                 val aidl = androidComponents.sdkComponents.sdkDirectory.get().asFile
                     .resolve("build-tools/34.0.0/" + if (System.getProperty("os.name").startsWith("Windows")) "aidl.exe" else "aidl")
-                if (aidl.isFile) {
-                    arguments += "-DDROIDVM_BUILD_PLATFORM_PROBE=ON"
-                    arguments += "-DDROIDVM_AIDL=${aidl.invariantSeparatorsPath}"
-                } else {
-                    logger.warn("build-tools 34.0.0 aidl not found: droidvmd is built without Binder/audio services")
+                require(aidl.isFile) {
+                    "Install Android SDK build-tools 34.0.0: droidvmd requires its AIDL compiler for Binder/audio services ($aidl)"
                 }
+                arguments += "-DDROIDVM_BUILD_PLATFORM_PROBE=ON"
+                arguments += "-DDROIDVM_AIDL=${aidl.invariantSeparatorsPath}"
             }
         }
     }

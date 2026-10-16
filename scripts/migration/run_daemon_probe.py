@@ -10,6 +10,7 @@ import shlex
 import socket
 import struct
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -49,6 +50,7 @@ def main():
     parser.add_argument("--launcher", type=Path, help="Optional existing double-fork launcher to verify")
     parser.add_argument("--hash-apk", type=Path, help="Copy this APK into the isolated directory and verify its hash without installing it")
     parser.add_argument("--data-layout", action="store_true", help="Verify app-owned run/cache layout and bounded native log entry")
+    parser.add_argument("--metrics", action="store_true", help="Sample the isolated daemon's resources and ping latency")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/daemon-device" / nonce
@@ -285,6 +287,11 @@ def main():
         maps = shell(["cat", f"/proc/{pid}/maps"], check=True, capture_output=True).stdout
         assert "/libart.so" not in maps and "/libjvm.so" not in maps
         report["art_or_jvm_loaded"] = False
+        if args.metrics:
+            subprocess.run([sys.executable, str(root / "scripts/migration/sample_daemon_metrics.py"),
+                            "--serial", args.serial, "--run-dir", directory,
+                            "--label", "isolated-native"], check=True, timeout=120)
+            report["resource_metrics_sampled"] = True
         original = {name: read(name) for name in ("droidvmd.pid", "droidvmd-port.txt", "droidvmd-token.txt")}
         log_before = shell(["cat", daemon_log], check=True, capture_output=True).stdout if args.data_layout else None
         duplicate = shell(command, capture_output=True)
