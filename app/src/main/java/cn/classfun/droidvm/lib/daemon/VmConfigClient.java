@@ -192,12 +192,24 @@ public final class VmConfigClient {
     public EditSession edit() throws IOException, JSONException { return new EditSession(read()); }
 
     public Snapshot read() throws IOException, JSONException {
-        JSONObject page = call("vm_config_snapshot", new JSONObject().put("max_bytes", 128 << 10));
+        Document document = readDocument("vm_config_snapshot", "vms", MAX_BYTES);
+        return new Snapshot(document.metadata, document.epoch, document.cursor, document.json);
+    }
+    static final class Document {
+        final JSONObject metadata;
+        final String epoch, cursor, json;
+        Document(JSONObject metadata, String epoch, String cursor, String json) {
+            this.metadata = metadata; this.epoch = epoch; this.cursor = cursor; this.json = json;
+        }
+    }
+    Document readDocument(String command, String rootKey, int maxBytes) throws IOException, JSONException {
+        JSONObject page = call(command, new JSONObject().put("max_bytes", 128 << 10));
         String id = page.getString("snapshot_id");
         try {
             String epoch = page.getString("epoch"), cursor = page.getString("cursor");
             int total = page.getInt("total"), seen = 0, expected = -1;
-            if (total < 1 || total > 1 + (MAX_BYTES + CHUNK_BYTES - 1) / CHUNK_BYTES)
+            if (id.isEmpty() || epoch.isEmpty() || cursor.isEmpty()
+                    || total < 1 || total > 1 + (maxBytes + CHUNK_BYTES - 1) / CHUNK_BYTES)
                 throw new IOException("Invalid document snapshot row count");
             JSONObject metadata = null;
             ByteArrayOutputStream output = null;
@@ -214,7 +226,7 @@ public final class VmConfigClient {
                         if (!"metadata".equals(row.getString("type")) || !"base64-json".equals(row.getString("encoding")))
                             throw new IOException("Unsupported snapshot encoding");
                         long size = row.getLong("bytes");
-                        if (size <= 0 || size > MAX_BYTES) throw new IOException("Invalid configuration size");
+                        if (size <= 0 || size > maxBytes) throw new IOException("Invalid configuration size");
                         expected = (int) size;
                         output = new ByteArrayOutputStream(expected);
                     } else {
@@ -231,12 +243,13 @@ public final class VmConfigClient {
                         output.write(bytes);
                     }
                 }
+                if (!page.has("next_offset")) throw new IOException("Missing snapshot continuation");
                 if (page.isNull("next_offset")) {
                     if (seen != total || output.size() != expected) throw new IOException("Incomplete configuration snapshot");
                     String json = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                         .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(output.toByteArray())).toString();
-                    new JSONObject(json).getJSONArray("vms");
-                    return new Snapshot(metadata, epoch, cursor, json);
+                    new JSONObject(json).getJSONArray(rootKey);
+                    return new Document(metadata, epoch, cursor, json);
                 }
                 if (page.getInt("next_offset") != seen || seen >= total) throw new IOException("Invalid next snapshot offset");
                 page = call("resource_snapshot_page", new JSONObject().put("snapshot_id", id).put("offset", seen).put("max_bytes", 128 << 10));
