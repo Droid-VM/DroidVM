@@ -62,11 +62,61 @@ public final class VmConfigClient {
     }
     public boolean supported() throws IOException, JSONException {
         JSONObject capabilities = call("capabilities", new JSONObject());
-        return "base64-json-chunks-v1".equals(capabilities.optString("vm_config_snapshot"))
+        boolean supported = "base64-json-chunks-v1".equals(capabilities.optString("vm_config_snapshot"))
             && "revisioned-chunks-v1".equals(capabilities.optString("vm_config_upload"))
             && "revisioned-batch-v1".equals(capabilities.optString("vm_config_updates"));
+        if (!supported) {
+            var keys = capabilities.keys();
+            while (keys.hasNext())
+                if (keys.next().startsWith("vm_config_"))
+                    throw new IOException("Unsupported VM configuration API; local writes are not permitted");
+        }
+        return supported;
     }
     public Version status() throws IOException, JSONException { return new Version(call("vm_config_status", new JSONObject())); }
+
+    /** One editor's baseline. Conflicts/uncertain commits require an explicit new session,
+     * never a silent refresh followed by an overwrite of somebody else's changes. */
+    public final class EditSession {
+        private String revision;
+        private JSONObject baseline;
+        private boolean reloadRequired;
+        private EditSession(Snapshot snapshot) throws JSONException {
+            revision = snapshot.revision;
+            baseline = snapshot.document();
+        }
+        public synchronized JSONObject document() throws JSONException {
+            return new JSONObject(baseline.toString());
+        }
+        public synchronized boolean requiresReload() { return reloadRequired; }
+        public synchronized void saveVm(JSONObject config, boolean create) throws IOException, JSONException {
+            if (reloadRequired) throw new IOException("Reload configuration before saving again");
+            JSONObject next = document();
+            JSONArray vms = next.getJSONArray("vms");
+            String id = config.getString("id");
+            int index = -1;
+            for (int i = 0; i < vms.length(); i++)
+                if (id.equals(vms.getJSONObject(i).getString("id"))) { index = i; break; }
+            if (create == (index >= 0)) throw new IOException("VM no longer matches the editor baseline");
+            // Detach caller-owned objects and preserve every untouched VM/root field.
+            vms.put(create ? vms.length() : index, new JSONObject(config.toString()));
+            try {
+                Version saved = replace(revision, next);
+                revision = saved.revision;
+                baseline = next;
+                reloadRequired = saved.durabilityUncertain;
+                if (reloadRequired) throw new IOException("Configuration durability is uncertain; reload before retrying");
+            } catch (CommitUnknown failure) {
+                reloadRequired = true;
+                throw failure;
+            } catch (RemoteFailure failure) {
+                if ("CONFLICT".equals(failure.code) || "COMMIT_UNCERTAIN".equals(failure.code)
+                    || "INTERNAL".equals(failure.code) || "UNKNOWN".equals(failure.code)) reloadRequired = true;
+                throw failure;
+            }
+        }
+    }
+    public EditSession edit() throws IOException, JSONException { return new EditSession(read()); }
 
     public Snapshot read() throws IOException, JSONException {
         JSONObject page = call("vm_config_snapshot", new JSONObject().put("max_bytes", 128 << 10));

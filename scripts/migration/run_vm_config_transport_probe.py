@@ -131,7 +131,7 @@ def main():
                       "-e", "port", remote, "-e", "token", token,
                       "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"], timeout=120)
         (output / "java-tests.txt").write_text(java.stdout + java.stderr, encoding="utf-8")
-        check(java.returncode == 0 and "OK (2 tests)" in java.stdout, "production Java config client passes real TCP tests including >8 MiB VM")
+        check(java.returncode == 0 and "OK (3 tests)" in java.stdout, "production Java config client and editor session pass TCP and capability tests including >8 MiB VM")
         with connect(local, token) as sock:
             check(exchange(sock, "vm_config_upload_commit", upload_id=stale)["error"]["code"] == "CONFLICT", "stale upload cannot overwrite Java commit")
             view, state, document = snapshot(sock)
