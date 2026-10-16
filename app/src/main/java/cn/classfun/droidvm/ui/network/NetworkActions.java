@@ -22,6 +22,7 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.NetworkConfigClient;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
@@ -46,6 +47,24 @@ public final class NetworkActions {
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
         @NonNull Runnable onStarted
+    ) {
+        final UUID id = config.getId();
+        runOnPool(() -> {
+            try {
+                var client = new NetworkConfigClient(request -> DaemonConnection.getInstance().request(request));
+                if (client.supported()) {
+                    client.start(id.toString());
+                    mainHandler.post(() -> { if (ui.isAlive()) onStarted.run(); });
+                } else mainHandler.post(() -> {
+                    if (ui.isAlive()) createAndStartLegacy(config, mainHandler, ui, onStarted);
+                });
+            } catch (Exception error) { showDaemonError(mainHandler, ui, error); }
+        });
+    }
+
+    private static void createAndStartLegacy(
+        @NonNull NetworkConfig config, @NonNull Handler mainHandler,
+        @NonNull UIContext ui, @NonNull Runnable onStarted
     ) {
         var conn = DaemonConnection.getInstance();
         DaemonConnection.OnError err = e ->

@@ -9,6 +9,9 @@ import org.json.JSONObject;
 
 /** Worker-only network edits over the existing authenticated transport. */
 public final class NetworkConfigClient {
+    public static final class StartUnknown extends IOException {
+        StartUnknown(Exception cause) { super("Network start result unknown; reload state before retrying", cause); }
+    }
     private final VmConfigClient.Rpc rpc;
     public NetworkConfigClient(VmConfigClient.Rpc rpc) { this.rpc = rpc; }
 
@@ -46,6 +49,21 @@ public final class NetworkConfigClient {
     public EditSession create(String id) {
         UUID.fromString(id);
         return new EditSession(id, null);
+    }
+
+    /** Start the service's current persisted network by identity, without saving UI state. */
+    public void start(String id) throws IOException, JSONException {
+        UUID.fromString(id);
+        try {
+            var result = call("network_start", new JSONObject().put("network_id", id));
+            if (!id.equals(result.getString("network_id"))
+                    || !"running".equalsIgnoreCase(result.getString("state")))
+                throw new IOException("Invalid network start acknowledgement");
+        } catch (VmConfigClient.RemoteFailure failure) {
+            if ("UNKNOWN".equals(failure.code) || "INTERNAL".equals(failure.code))
+                throw new StartUnknown(failure);
+            throw failure;
+        } catch (IOException | JSONException failure) { throw new StartUnknown(failure); }
     }
 
     public final class EditSession {
