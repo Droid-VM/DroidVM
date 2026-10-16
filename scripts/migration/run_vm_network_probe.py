@@ -303,6 +303,16 @@ def main():
                           for row in live.get("dhcp_leases", [])), "bridgedhcp lease listed")
             check(exchange(sock, "network_pd_renew", network_id=network_id, vlan_id=0)["message"] == "failed to renew PD delegation", "PD renew without a PD client")
             check(exchange(sock, "network_pd_release", network_id=network_id)["message"] == "missing vlan_id", "PD release without a VLAN")
+            # Manual bridge edits: an owned port and an address on the network's own bridge.
+            check(exchange(sock, "network_add_address", network_id=network_id, address="bogus")["message"] == "invalid address: Invalid IP network: bogus", "invalid manual address")
+            check(exchange(sock, "network_add_address", network_id=network_id, address="10.88.0.1/24")["success"] and "10.88.0.1/24" in inside(f"ip -o addr show dev {bridge}"), "manual address added to the bridge")
+            check(exchange(sock, "network_remove_address", network_id=network_id, address="10.88.0.1/24")["success"] and "10.88.0.1/24" not in inside(f"ip -o addr show dev {bridge}"), "manual address removed")
+            inside("ip link add dvmport0 type dummy")
+            check(exchange(sock, "network_add_interface", network_id=network_id, interface="dvmport0")["success"] and f"master {bridge}" in inside("ip -o link show dvmport0"), "manual interface enslaved")
+            check(exchange(sock, "network_remove_interface", network_id=network_id, interface="lo")["message"] == "failed to remove interface", "foreign interface is never released")
+            check(exchange(sock, "network_remove_interface", network_id=network_id, interface="dvmport0")["success"] and "master" not in inside("ip -o link show dvmport0"), "manual interface released")
+            check(exchange(sock, "network_add_interface", network_id=network_id, interface="dvmport0")["success"], "manual interface enslaved again")
+            check(exchange(sock, "network_add_interface", network_id=network_id)["message"] == "missing interface", "add interface without a name")
             check(exchange(sock, "vm_stop", vm_id=vm_id)["success"], "stop VM")
             deadline = time.monotonic() + 60
             while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "stopped":
@@ -314,6 +324,7 @@ def main():
             check("10.77.0.10/32" not in inside("iptables -S FORWARD"), "VM forward retired with its NIC")
             check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "network keeps running after the VM")
             check(exchange(sock, "network_stop", network_id=network_id)["success"], "network stops once unused")
+            check("master" not in inside("ip -o link show dvmport0") and "dvmport0" in inside("ip -o link show dvmport0"), "network stop releases the manual port, not the link")
             check(exchange(sock, "network_modify", config=dict(network, auto_up=True))["success"], "mark the network auto_up")
         root_shell(f"kill -15 {daemon_pid}")
         daemon.wait(timeout=60)
