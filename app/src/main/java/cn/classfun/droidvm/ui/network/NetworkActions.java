@@ -4,7 +4,6 @@
 package cn.classfun.droidvm.ui.network;
 
 import static android.widget.Toast.LENGTH_LONG;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
@@ -18,18 +17,19 @@ import androidx.annotation.NonNull;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.io.IOException;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.UIContext;
-import cn.classfun.droidvm.lib.utils.JsonUtils;
+import cn.classfun.droidvm.ui.vm.VmRunningQuery;
 
 public final class NetworkActions {
     private static final String TAG = "NetworkActions";
@@ -119,101 +119,71 @@ public final class NetworkActions {
         @NonNull Callback callback
     ) {
         var netId = networkId.toString();
-        var vmStore = new VMStore();
         runOnPool(() -> {
-            vmStore.load(context);
-            var runningNames = new ArrayList<String>();
             try {
-                var latch = getCountDownLatch(vmStore, netId, runningNames);
-                //noinspection ResultOfMethodCallIgnored
-                latch.await(5, SECONDS);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to check running VMs", e);
-            }
-            if (!runningNames.isEmpty()) {
+                // Until cross-resource deletion is available, never let this legacy
+                // workflow mutate a configuration owned by the native service.
+                VmConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                    var vmStore = new VMStore();
+                    if (!vmStore.load(context)) throw new IOException("Cannot read VM configuration");
+                    var runningNames = VmRunningQuery.inUseAmong(
+                        namesUsingNetwork(vmStore, netId));
+                    if (!runningNames.isEmpty())
+                        throw new IOException(context.getString(R.string.network_delete_in_use,
+                            String.join(", ", runningNames)));
+                    boolean modified = false;
+                    var allVms = new ArrayList<VMConfig>();
+                    vmStore.forEach((id, cfg) -> allVms.add(cfg));
+                    for (var vm : allVms) {
+                        var nets = vm.item.opt("networks", DataItem.newArray());
+                        for (int i = nets.size() - 1; i >= 0; i--) {
+                            if (netId.equals(nets.get(i).optString("network_id", ""))) {
+                                nets.remove(i);
+                                modified = true;
+                            }
+                        }
+                    }
+                    if (modified && !vmStore.save(context))
+                        throw new IOException("Cannot save VM network references");
+                });
+                var response = DaemonConnection.getInstance().request(new JSONObject()
+                    .put("command", "network_delete").put("network_id", netId));
+                if (response == null || !Boolean.TRUE.equals(response.opt("success")))
+                    throw new IOException(response == null ? "Missing network deletion response"
+                        : response.optString("message", "Network deletion was not confirmed"));
+                // Re-read after the daemon response: native deletion also persists the
+                // network list. Never write the UI's potentially stale list back.
+                var fresh = new NetworkStore();
+                if (!fresh.load(context)) throw new IOException("Cannot reload network configuration");
+                if (fresh.findById(networkId) != null) {
+                    fresh.removeById(networkId);
+                    if (!fresh.save(context)) throw new IOException("Cannot save network configuration");
+                }
                 mainHandler.post(() -> {
-                    Toast.makeText(context,
-                        context.getString(R.string.network_delete_in_use,
-                            String.join(", ", runningNames)),
-                        LENGTH_LONG).show();
+                    netStore.removeById(networkId);
+                    callback.onFinished(true);
+                });
+            } catch (Exception error) {
+                Log.e(TAG, "Network deletion incomplete; reload state before retrying", error);
+                mainHandler.post(() -> {
+                    Toast.makeText(context, error.getMessage(), LENGTH_LONG).show();
                     callback.onFinished(false);
                 });
-                return;
             }
-            boolean vmModified = false;
-            var allVms = new ArrayList<VMConfig>();
-            vmStore.forEach((id, cfg) -> allVms.add(cfg));
-            for (var vmCfg : allVms) {
-                var nets = vmCfg.item.opt("networks", DataItem.newArray());
-                for (int i = nets.size() - 1; i >= 0; i--) {
-                    if (netId.equals(nets.get(i).optString("network_id", ""))) {
-                        nets.remove(i);
-                        vmModified = true;
-                    }
-                }
-            }
-            if (vmModified) vmStore.save(context);
-            DaemonConnection.OnUnsuccessful f = r ->
-                Log.w(TAG, fmt("Daemon network_delete failed: %s", r.optString("message", "")));
-            DaemonConnection.getInstance().buildRequest("network_delete")
-                .put("network_id", netId)
-                .onUnsuccessful(f)
-                .onError(e -> Log.w(TAG, "Daemon network_delete error", e))
-                .invoke();
-            netStore.removeById(networkId);
-            netStore.save(context);
-            mainHandler.post(() -> callback.onFinished(true));
         });
     }
 
-    @NonNull
-    private static CountDownLatch getCountDownLatch(
-        VMStore vmStore,
-        String netId,
-        ArrayList<String> runningNames
-    ) {
-        var latch = new CountDownLatch(1);
-        DaemonConnection.getInstance().buildRequest("vm_list")
-            .onResponse(resp -> {
-                collectRunningVMsUsingNetwork(resp, vmStore, netId, runningNames);
-                latch.countDown();
-            })
-            .onUnsuccessful(r -> latch.countDown())
-            .onError(e -> {
-                Log.w(TAG, "Failed to query VM list", e);
-                latch.countDown();
-            })
-            .invoke();
-        return latch;
-    }
-
-    private static void collectRunningVMsUsingNetwork(
-        @NonNull JSONObject resp,
-        @NonNull VMStore vmStore,
-        @NonNull String netId,
-        @NonNull ArrayList<String> out
-    ) {
-        try {
-            JsonUtils.forEachArray(resp, "data", (JSONObject vm) -> {
-                // vm_list reports the enum name ("STOPPED"); vm_status lower-cases it. Compare
-                // either way -- a case-sensitive match here read every stopped VM as running and
-                // so refused to delete any network a VM had ever been attached to.
-                if (vm.optString("state", "stopped").equalsIgnoreCase("stopped")) return;
-                var vmId = vm.optString("id", "");
-                var vmCfg = vmStore.findById(vmId);
-                if (vmCfg == null) return;
-                var nets = vmCfg.item.opt("networks", DataItem.newArray());
-                if (nets.isEmpty()) return;
-                for (var iter : nets) {
-                    if (netId.equals(iter.getValue().optString("network_id", ""))) {
-                        var name = vmCfg.getName();
-                        out.add(name != null ? name : vmId);
-                        break;
-                    }
+    static ArrayList<String> namesUsingNetwork(VMStore store, String networkId) {
+        var names = new ArrayList<String>();
+        store.forEach((id, vm) -> {
+            for (var entry : vm.item.opt("networks", DataItem.newArray())) {
+                if (networkId.equals(entry.getValue().optString("network_id", ""))) {
+                    names.add(vm.getName());
+                    break;
                 }
-            });
-        } catch (Exception ignored) {
-        }
+            }
+        });
+        return names;
     }
 
     private static void showError(@NonNull Handler handler, UIContext ui, String msg) {
