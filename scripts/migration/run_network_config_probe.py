@@ -130,6 +130,44 @@ def main():
             assert not exchange(sock, "network_list_host_addresses", authenticated=True)["success"]
             assert exchange(sock, "auth", token=token)["success"]
             cap = exchange(sock, "capabilities")
+            assert cap["network_config_events"] == "invalidation-v1" and cap["service_api_minor"] >= 12
+            baseline = exchange(sock, "network_config_snapshot")
+            assert baseline["success"] and baseline["epoch"] == cap["epoch"]
+            assert [row["name"] for row in baseline["items"]] == ["existing", "legacy"]
+            # Commit in the snapshot/subscription gap. A large configuration is
+            # read from the fixed view, never copied into the event history.
+            changed_config = dict(existing, extension={"large": "x" * 20000})
+            assert exchange(sock, "network_modify", config=changed_config)["success"]
+            with connect() as resources, connect() as tasks_only:
+                for connection, command in ((resources, "resource_subscribe"), (tasks_only, "task_subscribe")):
+                    assert exchange(connection, command, epoch=baseline["epoch"], cursor=baseline["cursor"])["success"]
+                replay = receive(resources)
+                assert replay["event"] == "resource_events", replay
+                invalidations = [row for row in replay["events"] if row["kind"] == "network.config.invalidated"]
+                assert len(invalidations) == 1 and invalidations[0]["data"] is None, replay
+                assert int(invalidations[0]["seq"]) > int(baseline["cursor"])
+                filtered = receive(tasks_only)
+                assert filtered["event"] == "task_events" and filtered["events"] == [], filtered
+                assert filtered["cursor"] == replay["cursor"]
+                assert exchange(resources, "resource_unsubscribe")["success"]
+                assert exchange(tasks_only, "task_unsubscribe")["success"]
+            frozen = exchange(sock, "resource_snapshot_page", snapshot_id=baseline["snapshot_id"], offset=0)
+            assert frozen["items"] == baseline["items"] and frozen["cursor"] == baseline["cursor"]
+            assert exchange(sock, "network_config_snapshot", max_bytes=16448)["error"]["code"] == "RESOURCE_EXHAUSTED"
+            updated = exchange(sock, "network_config_snapshot")
+            assert updated["items"][0]["extension"]["large"] == "x" * 20000
+            assert exchange(sock, "network_modify", config=existing)["success"]
+            # Reconnect with the last processed cursor; the intervening commit
+            # survives the first subscriber's connection lifetime.
+            with connect() as resources:
+                assert exchange(resources, "resource_subscribe", epoch=baseline["epoch"], cursor=replay["cursor"])["success"]
+                tail = receive(resources)
+                assert tail["event"] == "resource_events"
+                assert len([row for row in tail["events"] if row["kind"] == "network.config.invalidated"]) == 1
+                assert exchange(resources, "resource_unsubscribe")["success"]
+            for view in (baseline, updated):
+                assert exchange(sock, "resource_snapshot_release", snapshot_id=view["snapshot_id"])["success"]
+            report["network_snapshot_replay_reconnect_large_config_task_filter"] = True
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
             assert "network_delete" in cap["commands"] and cap["network_delete"] and cap["network_live_details"]
@@ -253,6 +291,9 @@ def main():
         stop()
         port, token, _ = start()
         with connect() as sock:
+            stale = exchange(sock, "resource_subscribe", epoch=baseline["epoch"], cursor=baseline["cursor"])
+            assert stale["error"]["code"] == "RESYNC_REQUIRED", stale
+            report["resource_restart_epoch_resync"] = True
             assert exchange(sock, "network_exists", network_id=created["id"])["exists"]
             assert exchange(sock, "network_exists", network_id=half["id"])["exists"]
         if args.lifecycle:
