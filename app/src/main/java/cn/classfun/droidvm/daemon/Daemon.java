@@ -270,6 +270,13 @@ public final class Daemon {
     }
 
     public static void main(String... args) {
+        try {
+            cn.classfun.droidvm.lib.store.base.VmConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
+        } catch (Exception error) {
+            System.err.println("Legacy daemon refused: " + error.getMessage());
+            System.exit(1);
+            return;
+        }
         boolean force = Arrays.asList(args).contains("--force");
         System.out.print("Starting DroidVM Daemon...\n");
         UnixHelper.load();
@@ -283,6 +290,13 @@ public final class Daemon {
         if (!acquireLock(force)) {
             System.out.print("Another DroidVM Daemon is already running.\n");
             System.exit(1);
+        }
+        try {
+            cn.classfun.droidvm.lib.store.base.VmConfigOwnership.requireLegacy(new File(DATA_DIR, "files"));
+        } catch (Exception error) {
+            System.err.println("Legacy daemon refused: " + error.getMessage());
+            System.exit(1);
+            return;
         }
         // Publish the host's audio endpoints before any VM starts, and keep them current: a VM
         // pinned to a headset needs to find it again by name after it is reconnected, and the

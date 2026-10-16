@@ -336,7 +336,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
                 if (configSession != null) configSession.saveVm(config.toJson(), creating);
                 else {
                     // Refuse a legacy save if this daemon now advertises configuration ownership.
-                    // Production activation still requires a process-wide persistent ownership gate.
+                    // DataStore also locks/checks the persistent gate across the actual file write.
                     if (configClient.supported()) throw new IOException("Configuration ownership changed; reopen editor");
                     if (!store.save(appContext)) throw new IOException("Cannot save VM configuration");
                 }

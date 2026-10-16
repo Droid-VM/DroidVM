@@ -27,6 +27,10 @@ val vmConfigSources = tasks.register<ContractSourceTask>("syncVmConfigSources") 
     sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/daemon/VmConfigClient.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/vmconfig/main"))
 }
+val vmOwnershipSources = tasks.register<ContractSourceTask>("syncVmOwnershipSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/store/base/VmConfigOwnership.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/vmownership/main"))
+}
 val contractSources = tasks.register<ContractSourceTask>("syncContractSources") {
     sourceFile.set(rootProject.file("app/src/androidTest/java/cn/classfun/droidvm/lib/daemon/ProtocolContractTest.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/protocol/androidTest"))
@@ -75,6 +79,7 @@ androidComponents {
     onVariants { variant ->
         variant.sources.java?.addGeneratedSourceDirectory(protocolSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(vmConfigSources, ContractSourceTask::outputDirectory)
+        variant.sources.java?.addGeneratedSourceDirectory(vmOwnershipSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(audioTypeSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(evdevSources, ContractSourceTask::outputDirectory)
         variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
