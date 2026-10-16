@@ -23,12 +23,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
+    parser.add_argument("--display", action="store_true", help="Run the default native-display screen with input instead of the full lifecycle")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/vm-runtime-device" / nonce
     output.mkdir(parents=True)
     app = "cn.classfun.droidvm.migration.test"
     data = f"/data/user/0/{app}/cache/vmrt-{nonce[:8]}"
+    if args.display:
+        data = f"/data/local/tmp/dv{nonce[:6]}"  # input socket paths must fit sun_path
     binary_dir = f"/data/local/tmp/droidvm-vmrt-{nonce}"
     adb = ["adb", "-s", args.serial]
     report, processes, forwards, logs, events = {"checks": []}, [], [], [], []
@@ -134,7 +137,11 @@ def main():
         report["pool_want_before"] = pool_want()
         test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
         subprocess.run(adb + ["install", "-r", "-t", str(test_apk)], check=True, timeout=60, capture_output=True)
-        shell(["run-as", app, "mkdir", "-p", data + "/files", data + "/bin"], check=True)
+        if args.display:
+            app_uid = shell(["stat", "-c", "%u", f"/data/user/0/{app}"], check=True).stdout.strip()
+            assert root_shell(f"mkdir -p {data}/files {data}/bin && chown -R {app_uid}:{app_uid} {data} && chmod 700 {data}").returncode == 0
+        else:
+            shell(["run-as", app, "mkdir", "-p", data + "/files", data + "/bin"], check=True)
         uid = shell(["stat", "-c", "%u", data], check=True).stdout.strip()
         assert root_shell(f"ln -s {PRODUCTION}/usr {data}/usr && ln -s {PRODUCTION}/lib {data}/lib && ln -s {PRODUCTION}/bin/lbx {data}/bin/lbx && chown -h {uid}:{uid} {data}/usr {data}/lib {data}/bin/lbx").returncode == 0
         shell(["mkdir", binary_dir], check=True)
@@ -148,6 +155,38 @@ def main():
                   "boot": {"protocol": "linux", "linux": {"source": "manual", "kernel": PRODUCTION + "/usr/share/droidvm/vmlinuz",
                                                           "initrd": PRODUCTION + "/usr/share/droidvm/initramfs.img",
                                                           "cmdline": "console=ttyS0 earlycon"}}}
+        if args.display:
+            # New-VM default: simplefb exported natively with input.
+            config["screens"] = {"gpu-0": {"enabled": False}, "simplefb": {"enabled": True, "exporter": "native", "input_enabled": True}}
+            port, token = start()
+            with connect(port, token) as sock:
+                check(exchange(sock, "vm_create", config=config)["success"], "create native-display VM")
+                check(exchange(sock, "vm_start", vm_id=vm_id)["success"], "start native-display VM")
+                running = wait_state(sock, "running", 120)
+                if not running:
+                    report["stdio"] = history(sock, "stdio")[-3000:]
+                check(running, "native-display VM reaches RUNNING")
+                sockets = root_shell(f"ls {data}/run").stdout.split()
+                report["sockets"] = sockets
+                for tag in ("ms", "sfb_mt", "sfb_tab", "sfb_kbd"):
+                    check(f"dvmin_{vm_id}_{tag}.sock" in sockets, "input socket " + tag)
+                import base64
+                event = base64.b64encode(bytes(24)).decode()
+                delivered = False
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline and not delivered:
+                    delivered = exchange(sock, "vm_input", vm_id=vm_id, screen="simplefb", channel=2, data=event).get("delivered")
+                    time.sleep(0.25)
+                check(delivered, "vm_input reaches crosvm's mouse device")
+                check(exchange(sock, "vm_input", vm_id=vm_id, screen="simplefb", channel=1, data=event)["delivered"], "keyboard channel delivered")
+                check(exchange(sock, "vm_input", vm_id=vm_id, screen="gpu-0", channel=0, data=event)["delivered"] is False, "no device on a disabled screen")
+                check(exchange(sock, "vm_input", vm_id=str(uuid.uuid4()), channel=2, data=event)["message"].startswith("VM not found"), "vm_input unknown VM")
+                check(exchange(sock, "vm_stop", vm_id=vm_id)["success"] and wait_state(sock, "stopped", 60), "stop native-display VM")
+                check(not [s for s in root_shell(f"ls {data}/run").stdout.split() if s.startswith("dvmin_")], "input sockets removed")
+            stop()
+            report["passed"] = True
+            print("PASS: native-display VM with the input bridge,", len(report["checks"]), "checks")
+            return
         port, token = start()
         stop_flag = threading.Event()
         listener = threading.Thread(target=listen, args=(port, token, stop_flag), daemon=True)
