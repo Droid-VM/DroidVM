@@ -32,7 +32,8 @@ public final class NetworkConfigClient {
         if ("compare-config-v1".equals(caps.optString("network_config_update"))) return true;
         if (caps.has("network_config_update") || (caps.has("network_config_persistence")
                 && !Boolean.FALSE.equals(caps.opt("network_config_persistence")))
-                || caps.has("network_config_events") || caps.has("network_config_import") || caps.has("network_config_document"))
+                || caps.has("network_config_events") || caps.has("network_config_import") || caps.has("network_config_document")
+                || caps.has("network_config_delete") || caps.has("configuration_recover"))
             throw new IOException("Network configuration API is incompatible; reopen after updating the daemon");
         return false;
     }
@@ -147,6 +148,61 @@ public final class NetworkConfigClient {
                     if (!ordered.getString(i).equals(saved.getString(i))) throw new IOException("Network import identity mismatch");
             } catch (IOException | JSONException failure) { throw new VmConfigClient.CommitUnknown(failure); }
         }
+    }
+
+    /** Capture both confirmations before displaying deletion to the user. Network must be stopped. */
+    public DeleteSession deleteSession(String id) throws IOException, JSONException {
+        String canonical = UUID.fromString(id).toString();
+        var caps = call("capabilities", new JSONObject());
+        if (!"revisioned-stopped-chunks-v1".equals(caps.optString("network_config_delete")))
+            throw new IOException("Coordinated network deletion API is unavailable");
+        var vms = new VmConfigClient(rpc).read();
+        var rows = planningDocument().getJSONArray("networks");
+        for (int i = 0; i < rows.length(); i++) {
+            var row = rows.getJSONObject(i);
+            if (canonical.equals(UUID.fromString(row.getString("id")).toString()))
+                return new DeleteSession(canonical, row.toString(), vms);
+        }
+        throw new IOException("Network is not in the confirmation snapshot");
+    }
+
+    public final class DeleteSession {
+        private final String id, baseline;
+        private final VmConfigClient.Snapshot vms;
+        private boolean submitted;
+        private DeleteSession(String id, String baseline, VmConfigClient.Snapshot vms) {
+            this.id = id; this.baseline = baseline; this.vms = vms;
+        }
+        public JSONObject configuration() throws JSONException { return new JSONObject(baseline); }
+        public JSONObject vmDocument() throws JSONException { return vms.document(); }
+        public synchronized VmConfigClient.Version delete() throws IOException, JSONException {
+            if (submitted) throw new IOException("Reload network and VM state before deleting again");
+            byte[] bytes = new JSONObject().put("expected", new JSONObject(baseline)).toString().getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > (9 << 20)) throw new IOException("Network deletion confirmation exceeds upload limit");
+            submitted = true;
+            final JSONObject response;
+            try {
+                response = new VmConfigClient(rpc).upload("network_config_delete", new JSONObject().put("revision", vms.revision), bytes);
+            } catch (VmConfigClient.RemoteFailure failure) {
+                if ("INTERNAL".equals(failure.code) || "UNKNOWN".equals(failure.code))
+                    throw new VmConfigClient.CommitUnknown(failure);
+                throw failure;
+            }
+            try {
+                var version = new VmConfigClient.Version(response);
+                if (!id.equals(response.getString("network_id")) || !version.persisted || version.durabilityUncertain)
+                    throw new IOException("Network deletion acknowledgement is incomplete");
+                return version;
+            } catch (IOException | JSONException failure) { throw new VmConfigClient.CommitUnknown(failure); }
+        }
+    }
+
+    /** Explicit recovery of a server-side decision; never resubmits the deletion. */
+    public void recoverConfiguration() throws IOException, JSONException {
+        var caps = call("capabilities", new JSONObject());
+        if (!"redo-v1".equals(caps.optString("configuration_recover")))
+            throw new IOException("Configuration recovery API is unavailable");
+        call("configuration_recover", new JSONObject());
     }
 
     public EditSession edit(String id) throws IOException, JSONException {
