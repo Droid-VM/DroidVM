@@ -32,13 +32,27 @@ public final class NetworkConfigClient {
         if ("compare-config-v1".equals(caps.optString("network_config_update"))) return true;
         if (caps.has("network_config_update") || (caps.has("network_config_persistence")
                 && !Boolean.FALSE.equals(caps.opt("network_config_persistence")))
-                || caps.has("network_config_events") || caps.has("network_config_import"))
+                || caps.has("network_config_events") || caps.has("network_config_import") || caps.has("network_config_document"))
             throw new IOException("Network configuration API is incompatible; reopen after updating the daemon");
         return false;
     }
 
     /** A fixed paginated configuration view, without runtime projection fields. */
     public JSONObject planningDocument() throws IOException, JSONException {
+        var caps = call("capabilities", new JSONObject());
+        if (caps.has("network_config_document")) {
+            if (!"base64-json-chunks-v1".equals(caps.optString("network_config_document")))
+                throw new IOException("Unsupported network document encoding");
+            var document = new JSONObject(new VmConfigClient(rpc)
+                .readDocument("network_config_document", "networks", 8 << 20).json);
+            var rows = document.getJSONArray("networks");
+            if (rows.length() > 1024) throw new IOException("Too many networks in snapshot");
+            var ids = new HashSet<String>();
+            for (int i = 0; i < rows.length(); i++)
+                if (!ids.add(UUID.fromString(rows.getJSONObject(i).getString("id")).toString()))
+                    throw new IOException("Repeated network in snapshot");
+            return document;
+        }
         var page = call("network_config_snapshot", new JSONObject().put("max_bytes", 1 << 20));
         String id = page.getString("snapshot_id");
         try {

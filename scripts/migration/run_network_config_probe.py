@@ -135,6 +135,29 @@ def main():
             baseline = exchange(sock, "network_config_snapshot")
             assert baseline["success"] and baseline["epoch"] == cap["epoch"]
             assert [row["name"] for row in baseline["items"]] == ["existing", "legacy"]
+            assert cap["network_config_document"] == "base64-json-chunks-v1" and cap["service_api_minor"] >= 19
+            page = exchange(sock, "network_config_document", max_bytes=128 << 10)
+            view, epoch, cursor = page["snapshot_id"], page["epoch"], page["cursor"]
+            document, seen, expected = bytearray(), 0, None
+            try:
+                while True:
+                    assert page["success"] and (page["snapshot_id"], page["epoch"], page["cursor"]) == (view, epoch, cursor)
+                    for row in page["items"]:
+                        if seen == 0:
+                            assert row["type"] == "metadata" and row["encoding"] == "base64-json"
+                            expected = row["bytes"]
+                        else:
+                            assert row["type"] == "chunk" and row["offset"] == len(document)
+                            document.extend(base64.b64decode(row["data"], validate=True))
+                        seen += 1
+                    if page["next_offset"] is None:
+                        assert seen == page["total"] and len(document) == expected
+                        break
+                    assert page["next_offset"] == seen
+                    page = exchange(sock, "resource_snapshot_page", snapshot_id=view, offset=seen, max_bytes=128 << 10)
+                assert json.loads(document)["networks"] == baseline["items"]
+            finally:
+                assert exchange(sock, "resource_snapshot_release", snapshot_id=view)["success"]
             # Commit in the snapshot/subscription gap. A large configuration is
             # read from the fixed view, never copied into the event history.
             changed_config = dict(existing, extension={"large": "x" * 20000})
