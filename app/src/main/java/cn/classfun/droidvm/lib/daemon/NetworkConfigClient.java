@@ -4,6 +4,9 @@ package cn.classfun.droidvm.lib.daemon;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import java.util.HashMap;
+import java.util.HashSet;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -29,14 +32,107 @@ public final class NetworkConfigClient {
         if ("compare-config-v1".equals(caps.optString("network_config_update"))) return true;
         if (caps.has("network_config_update") || (caps.has("network_config_persistence")
                 && !Boolean.FALSE.equals(caps.opt("network_config_persistence")))
-                || caps.has("network_config_events"))
+                || caps.has("network_config_events") || caps.has("network_config_import"))
             throw new IOException("Network configuration API is incompatible; reopen after updating the daemon");
         return false;
     }
 
-    /** Advisory list for name/address validation, never an update baseline. */
+    /** A fixed paginated configuration view, without runtime projection fields. */
     public JSONObject planningDocument() throws IOException, JSONException {
-        return new JSONObject().put("networks", call("network_list", new JSONObject()).getJSONArray("data"));
+        var page = call("network_config_snapshot", new JSONObject().put("max_bytes", 1 << 20));
+        String id = page.getString("snapshot_id");
+        try {
+            String epoch = page.getString("epoch"), cursor = page.getString("cursor");
+            int total = page.getInt("total");
+            if (id.isEmpty() || epoch.isEmpty() || cursor.isEmpty() || total < 0 || total > 1024)
+                throw new IOException("Invalid network snapshot metadata");
+            var rows = new JSONArray();
+            var ids = new HashSet<String>();
+            long bytes = 0;
+            for (;;) {
+                if (!id.equals(page.getString("snapshot_id")) || !epoch.equals(page.getString("epoch"))
+                        || !cursor.equals(page.getString("cursor")) || total != page.getInt("total"))
+                    throw new IOException("Network snapshot changed between pages");
+                var items = page.getJSONArray("items");
+                if (items.length() > total - rows.length() || (items.length() == 0 && rows.length() < total))
+                    throw new IOException("Invalid network snapshot page length");
+                for (int i = 0; i < items.length(); i++) {
+                    var config = items.getJSONObject(i);
+                    String key = UUID.fromString(config.getString("id")).toString();
+                    if (!ids.add(key)) throw new IOException("Repeated network in snapshot");
+                    bytes += config.toString().getBytes(StandardCharsets.UTF_8).length;
+                    if (bytes > (8 << 20)) throw new IOException("Network snapshot exceeds storage capacity");
+                    rows.put(new JSONObject(config.toString()));
+                }
+                if (!page.has("next_offset")) throw new IOException("Missing network snapshot continuation");
+                if (page.isNull("next_offset")) {
+                    if (rows.length() != total) throw new IOException("Incomplete network snapshot");
+                    return new JSONObject().put("networks", rows);
+                }
+                if (page.getInt("next_offset") != rows.length() || rows.length() >= total)
+                    throw new IOException("Invalid network snapshot continuation");
+                page = call("resource_snapshot_page", new JSONObject().put("snapshot_id", id)
+                    .put("offset", rows.length()).put("max_bytes", 1 << 20));
+            }
+        } finally {
+            try { call("resource_snapshot_release", new JSONObject().put("snapshot_id", id)); }
+            catch (IOException | JSONException ignored) { /* Fixed expiry reclaims disconnected views. */ }
+        }
+    }
+
+    public ImportSession importSession() throws IOException, JSONException {
+        var caps = call("capabilities", new JSONObject());
+        if (!"conditional-chunks-v1".equals(caps.optString("network_config_import"))
+                || !"invalidation-v1".equals(caps.optString("network_config_events")))
+            throw new IOException("Atomic network import API is unavailable");
+        return new ImportSession(planningDocument().toString());
+    }
+
+    public final class ImportSession {
+        private final String baseline;
+        private boolean submitted;
+        private ImportSession(String baseline) { this.baseline = baseline; }
+        public JSONObject document() throws JSONException { return new JSONObject(baseline); }
+        public synchronized void merge(JSONArray imported) throws IOException, JSONException {
+            if (submitted) throw new IOException("Reload network state before importing again");
+            if (imported.length() > 1024) throw new IOException("Too many imported networks");
+            var current = new HashMap<String, JSONObject>();
+            var rows = document().getJSONArray("networks");
+            for (int i = 0; i < rows.length(); i++) {
+                var row = rows.getJSONObject(i);
+                current.put(UUID.fromString(row.getString("id")).toString(), row);
+            }
+            var ids = new HashSet<String>();
+            var ordered = new JSONArray();
+            var operations = new JSONArray();
+            for (int i = 0; i < imported.length(); i++) {
+                var config = new JSONObject(imported.getJSONObject(i).toString());
+                String id = UUID.fromString(config.getString("id")).toString();
+                if (!ids.add(id)) throw new IOException("Repeated network import ID");
+                if (config.toString().getBytes(StandardCharsets.UTF_8).length > (256 << 10))
+                    throw new IOException("Network configuration exceeds edit limit");
+                ordered.put(id);
+                operations.put(new JSONObject().put("config", config)
+                    .put("expected", current.containsKey(id) ? current.get(id) : JSONObject.NULL));
+            }
+            if (operations.length() == 0) return;
+            byte[] bytes = new JSONObject().put("operations", operations).toString().getBytes(StandardCharsets.UTF_8);
+            if (bytes.length > (17 << 20)) throw new IOException("Network import exceeds upload limit");
+            submitted = true;
+            final JSONObject result;
+            try { result = new VmConfigClient(rpc).upload("network_config_import", new JSONObject(), bytes); }
+            catch (VmConfigClient.RemoteFailure failure) {
+                if ("INTERNAL".equals(failure.code) || "UNKNOWN".equals(failure.code))
+                    throw new VmConfigClient.CommitUnknown(failure);
+                throw failure;
+            }
+            try {
+                var saved = result.getJSONArray("network_ids");
+                if (saved.length() != ordered.length()) throw new IOException("Incomplete network import acknowledgement");
+                for (int i = 0; i < saved.length(); i++)
+                    if (!ordered.getString(i).equals(saved.getString(i))) throw new IOException("Network import identity mismatch");
+            } catch (IOException | JSONException failure) { throw new VmConfigClient.CommitUnknown(failure); }
+        }
     }
 
     public EditSession edit(String id) throws IOException, JSONException {

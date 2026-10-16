@@ -60,7 +60,8 @@ public final class VmConfigClient {
 
     private JSONObject call(String command, JSONObject request) throws IOException, JSONException {
         JSONObject response = rpc.request(request.put("command", command));
-        if (response == null) throw new IOException("Missing configuration response");
+        if (response == null || !(response.opt("success") instanceof Boolean))
+            throw new IOException("Missing or invalid configuration response");
         if (!response.getBoolean("success")) throw new RemoteFailure(response);
         return response;
     }
@@ -257,7 +258,14 @@ public final class VmConfigClient {
         document.getJSONArray("vms");
         byte[] bytes = document.toString().getBytes(StandardCharsets.UTF_8);
         if (bytes.length == 0 || bytes.length > MAX_BYTES) throw new IOException("Configuration exceeds upload limit");
-        JSONObject begin = call("vm_config_upload_begin", new JSONObject().put("revision", revision).put("bytes", bytes.length));
+        JSONObject result = upload("vm_config_upload", new JSONObject().put("revision", revision), bytes);
+        try { return new Version(result); }
+        catch (IOException | JSONException failure) { throw new CommitUnknown(failure); }
+    }
+
+    /** Shared staging protocol; a returned response means commit was attempted exactly once. */
+    JSONObject upload(String prefix, JSONObject options, byte[] bytes) throws IOException, JSONException {
+        JSONObject begin = call(prefix + "_begin", options.put("bytes", bytes.length));
         String id = begin.getString("upload_id");
         boolean commitAttempted = false;
         try {
@@ -265,16 +273,18 @@ public final class VmConfigClient {
             if (chunkSize <= 0 || chunkSize > CHUNK_BYTES) throw new IOException("Invalid upload chunk size");
             for (int offset = 0; offset < bytes.length; offset += chunkSize) {
                 int count = Math.min(chunkSize, bytes.length - offset);
-                JSONObject reply = call("vm_config_upload_append", new JSONObject().put("upload_id", id).put("offset", offset)
+                JSONObject reply = call(prefix + "_append", new JSONObject().put("upload_id", id).put("offset", offset)
                     .put("data", Base64.encodeToString(bytes, offset, count, Base64.NO_WRAP)));
                 if (reply.getLong("received") != (long) offset + count) throw new IOException("Invalid upload acknowledgement");
             }
             JSONObject commitRequest = new JSONObject().put("upload_id", id);
             commitAttempted = true;
-            return commit("vm_config_upload_commit", commitRequest);
+            try { return call(prefix + "_commit", commitRequest); }
+            catch (RemoteFailure failure) { throw failure; }
+            catch (IOException | JSONException failure) { throw new CommitUnknown(failure); }
         } finally {
             if (!commitAttempted) {
-                try { call("vm_config_upload_abort", new JSONObject().put("upload_id", id)); }
+                try { call(prefix + "_abort", new JSONObject().put("upload_id", id)); }
                 catch (IOException | JSONException ignored) { /* disconnected or expired */ }
             }
         }
