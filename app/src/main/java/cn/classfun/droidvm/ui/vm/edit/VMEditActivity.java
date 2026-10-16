@@ -5,6 +5,7 @@ package cn.classfun.droidvm.ui.vm.edit;
 
 import static java.util.Objects.requireNonNull;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.net.Uri;
 import android.os.Bundle;
@@ -15,6 +16,7 @@ import android.widget.Toast;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.widget.NestedScrollView;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
@@ -58,6 +60,8 @@ public final class VMEditActivity extends SwipeableTabActivity {
     private CameraPermission cameraPermission;
     /** A microphone permission choice has already been offered during this edit session. */
     private boolean micPermissionHandled = false;
+    private boolean saving = false;
+    private AlertDialog savingDialog;
     private final Map<String, Object> sharedData = new HashMap<>();
 
 
@@ -223,6 +227,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     private void doSave() {
+        if (saving) return;
         var peripheralTab = getTab(VMEditTab.TAB_PERIPHERAL);
         if (!micPermissionHandled
             && peripheralTab instanceof VMEditPeripheralTab
@@ -236,7 +241,10 @@ public final class VMEditActivity extends SwipeableTabActivity {
         var focused = getCurrentFocus();
         if (focused != null) focused.clearFocus();
         var store = new VMStore();
-        store.load(this);
+        if (!store.load(this)) {
+            Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
+            return;
+        }
         boolean valid = true;
         VMEditTab firstErrorTab = null;
         for (var tab : tabs) {
@@ -264,7 +272,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
         if (editMode) {
             config = store.findById(editVMId);
             if (config == null) {
-                finish();
+                Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
                 return;
             }
         } else {
@@ -287,14 +295,33 @@ public final class VMEditActivity extends SwipeableTabActivity {
             store.update(config);
         } else {
             store.add(config);
-            // The VM exists from here on, so this session is editing it, not creating one. The
-            // save can still end in the editor staying open -- the USB rules below -- and a
-            // second Save that took the creation path again would mint another id and leave two
-            // copies of the VM in the file, after refusing the name the first copy already has.
-            editVMId = config.getId();
-            editMode = true;
         }
-        store.save(this);
+        saving = true;
+        fab.setEnabled(false);
+        savingDialog = new MaterialAlertDialogBuilder(this)
+            .setMessage(R.string.home_card_loading)
+            .setCancelable(false)
+            .show();
+        var appContext = getApplicationContext();
+        runOnPool(() -> {
+            boolean saved = store.save(appContext);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (!saved) {
+                    endSaving();
+                    Toast.makeText(this, R.string.create_vm_error_save, Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                onConfigSaved(config, peripheralTab);
+            });
+        });
+    }
+
+    private void onConfigSaved(@NonNull VMConfig config, @NonNull VMEditBaseTab peripheralTab) {
+        // Only a successful save turns creation into editing. A failed USB-rule submission
+        // leaves this session open; retrying must update this VM rather than create another.
+        editVMId = config.getId();
+        editMode = true;
         setResult(RESULT_OK);
         // The VM config first, the USB rules second: a rule names the VM and the controller it
         // attaches to, and the daemon refuses one whose target it cannot find -- which a VM
@@ -303,10 +330,35 @@ public final class VMEditActivity extends SwipeableTabActivity {
         if (peripheralTab instanceof VMEditPeripheralTab
             && ((VMEditPeripheralTab) peripheralTab).hasPendingUsbRules()) {
             ((VMEditPeripheralTab) peripheralTab)
-                .pushUsbRules(config, this::finish, this::showUsbRulesError);
+                .pushUsbRules(config, () -> {
+                    endSaving();
+                    finish();
+                }, message -> {
+                    endSaving();
+                    if (!isFinishing() && !isDestroyed()) showUsbRulesError(message);
+                });
             return;
         }
+        endSaving();
         finish();
+    }
+
+    private void endSaving() {
+        saving = false;
+        fab.setEnabled(true);
+        if (savingDialog != null) {
+            savingDialog.dismiss();
+            savingDialog = null;
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (savingDialog != null) {
+            savingDialog.dismiss();
+            savingDialog = null;
+        }
+        super.onDestroy();
     }
 
     /** The VM was saved and its USB bindings were not; the editor stays open so they are not
