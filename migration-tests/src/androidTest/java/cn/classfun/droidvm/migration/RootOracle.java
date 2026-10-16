@@ -121,7 +121,9 @@ public final class RootOracle {
                         boot(test, row);
                         break;
                     default:
-                        throw new IllegalArgumentException("unknown op");
+                        if (!test.getString("op").startsWith("usb_")) throw new IllegalArgumentException("unknown op");
+                        UsbOracle.evaluate(test, row);
+                        break;
                 }
                 row.put("status", "ok");
             } catch (Throwable error) {
