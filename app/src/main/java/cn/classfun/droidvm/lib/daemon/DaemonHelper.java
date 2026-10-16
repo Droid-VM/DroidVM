@@ -33,6 +33,7 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.daemon.Daemon;
+import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 import cn.classfun.droidvm.lib.ui.UIContext;
 
 public final class DaemonHelper {
@@ -127,8 +128,15 @@ public final class DaemonHelper {
      * already running. With {@code force}, the new daemon terminates the
      * running one and takes over -- used for restart.
      */
+    /** The settings switch; the native daemon shares the Java one's run files and lock. */
+    public boolean useNativeDaemon() {
+        return ctx.getContext().getSharedPreferences("droidvm_prefs", 0).getBoolean(
+            MainSettingsFragment.KEY_NATIVE_DAEMON, MainSettingsFragment.DEFAULT_NATIVE_DAEMON);
+    }
+
     public boolean startDaemon(boolean force) {
         var zipPath = getDaemonZipPath();
+        if (useNativeDaemon()) return startNativeDaemon(zipPath, force);
         Log.i(TAG, fmt("Starting daemon via app_process64 with %s (force=%b)", zipPath, force));
         var runDir = pathJoin(DATA_DIR, "run");
         var uid = Process.myUid();
@@ -160,6 +168,27 @@ public final class DaemonHelper {
             result.printLog("droidvmd");
             return false;
         }
+    }
+
+    /** droidvmd creates run/ itself; the same launcher daemonizes it. */
+    private boolean startNativeDaemon(@NonNull String zipPath, boolean force) {
+        var cmd = fmt(
+            "%s %s --data-dir %s --apk %s%s",
+            escapedString(getAssetBinaryPath("daemon")),
+            escapedString(getAssetBinaryPath("droidvmd")),
+            escapedString(DATA_DIR),
+            escapedString(zipPath),
+            force ? " --force" : ""
+        );
+        Log.i(TAG, fmt("Starting native daemon: %s", cmd));
+        var result = run(cmd);
+        if (!result.isSuccess()) {
+            Log.e(TAG, "Failed to start native daemon");
+            result.printLog("droidvmd");
+            return false;
+        }
+        DaemonConnection.getInstance().connect();
+        return true;
     }
 
     public boolean stopDaemon() {

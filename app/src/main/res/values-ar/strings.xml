@@ -984,6 +984,8 @@
     <string name="vm_info_sleepbtn">زر السكون</string>
 
     <string name="settings_category_daemon">خدمة الخلفية (Daemon)</string>
+    <string name="settings_native_daemon_title">الخدمة الأصلية (معاينة)</string>
+    <string name="settings_native_daemon_summary">تشغيل خدمة droidvmd الأصلية بدلًا من خدمة Java؛ يسري عند تشغيل الخدمة في المرة القادمة</string>
     <string name="settings_daemon_status_title">حالة الخدمة</string>
     <string name="settings_daemon_running">قيد التشغيل</string>
     <string name="settings_daemon_stopped">متوقفة</string>
