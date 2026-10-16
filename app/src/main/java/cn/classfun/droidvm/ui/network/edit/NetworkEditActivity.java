@@ -9,6 +9,7 @@ import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.NetUtils.generateRandomMac;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,6 +23,8 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.button.MaterialButton;
@@ -33,9 +36,11 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.io.IOException;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.NetworkConfigClient;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.base.DataItem;
@@ -87,6 +92,14 @@ public final class NetworkEditActivity extends AppCompatActivity {
     private MaterialButton btnAddVlan;
     private FloatingActionButton fab;
     private NetworkStore store;
+    private final NetworkConfigClient configClient = new NetworkConfigClient(
+        request -> DaemonConnection.getInstance().request(request));
+    private NetworkConfigClient.EditSession configSession;
+    private NetworkConfig legacyBaseline;
+    private final UUID draftNetworkId = UUID.randomUUID();
+    private boolean busy;
+    private boolean running;
+    private AlertDialog busyDialog;
     @SuppressWarnings("FieldCanBeLocal")
     private String[] bridgeTypeLabels;
     @SuppressWarnings("FieldCanBeLocal")
@@ -121,8 +134,53 @@ public final class NetworkEditActivity extends AppCompatActivity {
 
     private void initialize() {
         new BackAskHelper(this);
-        store = new NetworkStore();
-        store.load(this);
+        try {
+            var intent = getIntent();
+            if (intent != null && intent.hasExtra(EXTRA_NETWORK_ID)) {
+                editMode = true;
+                editNetworkId = UUID.fromString(intent.getStringExtra(EXTRA_NETWORK_ID));
+            }
+        } catch (Exception error) {
+            Toast.makeText(this, R.string.network_edit_error_not_found, LENGTH_LONG).show();
+            finish();
+            return;
+        }
+        beginBusy();
+        var context = getApplicationContext();
+        runOnPool(() -> {
+            try {
+                boolean nativeConfig = configClient.supported();
+                var loaded = nativeConfig ? new NetworkStore(configClient.planningDocument()) : new NetworkStore();
+                if (!nativeConfig && !loaded.load(context)) throw new IOException("Cannot read network configuration");
+                var session = nativeConfig ? (editMode ? configClient.edit(editNetworkId.toString())
+                    : configClient.create(draftNetworkId.toString())) : null;
+                if (editMode) {
+                    var target = session == null ? loaded.findById(editNetworkId)
+                        : new NetworkConfig(session.configuration());
+                    if (target == null) throw new IOException("Network no longer exists");
+                    if (loaded.findById(editNetworkId) != null) loaded.removeById(editNetworkId);
+                    loaded.add(target);
+                    legacyBaseline = new NetworkConfig(target.toJson());
+                }
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    store = loaded;
+                    configSession = session;
+                    initializeLoaded();
+                    endBusy();
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    endBusy();
+                    Toast.makeText(this, error.getMessage(), LENGTH_LONG).show();
+                    finish();
+                });
+            }
+        });
+    }
+
+    private void initializeLoaded() {
         bridgeTypeLabels = new String[]{
             getString(R.string.network_edit_bridge_type_linux),
             getString(R.string.network_edit_bridge_type_gvisor),
@@ -147,10 +205,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         fab.setOnClickListener(v -> onSaveClicked());
         updateUplinkModeDropdown();
         loadUplinks();
-        var intent = getIntent();
-        if (intent != null && intent.hasExtra(EXTRA_NETWORK_ID)) {
-            editMode = true;
-            editNetworkId = UUID.fromString(intent.getStringExtra(EXTRA_NETWORK_ID));
+        if (editMode) {
             collapsingToolbar.setTitle(getString(R.string.network_edit_title));
             loadExistingConfig();
             checkRunningState();
@@ -390,6 +445,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
                 if (state.equalsIgnoreCase("running")
                     || state.equalsIgnoreCase("starting")) {
                     mainHandler.post(() -> {
+                        running = true;
                         tvRunningBanner.setVisibility(VISIBLE);
                         fab.setEnabled(false);
                     });
@@ -439,6 +495,11 @@ public final class NetworkEditActivity extends AppCompatActivity {
     }
 
     private void onSaveClicked() {
+        if (busy || running) return;
+        if (configSession != null && configSession.requiresReload()) {
+            Toast.makeText(this, "Reload network state before saving again", LENGTH_LONG).show();
+            return;
+        }
         storeAllBinders();
         var name = inputName.getText().trim();
         if (name.isEmpty()) {
@@ -468,6 +529,7 @@ public final class NetworkEditActivity extends AppCompatActivity {
         var config = new NetworkConfig();
         if (editMode && editNetworkId != null)
             config.setId(editNetworkId);
+        else config.setId(draftNetworkId);
         config.setName(name);
         config.setBridgeName(bridgeName);
         config.item.set("auto_up", swAutoUp.isChecked());
@@ -494,18 +556,67 @@ public final class NetworkEditActivity extends AppCompatActivity {
             Toast.makeText(this, conflict, LENGTH_LONG).show();
             return;
         }
-        if (editMode) {
-            store.update(config);
-        } else {
-            store.add(config);
+        final NetworkConfig detached;
+        try { detached = new NetworkConfig(config.toJson()); }
+        catch (Exception error) {
+            Toast.makeText(this, error.getMessage(), LENGTH_LONG).show();
+            return;
         }
-        store.save(this);
-        NetworkActions.syncToDaemon(config);
-        Toast.makeText(this,
-            editMode ? getString(R.string.network_edit_saved, name) :
-                getString(R.string.network_create_success, name),
-            LENGTH_SHORT).show();
-        finish();
+        beginBusy();
+        var context = getApplicationContext();
+        runOnPool(() -> {
+            try {
+                if (configSession != null) configSession.save(detached.toJson());
+                else {
+                    // No local fallback after a failed capability query or native takeover.
+                    if (configClient.supported()) throw new IOException("Network ownership changed; reopen editor");
+                    var fresh = new NetworkStore();
+                    if (!fresh.load(context)) throw new IOException("Cannot read network configuration");
+                    var current = fresh.findById(detached.getId());
+                    if (editMode) {
+                        if (current == null || !current.item.equals(legacyBaseline.item))
+                            throw new IOException("Network configuration changed; reopen editor");
+                        fresh.update(detached);
+                    } else {
+                        if (current != null) throw new IOException("Network already exists; reload state");
+                        fresh.add(detached);
+                    }
+                    if (!fresh.save(context)) throw new IOException("Cannot save network configuration");
+                    NetworkActions.syncToDaemon(detached);
+                }
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    endBusy();
+                    Toast.makeText(this, editMode ? getString(R.string.network_edit_saved, name)
+                        : getString(R.string.network_create_success, name), LENGTH_SHORT).show();
+                    finish();
+                });
+            } catch (Exception error) {
+                mainHandler.post(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    endBusy();
+                    Toast.makeText(this, error.getMessage(), LENGTH_LONG).show();
+                });
+            }
+        });
+    }
+
+    private void beginBusy() {
+        busy = true;
+        fab.setEnabled(false);
+        busyDialog = new MaterialAlertDialogBuilder(this)
+            .setMessage(R.string.home_card_loading).setCancelable(false).show();
+    }
+
+    private void endBusy() {
+        busy = false;
+        fab.setEnabled(!running);
+        if (busyDialog != null) { busyDialog.dismiss(); busyDialog = null; }
+    }
+
+    @Override protected void onDestroy() {
+        if (busyDialog != null) { busyDialog.dismiss(); busyDialog = null; }
+        super.onDestroy();
     }
 
     /**
