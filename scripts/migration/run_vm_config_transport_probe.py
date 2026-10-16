@@ -22,6 +22,7 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--coordinated", action="store_true", help="Exercise coordinated network deletion and recovery")
     mode.add_argument("--coordinated-java", action="store_true", help="Exercise production Java deletion client over TCP")
+    mode.add_argument("--disk-config", action="store_true", help="Exercise production Java disk registry client over TCP")
     parser.add_argument("--fixture", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvm_vm_config_fixture")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
@@ -108,6 +109,7 @@ def main():
         report["fingerprint"] = shell(["getprop", "ro.build.fingerprint"], check=True).stdout.strip()
         report["coordinated"] = args.coordinated
         report["coordinated_java"] = args.coordinated_java
+        report["disk_config"] = args.disk_config
         if not args.coordinated:
             test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
             report["test_apk_sha256"] = hashlib.sha256(test_apk.read_bytes()).hexdigest()
@@ -117,6 +119,11 @@ def main():
         shell(["chmod", "755", executable], check=True)
         apk = shell(["pm", "path", "cn.classfun.droidvm"], check=True).stdout.strip().removeprefix("package:")
         assert apk.startswith("/") and "\n" not in apk
+        if args.disk_config:
+            from disk_config_probe import run
+            run(start, stop, connect, exchange, snapshot, check, shell, read, output, directory)
+            report["passed"] = True
+            return
         if args.coordinated_java:
             for scenario in ("normal", "uncertain"):
                 options = ["--coordinated"]
