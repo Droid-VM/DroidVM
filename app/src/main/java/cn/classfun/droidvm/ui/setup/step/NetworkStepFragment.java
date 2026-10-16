@@ -5,6 +5,7 @@ package cn.classfun.droidvm.ui.setup.step;
 
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.os.Bundle;
 import android.util.Log;
@@ -19,8 +20,15 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.NetworkConfigClient;
+import cn.classfun.droidvm.lib.store.base.NetworkConfigOwnership;
 import cn.classfun.droidvm.lib.network.IPv4Network;
 import cn.classfun.droidvm.lib.network.IPv6Network;
 import cn.classfun.droidvm.lib.store.network.BridgeType;
@@ -54,6 +62,8 @@ public final class NetworkStepFragment extends BaseStepFragment {
     private final NetworkStore store = new NetworkStore();
     private boolean storeLoaded = false;
     private boolean created = false;
+    private boolean saving = false;
+    private boolean reloadRequired = false;
     private RadioGroup rgPreset;
     private TextView tvInfo;
     /**
@@ -139,6 +149,11 @@ public final class NetworkStepFragment extends BaseStepFragment {
     }
 
     private void onNext() {
+        if (saving || created) return;
+        if (reloadRequired) {
+            Toast.makeText(activity, "Reload network state before trying again", LENGTH_LONG).show();
+            return;
+        }
         int checkedId = rgPreset.getCheckedRadioButtonId();
         NetworkConfig config;
         if (checkedId == R.id.rb_net_wifi) {
@@ -158,16 +173,47 @@ public final class NetworkStepFragment extends BaseStepFragment {
             Toast.makeText(activity, e.getMessage(), LENGTH_LONG).show();
             return;
         }
-        store().add(config);
-        store().save(activity);
-        // Normally the daemon is not up yet and reads this out of networks.json when it starts;
-        // when it is already running, it has to be told, or it cannot resolve the network for
-        // the first VM that uses it.
-        NetworkActions.syncToDaemon(config);
-        created = true;
-        Toast.makeText(activity,
-            getString(R.string.setup_network_created, config.getName()),
-            LENGTH_SHORT).show();
-        activity.onStepCompleted();
+        saving = true;
+        var context = activity.getApplicationContext();
+        runOnPool(() -> {
+            NetworkConfigClient.EditSession session = null;
+            try {
+                var gate = new File(context.getFilesDir(), NetworkConfigOwnership.FILE_NAME).toPath();
+                boolean owned = !Files.notExists(gate, LinkOption.NOFOLLOW_LINKS) && Files.size(gate) != 0;
+                if (owned) {
+                    var client = new NetworkConfigClient(request -> DaemonConnection.getInstance().request(request));
+                    if (!client.supported()) throw new IOException("Native network service is required");
+                    session = client.create(config.getId().toString());
+                    session.save(config.toJson());
+                } else {
+                    // First install can precede daemon startup. The gate serializes
+                    // fresh read/save with a concurrent native ownership claim.
+                    NetworkConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                        var fresh = new NetworkStore();
+                        if (!fresh.load(context)) throw new IOException("Cannot read network configuration");
+                        if (!fresh.isEmpty()) throw new IOException("Networks changed; reopen setup");
+                        fresh.add(config);
+                        if (!fresh.save(context)) throw new IOException("Cannot save preset network");
+                    });
+                    NetworkActions.syncToDaemon(config);
+                }
+                activity.runOnUiThread(() -> {
+                    saving = false;
+                    created = true;
+                    if (!isAdded() || activity.isFinishing() || activity.isDestroyed()) return;
+                    Toast.makeText(activity, getString(R.string.setup_network_created, config.getName()), LENGTH_SHORT).show();
+                    activity.onStepCompleted();
+                });
+            } catch (Exception error) {
+                boolean uncertain = session != null && session.requiresReload();
+                Log.e(TAG, "Preset network was not confirmed", error);
+                activity.runOnUiThread(() -> {
+                    saving = false;
+                    reloadRequired = uncertain;
+                    if (isAdded() && !activity.isFinishing() && !activity.isDestroyed())
+                        Toast.makeText(activity, error.getMessage(), LENGTH_LONG).show();
+                });
+            }
+        });
     }
 }

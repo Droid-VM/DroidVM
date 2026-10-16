@@ -609,15 +609,15 @@ public final class MainSettingsFragment extends MainBaseFragment {
         ctor.setAccessible(true);
         var oldStore = ctor.newInstance();
         var newStore = ctor.newInstance();
-        oldStore.load(ctx);
-        newStore.load(json);
+        if (!oldStore.load(ctx) || !newStore.load(json))
+            throw new java.io.IOException("Cannot read configuration for import");
         newStore.forEach((k, v) -> {
             if (oldStore.findById(k) == null)
                 oldStore.add(v);
             else
                 oldStore.update(v);
         });
-        oldStore.save(ctx);
+        if (!oldStore.save(ctx)) throw new java.io.IOException("Configuration import was not saved");
     }
 
     @SuppressWarnings("unused")
