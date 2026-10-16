@@ -7,7 +7,10 @@ import androidx.annotation.NonNull;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import org.json.JSONObject;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -22,38 +25,47 @@ public final class VmRunningQuery {
     /**
      * Names among {@code candidates} whose VM is anything but stopped - starting, running,
      * suspended, stopping or rebooting all hold the disk files open. Blocking (up to 5s) - call
-     * off the main thread. Daemon errors read as "none in use": these checks guard disk
-     * operations, and with the daemon down no VM can be running anyway.
+     * off the main thread. Failure is unknown, never evidence that a VM stopped.
      */
     @NonNull
     public static List<String> inUseAmong(@NonNull Collection<String> candidates) {
-        var inUse = new HashSet<String>();
+        var response = new AtomicReference<JSONObject>();
+        var failure = new AtomicReference<Exception>();
         var latch = new CountDownLatch(1);
         DaemonConnection.getInstance().buildRequest("vm_list")
-            .onResponse(resp -> {
-                var arr = resp.optJSONArray("data");
-                if (arr != null) {
-                    for (int i = 0; i < arr.length(); i++) {
-                        var obj = arr.optJSONObject(i);
-                        if (obj != null
-                            && !obj.optString("state").equalsIgnoreCase("stopped"))
-                            inUse.add(obj.optString("name", ""));
-                    }
-                }
+            .onResponse(resp -> { response.set(resp); latch.countDown(); })
+            .onUnsuccessful(resp -> {
+                failure.set(new IllegalStateException(resp.optString("message", "VM state query failed")));
                 latch.countDown();
             })
-            .onUnsuccessful(resp -> latch.countDown())
-            .onError(e -> latch.countDown())
+            .onError(error -> { failure.set(error); latch.countDown(); })
             .invoke();
         try {
-            //noinspection ResultOfMethodCallIgnored
-            latch.await(5, TimeUnit.SECONDS);
+            if (!latch.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("VM state query timed out");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            throw new IllegalStateException("VM state query interrupted", e);
         }
+        if (failure.get() != null) throw new IllegalStateException("Cannot verify VM run state", failure.get());
+        var reply = response.get();
+        var rows = reply == null ? null : reply.optJSONArray("data");
+        if (rows == null) throw new IllegalStateException("Missing VM run state list");
+        var states = new HashMap<String, String>();
+        for (int i = 0; i < rows.length(); i++) {
+            var row = rows.optJSONObject(i);
+            if (row == null || !(row.opt("name") instanceof String) || !(row.opt("state") instanceof String))
+                throw new IllegalStateException("Invalid VM run state entry");
+            var name = row.optString("name");
+            if (name.isEmpty() || states.put(name, row.optString("state")) != null)
+                throw new IllegalStateException("Ambiguous VM run state entry");
+        }
+        return inUseFromStates(candidates, states);
+    }
+
+    static List<String> inUseFromStates(Collection<String> candidates, Map<String, String> states) {
         var out = new ArrayList<String>();
         for (var name : candidates)
-            if (inUse.contains(name)) out.add(name);
+            if (!"stopped".equalsIgnoreCase(states.get(name))) out.add(name);
         return out;
     }
 }
