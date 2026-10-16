@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 import shlex
 import socket
@@ -18,6 +19,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
+    parser.add_argument("--coordinated", action="store_true", help="Exercise coordinated network deletion and recovery")
     parser.add_argument("--fixture", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvm_vm_config_fixture")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
@@ -40,17 +42,19 @@ def main():
         assert condition, label
         report["checks"].append(label)
 
-    def start():
-        log = (output / f"fixture-{len(processes)}.txt").open("w", encoding="utf-8")
+    def start(*options):
+        log_path = output / f"fixture-{len(processes)}.txt"
+        log = log_path.open("w", encoding="utf-8")
         logs.append(log)
-        process = subprocess.Popen(adb + ["shell", shlex.join([executable, directory, apk])], stdout=log, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(adb + ["shell", shlex.join([executable, directory, apk, *options])], stdout=log, stderr=subprocess.STDOUT)
         processes.append(process)
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError("Fixture exited before readiness")
             pid, port, token = read("droidvmd.pid"), read("droidvmd-port.txt"), read("droidvmd-token.txt")
-            if pid.isdecimal() and port.isdecimal() and len(token) == 32:
+            ready = re.search(r"droidvmd ready pid=(\d+) port=(\d+)", log_path.read_text(encoding="utf-8", errors="replace"))
+            if ready and (pid, port) == ready.groups() and len(token) == 32:
                 forwarded = subprocess.run(adb + ["forward", "tcp:0", "tcp:" + port], check=True, capture_output=True, text=True, timeout=10)
                 local = int(forwarded.stdout.strip()); forwards.append(local)
                 return process, pid, local, port, token
@@ -75,8 +79,8 @@ def main():
             assert exchange(sock, "auth", token=token)["success"]
         return sock
 
-    def snapshot(sock):
-        page = exchange(sock, "vm_config_snapshot", max_bytes=131072)
+    def snapshot(sock, command="vm_config_snapshot"):
+        page = exchange(sock, command, max_bytes=131072)
         assert page["success"]
         first = page
         items = []
@@ -99,15 +103,22 @@ def main():
             assert exchange(sock, "resource_snapshot_release", snapshot_id=first["snapshot_id"])["success"]
 
     try:
-        test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
-        report["test_apk_sha256"] = hashlib.sha256(test_apk.read_bytes()).hexdigest()
         report["fingerprint"] = shell(["getprop", "ro.build.fingerprint"], check=True).stdout.strip()
-        subprocess.run(adb + ["install", "-r", "-t", str(test_apk)], check=True, timeout=60)
+        report["coordinated"] = args.coordinated
+        if not args.coordinated:
+            test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
+            report["test_apk_sha256"] = hashlib.sha256(test_apk.read_bytes()).hexdigest()
+            subprocess.run(adb + ["install", "-r", "-t", str(test_apk)], check=True, timeout=60)
         shell(["mkdir", directory], check=True)
         subprocess.run(adb + ["push", str(args.fixture), executable], check=True, timeout=30)
         shell(["chmod", "755", executable], check=True)
         apk = shell(["pm", "path", "cn.classfun.droidvm"], check=True).stdout.strip().removeprefix("package:")
         assert apk.startswith("/") and "\n" not in apk
+        if args.coordinated:
+            from coordinated_config_probe import run
+            run(start, stop, connect, exchange, snapshot, check, shell, directory)
+            report["passed"] = True
+            return
         process, pid, local, remote, token = start()
         with connect(local) as sock:
             for command in ("vm_config_snapshot", "vm_config_status", "vm_config_apply", "vm_config_upload_begin"):
