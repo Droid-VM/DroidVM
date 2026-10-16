@@ -327,6 +327,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:icon="@drawable/ic_package"
+                android:subtitle="@string/hugepage_enable_module_sub"
                 android:text="@string/hugepage_enable_module" />
 
             <cn.classfun.droidvm.ui.widgets.row.TextRowWidget

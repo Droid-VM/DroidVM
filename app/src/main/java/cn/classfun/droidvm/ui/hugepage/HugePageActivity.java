@@ -84,7 +84,6 @@ public final class HugePageActivity extends AppCompatActivity {
     private boolean moduleInstalled = false;
     private boolean moduleLoaded = false;
     private boolean moduleHasPoolWant = false;
-    private boolean moduleSoftDisabled = false;
     private boolean moduleAcquiring = false;
     // Drives the acquire-mode slots (v1/v2/v3): true while a run is in flight.
     // Set optimistically on tap, then reconciled from acquire_active
@@ -114,7 +113,6 @@ public final class HugePageActivity extends AppCompatActivity {
     private TextInputRowWidget inputCmaSize;
     private SwitchRowWidget rowCmaEnable;
     private boolean cmaSwitchSyncing = false;   // programmatic setChecked guard
-    private boolean cmaInputLoaded = false;     // seed the CMA size input once per show
     private boolean cmaBusy = false;            // an enable/disable flow is in flight
     // Two-way size link (pool_want <= pool_want_with_cma): which input the
     // user touched last decides who yields when they cross.
@@ -196,15 +194,18 @@ public final class HugePageActivity extends AppCompatActivity {
         inputCmaSize.setOnFocusLostListener(this::reconcileSizeLink);
         // One button:
         //   not installed        -> Install (open releases page)
-        //   installed, unloaded  -> Enable (insmod)
-        //   loaded, soft-disabled-> Enable (restore pool_want + acquire)
-        //   loaded (v7)          -> Disable (shrink pool to 1 page, stay loaded
-        //                           so per-VM tracking is never lost; no save)
-        //   loaded (v6, no knob) -> Disable (rmmod)
+        //   installed, unloaded  -> Load Kernel Module (insmod)
+        //   loaded (v7)          -> Release (shrink pool to 1 page, stay loaded
+        //                           so per-VM tracking is never lost; greyed once
+        //                           pool_want is already 0)
+        //   loaded (v6, no knob) -> Release (rmmod)
+        // Load only ever means insmod now: a loaded module always shows the
+        // release label, so there is no "re-collect" click path left (Save &
+        // Apply owns that).
         btnModuleToggle.setOnClickListener(v -> {
             if (!moduleInstalled) openModulePage();
-            else if (!moduleLoaded || moduleSoftDisabled) doEnable();
-            else if (moduleHasPoolWant) doDisable();   // v7: soft-disable (pool_want=0)
+            else if (!moduleLoaded) doEnable();         // insmod
+            else if (moduleHasPoolWant) doDisable();    // v7: soft-release (pool_want=0)
             else confirmUnload();                       // v6: no soft knob -> confirm rmmod
         });
         btnViewProcesses.setOnClickListener(v -> startActivity(
@@ -233,7 +234,7 @@ public final class HugePageActivity extends AppCompatActivity {
         progressAcquireV3.setOnClickListener(stopAcquire);
         applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
-        loadPoolSize();
+        loadSavedSizes();
         // One-time migration: drop a stale cma_probe_result from the removed
         // probe, which the shipped boot script would otherwise treat as a denial
         // and keep the module's CMA side cold.
@@ -624,24 +625,27 @@ public final class HugePageActivity extends AppCompatActivity {
         if (acquiring) btnSavePoolSize.setTextColor(Color.TRANSPARENT);
         else btnSavePoolSize.setTextColor(saveTextColors);
         btnSavePoolSize.setEnabled(snap.installed);
-        // Install / Enable / Disable. "Disable" on v7 shrinks the pool to one
-        // page (frees memory) but keeps the module loaded so it never loses
-        // per-VM tracking; soft-disabled shows "Enable" again. v6 has no
-        // pool_want knob, so Disable falls back to rmmod.
+        // Install / Load Module / Release. "Release" on v7 shrinks the pool
+        // to one page (frees memory) but keeps the module loaded so it never loses
+        // per-VM tracking; v6 has no pool_want knob, so it falls back to rmmod.
+        // Once released (loaded and pool_want=0) there is nothing left to release -
+        // the write would be a no-op, i.e. exactly what "Save & Apply" already does
+        // with a 0 target - so the button is greyed out; the way back is to set a
+        // size and Save & Apply.
         moduleInstalled = snap.installed;
         moduleLoaded = snap.loaded;
         moduleHasPoolWant = snap.hasPoolWant;
-        moduleSoftDisabled = snap.softDisabled;
         btnModuleToggle.setEnabled(true);
         if (!snap.installed) {
             btnModuleToggle.setText(R.string.hugepage_btn_install);
             btnModuleToggle.setIconResource(R.drawable.ic_download);
-        } else if (!snap.loaded || snap.softDisabled) {
+        } else if (!snap.loaded) {
             btnModuleToggle.setText(R.string.hugepage_btn_enable);
             btnModuleToggle.setIconResource(R.drawable.ic_start);
         } else {
             btnModuleToggle.setText(R.string.hugepage_btn_disable);
             btnModuleToggle.setIconResource(R.drawable.ic_stop);
+            btnModuleToggle.setEnabled(!snap.softDisabled);
         }
         rowModuleEnable.setEnabled(snap.installed);
         rowModuleEnable.setChecked(snap.bootEnabled);
@@ -663,24 +667,10 @@ public final class HugePageActivity extends AppCompatActivity {
                 rowCmaEnable.setChecked(cmaActive);
                 cmaSwitchSyncing = false;
             }
-            // Two stacked size rows: the with-CMA total is editable only while
-            // the reservoir is on, greyed and non-editable otherwise. Seed it
-            // from pool_want_with_cma once each time CMA turns on.
+            // The with-CMA total is editable only while the reservoir is on,
+            // greyed otherwise. Its value is seeded from settings.prop by
+            // loadSavedSizes(), never from the live knob.
             inputCmaSize.setEnabled(cmaActive);
-            if (cmaActive) {
-                if (!cmaInputLoaded) {
-                    sizeLinkSyncing = true;
-                    try {
-                        inputCmaSize.setBigValue(
-                            BigInteger.valueOf(snap.wantWithCma * PAGE_SIZE));
-                    } finally {
-                        sizeLinkSyncing = false;
-                    }
-                    cmaInputLoaded = true;
-                }
-            } else {
-                cmaInputLoaded = false;
-            }
         }
     }
 
@@ -753,49 +743,66 @@ public final class HugePageActivity extends AppCompatActivity {
         }
     }
 
-    private void loadPoolSize() {
+    private void loadSavedSizes() {
         runOnPool(() -> {
-            // Seed from the MODULE's live readback first: the kernel clamps an
-            // oversized write to pool_size_max, so settings.prop may say 10G
-            // while the target actually in force is 8.71G. The prop keeps the
-            // bigger wish (insmod re-clamps it every boot); the input must show
-            // the effective value. settings.prop is only the fallback while the
-            // module is not loaded (nothing to read back from).
-            long pages = -1;
-            var snap = model.state();
-            if (snap.loaded && snap.statsOk) pages = snap.targetIdeal;
-            if (pages < 0) {
-                Map<String, String> settings;
-                try {
-                    var result = shellReadFile(SETTINGS_PROP);
-                    settings = parseProp(result);
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed to read settings.prop", e);
-                    return;
-                }
-                // Prefer pool_want; fall back to legacy pool_target.
-                var cur = settings.getOrDefault("pool_want",
-                    settings.getOrDefault("pool_target", "1024"));
-                if (cur == null || cur.isEmpty()) cur = "1024";
-                try {
-                    pages = Long.parseLong(cur.trim());
-                } catch (NumberFormatException e) {
-                    Log.w(TAG, "Failed to parse pool_want", e);
-                    return;
-                }
+            // Seed BOTH size inputs from settings.prop, the persisted targets -
+            // the app's own source of truth (the master). The live kernel values
+            // are the slave: the module clamps them (pool_size_max), couples them
+            // (W) and refuses some writes (-EBUSY mid-run), and none of that may
+            // feed back into what the user configured. The effective values are
+            // reported by the pool stat rows and the bar instead. Seeding from
+            // the config (not the live knob) also survives a release: a released
+            // pool reads 0 live, which would leave nothing for "Save & Apply" to
+            // re-collect with.
+            Map<String, String> settings;
+            try {
+                var result = shellReadFile(SETTINGS_PROP);
+                settings = parseProp(result);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to read settings.prop", e);
+                return;
             }
-            var bytes = BigInteger.valueOf(pages * PAGE_SIZE);
+            // Pool target: pool_want; fall back to legacy pool_target.
+            var cur = settings.getOrDefault("pool_want",
+                settings.getOrDefault("pool_target", "1024"));
+            if (cur == null || cur.isEmpty()) cur = "1024";
+            final long pages;
+            try {
+                pages = Long.parseLong(cur.trim());
+            } catch (NumberFormatException e) {
+                Log.w(TAG, "Failed to parse pool_want", e);
+                return;
+            }
+            // With-CMA total: a saved (positive) target wins; 0 or absent means
+            // "no total configured", so fall back to the live value. That covers
+            // a reservoir built live-only, or one just re-enabled before the user
+            // saved the target - seeding 0 beside a live reservoir would make the
+            // next Save & Apply switch CMA off.
+            long cma = 0;
+            var cmaRaw = settings.get("pool_want_with_cma");
+            if (cmaRaw != null) try {
+                cma = Long.parseLong(cmaRaw.trim());
+            } catch (NumberFormatException ignored) {
+            }
+            final long cmaPages = cma > 0 ? cma : liveCmaPages();
             runOnUiThread(() -> {
                 // Programmatic seed - don't count it as a user edit for
                 // the pool<->with-CMA size link.
                 sizeLinkSyncing = true;
                 try {
-                    inputPoolSize.setBigValue(bytes);
+                    inputPoolSize.setBigValue(BigInteger.valueOf(pages * PAGE_SIZE));
+                    inputCmaSize.setBigValue(BigInteger.valueOf(cmaPages * PAGE_SIZE));
                 } finally {
                     sizeLinkSyncing = false;
                 }
             });
         });
+    }
+
+    /** Live {@code pool_want_with_cma} in pages; 0 when the module is down. */
+    private long liveCmaPages() {
+        var snap = model.state();
+        return snap.loaded && snap.hasCma ? snap.wantWithCma : 0;
     }
 
     /**
@@ -903,15 +910,12 @@ public final class HugePageActivity extends AppCompatActivity {
                     : appliedNow ? R.string.hugepage_pool_size_applied
                     : R.string.hugepage_pool_size_saved;
                 Toast.makeText(this, msg, LENGTH_SHORT).show();
-                // Re-seed BOTH inputs from the module's readback, because the
-                // pair is coupled (sec. 4): the kernel clamps each to pool_size_max
-                // AND links them - writing pool_want up drags pool_want_with_cma
-                // up with it; a with-CMA total below the pool is lifted back to
-                // it; both round up to a multiple of S. So one save can move the
-                // OTHER field too - show what actually stuck on each.
-                cmaInputLoaded = false;   // updateUI reseeds the CMA total from
-                refreshStatus();          //   snap.wantWithCma on its next pass
-                loadPoolSize();           // reseed the pool input (clamped want)
+                // Re-seed both inputs from the saved config (the master), not
+                // from the live pool: the module may clamp, couple or refuse the
+                // apply (e.g. -EBUSY while a shrink run is in flight), and that
+                // must not rewrite what the user just typed.
+                refreshStatus();
+                loadSavedSizes();
             });
         });
     }
@@ -1071,7 +1075,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 Toast.makeText(this, fOk ? R.string.hugepage_cma_enabled
                     : R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
                 if (!fOk) setCmaSwitch(false);
-                cmaInputLoaded = false;   // reseed the CMA size input
+                loadSavedSizes();   // the saved target just changed
                 refreshStatus();
             });
         });
@@ -1134,7 +1138,7 @@ public final class HugePageActivity extends AppCompatActivity {
             if (s2.loaded && s2.deficit > 0) model.acquire(3);
         }
         runOnUiThread(() -> {
-            cmaInputLoaded = false;
+            loadSavedSizes();
             refreshStatus();
             if (isFinishing()) {
                 cmaBusy = false;
@@ -1191,7 +1195,7 @@ public final class HugePageActivity extends AppCompatActivity {
                 cmaBusy = false;
                 setCmaSwitch(true);
                 Toast.makeText(this, R.string.hugepage_cma_enabled, LENGTH_SHORT).show();
-                cmaInputLoaded = false;
+                loadSavedSizes();
                 refreshStatus();
             });
         });
