@@ -51,6 +51,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.BootConfig;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
+import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
 import cn.classfun.droidvm.ui.disk.tree.DiskTree;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -608,26 +609,25 @@ public final class VMActions {
         runOnPool(() -> {
             var held = new LinkedHashMap<String, List<String>>();
             try {
-                var vmStore = new VMStore();
-                if (vmStore.load(appContext)) {
-                    var sharers = VmDiskSharing.sharersOf(vmStore, config.getId(),
-                        VmDiskSharing.attachedPaths(config, true));
-                    if (!sharers.isEmpty()) {
-                        var names = new LinkedHashSet<String>();
-                        for (var vms : sharers.values()) names.addAll(vms);
-                        // Blocking daemon query; a daemon that cannot be reached has no VM
-                        // running either, so it reads as "nobody holds these".
-                        var running = new HashSet<>(VmRunningQuery.inUseAmong(names));
-                        for (var entry : sharers.entrySet()) {
-                            var holders = new ArrayList<String>();
-                            for (var name : entry.getValue())
-                                if (running.contains(name)) holders.add(name);
-                            if (!holders.isEmpty()) held.put(entry.getKey(), holders);
-                        }
+                var vmStore = DiskDependencyUpdater.loadForPlanning(appContext);
+                var sharers = VmDiskSharing.sharersOf(vmStore, config.getId(),
+                    VmDiskSharing.attachedPaths(config, true));
+                if (!sharers.isEmpty()) {
+                    var names = new LinkedHashSet<String>();
+                    for (var vms : sharers.values()) names.addAll(vms);
+                    // A disconnected daemon may still own running VMs.
+                    var running = new HashSet<>(VmRunningQuery.inUseAmong(names));
+                    for (var entry : sharers.entrySet()) {
+                        var holders = new ArrayList<String>();
+                        for (var name : entry.getValue())
+                            if (running.contains(name)) holders.add(name);
+                        if (!holders.isEmpty()) held.put(entry.getKey(), holders);
                     }
                 }
             } catch (Exception e) {
                 Log.w(TAG, "shared-disk check failed", e);
+                showError(mainHandler, ui, e.getMessage());
+                return;
             }
             if (held.isEmpty()) {
                 mainHandler.post(() -> proceed.accept(config));
