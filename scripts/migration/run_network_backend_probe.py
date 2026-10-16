@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--netbox", default="/data/user/0/cn.classfun.droidvm/bin/netbox")
     parser.add_argument("--control-tools", help="Run real gvswitch/bridgedhcp HTTP contracts using this device bin directory")
     parser.add_argument("--daemon", type=Path, help="Native daemon for startup recovery (defaults to standalone arm64 build)")
-    parser.add_argument("--suite", choices=("all", "firewall-coordinator", "firewall-forwards"), default="all", help="Select a focused isolated network suite")
+    parser.add_argument("--suite", choices=("all", "firewall-coordinator", "firewall-forwards", "backend"), default="all", help="Select a focused isolated network suite")
     args = parser.parse_args()
     if args.control_tools and args.suite != "all":
         parser.error("--suite requires network contracts, not --control-tools")

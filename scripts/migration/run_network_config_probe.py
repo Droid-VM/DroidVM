@@ -133,7 +133,7 @@ def main():
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
             assert "network_delete" not in cap["commands"]
-            assert cap["network_lifecycle_backends"] == ["gvisor"] and cap["network_watchdog"] and cap["network_auto_up"]
+            assert cap["network_lifecycle_backends"] == ["gvisor", "linux-l3"] and cap["network_watchdog"] and cap["network_auto_up"]
             assert all(name in cap["commands"] for name in ("network_start", "network_stop", "network_status", "network_tool_log"))
             assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]
             assert cap["network_uplinks"] and cap["network_host_addresses"] and cap["service_api_minor"] == 5
