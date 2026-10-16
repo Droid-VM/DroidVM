@@ -404,7 +404,9 @@ def main():
                    binary_directory + "/source.apk",
                    directory + "/droidvmd.lock", directory + "/release-java-lock",
                    # A data-layout daemon keeps its (empty) helper identity journal.
-                   directory + "/network-runtime.json", directory + "/network-runtime.json.bak"], check=True)
+                   directory + "/network-runtime.json", directory + "/network-runtime.json.bak",
+                   # HostAudioTable keeps the last published table, as the Java daemon does.
+                   directory + "/audio_devices"], check=True)
             shell(["rmdir", directory], check=True)
             if args.data_layout:
                 shell(["rm", "-f", daemon_log], check=True)

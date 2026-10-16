@@ -516,7 +516,7 @@ def main():
         if report.get("passed"):
             shell(["rm", "-f", data + "/run/droidvmd.lock", data + "/cache/daemon.log",
                    data + "/bin/netbox",
-                   data + "/bin/gvswitch", data + "/run/network-runtime.json", data + "/run/network-runtime.json.bak",
+                   data + "/bin/gvswitch", data + "/run/network-runtime.json", data + "/run/network-runtime.json.bak", data + "/run/audio_devices",
                    data + "/files/networks.json", data + "/files/networks.json.bak", data + "/files/networks.json.corrupt",
                    binary_dir + "/droidvmd", binary_dir + "/fixture", binary_dir + "/contract", binary_dir + "/control", binary_dir + "/seed.json"], check=True)
             shell(["rmdir", data + "/run", data + "/cache", data + "/files", data + "/bin", data, binary_dir], check=True)
