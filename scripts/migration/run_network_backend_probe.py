@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import shlex
 import subprocess
+import time
 import uuid
 
 
@@ -17,7 +18,10 @@ def main():
     parser.add_argument("--netbox", default="/data/user/0/cn.classfun.droidvm/bin/netbox")
     parser.add_argument("--control-tools", help="Run real gvswitch/bridgedhcp HTTP contracts using this device bin directory")
     parser.add_argument("--daemon", type=Path, help="Native daemon for startup recovery (defaults to standalone arm64 build)")
+    parser.add_argument("--suite", choices=("all", "firewall-coordinator"), default="all", help="Select a focused isolated network suite")
     args = parser.parse_args()
+    if args.control_tools and args.suite != "all":
+        parser.error("--suite requires network contracts, not --control-tools")
     if args.binary is None:
         target = "droidvm_control_http_contract" if args.control_tools else "droidvm_network_backend_contract"
         args.binary = root / "build/migration/standalone-arm64-v8a" / target
@@ -31,7 +35,7 @@ def main():
         return subprocess.run(adb + ["shell", shlex.join(argv)], text=True, encoding="utf-8", errors="replace",
                               capture_output=True, timeout=120, **kwargs)
 
-    report = {"serial": args.serial, "directory": directory, "binary": str(args.binary),
+    report = {"serial": args.serial, "directory": directory, "binary": str(args.binary), "suite": args.suite,
               "sha256": hashlib.sha256(args.binary.read_bytes()).hexdigest(), "passed": False}
     try:
         report["fingerprint"] = shell(["getprop", "ro.build.fingerprint"], check=True).stdout.strip()
@@ -48,12 +52,25 @@ def main():
         subprocess.run(adb + ["push", str(args.binary), directory + "/contract"], check=True, timeout=30)
         shell(["chmod", "700", directory + "/contract"], check=True)
         command = [directory + "/contract", args.control_tools or args.netbox, directory]
+        if args.suite == "firewall-coordinator":
+            command.insert(1, "--linux-firewall-coordinator")
         daemon = args.daemon or root / "build/migration/standalone-arm64-v8a/droidvmd"
         report["daemon_sha256"] = hashlib.sha256(daemon.read_bytes()).hexdigest()
         subprocess.run(adb + ["push", str(daemon), directory + "/daemon"], check=True, timeout=30)
         shell(["chmod", "700", directory + "/daemon"], check=True)
         command.append(directory + "/daemon")
-        result = shell(command)
+        started = time.monotonic()
+        try:
+            result = shell(command)
+        except subprocess.TimeoutExpired as error:
+            report["timed_out"] = True
+            for name, value in (("stdout", error.stdout), ("stderr", error.stderr)):
+                if isinstance(value, bytes):
+                    value = value.decode("utf-8", errors="replace")
+                (output / (name + ".txt")).write_text(value or "", encoding="utf-8")
+            raise
+        finally:
+            report["contract_seconds"] = time.monotonic() - started
         (output / "stdout.txt").write_text(result.stdout, encoding="utf-8")
         (output / "stderr.txt").write_text(result.stderr, encoding="utf-8")
         report["exit_code"] = result.returncode
