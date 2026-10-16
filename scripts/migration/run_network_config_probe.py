@@ -284,12 +284,13 @@ def main():
                 deadline = time.monotonic() + 8
                 while True:
                     reply = exchange(sock, command, network_id=network_id)
+                    report["last_" + command + "_reply"] = reply
                     if (reply.get("error", {}).get("code") != "CONFLICT"
                             or reply.get("message") != "Network operation already in progress"):
-                        report["last_" + command + "_reply"] = reply
                         return reply
                     key = command + "_busy_retries"
                     report[key] = report.get(key, 0) + 1
+                    report["last_" + command + "_busy_reply"] = reply
                     assert time.monotonic() < deadline, reply
                     time.sleep(0.05)
 
@@ -410,7 +411,8 @@ def main():
                 running(sock)
                 assert runtime_directory() != before_crash
                 assert shell(["test", "-e", before_crash]).returncode != 0
-                assert exchange(sock, "network_stop", network_id=switch["id"])["success"]
+                stopped = stop_network(sock, switch["id"])
+                assert stopped["success"], stopped
                 switch["auto_up"] = False
                 assert exchange(sock, "network_modify", config=switch)["success"]
                 started = start_network(sock, switch["id"])
