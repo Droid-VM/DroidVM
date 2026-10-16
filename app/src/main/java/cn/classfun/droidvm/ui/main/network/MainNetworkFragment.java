@@ -6,7 +6,6 @@ package cn.classfun.droidvm.ui.main.network;
 import static android.widget.Toast.LENGTH_LONG;
 
 import android.app.Activity;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.view.MenuItem;
 import android.view.View;
@@ -15,10 +14,9 @@ import android.widget.Toast;
 import androidx.annotation.MenuRes;
 import androidx.annotation.NonNull;
 
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
-
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.ui.UIContext;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
 import cn.classfun.droidvm.lib.store.network.NetworkState;
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
@@ -112,17 +110,7 @@ public final class MainNetworkFragment
     }
 
     private void deleteNetwork(@NonNull NetworkConfig config) {
-        var ctx = requireContext();
-        NetworkActions.Callback cb = success -> {
-            if (isAdded() && success) refreshView();
-        };
-        DialogInterface.OnClickListener performDeleteNetwork = (dialog, which) ->
-            NetworkActions.deleteNetwork(ctx, mainHandler, config.getId(), adapter.items, cb);
-        new MaterialAlertDialogBuilder(ctx)
-            .setTitle(config.getName())
-            .setMessage(R.string.network_delete_confirm)
-            .setPositiveButton(R.string.network_delete, performDeleteNetwork)
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
+        NetworkActions.confirmDeleteNetwork(config, mainHandler, UIContext.fromFragment(this), adapter.items,
+            success -> { if (isAdded()) refreshView(); });
     }
 }

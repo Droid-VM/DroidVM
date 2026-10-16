@@ -970,6 +970,8 @@
     <string name="network_state_running">运行中</string>
     <string name="network_state_stopping">停止中</string>
     <string name="network_delete">删除</string>
+    <string name="network_delete_recovery_needed">未能确认删除结果。请恢复待完成的更改并重新读取当前状态，此操作不会再次提交删除。</string>
+    <string name="network_delete_recover">恢复并重新读取</string>
     <string name="network_delete_confirm">确定要删除此网络吗？</string>
     <string name="network_delete_in_use">无法删除：网络正在被运行中的虚拟机使用：%1$s</string>
     <string name="network_create_title">创建网络</string>

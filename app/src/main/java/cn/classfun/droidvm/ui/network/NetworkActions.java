@@ -8,21 +8,30 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.Context;
+import android.app.Activity;
 import android.os.Handler;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.lifecycle.Lifecycle;
+import androidx.lifecycle.LifecycleEventObserver;
+import androidx.lifecycle.LifecycleOwner;
 
 import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.io.IOException;
 import java.util.UUID;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.NetworkConfigClient;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
@@ -34,6 +43,7 @@ import cn.classfun.droidvm.ui.vm.VmRunningQuery;
 
 public final class NetworkActions {
     private static final String TAG = "NetworkActions";
+    private static final Set<UUID> deleting = ConcurrentHashMap.newKeySet();
 
     public interface Callback {
         void onFinished(boolean success);
@@ -130,7 +140,112 @@ public final class NetworkActions {
             .invoke();
     }
 
-    public static void deleteNetwork(
+    private static boolean alive(UIContext ui) {
+        if (!ui.isAlive()) return false;
+        if (!(ui.getContext() instanceof Activity)) return true;
+        var activity = (Activity) ui.getContext();
+        return !activity.isFinishing() && !activity.isDestroyed();
+    }
+
+    private static void showDeletionDialog(UIContext ui, MaterialAlertDialogBuilder builder, Runnable dismissed) {
+        var dialog = builder.create();
+        LifecycleOwner owner = ui.getContext() instanceof LifecycleOwner ? (LifecycleOwner) ui.getContext() : null;
+        LifecycleEventObserver observer = (source, event) -> { if (event == Lifecycle.Event.ON_DESTROY) dialog.dismiss(); };
+        dialog.setOnDismissListener(ignored -> {
+            if (owner != null) owner.getLifecycle().removeObserver(observer);
+            dismissed.run();
+        });
+        if (owner != null) owner.getLifecycle().addObserver(observer);
+        dialog.show();
+    }
+
+    /** One confirmation/commit per network across both list and detail screens. */
+    public static void confirmDeleteNetwork(@NonNull NetworkConfig config, @NonNull Handler handler,
+            @NonNull UIContext ui, @NonNull NetworkStore store, @NonNull Callback callback) {
+        UUID id = config.getId();
+        if (!deleting.add(id)) return;
+        var client = new NetworkConfigClient(request -> DaemonConnection.getInstance().request(request));
+        runOnPool(() -> {
+            try {
+                var session = client.supported() ? client.deleteSession(id.toString()) : null;
+                String name = session == null ? config.getName() : session.configuration().getString("name");
+                handler.post(() -> {
+                    if (!alive(ui)) { deleting.remove(id); return; }
+                    var accepted = new AtomicBoolean();
+                    showDeletionDialog(ui, new MaterialAlertDialogBuilder(ui.getContext()).setTitle(name).setMessage(R.string.network_delete_confirm)
+                        .setPositiveButton(R.string.network_delete, (dialog, which) -> {
+                            accepted.set(true);
+                            if (!alive(ui)) { deleting.remove(id); return; }
+                            if (session == null) {
+                                deleteNetworkLegacy(ui.getContext().getApplicationContext(), handler, id, store, success -> {
+                                    deleting.remove(id);
+                                    if (alive(ui)) callback.onFinished(success);
+                                });
+                            } else runOnPool(() -> {
+                                try {
+                                    session.delete();
+                                    finishDeletion(handler, ui, id, store, callback, true);
+                                } catch (Exception error) { deletionFailed(handler, ui, id, store, callback, client, error); }
+                            });
+                        }).setNegativeButton(android.R.string.cancel, null), () -> { if (!accepted.get()) deleting.remove(id); });
+                });
+            } catch (Exception error) { deletionFailed(handler, ui, id, store, callback, client, error); }
+        });
+    }
+
+    private static void finishDeletion(Handler handler, UIContext ui, UUID id, NetworkStore store, Callback callback, boolean success) {
+        handler.post(() -> {
+            deleting.remove(id);
+            if (success) store.removeById(id);
+            if (alive(ui)) callback.onFinished(success);
+        });
+    }
+
+    private static void deletionFailed(Handler handler, UIContext ui, UUID id, NetworkStore store,
+            Callback callback, NetworkConfigClient client, Exception error) {
+        Log.e(TAG, "Network deletion requires fresh state", error);
+        boolean recoverable = error instanceof VmConfigClient.CommitUnknown
+            || (error instanceof VmConfigClient.RemoteFailure
+                && ("COMMIT_UNCERTAIN".equals(((VmConfigClient.RemoteFailure) error).code)
+                    || "UNAVAILABLE".equals(((VmConfigClient.RemoteFailure) error).code)));
+        handler.post(() -> {
+            if (!alive(ui)) { deleting.remove(id); return; }
+            if (!recoverable) {
+                deleting.remove(id);
+                Toast.makeText(ui.getContext(), error.getMessage(), LENGTH_LONG).show();
+                callback.onFinished(false);
+                return;
+            }
+            var accepted = new AtomicBoolean();
+            showDeletionDialog(ui, new MaterialAlertDialogBuilder(ui.getContext()).setMessage(R.string.network_delete_recovery_needed)
+                .setPositiveButton(R.string.network_delete_recover, (dialog, which) -> {
+                    accepted.set(true);
+                    runOnPool(() -> {
+                        try {
+                            client.recoverConfiguration();
+                            boolean present = false;
+                            var networks = client.planningDocument().getJSONArray("networks");
+                            for (int i = 0; i < networks.length(); i++)
+                                if (id.equals(UUID.fromString(networks.getJSONObject(i).getString("id")))) { present = true; break; }
+                            finishDeletion(handler, ui, id, store, callback, !present);
+                        } catch (Exception failure) {
+                            Log.e(TAG, "Configuration recovery failed", failure);
+                            handler.post(() -> {
+                                deleting.remove(id);
+                                if (alive(ui)) {
+                                    Toast.makeText(ui.getContext(), failure.getMessage(), LENGTH_LONG).show();
+                                    callback.onFinished(false);
+                                }
+                            });
+                        }
+                    });
+                }).setNegativeButton(android.R.string.cancel, null), () -> {
+                    if (!accepted.get()) { deleting.remove(id); if (alive(ui)) callback.onFinished(false); }
+                });
+        });
+    }
+
+    private static void deleteNetworkLegacy(
         @NonNull Context context,
         @NonNull Handler mainHandler,
         @NonNull UUID networkId,

@@ -28,7 +28,7 @@ public final class NetworkConfigDeleteTest {
         public JSONObject request(JSONObject request) throws IOException, JSONException {
             String command = request.getString("command");
             if ("capabilities".equals(command)) return new JSONObject().put("success", true)
-                .put("network_config_delete", "unsupported".equals(mode) ? "future" : "revisioned-stopped-chunks-v1")
+                .put("network_config_delete", "unsupported".equals(mode) ? "future" : "revisioned-stop-chunks-v1")
                 .put("configuration_recover", "redo-v1");
             if ("vm_config_snapshot".equals(command)) {
                 byte[] bytes = "{\"vms\":[]}".getBytes(StandardCharsets.UTF_8);

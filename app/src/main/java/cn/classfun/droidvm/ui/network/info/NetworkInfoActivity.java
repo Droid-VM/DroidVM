@@ -36,7 +36,6 @@ import androidx.core.widget.NestedScrollView;
 import com.google.android.material.appbar.CollapsingToolbarLayout;
 import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
-import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.tabs.TabLayout;
 
 import org.json.JSONArray;
@@ -391,20 +390,11 @@ public final class NetworkInfoActivity extends SwipeableTabActivity {
     }
 
     private void doDelete() {
-        new MaterialAlertDialogBuilder(this)
-            .setTitle(config.getName())
-            .setMessage(R.string.network_delete_confirm)
-            .setPositiveButton(R.string.network_delete, (d, w) -> performDelete())
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
-    }
-
-    private void performDelete() {
-        NetworkActions.deleteNetwork(this, mainHandler, networkId, store, success -> {
+        NetworkActions.confirmDeleteNetwork(config, mainHandler, UIContext.fromActivity(this), store, success -> {
             if (success) {
                 Toast.makeText(this, R.string.network_delete, LENGTH_SHORT).show();
                 finish();
-            }
+            } else syncState();
         });
     }
 
