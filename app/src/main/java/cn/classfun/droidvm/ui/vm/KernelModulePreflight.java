@@ -101,6 +101,7 @@ public final class KernelModulePreflight {
     @NonNull
     public static List<Missing> check(@NonNull Context ctx, @NonNull DataItem item) {
         var wanted = wantedBy(item);
+        if (!ProtectedVM.supportsPseudoUnprotected(item)) wanted.remove(GUNYAH_HOST_SHARE);
         if (wanted.isEmpty()) return List.of();
 
         var modules = KernelModuleManager.list(ctx);
