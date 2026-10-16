@@ -970,6 +970,8 @@
     <string name="network_state_running">執行中</string>
     <string name="network_state_stopping">停止中</string>
     <string name="network_delete">刪除</string>
+    <string name="network_delete_recovery_needed">無法確認刪除結果。請復原待完成的變更並重新讀取目前狀態，此操作不會再次提交刪除。</string>
+    <string name="network_delete_recover">復原並重新讀取</string>
     <string name="network_delete_confirm">確定要刪除此網路嗎？</string>
     <string name="network_delete_in_use">無法刪除：網路正在被執行中的虛擬機器使用：%1$s</string>
     <string name="network_create_title">建立網路</string>

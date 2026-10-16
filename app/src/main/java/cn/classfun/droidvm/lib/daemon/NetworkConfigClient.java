@@ -150,11 +150,12 @@ public final class NetworkConfigClient {
         }
     }
 
-    /** Capture both confirmations before displaying deletion to the user. Network must be stopped. */
+    /** Capture both confirmations before displaying deletion to the user. */
     public DeleteSession deleteSession(String id) throws IOException, JSONException {
         String canonical = UUID.fromString(id).toString();
         var caps = call("capabilities", new JSONObject());
-        if (!"revisioned-stopped-chunks-v1".equals(caps.optString("network_config_delete")))
+        if (!"revisioned-stop-chunks-v1".equals(caps.optString("network_config_delete"))
+                && !"revisioned-stopped-chunks-v1".equals(caps.optString("network_config_delete")))
             throw new IOException("Coordinated network deletion API is unavailable");
         var vms = new VmConfigClient(rpc).read();
         var rows = planningDocument().getJSONArray("networks");
