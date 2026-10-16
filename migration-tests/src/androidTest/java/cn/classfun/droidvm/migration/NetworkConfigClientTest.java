@@ -91,4 +91,38 @@ public final class NetworkConfigClientTest {
         assertEquals("original", backend.submitted.getJSONObject("expected").getString("name"));
         assertEquals(2, backend.writes);
     }
+
+    @Test public void startOnlySendsIdentityAndNeverSavesOrRetries() throws Exception {
+        String id = UUID.randomUUID().toString();
+        int[] calls = {0};
+        var client = new NetworkConfigClient(request -> {
+            calls[0]++;
+            assertEquals("network_start", request.getString("command"));
+            assertEquals(id, request.getString("network_id"));
+            assertFalse(request.has("config"));
+            assertFalse(request.has("expected"));
+            return new JSONObject().put("success", true).put("network_id", id).put("state", "running");
+        });
+        client.start(id);
+        assertEquals(1, calls[0]);
+        calls[0] = 0;
+        var disconnected = new NetworkConfigClient(request -> { calls[0]++; throw new IOException("lost response"); });
+        assertThrows(NetworkConfigClient.StartUnknown.class, () -> disconnected.start(id));
+        assertEquals(1, calls[0]);
+    }
+
+    @Test public void startDistinguishesRejectionFromUnknownResponse() throws Exception {
+        String id = UUID.randomUUID().toString();
+        var rejected = new NetworkConfigClient(request -> new JSONObject().put("success", false)
+            .put("error", new JSONObject().put("code", "CONFLICT")));
+        assertThrows(VmConfigClient.RemoteFailure.class, () -> rejected.start(id));
+        for (String state : new String[]{"stopped", "starting", "unknown"}) {
+            var invalid = new NetworkConfigClient(request -> new JSONObject().put("success", true)
+                .put("network_id", id).put("state", state));
+            assertThrows(NetworkConfigClient.StartUnknown.class, () -> invalid.start(id));
+        }
+        var wrongId = new NetworkConfigClient(request -> new JSONObject().put("success", true)
+            .put("network_id", UUID.randomUUID().toString()).put("state", "running"));
+        assertThrows(NetworkConfigClient.StartUnknown.class, () -> wrongId.start(id));
+    }
 }
