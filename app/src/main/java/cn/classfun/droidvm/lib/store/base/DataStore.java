@@ -148,6 +148,8 @@ public abstract class DataStore<T extends DataConfig> implements JSONSerialize {
                 VmConfigOwnership.legacyWrite(file.getAbsoluteFile().getParentFile(), () -> saveJSONFile(file, data));
             } else if ("networks".equals(getTypeName())) {
                 NetworkConfigOwnership.legacyWrite(file.getAbsoluteFile().getParentFile(), () -> saveJSONFile(file, data));
+            } else if ("disks".equals(getTypeName())) {
+                DiskConfigOwnership.legacyWrite(file.getAbsoluteFile().getParentFile(), () -> saveJSONFile(file, data));
             } else saveJSONFile(file, data);
             return true;
         } catch (Exception e) {
