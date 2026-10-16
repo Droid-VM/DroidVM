@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Compare native VM runtime planning (NIC, boot plan, crosvm and QEMU argv) to the production Java code run as root."""
+"""Compare native VM runtime planning (NIC, boot plan, crosvm and QEMU argv) and USB passthrough logic to the production Java code run as root."""
 import argparse
 import copy
 import hashlib
@@ -89,7 +89,7 @@ def main():
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
-    parser.add_argument("--suite", choices=("nic", "boot", "crosvm", "qemu", "all"), default="all")
+    parser.add_argument("--suite", choices=("nic", "boot", "crosvm", "qemu", "usb", "all"), default="all")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/vm-oracle-device" / nonce
@@ -116,6 +116,15 @@ def main():
     if args.suite in ("qemu", "all"):
         import vm_qemu_fixtures
         samples += vm_qemu_fixtures.fixtures()
+    usb_setup = None
+    if args.suite in ("usb", "all"):
+        import vm_usb_fixtures
+        # Real root hubs only feed refusals (a hub is never taken from the host).
+        listing = shell("ls /sys/bus/usb/devices").stdout.split()
+        hubs = sorted(name for name in listing if name.startswith("usb") and name[3:].isdigit())
+        usb_samples, usb_setup = vm_usb_fixtures.fixtures(directory, hubs)
+        samples += usb_samples
+        (output / "usb_setup.sh").write_bytes(usb_setup.encode("utf-8"))
     (output / "fixtures.json").write_text(json.dumps(samples, ensure_ascii=False, indent=1), encoding="utf-8")
     passed = False
     # The Java code raises udmabuf limits and caches the app groups as the legacy
@@ -126,6 +135,11 @@ def main():
         assert shell(f"mkdir {directory}").returncode == 0
         for local, name in ((apk, "app.apk"), (test_apk, "test.apk"), (probe, "probe"), (output / "fixtures.json", "fixtures.json")):
             subprocess.run(adb + ["push", str(local), directory + "/" + name], check=True, capture_output=True, timeout=180)
+        if usb_setup is not None:
+            # Fake sysfs trees under the run directory; nothing outside it is written.
+            subprocess.run(adb + ["push", str(output / "usb_setup.sh"), directory + "/usb_setup.sh"], check=True, capture_output=True, timeout=60)
+            setup = shell(f"sh {directory}/usb_setup.sh")
+            assert setup.returncode == 0, setup.stdout + setup.stderr
         java = shell(f"cd {directory} && CLASSPATH={directory}/app.apk:{directory}/test.apk app_process64 / "
                      f"cn.classfun.droidvm.migration.RootOracle {directory}/fixtures.json {directory}/java.json", timeout=300)
         (output / "oracle.txt").write_text(java.stdout + java.stderr, encoding="utf-8")
