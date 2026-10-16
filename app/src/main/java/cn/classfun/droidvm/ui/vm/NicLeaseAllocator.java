@@ -3,13 +3,12 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm;
 
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.content.Context;
-import android.util.Log;
 
 import androidx.annotation.NonNull;
 
 import java.util.HashSet;
+import java.io.IOException;
 
 import cn.classfun.droidvm.lib.store.network.NetworkStore;
 import cn.classfun.droidvm.lib.store.vm.NicLeaseOffsets;
@@ -25,60 +24,54 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
  * same network/VLAN, then persists the result so the guest IP stays stable
  * across restarts.
  * <p>
- * Allocation is app-side and persisted here; nothing else assigns offsets.
+ * GUI allocation uses the guarded VM inventory. Native package imports also allocate leases.
  * </p>
  */
 public final class NicLeaseAllocator {
-    private static final String TAG = "NicLeaseAllocator";
-
     private NicLeaseAllocator() {
     }
 
     /**
-     * Resolves and persists empty DHCPv4 offsets for {@code config}. Best
-     * effort: failures are logged, never thrown, so a start is not blocked.
+     * Worker-only. Failures stop the start; the caller's config is updated only after save.
      */
-    public static void resolveAndPersist(@NonNull VMConfig config, @NonNull Context ctx) {
-        try {
-            var vmStore = new VMStore();
-            vmStore.load(ctx);
+    public static void resolveAndPersist(@NonNull VMConfig config, @NonNull Context ctx) throws Exception {
+        boolean[] needed = {false};
+        config.forEachNic(nic -> {
+            if (nic.isDhcp4LeaseEnabled() && !nic.hasDhcp4Offset()) needed[0] = true;
+        });
+        if (!needed[0]) return;
+        VMStore.updatePersistedField(ctx, config, "networks", (changed, observed) -> {
             var netStore = new NetworkStore();
-            netStore.load(ctx);
+            if (!netStore.load(ctx)) throw new IOException("Cannot read network configuration");
+            resolve(changed, observed, netStore);
+        });
+    }
 
-            var selfId = config.getId();
-            boolean[] changed = {false};
-            config.forEachNic(nic -> {
-                if (!nic.isDhcp4LeaseEnabled() || nic.hasDhcp4Offset()) return;
-                var netId = nic.getNetworkId();
-                if (netId == null) return;
-                var network = netStore.findById(netId);
-                if (network == null) return;
-                var vlan = nic.resolveDhcpVlan(network);
-                if (vlan == null || !vlan.isDhcp4Enabled()) return;
+    static void resolve(VMConfig config, VMStore vmStore, NetworkStore netStore) {
+        var selfId = config.getId();
+        config.forEachNic(nic -> {
+            if (!nic.isDhcp4LeaseEnabled() || nic.hasDhcp4Offset()) return;
+            var netId = nic.getNetworkId();
+            if (netId == null) throw new IllegalStateException("Static lease has no network");
+            var network = netStore.findById(netId);
+            if (network == null) throw new IllegalStateException("Static lease network no longer exists");
+            var vlan = nic.resolveDhcpVlan(network);
+            if (vlan == null || !vlan.isDhcp4Enabled())
+                throw new IllegalStateException("Static lease requires a DHCPv4 network");
 
-                var used = new HashSet<Long>();
-                vmStore.forEach((id, vm) -> {
-                    // its persisted copy is stale vs the config in hand
-                    if (id.equals(selfId)) return;
-                    NicLeaseOffsets.addOffsets(used, vm, network, vlan, NicLeaseOffsets.Family.IPV4);
-                });
-                NicLeaseOffsets.addOffsets(used, config, network, vlan, NicLeaseOffsets.Family.IPV4);
-                long offset = NicLeaseOffsets.resolve(
-                    NicLeaseOffsets.FIRST, used, vlan, NicLeaseOffsets.Family.IPV4);
-                if (offset < 0) {
-                    Log.w(TAG, fmt("No free DHCPv4 offset for a NIC on network %s", netId));
-                    return;
-                }
-                nic.setDhcp4Offset(offset);
-                changed[0] = true;
+            var used = new HashSet<Long>();
+            vmStore.forEach((id, vm) -> {
+                // its persisted copy is stale vs the config in hand
+                if (id.equals(selfId)) return;
+                NicLeaseOffsets.addOffsets(used, vm, network, vlan, NicLeaseOffsets.Family.IPV4);
             });
-
-            if (changed[0] && vmStore.findById(selfId) != null) {
-                vmStore.update(config);
-                vmStore.save(ctx);
+            NicLeaseOffsets.addOffsets(used, config, network, vlan, NicLeaseOffsets.Family.IPV4);
+            long offset = NicLeaseOffsets.resolve(
+                NicLeaseOffsets.FIRST, used, vlan, NicLeaseOffsets.Family.IPV4);
+            if (offset < 0) {
+                throw new IllegalStateException("No free DHCPv4 lease offset on network " + netId);
             }
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to allocate DHCPv4 lease offsets", e);
-        }
+            nic.setDhcp4Offset(offset);
+        });
     }
 }

@@ -950,13 +950,23 @@ public final class VMActions {
         @NonNull AtomicBoolean wantOpenConsole,
         @Nullable String bootEntry
     ) {
-        // migrated / decoupled NICs may have a static lease enabled but no
-        // offset yet; assign a conflict-free one (and persist it) before the
-        // config is pushed to the daemon, which never allocates offsets itself
-        NicLeaseAllocator.resolveAndPersist(config, ui.getContext());
+        var appContext = ui.getContext().getApplicationContext();
+        runOnPool(() -> {
+            try {
+                NicLeaseAllocator.resolveAndPersist(config, appContext);
+                mainHandler.post(() -> pushAndStart(config, mainHandler, ui, wantOpenConsole, bootEntry));
+            } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
+        });
+    }
+
+    private static void pushAndStart(
+        @NonNull VMConfig config,
+        @NonNull Handler mainHandler,
+        @NonNull UIContext ui,
+        @NonNull AtomicBoolean wantOpenConsole,
+        @Nullable String bootEntry
+    ) {
         var conn = DaemonConnection.getInstance();
-        var createReq = conn.buildRequest("vm_exists");
-        createReq.put("vm_id", config.getId().toString());
         DaemonConnection.OnError err = e ->
             showDaemonError(mainHandler, ui, e);
         DaemonConnection.OnUnsuccessful f = resp ->
