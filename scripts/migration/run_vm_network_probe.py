@@ -23,6 +23,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
+    parser.add_argument("--gvisor", action="store_true", help="Attach the VM to a gVisor (gvswitch AF_XDP) network instead")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/vm-network-device" / nonce
@@ -97,7 +98,7 @@ def main():
         subprocess.run(adb + ["shell", shlex.join(["run-as", app, "mkdir", "-p", data + "/files", data + "/bin"])], check=True, timeout=30)
         uid = root_shell(f"stat -c %u {data}").stdout.strip()
         links = " && ".join([f"ln -s {PRODUCTION}/usr {data}/usr", f"ln -s {PRODUCTION}/lib {data}/lib"] +
-                            [f"ln -s {PRODUCTION}/bin/{tool} {data}/bin/{tool}" for tool in ("lbx", "netbox", "bridgedhcp")])
+                            [f"ln -s {PRODUCTION}/bin/{tool} {data}/bin/{tool}" for tool in ("lbx", "netbox", "bridgedhcp", "gvswitch")])
         # Production layout: app-owned, files/ is 0771 with the app's own group.
         assert root_shell(links + f" && chown -h {uid}:{uid} {data}/usr {data}/lib {data}/bin/* && chown {uid}:{uid} {data} {data}/files {data}/bin"
                           f" && chmod 700 {data} && chmod 771 {data}/files && chmod 700 {data}/bin").returncode == 0
@@ -108,6 +109,8 @@ def main():
         root_shell(f"chmod 755 {binary_dir}/droidvmd {binary_dir}/contract")
         report["daemon_sha256"] = hashlib.sha256(args.daemon.read_bytes()).hexdigest()
         apk = subprocess.run(adb + ["shell", "pm path cn.classfun.droidvm"], capture_output=True, text=True).stdout.strip().removeprefix("package:")
+        report["apk"] = apk
+        assert apk.endswith(".apk"), "production APK path"
         def launch(tag):
             nonlocal daemon_pid
             daemon, daemon_log = spawn(f"{binary_dir}/contract --netns-exec {data}/bin/netbox {binary_dir}/droidvmd --data-dir {data} --apk {apk}", f"daemon{tag}.txt")
@@ -120,6 +123,97 @@ def main():
             return daemon, local, root_shell(f"cat {data}/run/droidvmd-token.txt").stdout.strip()
 
         daemon, local, token = launch("")
+        if args.gvisor:
+            with socket.create_connection(("127.0.0.1", local), timeout=60) as sock:
+                exchange(sock, "auth", token=token)
+                network = {"schema": 2, "id": network_id, "name": "gv network " + nonce[:6], "bridge_name": bridge, "bridge_type": "gvisor",
+                           "l3": {"vlans": [{"vlan_id": 0, "ipv4": {"cidr": "10.78.0.1/24", "snat": True,
+                                                                    "dhcp": {"enabled": True, "offset_start": 100, "offset_end": 120}}}]}}
+                check(exchange(sock, "network_create", config=network)["success"], "create gVisor L3 network")
+                config = {"id": vm_id, "name": name, "backend": "crosvm", "memory_mb": 512, "cpu_count": 1, "disks": [],
+                          "screens": {"gpu-0": {"enabled": False}, "simplefb": {"enabled": False}},
+                          "networks": [{"network_id": network_id, "mac_address": "02:78:00:00:00:0a",
+                                        "dhcp4_lease": {"enabled": True, "offset": 10,
+                                                        "forwards": [{"proto": "tcp", "host": "18080-18081", "guest": "80-81"},
+                                                                     {"proto": "tcp", "host": "18080", "guest": "82"}]}}],
+                          "boot": {"protocol": "linux", "linux": {"source": "manual", "kernel": PRODUCTION + "/usr/share/droidvm/vmlinuz",
+                                                                  "initrd": PRODUCTION + "/usr/share/droidvm/initramfs.img", "cmdline": "console=ttyS0"}}}
+                check(exchange(sock, "vm_create", config=config)["success"], "create VM with a gVisor NIC")
+                started = exchange(sock, "vm_start", vm_id=vm_id)
+                if not started["success"]:
+                    report["start_failure"] = urllib.parse.unquote(exchange(sock, "vm_console_history", vm_id=vm_id, stream="stdio").get("stdio", ""))
+                check(started["success"], "vm_start attaches the gVisor NIC")
+                check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "VM start auto-starts the gVisor network")
+                deadline = time.monotonic() + 120
+                while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "running":
+                    time.sleep(0.25)
+                check(exchange(sock, "vm_status", vm_id=vm_id)["state"] == "running", "VM with a gVisor NIC reaches RUNNING")
+                report["tap_link"] = inside(f"ip -o link show {tap}")
+                check(f"{tap}:" in report["tap_link"] and "master" not in report["tap_link"], "TAP exists outside any kernel bridge")
+                report["xdp"] = inside(f"ip -d link show {tap}")
+                argv = root_shell(f"for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' < $p/cmdline 2>/dev/null); case \"$c\" in *crosvm*{name}*) echo \"$c\";; esac; done").stdout
+                check(f"--net tap-name={tap},mac=02:78:00:00:00:0a" in argv, "crosvm receives the gVisor TAP")
+                info = exchange(sock, "network_info", network_id=network_id)
+                report["network_info"] = info.get("data")
+                failures = info["data"].get("forward_failures", {}).get(tap, [])
+                check(len(failures) == 1 and failures[0].startswith("tcp 0.0.0.0:18080 (") and "in use" in failures[0], "duplicate bind recorded in forward_failures")
+                check(not exchange(sock, "network_stop", network_id=network_id)["success"], "gVisor network stop refused while the VM uses it")
+                check("Press Enter for system maintenance" in wait_text(sock, "Press Enter for system maintenance", 120), "guest reaches its console")
+                exchange(sock, "vm_console_write", vm_id=vm_id, stream="serial1", data="\n")
+                time.sleep(3)
+                exchange(sock, "vm_console_write", vm_id=vm_id, stream="serial1",
+                         data="ip link set eth0 up; udhcpc -i eth0 -n -q -t 5 -s /bin/true 2>&1; ip addr add 10.78.0.10/24 dev eth0; "
+                              "ping -c 3 -W 2 10.78.0.1 && echo GATEWAY-$((6*7))-OK; command -v nc; echo PROBE-$((6*7))-DONE\n")
+                text = wait_text(sock, "PROBE-42-DONE", 90)
+                (output / "serial1.txt").write_text(text, encoding="utf-8")
+                tail = text[text.rfind("udhcpc -i eth0"):]
+                check("lease of 10.78.0.10 obtained" in tail.lower(), "guest DHCP receives its gvswitch static lease")
+                check("GATEWAY-42-OK" in tail, "guest reaches the gvswitch gateway through AF_XDP")
+                # The range expands to two local forwards; the duplicate bind is recorded, not fatal.
+                report["daemon_log_running"] = root_shell(f"cat {data}/cache/daemon.log").stdout[-2000:]
+                guest_nc = "/nc" in tail.split("GATEWAY-42-OK")[-1] or "busybox" in tail.split("GATEWAY-42-OK")[-1]
+                report["guest_nc"] = guest_nc
+                if guest_nc:
+                    exchange(sock, "vm_console_write", vm_id=vm_id, stream="serial1",
+                             data="(echo GUEST-$((6*7))-SERVED | nc -l -p 80 &) ; sleep 1; echo LISTEN-$((6*7))\n")
+                    wait_text(sock, "LISTEN-42", 30)
+                    reply = inside("sh -c 'echo | nc -w 3 127.0.0.1 18080'")
+                    report["forward_reply"] = reply
+                    check("GUEST-42-SERVED" in reply, "local forward 18080 reaches the guest")
+                # gvswitch is the data path: a crash is relaunched and the retained TAP re-posted.
+                generation = exchange(sock, "network_status", network_id=network_id)["runtime_generation"]
+                switch = root_shell(f"for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' < $p/cmdline 2>/dev/null); case \"$c\" in */gvswitch\\ -listen*) echo ${{p#/proc/}};; esac; done").stdout.split()
+                check(len(switch) == 1 and root_shell(f"kill -9 {switch[0]}").returncode == 0, "kill the running gvswitch")
+                deadline = time.monotonic() + 60
+                status = {}
+                while time.monotonic() < deadline:
+                    status = exchange(sock, "network_status", network_id=network_id)
+                    if status["runtime_generation"] != generation and status["runtime_state"] == "RUNNING":
+                        break
+                    time.sleep(0.25)
+                report["recovered_status"] = status
+                check(status["runtime_generation"] != generation and status["runtime_state"] == "RUNNING", "watchdog relaunches gvswitch")
+                check(f"{tap}:" in inside(f"ip -o link show {tap}") and exchange(sock, "vm_status", vm_id=vm_id)["state"] == "running", "TAP and VM survive the relaunch")
+                exchange(sock, "vm_console_write", vm_id=vm_id, stream="serial1", data="ping -c 3 -W 2 10.78.0.1 && echo REATTACH-$((6*7))-OK\n")
+                text = wait_text(sock, "REATTACH-42-OK", 40)
+                check("REATTACH-42-OK" in text, "guest reaches the relaunched gvswitch through its re-posted port")
+                check(exchange(sock, "vm_stop", vm_id=vm_id)["success"], "stop VM")
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "stopped":
+                    time.sleep(0.25)
+                check(exchange(sock, "vm_status", vm_id=vm_id)["state"] == "stopped", "VM stopped")
+                check(not inside(f"ip -o link show {tap}"), "TAP removed after VM exit")
+                check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "gVisor network keeps running after the VM")
+                check(exchange(sock, "network_stop", network_id=network_id)["success"], "gVisor network stops once unused")
+            root_shell(f"kill -15 {daemon_pid}")
+            daemon.wait(timeout=60)
+            report["daemon_log"] = root_shell(f"cat {data}/cache/daemon.log").stdout[-3000:]
+            report["pool_want_before"] = before_want
+            report["pool_want_after"] = root_shell("cat /sys/module/gh_hugepage_reserve/parameters/pool_want").stdout.strip()
+            check(report["pool_want_after"] == before_want, "reserve target restored")
+            report["passed"] = True
+            print("PASS: VM NIC attached to a native gVisor network,", len(report["checks"]), "checks")
+            return
         with socket.create_connection(("127.0.0.1", local), timeout=60) as sock:
             exchange(sock, "auth", token=token)
             network = {"schema": 2, "id": network_id, "name": "vm network " + nonce[:6], "bridge_name": bridge, "bridge_type": "linux",
