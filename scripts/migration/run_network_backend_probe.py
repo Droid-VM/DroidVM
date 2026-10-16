@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--netbox", default="/data/user/0/cn.classfun.droidvm/bin/netbox")
     parser.add_argument("--control-tools", help="Run real gvswitch/bridgedhcp HTTP contracts using this device bin directory")
     parser.add_argument("--daemon", type=Path, help="Native daemon for startup recovery (defaults to standalone arm64 build)")
-    parser.add_argument("--suite", choices=("all", "firewall-coordinator"), default="all", help="Select a focused isolated network suite")
+    parser.add_argument("--suite", choices=("all", "firewall-coordinator", "firewall-forwards"), default="all", help="Select a focused isolated network suite")
     args = parser.parse_args()
     if args.control_tools and args.suite != "all":
         parser.error("--suite requires network contracts, not --control-tools")
@@ -52,8 +52,8 @@ def main():
         subprocess.run(adb + ["push", str(args.binary), directory + "/contract"], check=True, timeout=30)
         shell(["chmod", "700", directory + "/contract"], check=True)
         command = [directory + "/contract", args.control_tools or args.netbox, directory]
-        if args.suite == "firewall-coordinator":
-            command.insert(1, "--linux-firewall-coordinator")
+        if args.suite != "all":
+            command.insert(1, "--linux-" + args.suite)
         daemon = args.daemon or root / "build/migration/standalone-arm64-v8a/droidvmd"
         report["daemon_sha256"] = hashlib.sha256(daemon.read_bytes()).hexdigest()
         subprocess.run(adb + ["push", str(daemon), directory + "/daemon"], check=True, timeout=30)
