@@ -277,20 +277,27 @@ def main():
                 entries = json.loads(read(data + "/run/network-runtime.json"))["switches"]
                 return data + "/run/" + next(row["name"] for row in entries if row["owner"] == switch["id"])
 
-            def stop_network(sock, network_id):
+            def lifecycle_call(sock, command, network_id):
                 # A maintenance tick holds the same operation lock as stop.
                 # Retry only that explicit busy response, never cleanup errors
                 # or a conflict about resource ownership/configuration.
                 deadline = time.monotonic() + 8
                 while True:
-                    reply = exchange(sock, "network_stop", network_id=network_id)
+                    reply = exchange(sock, command, network_id=network_id)
                     if (reply.get("error", {}).get("code") != "CONFLICT"
                             or reply.get("message") != "Network operation already in progress"):
-                        report["last_network_stop_reply"] = reply
+                        report["last_" + command + "_reply"] = reply
                         return reply
-                    report["network_stop_busy_retries"] = report.get("network_stop_busy_retries", 0) + 1
+                    key = command + "_busy_retries"
+                    report[key] = report.get(key, 0) + 1
                     assert time.monotonic() < deadline, reply
                     time.sleep(0.05)
+
+            def stop_network(sock, network_id):
+                return lifecycle_call(sock, "network_stop", network_id)
+
+            def start_network(sock, network_id):
+                return lifecycle_call(sock, "network_start", network_id)
 
             with connect(False) as unauthorized:
                 for name in ("network_start", "network_stop", "network_status", "network_tool_log"):
@@ -304,10 +311,10 @@ def main():
                 assert status(sock)["runtime_state"] == "STOPPED" and status(sock)["runtime_error"]
                 shell(["cp", "/data/user/0/cn.classfun.droidvm/bin/gvswitch", data + "/bin/gvswitch"], check=True)
                 shell(["chmod", "700", data + "/bin/gvswitch"], check=True)
-                first = exchange(sock, "network_start", network_id=switch["id"])
+                first = start_network(sock, switch["id"])
                 assert first["success"] and first["state"] == "running" and first["tools"][0]["running"], first
-                repeated = exchange(sock, "network_start", network_id=switch["id"])
-                assert repeated["runtime_generation"] == first["runtime_generation"]
+                repeated = start_network(sock, switch["id"])
+                assert repeated["success"] and repeated["runtime_generation"] == first["runtime_generation"], repeated
                 assert exchange(sock, "network_modify", config=switch)["error"]["code"] == "CONFLICT"
                 info = exchange(sock, "network_info", network_id=switch["id"])["data"]
                 assert info["state"] == "RUNNING" and info["tools"][0]["key"] == "gvswitch"
@@ -353,7 +360,8 @@ def main():
                 assert stopped["error"]["code"] == "IO_ERROR", stopped
                 failed = status(sock)
                 assert failed["state"] == "stopping" and failed["runtime_state"] == "FAILED" and not failed["desired_running"]
-                assert exchange(sock, "network_start", network_id=independent["id"])["success"]
+                started = start_network(sock, independent["id"])
+                assert started["success"], started
                 stopped = stop_network(sock, independent["id"])
                 assert stopped["success"], stopped
                 time.sleep(0.8)
@@ -405,7 +413,8 @@ def main():
                 assert exchange(sock, "network_stop", network_id=switch["id"])["success"]
                 switch["auto_up"] = False
                 assert exchange(sock, "network_modify", config=switch)["success"]
-                assert exchange(sock, "network_start", network_id=switch["id"])["success"]
+                started = start_network(sock, switch["id"])
+                assert started["success"], started
             stop()  # graceful daemon shutdown must also stop an active switch
             assert json.loads(read(data + "/run/network-runtime.json"))["switches"] == []
             port, token, _ = start()
