@@ -277,6 +277,21 @@ def main():
                 entries = json.loads(read(data + "/run/network-runtime.json"))["switches"]
                 return data + "/run/" + next(row["name"] for row in entries if row["owner"] == switch["id"])
 
+            def stop_network(sock, network_id):
+                # A maintenance tick holds the same operation lock as stop.
+                # Retry only that explicit busy response, never cleanup errors
+                # or a conflict about resource ownership/configuration.
+                deadline = time.monotonic() + 8
+                while True:
+                    reply = exchange(sock, "network_stop", network_id=network_id)
+                    if (reply.get("error", {}).get("code") != "CONFLICT"
+                            or reply.get("message") != "Network operation already in progress"):
+                        report["last_network_stop_reply"] = reply
+                        return reply
+                    report["network_stop_busy_retries"] = report.get("network_stop_busy_retries", 0) + 1
+                    assert time.monotonic() < deadline, reply
+                    time.sleep(0.05)
+
             with connect(False) as unauthorized:
                 for name in ("network_start", "network_stop", "network_status", "network_tool_log"):
                     assert not exchange(unauthorized, name, network_id=switch["id"], tool="gvswitch")["success"]
@@ -334,15 +349,18 @@ def main():
                 assert shell(["test", "-e", old_directory]).returncode != 0
                 retained_directory = runtime_directory()
                 shell(["touch", retained_directory + "/retained"], check=True)
-                assert exchange(sock, "network_stop", network_id=switch["id"])["error"]["code"] == "IO_ERROR"
+                stopped = stop_network(sock, switch["id"])
+                assert stopped["error"]["code"] == "IO_ERROR", stopped
                 failed = status(sock)
                 assert failed["state"] == "stopping" and failed["runtime_state"] == "FAILED" and not failed["desired_running"]
                 assert exchange(sock, "network_start", network_id=independent["id"])["success"]
-                assert exchange(sock, "network_stop", network_id=independent["id"])["success"]
+                stopped = stop_network(sock, independent["id"])
+                assert stopped["success"], stopped
                 time.sleep(0.8)
                 assert status(sock)["runtime_generation"] == failed["runtime_generation"]
                 shell(["rm", retained_directory + "/retained"], check=True)
-                assert exchange(sock, "network_stop", network_id=switch["id"])["state"] == "stopped"
+                stopped = stop_network(sock, switch["id"])
+                assert stopped["state"] == "stopped", stopped
                 report["lifecycle_auth_readiness_idempotency_logs_watchdog_and_cleanup_retry"] = True
 
                 # Run a live helper without its API, in only this test's bin.
