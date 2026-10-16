@@ -25,15 +25,26 @@ public final class VMStore extends DataStore<VMConfig> {
     /** Worker-only guarded field edit. Session-only changes to other fields are never saved. */
     public static void updatePersistedField(@NonNull Context context, @NonNull VMConfig expected,
         @NonNull String field, @NonNull Consumer<VMConfig> change) throws Exception {
+        updatePersistedField(context, expected, field, (changed, observed) -> change.accept(changed));
+    }
+
+    @FunctionalInterface
+    public interface FieldChange {
+        void apply(VMConfig changed, VMStore observed) throws Exception;
+    }
+
+    /** The planner observes the same VM inventory whose revision/legacy lock guards the save. */
+    public static void updatePersistedField(@NonNull Context context, @NonNull VMConfig expected,
+        @NonNull String field, @NonNull FieldChange change) throws Exception {
         var before = new VMConfig(expected.toJson());
         var changed = new VMConfig(expected.toJson());
-        change.accept(changed);
         var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
         if (client.supported()) {
             var session = client.edit();
             var store = new VMStore(session.document());
             var current = store.findById(before.getId());
             if (current == null) throw new IOException("VM no longer exists; reload before starting");
+            change.apply(changed, store);
             applyFieldUpdate(current.item, before.item, changed.item, field);
             session.saveVm(current.toJson(), false);
         } else {
@@ -42,6 +53,7 @@ public final class VMStore extends DataStore<VMConfig> {
                 if (!store.load(context)) throw new IOException("Cannot read VM configuration");
                 var current = store.findById(before.getId());
                 if (current == null) throw new IOException("VM no longer exists; reload before starting");
+                change.apply(changed, store);
                 applyFieldUpdate(current.item, before.item, changed.item, field);
                 if (!store.save(context)) throw new IOException("Cannot save VM configuration");
             });
