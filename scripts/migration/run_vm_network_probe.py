@@ -108,14 +108,18 @@ def main():
         root_shell(f"chmod 755 {binary_dir}/droidvmd {binary_dir}/contract")
         report["daemon_sha256"] = hashlib.sha256(args.daemon.read_bytes()).hexdigest()
         apk = subprocess.run(adb + ["shell", "pm path cn.classfun.droidvm"], capture_output=True, text=True).stdout.strip().removeprefix("package:")
-        daemon, daemon_log = spawn(f"{binary_dir}/contract --netns-exec {data}/bin/netbox {binary_dir}/droidvmd --data-dir {data} --apk {apk}", "daemon.txt")
-        ready = wait_line(daemon, daemon_log, r"droidvmd ready pid=(\d+) port=(\d+)")
-        daemon_pid, inner_port = ready.groups()
-        relay, relay_log = spawn(f"{binary_dir}/contract --netns-relay {daemon_pid} {inner_port}", "relay.txt")
-        relay_port = wait_line(relay, relay_log, r"relay port=(\d+)").group(1)
-        local = int(subprocess.run(adb + ["forward", "tcp:0", "tcp:" + relay_port], check=True, capture_output=True, text=True).stdout.strip())
-        forwards.append(local)
-        token = root_shell(f"cat {data}/run/droidvmd-token.txt").stdout.strip()
+        def launch(tag):
+            nonlocal daemon_pid
+            daemon, daemon_log = spawn(f"{binary_dir}/contract --netns-exec {data}/bin/netbox {binary_dir}/droidvmd --data-dir {data} --apk {apk}", f"daemon{tag}.txt")
+            ready = wait_line(daemon, daemon_log, r"droidvmd ready pid=(\d+) port=(\d+)")
+            daemon_pid, inner_port = ready.groups()
+            relay, relay_log = spawn(f"{binary_dir}/contract --netns-relay {daemon_pid} {inner_port}", f"relay{tag}.txt")
+            relay_port = wait_line(relay, relay_log, r"relay port=(\d+)").group(1)
+            local = int(subprocess.run(adb + ["forward", "tcp:0", "tcp:" + relay_port], check=True, capture_output=True, text=True).stdout.strip())
+            forwards.append(local)
+            return daemon, local, root_shell(f"cat {data}/run/droidvmd-token.txt").stdout.strip()
+
+        daemon, local, token = launch("")
         with socket.create_connection(("127.0.0.1", local), timeout=60) as sock:
             exchange(sock, "auth", token=token)
             network = {"schema": 2, "id": network_id, "name": "vm network " + nonce[:6], "bridge_name": bridge, "bridge_type": "linux",
@@ -193,8 +197,29 @@ def main():
             check("10.77.0.10/32" not in inside("iptables -S FORWARD"), "VM forward retired with its NIC")
             check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "network keeps running after the VM")
             check(exchange(sock, "network_stop", network_id=network_id)["success"], "network stops once unused")
+            check(exchange(sock, "network_modify", config=dict(network, auto_up=True))["success"], "mark the network auto_up")
         root_shell(f"kill -15 {daemon_pid}")
         daemon.wait(timeout=60)
+        # Next daemon start: networks come up first, then auto_up VMs attach to them.
+        local_vms = output / "vms.json"
+        local_vms.write_text(json.dumps({"vms": [dict(config, auto_up=True)]}), encoding="utf-8")
+        subprocess.run(adb + ["push", str(local_vms), binary_dir + "/vms.json"], check=True, timeout=30, capture_output=True)
+        assert root_shell(f"cp {binary_dir}/vms.json {data}/files/vms.json && chown {uid}:{uid} {data}/files/vms.json && chmod 600 {data}/files/vms.json").returncode == 0
+        daemon, local, token = launch("-auto")
+        with socket.create_connection(("127.0.0.1", local), timeout=60) as sock:
+            exchange(sock, "auth", token=token)
+            deadline = time.monotonic() + 120
+            while time.monotonic() < deadline and exchange(sock, "vm_status", vm_id=vm_id)["state"] != "running":
+                time.sleep(0.25)
+            check(exchange(sock, "vm_status", vm_id=vm_id)["state"] == "running", "auto_up VM starts on daemon start")
+            check(exchange(sock, "network_status", network_id=network_id)["state"] == "running", "auto_up network is running")
+            check(f"master {bridge}" in inside(f"ip -o link show {tap}"), "auto-started VM is attached to the auto-started network")
+            check(not exchange(sock, "network_stop", network_id=network_id)["success"], "the auto-started VM holds its network")
+        # SIGTERM: VMs leave before their networks.
+        root_shell(f"kill -15 {daemon_pid}")
+        daemon.wait(timeout=90)
+        report["daemon_log"] = root_shell(f"cat {data}/cache/daemon.log").stdout[-3000:]
+        check("Network shutdown incomplete" not in report["daemon_log"] and "ERROR" not in report["daemon_log"], "daemon shutdown with an auto-started VM is clean")
         report["pool_want_before"] = before_want
         report["pool_want_after"] = root_shell("cat /sys/module/gh_hugepage_reserve/parameters/pool_want").stdout.strip()
         check(report["pool_want_after"] == before_want, "reserve target restored")
