@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
     parser.add_argument("--display", action="store_true", help="Run the default native-display screen with input instead of the full lifecycle")
+    parser.add_argument("--autostart", action="store_true", help="Auto-start an image-boot VM from vms.json; vm_bootscan and set_app_config")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/vm-runtime-device" / nonce
@@ -33,6 +34,7 @@ def main():
     if args.display:
         data = f"/data/local/tmp/dv{nonce[:6]}"  # input socket paths must fit sun_path
     binary_dir = f"/data/local/tmp/droidvm-vmrt-{nonce}"
+    external = f"/storage/emulated/0/Android/data/{app}/files/vmrt-{nonce[:8]}"
     adb = ["adb", "-s", args.serial]
     report, processes, forwards, logs, events = {"checks": []}, [], [], [], []
     active = None
@@ -126,6 +128,11 @@ def main():
         result = exchange(sock, "vm_console_history", vm_id=vm_id, stream=stream)
         return urllib.parse.unquote_to_bytes(result.get(stream, "")).decode("utf-8", "replace")
 
+    def crosvm_argv():
+        for pid in crosvm_pids():
+            return root_shell(f"tr '\\0' '\\n' < /proc/{pid}/cmdline").stdout.splitlines()
+        return []
+
     def crosvm_pids():
         out = root_shell(f"for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' < $p/cmdline 2>/dev/null); case \"$c\" in *crosvm*--name\\ {name}\\ *) echo ${{p#/proc/}};; esac; done").stdout
         return [int(x) for x in out.split()]
@@ -186,6 +193,67 @@ def main():
             stop()
             report["passed"] = True
             print("PASS: native-display VM with the input bridge,", len(report["checks"]), "checks")
+            return
+        if args.autostart:
+            # A guest disk on shared storage, booted through lbx like a real image VM.
+            image = external + "/disk.img"
+            script = (f"set -e; mkdir -p {external}/root/boot/grub; cp {PRODUCTION}/usr/share/droidvm/vmlinuz {external}/root/boot/vmlinuz-6.1.0-test; "
+                      f"cp {PRODUCTION}/usr/share/droidvm/initramfs.img {external}/root/boot/initrd.img-6.1.0-test; "
+                      f"printf 'set default=0\\nmenuentry \"Test Linux\" {{\\n linux /boot/vmlinuz-6.1.0-test root=/dev/vda console=ttyS0 earlycon\\n initrd /boot/initrd.img-6.1.0-test\\n}}\\n' > {external}/root/boot/grub/grub.cfg; "
+                      f"mke2fs -q -t ext4 -d {external}/root {image} 96M; rm -r {external}/root")
+            built = root_shell(script)
+            assert built.returncode == 0, built.stderr
+            auto = dict(config, auto_up=True, disks=[{"path": image, "readonly": True}],
+                        boot={"protocol": "linux", "linux": {"source": "image", "image": {"disk": 0}}})
+            idle_id = str(uuid.uuid4())
+            idle = dict(config, id=idle_id, name=name + "-idle", auto_up=False)
+            local = output / "vms.json"
+            local.write_text(json.dumps({"vms": [idle, auto]}), encoding="utf-8")
+            subprocess.run(adb + ["push", str(local), binary_dir + "/vms.json"], check=True, timeout=30, capture_output=True)
+            assert root_shell(f"cp {binary_dir}/vms.json {data}/files/vms.json && chown {uid}:{uid} {data}/files/vms.json && chmod 600 {data}/files/vms.json").returncode == 0
+            port, token = start()
+            with connect(port, token) as sock:
+                check(exchange(sock, "capabilities").get("vm_auto_up") is True, "capabilities advertise VM auto-start")
+                check(wait_state(sock, "running", 120), "auto_up VM starts without vm_start")
+                check(exchange(sock, "vm_status", vm_id=idle_id)["state"] == "stopped", "VM without auto_up stays stopped")
+                argv = crosvm_argv()
+                report["argv"] = argv
+                media = image.replace("/storage/emulated/", "/data/media/", 1)
+                disk = lambda path: any(a.split(",")[0] == path for a in argv)
+                check(disk(media), "optimize_sdcard defaults on before the UI sends its config")
+                boot_log = ""
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline and "Linux version" not in boot_log:
+                    boot_log = history(sock, "serial1")
+                    time.sleep(0.5)
+                (output / "serial1.txt").write_text(boot_log, encoding="utf-8")
+                check("Linux version" in boot_log and "root=/dev/vda" in boot_log, "guest boots the kernel and cmdline of the image entry")
+                cached = root_shell(f"ls {data}/cache/boot/{vm_id}").stdout.split()
+                report["boot_cache"] = cached
+                check("initrd" in cached and len(cached) >= 3, "lbx extracted kernel and initrd into the boot cache")
+                scan = exchange(sock, "vm_bootscan", image=image)
+                report["bootscan"] = scan
+                check(scan["success"] and [e["title"] for e in scan["entries"]] == ["Test Linux"] and scan["entries"][0]["default"] is True, "vm_bootscan lists the image entries")
+                check(exchange(sock, "vm_bootscan")["message"] == "missing image", "vm_bootscan without an image")
+                check(exchange(sock, "vm_bootscan", image=external + "/absent.img")["message"] == "internal error", "vm_bootscan of an unreadable image")
+                check(exchange(sock, "set_app_config")["message"] == "internal error", "set_app_config without config")
+                check(exchange(sock, "set_app_config", config=[1])["message"] == "internal error", "set_app_config with a non-object config")
+                check(exchange(sock, "set_app_config", config={"optimize_sdcard": False, "usb_acm_enable": False})["success"], "set_app_config accepted")
+                check(exchange(sock, "vm_stop", vm_id=vm_id)["success"] and wait_state(sock, "stopped", 60), "stop the auto-started VM")
+                check(exchange(sock, "vm_start", vm_id=vm_id)["success"] and wait_state(sock, "running", 120), "restart after set_app_config")
+                argv = crosvm_argv()
+                check(disk(image) and not disk(media), "optimize_sdcard=false keeps the shared-storage path")
+                check(exchange(sock, "vm_stop", vm_id=vm_id)["success"] and wait_state(sock, "stopped", 60) and not crosvm_pids(), "stop leaves no VMM")
+            stop()
+            port, token = start()
+            with connect(port, token) as sock:
+                check(wait_state(sock, "running", 120), "auto-start repeats on the next daemon start")
+            # SIGTERM while the auto-started VM runs: stopAll takes it down with the daemon.
+            stop()
+            check(not crosvm_pids(), "daemon shutdown stops the auto-started VM")
+            check(pool_want() == report["pool_want_before"], "reserve target restored")
+            report["passed"] = True
+            print("PASS: auto-started image-boot VM, vm_bootscan and set_app_config,", len(report["checks"]), "checks")
             return
         port, token = start()
         stop_flag = threading.Event()
@@ -275,7 +343,11 @@ def main():
         print("Results:", output)
         if report.get("passed") and not report["leftover_vmm"]:
             root_shell(f"rm -r {data} {binary_dir}")
+            if args.autostart:
+                root_shell(f"rm -r {external}")
     assert report.get("passed"), report
+    if args.display or args.autostart:
+        return
     print("PASS: real crosvm VM lifecycle through the native daemon,", len(report["checks"]), "checks")
 
 
