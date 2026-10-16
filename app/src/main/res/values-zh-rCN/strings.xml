@@ -476,6 +476,7 @@
     <string name="settings_import_confirm_message">这将用选定文件中的数据覆盖您现有的虚拟机、磁盘和网络配置。确定要继续吗？</string>
     <string name="settings_import_success">成功导入 %1$d 个配置文件。</string>
     <string name="settings_import_failed">导入失败：%1$s</string>
+    <string name="settings_import_partial">%1$s\n已保存 %2$d 类配置，请重新加载以查看当前状态。</string>
     <string name="settings_import_invalid_json">选定文件不是有效的配置备份文件。</string>
     <string name="settings_category_vm">虚拟机</string>
     <string name="settings_vm_auto_console_title">启动时打开控制台</string>
