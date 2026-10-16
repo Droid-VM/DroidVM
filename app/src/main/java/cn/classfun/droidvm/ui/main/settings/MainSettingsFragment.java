@@ -611,6 +611,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
             VMStore.importPersisted(ctx, json);
             return;
         }
+        if (NetworkStore.class.equals(store)) {
+            NetworkStore.importPersisted(ctx, json);
+            return;
+        }
         ctor.setAccessible(true);
         var oldStore = ctor.newInstance();
         var newStore = ctor.newInstance();

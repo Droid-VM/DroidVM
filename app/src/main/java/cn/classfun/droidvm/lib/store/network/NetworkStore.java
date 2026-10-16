@@ -20,6 +20,34 @@ import cn.classfun.droidvm.lib.store.base.DataStore;
 import cn.classfun.droidvm.lib.utils.JsonUtils;
 
 public final class NetworkStore extends DataStore<NetworkConfig> {
+    /** Worker-only settings merge, committed as one native network batch. */
+    public static void importPersisted(@NonNull Context context, @NonNull JSONObject document) throws Exception {
+        document.getJSONArray("networks");
+        var imported = new NetworkStore();
+        if (!imported.load(document)) throw new java.io.IOException("Cannot read imported network configuration");
+        var rows = new org.json.JSONArray();
+        var configs = new java.util.ArrayList<NetworkConfig>();
+        imported.forEach((id, config) -> configs.add(config));
+        if (configs.size() != document.getJSONArray("networks").length())
+            throw new java.io.IOException("Imported networks contain unsupported configurations");
+        for (var config : configs) {
+            NetworkConfigValidator.validate(config);
+            rows.put(config.toJson());
+        }
+        var client = new cn.classfun.droidvm.lib.daemon.NetworkConfigClient(
+            request -> cn.classfun.droidvm.lib.daemon.DaemonConnection.getInstance().request(request));
+        if (client.supported()) client.importSession().merge(rows);
+        else cn.classfun.droidvm.lib.store.base.NetworkConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+            var current = new NetworkStore();
+            if (!current.load(context)) throw new java.io.IOException("Cannot read current network configuration");
+            imported.forEach((id, config) -> {
+                if (current.findById(id) == null) current.add(config);
+                else current.update(config);
+            });
+            if (!current.save(context)) throw new java.io.IOException("Cannot save imported network configuration");
+        });
+    }
+
     public NetworkStore() {
         super();
     }

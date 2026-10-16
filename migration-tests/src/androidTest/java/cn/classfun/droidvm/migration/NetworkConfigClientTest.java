@@ -34,7 +34,7 @@ public final class NetworkConfigClientTest {
 
     @Test public void capabilityFailureAndPartialNativeApiNeverEnableLocalWrites() throws Exception {
         assertFalse(new NetworkConfigClient(r -> new JSONObject().put("success", true)).supported());
-        for (String key : new String[]{"network_config_persistence", "network_config_events", "network_config_update"}) {
+        for (String key : new String[]{"network_config_persistence", "network_config_events", "network_config_update", "network_config_import"}) {
             var client = new NetworkConfigClient(r -> new JSONObject().put("success", true).put(key, true));
             assertThrows(IOException.class, client::supported);
         }
