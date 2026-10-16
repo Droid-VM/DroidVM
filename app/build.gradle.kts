@@ -80,6 +80,15 @@ android {
                 arguments += "-DDROIDVM_VERSION_CODE=${versionCode}"
                 arguments += "-DDROIDVM_PACKAGE_NAME=${applicationId}"
                 arguments += "-DDROIDVM_BIN_OUTPUT_ROOT=${layout.buildDirectory.dir("intermediates/native_binaries").get().asFile.invariantSeparatorsPath}"
+                // droidvmd's Binder/audio services need the AOSP 14 aidl generator.
+                val aidl = androidComponents.sdkComponents.sdkDirectory.get().asFile
+                    .resolve("build-tools/34.0.0/" + if (System.getProperty("os.name").startsWith("Windows")) "aidl.exe" else "aidl")
+                if (aidl.isFile) {
+                    arguments += "-DDROIDVM_BUILD_PLATFORM_PROBE=ON"
+                    arguments += "-DDROIDVM_AIDL=${aidl.invariantSeparatorsPath}"
+                } else {
+                    logger.warn("build-tools 34.0.0 aidl not found: droidvmd is built without Binder/audio services")
+                }
             }
         }
     }
