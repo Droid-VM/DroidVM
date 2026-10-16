@@ -114,7 +114,10 @@ def main():
         auth(observer)
         stale = exchange(observer, "task_snapshot")
         time.sleep(2)
-        assert exchange(observer, "task_subscribe", epoch=epoch, cursor=stale["cursor"])["error"]["code"] == "RESYNC_REQUIRED"
+        replay = exchange(observer, "task_subscribe", epoch=epoch, cursor=stale["cursor"])
+        report["history_eviction"] = {"cursor": stale["cursor"], "reply": replay,
+                                      "task": get(observer, running)["task"]}
+        assert replay.get("error", {}).get("code") == "RESYNC_REQUIRED", report["history_eviction"]
         assert exchange(observer, "task_snapshot_release", snapshot_id=stale["snapshot_id"])["success"]
         snapshot = exchange(observer, "task_snapshot")
         assert exchange(observer, "task_subscribe", epoch=epoch, cursor=snapshot["cursor"])["success"]
