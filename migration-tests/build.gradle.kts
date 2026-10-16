@@ -39,6 +39,10 @@ val networkOwnershipSources = tasks.register<ContractSourceTask>("syncNetworkOwn
     sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/store/base/NetworkConfigOwnership.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/networkownership/main"))
 }
+val diskOwnershipSources = tasks.register<ContractSourceTask>("syncDiskOwnershipSources") {
+    sourceFile.set(rootProject.file("app/src/main/java/cn/classfun/droidvm/lib/store/base/DiskConfigOwnership.java"))
+    outputDirectory.set(layout.buildDirectory.dir("generated/diskownership/main"))
+}
 val contractSources = tasks.register<ContractSourceTask>("syncContractSources") {
     sourceFile.set(rootProject.file("app/src/androidTest/java/cn/classfun/droidvm/lib/daemon/ProtocolContractTest.java"))
     outputDirectory.set(layout.buildDirectory.dir("generated/protocol/androidTest"))
@@ -90,6 +94,7 @@ androidComponents {
         variant.sources.java?.addGeneratedSourceDirectory(networkConfigSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(vmOwnershipSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(networkOwnershipSources, ContractSourceTask::outputDirectory)
+        variant.sources.java?.addGeneratedSourceDirectory(diskOwnershipSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(audioTypeSources, ContractSourceTask::outputDirectory)
         variant.sources.java?.addGeneratedSourceDirectory(evdevSources, ContractSourceTask::outputDirectory)
         variant.androidTest?.sources?.java?.addGeneratedSourceDirectory(contractSources, ContractSourceTask::outputDirectory)
