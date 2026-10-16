@@ -245,8 +245,19 @@ def main():
             assert "task_subscribe" in responses[3]["commands"]
             sock.sendall(frame(request("task_snapshot")))
             snapshot = receive(sock)
-            assert snapshot["success"] and snapshot["items"] == [] and snapshot["cursor"] == "0"
+            # The network service publishes its initial immutable view into the
+            # same journal, even when there are no task records or networks.
+            has_network_events = responses[3].get("network_config_events") == "invalidation-v1"
+            assert snapshot["success"] and snapshot["items"] == []
+            assert snapshot["cursor"] == ("1" if has_network_events else "0"), snapshot
             assert snapshot["epoch"] == responses[3]["epoch"]
+            if has_network_events:
+                sock.sendall(frame(request("network_config_snapshot")))
+                network_snapshot = receive(sock)
+                assert network_snapshot["success"] and network_snapshot["items"] == []
+                assert (network_snapshot["epoch"], network_snapshot["cursor"]) == (snapshot["epoch"], snapshot["cursor"])
+                sock.sendall(frame(request("resource_snapshot_release", snapshot_id=network_snapshot["snapshot_id"])))
+                assert receive(sock)["success"]
             task_commands = [request("task_subscribe", epoch=snapshot["epoch"], cursor=snapshot["cursor"]),
                              request("ping", request="PING"), request("task_unsubscribe"),
                              request("task_snapshot_release", snapshot_id=snapshot["snapshot_id"]),
