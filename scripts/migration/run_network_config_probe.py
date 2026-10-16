@@ -3,6 +3,7 @@
 import argparse
 import concurrent.futures
 import json
+import re
 from pathlib import Path
 import shlex
 import socket
@@ -19,6 +20,7 @@ def main():
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
     parser.add_argument("--skip-slow", action="store_true", help="Skip the separate 35-second write-delay fixture")
+    parser.add_argument("--lifecycle", action="store_true", help="Also verify actual gvswitch commands, watchdog, auto_up and crash recovery")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
     output = root / "build/migration/network-config-device" / nonce
@@ -64,9 +66,11 @@ def main():
         while time.monotonic() < deadline:
             if process.poll() is not None:
                 raise RuntimeError("Daemon startup failed: " + log_path.read_text(encoding="utf-8"))
-            pid = shell(["cat", data + "/run/droidvmd.pid"]).stdout.strip()
-            port = shell(["cat", data + "/run/droidvmd-port.txt"]).stdout.strip()
-            if pid.isdecimal() and port.isdecimal():
+            # SIGKILL leaves discovery files behind. Wait for this invocation's
+            # ready line, emitted only after recovery and discovery publication.
+            ready = re.search(r"droidvmd ready pid=(\d+) port=(\d+)", log_path.read_text(encoding="utf-8"))
+            if ready:
+                pid, port = ready.groups()
                 token = read(data + "/run/droidvmd-token.txt")
                 forward = subprocess.run(adb + ["forward", "tcp:0", "tcp:" + port], check=True, capture_output=True, text=True, timeout=10)
                 local = int(forward.stdout.strip()); forwards.append(local)
@@ -75,12 +79,12 @@ def main():
             time.sleep(0.025)
         raise TimeoutError("Daemon readiness")
 
-    def stop():
+    def stop(number=15):
         nonlocal active
         process, pid, executable = active
         assert shell(["readlink", f"/proc/{pid}/exe"], check=True).stdout.strip() == executable
-        shell(["kill", "-15", pid], check=True)
-        assert process.wait(timeout=45) == 143
+        shell(["kill", f"-{number}", pid], check=True)
+        assert process.wait(timeout=45) == 128 + number
         active = None
 
     def connect(auth=True):
@@ -103,6 +107,8 @@ def main():
         uid = shell(["stat", "-c", "%u", data], check=True).stdout.strip()
         shell(["mkdir", binary_dir], check=True)
         binaries = [(args.daemon, "droidvmd"), (root / "build/migration/standalone-arm64-v8a/droidvm_network_contract", "contract")]
+        if args.lifecycle:
+            binaries.append((root / "build/migration/standalone-arm64-v8a/droidvm_control_http_contract", "control"))
         if not args.skip_slow:
             binaries.append((root / "build/migration/standalone-arm64-v8a/droidvm_network_fixture", "fixture"))
         for binary, name in binaries:
@@ -124,7 +130,9 @@ def main():
             cap = exchange(sock, "capabilities")
             assert cap["network_runtime"] is False and cap["network_config_persistence"] is True
             assert all(name in cap["commands"] for name in ("network_create", "network_modify", "network_list", "network_info", "network_exists"))
-            assert "network_delete" not in cap["commands"] and "network_start" not in cap["commands"]
+            assert "network_delete" not in cap["commands"]
+            assert cap["network_lifecycle_backends"] == ["gvisor"] and cap["network_watchdog"] and cap["network_auto_up"]
+            assert all(name in cap["commands"] for name in ("network_start", "network_stop", "network_status", "network_tool_log"))
             assert cap["network_host_interfaces"] is True and "network_list_interfaces" in cap["commands"]
             # Missing tool must surface an error, not a successful empty list.
             assert exchange(sock, "network_list_interfaces")["error"]["code"] == "IO_ERROR"
@@ -222,6 +230,119 @@ def main():
         with connect() as sock:
             assert exchange(sock, "network_exists", network_id=created["id"])["exists"]
             assert exchange(sock, "network_exists", network_id=half["id"])["exists"]
+        if args.lifecycle:
+            switch = dict(config("runtime switch"), bridge_type="gvisor")
+            independent = dict(config("independent switch"), bridge_type="gvisor")
+
+            def status(sock):
+                reply = exchange(sock, "network_status", network_id=switch["id"])
+                assert reply["success"], reply
+                return reply
+
+            def running(sock, previous=0):
+                deadline = time.monotonic() + 15
+                while True:
+                    value = status(sock)
+                    if value["runtime_state"] == "RUNNING" and int(value["runtime_generation"]) > previous:
+                        return value
+                    assert time.monotonic() < deadline, value
+                    time.sleep(0.05)
+
+            def runtime_directory():
+                entries = json.loads(read(data + "/run/network-runtime.json"))["switches"]
+                return data + "/run/" + next(row["name"] for row in entries if row["owner"] == switch["id"])
+
+            with connect(False) as unauthorized:
+                for name in ("network_start", "network_stop", "network_status", "network_tool_log"):
+                    assert not exchange(unauthorized, name, network_id=switch["id"], tool="gvswitch")["success"]
+            with connect() as sock:
+                assert exchange(sock, "network_create", config=switch)["success"]
+                assert exchange(sock, "network_create", config=independent)["success"]
+                assert exchange(sock, "network_start", network_id="missing")["message"] == "network missing not found"
+                assert exchange(sock, "network_start")["message"] == "missing network_id"
+                assert exchange(sock, "network_start", network_id=switch["id"])["error"]["code"] == "UNAVAILABLE"
+                assert status(sock)["runtime_state"] == "STOPPED" and status(sock)["runtime_error"]
+                shell(["cp", "/data/user/0/cn.classfun.droidvm/bin/gvswitch", data + "/bin/gvswitch"], check=True)
+                shell(["chmod", "700", data + "/bin/gvswitch"], check=True)
+                first = exchange(sock, "network_start", network_id=switch["id"])
+                assert first["success"] and first["state"] == "running" and first["tools"][0]["running"], first
+                repeated = exchange(sock, "network_start", network_id=switch["id"])
+                assert repeated["runtime_generation"] == first["runtime_generation"]
+                assert exchange(sock, "network_modify", config=switch)["error"]["code"] == "CONFLICT"
+                info = exchange(sock, "network_info", network_id=switch["id"])["data"]
+                assert info["state"] == "RUNNING" and info["tools"][0]["key"] == "gvswitch"
+                assert isinstance(exchange(sock, "network_tool_log", network_id=switch["id"], tool="gvswitch")["lines"], list)
+                assert exchange(sock, "network_tool_log", network_id=switch["id"], tool="unknown")["error"]["code"] == "NOT_FOUND"
+                old_directory = runtime_directory()
+                # Native fixture verifies inherited marker and uses pidfd. Never
+                # signal a helper using a PID read by the Python test runner.
+                shell([binary_dir + "/control", "--recover-helper", old_directory], check=True)
+                recovered = running(sock, int(first["runtime_generation"]))
+                assert int(recovered["tools"][0]["generation"]) > int(first["tools"][0]["generation"])
+                assert runtime_directory() != old_directory
+                assert shell(["test", "-e", old_directory]).returncode != 0
+                retained_directory = runtime_directory()
+                shell(["touch", retained_directory + "/retained"], check=True)
+                assert exchange(sock, "network_stop", network_id=switch["id"])["error"]["code"] == "IO_ERROR"
+                failed = status(sock)
+                assert failed["state"] == "stopping" and failed["runtime_state"] == "FAILED" and not failed["desired_running"]
+                assert exchange(sock, "network_start", network_id=independent["id"])["success"]
+                assert exchange(sock, "network_stop", network_id=independent["id"])["success"]
+                time.sleep(0.8)
+                assert status(sock)["runtime_generation"] == failed["runtime_generation"]
+                shell(["rm", retained_directory + "/retained"], check=True)
+                assert exchange(sock, "network_stop", network_id=switch["id"])["state"] == "stopped"
+                report["lifecycle_auth_readiness_idempotency_logs_watchdog_and_cleanup_retry"] = True
+
+                # Run a live helper without its API, in only this test's bin.
+                shell(["mv", data + "/bin/gvswitch", data + "/bin/real-gvswitch"], check=True)
+                subprocess.run(adb + ["push", str(sleeper), data + "/bin/gvswitch"], check=True, timeout=20)
+                shell(["chmod", "700", data + "/bin/gvswitch"], check=True)
+                def slow_start():
+                    with connect() as client:
+                        return exchange(client, "network_start", network_id=switch["id"])
+                wake_name = "droidvm-startprobe-" + nonce
+                shell(["sh", "-c", 'printf "%s" "$1" > /sys/power/wake_lock', "sh", wake_name + " 20000000000"], check=True)
+                try:
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        pending = pool.submit(slow_start)
+                        deadline = time.monotonic() + 3
+                        while status(sock)["runtime_state"] != "STARTING":
+                            assert time.monotonic() < deadline
+                            time.sleep(0.02)
+                        started = time.monotonic()
+                        assert exchange(sock, "ping", request="PING")["response"] == "PONG"
+                        assert time.monotonic() - started < 1 and not pending.done()
+                        assert exchange(sock, "network_start", network_id=switch["id"])["error"]["code"] == "CONFLICT"
+                        assert pending.result(timeout=8)["error"]["code"] == "UNAVAILABLE"
+                finally:
+                    shell(["sh", "-c", 'printf "%s" "$1" > /sys/power/wake_unlock', "sh", wake_name], check=True)
+                    shell(["mv", data + "/bin/real-gvswitch", data + "/bin/gvswitch"], check=True)
+                assert status(sock)["runtime_state"] == "STOPPED"
+                switch["auto_up"] = True
+                assert exchange(sock, "network_modify", config=switch)["success"]
+                report["slow_start_keeps_ping_and_status_responsive"] = True
+            stop()
+            port, token, _ = start()
+            with connect() as sock:
+                running(sock)
+                before_crash = runtime_directory()
+            stop(9)
+            port, token, _ = start()
+            with connect() as sock:
+                running(sock)
+                assert runtime_directory() != before_crash
+                assert shell(["test", "-e", before_crash]).returncode != 0
+                assert exchange(sock, "network_stop", network_id=switch["id"])["success"]
+                switch["auto_up"] = False
+                assert exchange(sock, "network_modify", config=switch)["success"]
+                assert exchange(sock, "network_start", network_id=switch["id"])["success"]
+            stop()  # graceful daemon shutdown must also stop an active switch
+            assert json.loads(read(data + "/run/network-runtime.json"))["switches"] == []
+            port, token, _ = start()
+            with connect() as sock:
+                assert status(sock)["runtime_state"] == "STOPPED"
+            report["auto_up_daemon_sigkill_recovery_and_graceful_shutdown"] = True
         stop()
         backup = json.loads(read(data + "/files/networks.json.bak"))
         seed("{broken")
@@ -298,7 +419,11 @@ def main():
         report["passed"] = True
     finally:
         if active is not None:
-            stop()
+            try:
+                stop()
+            except Exception as error:
+                report["cleanup_error"] = str(error)
+                report["passed"] = False
         for process in processes:
             if process.poll() is None:
                 process.kill(); process.wait(timeout=5)
@@ -311,9 +436,11 @@ def main():
         if report.get("passed"):
             shell(["rm", "-f", data + "/run/droidvmd.lock", data + "/cache/daemon.log",
                    data + "/bin/netbox",
+                   data + "/bin/gvswitch", data + "/run/network-runtime.json", data + "/run/network-runtime.json.bak",
                    data + "/files/networks.json", data + "/files/networks.json.bak", data + "/files/networks.json.corrupt",
-                   binary_dir + "/droidvmd", binary_dir + "/fixture", binary_dir + "/contract", binary_dir + "/seed.json"], check=True)
+                   binary_dir + "/droidvmd", binary_dir + "/fixture", binary_dir + "/contract", binary_dir + "/control", binary_dir + "/seed.json"], check=True)
             shell(["rmdir", data + "/run", data + "/cache", data + "/files", data + "/bin", data, binary_dir], check=True)
+    assert report.get("passed"), report
     print("PASS: persistent network configuration, legacy TCP and bounded asynchronous dispatch")
 
 
