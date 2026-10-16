@@ -182,6 +182,7 @@ def main():
         client = Client(forward, token)
         caps = client.call("capabilities")
         check("vm_export" in caps["commands"] and "vm_import" in caps["commands"] and caps.get("vm_packages") is True, "capabilities advertise packages")
+        check(caps.get("package_tasks") is True, "package tasks use the shared registry")
 
         def native(command, req, timeout=900):
             response = client.call(command, **req)
@@ -189,6 +190,19 @@ def main():
             if not response.get("success"):
                 return {"failed": response.get("message")}
             row["events"] = client.wait("vm_export_status" if command == "vm_export" else "vm_import_status", response["task_id"], timeout)
+            deadline = time.monotonic() + 10
+            while True:
+                task = client.call("task_get", epoch=response["epoch"], task_id=response["task_id"])
+                check(task.get("success") is True, "package task remains queryable")
+                task = task["task"]
+                if task["state"] in ("succeeded", "failed", "cancelled"):
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("package task terminal state")
+                time.sleep(.02)
+            check(task["kind"] == command and task["owner"] == "local-admin", "package task trusted owner and kind")
+            check(task["state"] == ("succeeded" if row["events"][-1]["phase"] == "done" else "failed"), "legacy event and retained task agree")
+            row["task"] = task
             return row
 
         # 1. Native exports.
@@ -407,6 +421,60 @@ def main():
             mine = ours.get("failed") if "failed" in ours else ours["events"][-1].get("message")
             other = theirs.get("refused", "internal error" if "internal" in theirs else None)
             check(mine == other, "import refusal " + name, {"native": ours, "java": theirs})
+        # Real long operations: keep a sparse source cheap on the device while
+        # making cancellation/commit races observable without artificial sleeps.
+        big_id = str(uuid.uuid4())
+        sh(f"truncate -s 1073741824 {base}/src/task-large.raw")
+        check(client.call("vm_create", config={"id": big_id, "name": "task cancellation fixture",
+              "disks": [{"path": base + "/src/task-large.raw", "bus": "virtio"}]})["success"], "create task fixture")
+        exported = client.call("vm_export", vm_id=big_id, dest_path=base + "/task-large.vmpkg", compression="ZSTD")
+        check(exported.get("success") is True, "large export accepted")
+        ref = {"epoch": exported["epoch"], "task_id": exported["task_id"]}
+        deadline = time.monotonic() + 10
+        while True:
+            task = client.call("task_get", **ref)["task"]
+            if task["state"] != "queued":
+                break
+            check(time.monotonic() < deadline, "background export starts")
+            time.sleep(.01)
+        check(task["state"] == "running" and task["cancellable"] is False, "export marks overwrite commit non-cancellable")
+        check(client.call("task_cancel", **ref).get("error", {}).get("code") == "NOT_CANCELLABLE", "committing export rejects cancellation")
+        before = time.monotonic()
+        check(client.call("vm_list")["success"], "VM control RPC remains available during compression")
+        check(time.monotonic() - before < 2, "background compression does not occupy control workers")
+        check(client.wait("vm_export_status", ref["task_id"])[-1]["phase"] == "done", "large export completes")
+        origin = Client(forward, token)
+        imported = origin.call("vm_import", src_path=base + "/task-large.vmpkg", target_dir=base + "/cancel-target", network_mode="skip")
+        check(imported.get("success") is True, "cancellable import accepted")
+        origin.close()
+        ref = {"epoch": imported["epoch"], "task_id": imported["task_id"]}
+        before_vms = len(client.call("vm_list")["data"])
+        deadline = time.monotonic() + 10
+        while True:
+            task = client.call("task_get", **ref)["task"]
+            if task["state"] == "running" and task["phase"] == "pack":
+                break
+            check(task["state"] not in ("succeeded", "failed", "cancelled") and time.monotonic() < deadline,
+                  "disconnected import reaches cancellable extraction")
+            time.sleep(.01)
+        check(task["cancellable"] is True, "running import is cancellable after origin disconnects")
+        cancelled = client.call("task_cancel", **ref)
+        check(cancelled.get("success") and cancelled["task"]["state"] in ("cancelling", "cancelled"), "cancel running import")
+        deadline = time.monotonic() + 10
+        while True:
+            task = client.call("task_get", **ref)["task"]
+            if task["state"] in ("succeeded", "failed", "cancelled"):
+                break
+            check(time.monotonic() < deadline, "import cancellation finishes within budget")
+            time.sleep(.02)
+        check(task["state"] == "cancelled", "import acknowledges cancellation only after cleanup")
+        check(sh(f"find {base}/cancel-target -mindepth 1 -print") == "", "cancelled import leaves no extracted files")
+        check(len(client.call("vm_list")["data"]) == before_vms, "cancelled import does not register a VM")
+        check(client.wait("vm_import_status", ref["task_id"])[-1]["phase"] == "error", "legacy client receives cancellation error event")
+        snapshot = client.call("task_snapshot")
+        check(any(row["task_id"] == ref["task_id"] and row["state"] == "cancelled" for row in snapshot["items"]), "package task participates in shared snapshot")
+        check(client.call("task_snapshot_release", snapshot_id=snapshot["snapshot_id"])["success"], "release package task snapshot")
+        check(client.call("task_get", epoch=str(uuid.uuid4()), task_id=ref["task_id"]).get("error", {}).get("code") == "TASK_EPOCH_MISMATCH", "package query rejects stale epoch")
         client.close()
         sh(f"kill -15 {pid}")
         deadline = time.monotonic() + 60
