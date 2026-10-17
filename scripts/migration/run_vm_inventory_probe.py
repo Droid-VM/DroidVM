@@ -218,6 +218,7 @@ def main():
         if report.get("passed"):
             shell(["rm", "-f", data + "/run/droidvmd.lock", data + "/cache/daemon.log", data + "/files/vms.json",
                    data + "/run/network-runtime.json", data + "/run/network-runtime.json.bak", data + "/run/audio_devices",
+                   data + "/files/vms.config-owner",  # isolated legacy ownership gate
                    binary_dir + "/droidvmd", binary_dir + "/seed.json"], check=True)
             shell(["rmdir", data + "/run", data + "/cache", data + "/files", data, binary_dir], check=True)
     assert report.get("passed"), report
