@@ -297,7 +297,8 @@ public final class QemuBackendInstance extends VMBackendInstance {
             switch (bus) {
                 case PFLASH:
                     args.add("-drive");
-                    args.add(fmt("file=%s,if=pflash,format=raw", path));
+                    args.add(fmt("file=%s,if=pflash,format=raw", path)
+                        + (readonly ? ",readonly=on" : ""));
                     break;
                 case CDROM: {
                     if (!scsiAdded) {
@@ -335,7 +336,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
                     if (fileSize <= 0) fileSize = 64L * 1024 * 1024;
                     args.add("-object");
                     args.add(fmt("memory-backend-file,id=%s,mem-path=%s,share=on,size=%d",
-                        pmId, path, fileSize));
+                        pmId, path, fileSize) + (readonly ? ",readonly=on" : ""));
                     args.add("-device");
                     args.add(fmt("virtio-pmem-pci,memdev=%s,disable-legacy=on,disable-modern=off",
                         pmId));
