@@ -88,10 +88,12 @@ public final class VmConfigClient {
         return true;
     }
 
-    /** Uses the caller's observed revision. Never reloads or replaces configuration to start. */
+    /**
+     * Uses the caller's observed revision. Never reloads or replaces configuration to start; a
+     * reopened, not yet confirmed file is synced by the daemon before it launches anything.
+     */
     public void start(Snapshot snapshot, String vmId, JSONObject overrides, String bootEntry, boolean clearLogs)
         throws IOException, JSONException {
-        if (snapshot.durabilityUncertain) throw new IOException("VM configuration durability is uncertain");
         if (vmId == null || vmId.isEmpty() || vmId.length() > 128) throw new IOException("Invalid VM ID");
         boolean found = false;
         JSONArray rows = snapshot.document().getJSONArray("vms");
