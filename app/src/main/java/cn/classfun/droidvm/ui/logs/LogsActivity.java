@@ -4,7 +4,7 @@
 package cn.classfun.droidvm.ui.logs;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
-import static cn.classfun.droidvm.daemon.Daemon.LOG_PATH;
+import static cn.classfun.droidvm.lib.daemon.DaemonHelper.LOG_PATH;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.net.Uri;

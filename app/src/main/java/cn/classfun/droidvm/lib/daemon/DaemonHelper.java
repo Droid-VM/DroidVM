@@ -8,7 +8,6 @@ import static android.widget.Toast.LENGTH_SHORT;
 import static java.lang.Integer.parseInt;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getAssetBinaryPath;
-import static cn.classfun.droidvm.lib.utils.FileUtils.findExecute;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGINT;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.isPidExists;
@@ -22,7 +21,6 @@ import static cn.classfun.droidvm.lib.utils.ThreadUtils.threadSleepOrKill;
 
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Process;
 import android.util.Log;
 import android.widget.Toast;
 
@@ -32,12 +30,12 @@ import androidx.annotation.Nullable;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.daemon.Daemon;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 import cn.classfun.droidvm.lib.ui.UIContext;
 
 public final class DaemonHelper {
     private static final String TAG = "DaemonHelper";
+    public static final String LOG_PATH = pathJoin(DATA_DIR, "cache", "daemon.log");
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final UIContext ctx;
     private Consumer<Boolean> onRefreshDaemonStatus = null;
@@ -87,13 +85,6 @@ public final class DaemonHelper {
                 } catch (Exception e) {
                     Log.w(TAG, "Failed to read proctitle", e);
                 }
-                try {
-                    var comm = shellReadFile(fmt("/proc/%d/cmdline", pid));
-                    if (comm.contains(Daemon.class.getName())) return pid;
-                    Log.i(TAG, fmt("cmdline mismatch: %s", comm.replace('\0', ' ')));
-                } catch (Exception e) {
-                    Log.w(TAG, "Failed to read cmdline", e);
-                }
                 Log.w(TAG, "pid file maybe stale");
             }
         } catch (Exception ignored) {
@@ -123,18 +114,6 @@ public final class DaemonHelper {
     }
 
     /**
-     * Launches the daemon. The daemon takes a single-instance lock at startup,
-     * so a normal ({@code force == false}) launch is a no-op when one is
-     * already running. With {@code force}, the new daemon terminates the
-     * running one and takes over -- used for restart.
-     */
-    /** The settings switch; the native daemon shares the Java one's run files and lock. */
-    public boolean useNativeDaemon() {
-        return ctx.getContext().getSharedPreferences("droidvm_prefs", 0).getBoolean(
-            MainSettingsFragment.KEY_NATIVE_DAEMON, MainSettingsFragment.DEFAULT_NATIVE_DAEMON);
-    }
-
-    /**
      * Native configuration ownership, once requested or recorded, is permanent: a native daemon
      * started without it would be refused by the persistent ownership gate.
      */
@@ -145,58 +124,25 @@ public final class DaemonHelper {
             || cn.classfun.droidvm.lib.store.base.VmConfigOwnership.claimed(context.getFilesDir());
     }
 
+    /**
+     * Launches droidvmd; it creates run/ itself and the launcher daemonizes it. The daemon takes
+     * a single-instance lock, so a normal launch is a no-op when one is already running. With
+     * {@code force}, the new daemon terminates the running one and takes over -- used for restart.
+     */
     public boolean startDaemon(boolean force) {
-        var zipPath = getDaemonZipPath();
-        // The Java daemon cannot serve configuration the native service owns.
-        if (useNativeDaemon() || useConfigurationOwner()) return startNativeDaemon(zipPath, force);
-        Log.i(TAG, fmt("Starting daemon via app_process64 with %s (force=%b)", zipPath, force));
-        var runDir = pathJoin(DATA_DIR, "run");
-        var uid = Process.myUid();
-        run("mkdir -p %s", runDir);
-        // Best-effort ownership fix; chown may be denied on some contexts (e.g. Android).
-        run("chown %d:%d %s || true", uid, uid, runDir);
-        var libPath = fmt(
-            "%s:%s",
-            ctx.getContext().getApplicationInfo().nativeLibraryDir,
-            pathJoin(DATA_DIR, "lib")
-        );
-        var cmd = fmt(
-            "env CLASSPATH=%s LD_LIBRARY_PATH=%s %s %s / %s%s",
-            escapedString(zipPath),
-            escapedString(libPath),
-            escapedString(getAssetBinaryPath("daemon")),
-            escapedString(findExecute("app_process64")),
-            escapedString(Daemon.class.getName()),
-            force ? " --force" : ""
-        );
-        Log.i(TAG, fmt("Running command: %s", cmd));
-        var result = run(cmd);
-        if (result.isSuccess()) {
-            Log.i(TAG, "Daemon started successfully");
-            DaemonConnection.getInstance().connect();
-            return true;
-        } else {
-            Log.e(TAG, "Failed to start daemon");
-            result.printLog("droidvmd");
-            return false;
-        }
-    }
-
-    /** droidvmd creates run/ itself; the same launcher daemonizes it. */
-    private boolean startNativeDaemon(@NonNull String zipPath, boolean force) {
         var cmd = fmt(
             "%s %s --data-dir %s --apk %s%s%s",
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(getAssetBinaryPath("droidvmd")),
             escapedString(DATA_DIR),
-            escapedString(zipPath),
+            escapedString(getDaemonZipPath()),
             force ? " --force" : "",
             useConfigurationOwner() ? " --configuration-owner" : ""
         );
-        Log.i(TAG, fmt("Starting native daemon: %s", cmd));
+        Log.i(TAG, fmt("Starting daemon: %s", cmd));
         var result = run(cmd);
         if (!result.isSuccess()) {
-            Log.e(TAG, "Failed to start native daemon");
+            Log.e(TAG, "Failed to start daemon");
             result.printLog("droidvmd");
             return false;
         }

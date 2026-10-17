@@ -238,30 +238,4 @@ public final class UsbHostDeviceTest {
         assertEquals("3-0:", UsbHostDevice.interfacePrefix("usb3"));
         assertEquals("1-1.4:", UsbHostDevice.interfacePrefix("1-1.4"));
     }
-
-    @Test
-    public void scanTakesEveryDeviceAndTheHubsWithThem() throws Exception {
-        var root = folder.newFolder("sysfs");
-        writeFlashDrive(root);
-        // A hub: on the same bus, and the thing the stick hangs off.
-        var hub = new File(root, "1-1");
-        assertTrue(hub.mkdirs());
-        write(hub, "idVendor", "05e3\n");
-        write(hub, "idProduct", "0610\n");
-        write(hub, "busnum", "1\n");
-        write(hub, "devnum", "3\n");
-        write(hub, "bDeviceClass", "09\n");
-        // A root hub and an interface directory, both of which sit next to the devices.
-        assertTrue(new File(root, "usb1").mkdirs());
-        assertTrue(new File(root, "1-1.1:1.0").mkdirs());
-
-        // The hub is in: one the gate left driverless is a whole subtree that never enumerates,
-        // so the pass has to be able to see it and give it back. A root hub and an interface
-        // directory are not devices and stay out.
-        var devices = new UsbHostInventory(root.getAbsolutePath(), "/dev/bus/usb").scan();
-        assertEquals(2, devices.size());
-        assertEquals("1-1", devices.get(0).sysfs);
-        assertTrue(devices.get(0).isHub());
-        assertEquals("1-1.1", devices.get(1).sysfs);
-    }
 }

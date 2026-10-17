@@ -72,6 +72,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
+    # The Java daemon left the APK; the oracle runs against an archived pre-removal build.
+    parser.add_argument("--oracle-apk", type=Path, default=root / "build/migration/oracle/java-daemon-oracle.apk")
     parser.add_argument("--contract", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvm_pkg_contract")
     args = parser.parse_args()
     nonce = uuid.uuid4().hex
@@ -80,7 +82,7 @@ def main():
     base = f"/data/local/tmp/droidvm-pkg-{nonce}"
     data = base + "/data"
     adb = ["adb", "-s", args.serial]
-    apk = root / "app/build/outputs/apk/debug/app-debug.apk"
+    apk = args.oracle_apk
     test_apk = root / "migration-tests/build/outputs/apk/androidTest/debug/migration-tests-debug-androidTest.apk"
     report = {"checks": [], "differences": [], "daemon_sha256": hashlib.sha256(args.daemon.read_bytes()).hexdigest(),
               "apk_sha256": hashlib.sha256(apk.read_bytes()).hexdigest()}
