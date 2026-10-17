@@ -416,6 +416,22 @@ public final class DiskActionDialog {
         var path = self.getFullPath();
         var tmp = fmt("%s.reset.tmp", path);
         try {
+            var operations = new DiskOperationClient(request -> DaemonConnection.getInstance().request(request));
+            if (operations.actions().contains("reset")) {
+                // Leased, journaled replacement in the daemon; no client-side image commands.
+                var status = operations.await(operations.start(new JSONObject()
+                    .put("action", "reset").put("disk_id", self.getId().toString())));
+                if (!status.succeeded()) {
+                    fail(context.getString(R.string.disk_operation_native_failed, String.valueOf(status.message)));
+                    return;
+                }
+                mainLooper.post(() -> {
+                    Toast.makeText(context, context.getString(R.string.disk_reset_done, self.getName()), LENGTH_SHORT).show();
+                    if (onUpdate != null) onUpdate.run();
+                    if (onConfirmed != null) onConfirmed.run();
+                });
+                return;
+            }
             var parentPath = parent.getFullPath();
             String backingFormat;
             try {

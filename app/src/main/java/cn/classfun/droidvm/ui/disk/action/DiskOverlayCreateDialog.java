@@ -35,7 +35,10 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.json.JSONObject;
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
@@ -157,11 +160,7 @@ public final class DiskOverlayCreateDialog {
         var overlayPath = pathJoin(folder, name);
         runOnPool(() -> {
             try {
-                var store = new DiskStore();
-                if (!store.load(context)) {
-                    fail(context.getString(R.string.disk_dependency_update_failed));
-                    return;
-                }
+                var store = DiskStore.loadForPlanning(context);
                 if (store.findByName(name) != null || new File(overlayPath).exists()) {
                     fail(context.getString(R.string.disk_create_error_exists));
                     return;
@@ -225,6 +224,22 @@ public final class DiskOverlayCreateDialog {
         boolean switchVmsToOverlay
     ) {
         try {
+            var operations = new DiskOperationClient(request -> DaemonConnection.getInstance().request(request));
+            if (operations.actions().contains("create")) {
+                // The daemon creates, registers and moves stopped VMs' slots in one operation.
+                var status = operations.await(operations.start(new JSONObject().put("action", "create")
+                    .put("folder", parent.item.optString("folder", "")).put("name", name).put("format", "qcow2")
+                    .put("backing_id", parent.getId().toString()).put("attach", switchVmsToOverlay ? "follow" : "readonly")));
+                if (!status.succeeded()) {
+                    fail(context.getString(R.string.disk_operation_native_failed, String.valueOf(status.message)));
+                    return;
+                }
+                mainLooper.post(() -> {
+                    Toast.makeText(context, context.getString(R.string.disk_overlay_created, name), LENGTH_SHORT).show();
+                    if (onUpdate != null) onUpdate.run();
+                });
+                return;
+            }
             var parentPath = parent.getFullPath();
             var backingFormat = detectFormat(parentPath);
             var result = runList(
