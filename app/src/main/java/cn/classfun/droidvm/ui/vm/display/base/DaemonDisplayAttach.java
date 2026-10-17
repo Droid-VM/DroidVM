@@ -117,6 +117,8 @@ public final class DaemonDisplayAttach {
         }
         cn.classfun.droidvm.lib.daemon.DaemonConnection.getInstance().buildRequest("display_attach")
             .put("nonce", nonce)
+            // Used only when the daemon has no verified profile for this firmware.
+            .put("broadcast_profile", BroadcastProfile.get(activity))
             .onError(e -> retry(attemptsLeft))
             .onUnsuccessful(r -> retry(attemptsLeft))
             .invoke();
