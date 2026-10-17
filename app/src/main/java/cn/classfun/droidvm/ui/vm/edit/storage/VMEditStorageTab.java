@@ -120,10 +120,23 @@ public final class VMEditStorageTab extends VMEditBaseTab {
     private void onImportPicker() {
         parent.currentPicker = uri -> {
             if (pendingImportDialog != null) {
-                var config = pendingImportDialog.onFileImported(uri);
+                var dialog = pendingImportDialog;
+                int position = pendingBrowsePosition;
+                var items = diskAdapter.getItems();
+                var target = position >= 0 && position < items.size() ? items.get(position) : null;
+                var originalPath = target == null ? null : target.optString("path", "");
                 pendingImportDialog = null;
-                if (config != null && pendingBrowsePosition >= 0)
-                    diskAdapter.setPathAt(pendingBrowsePosition, config.getFullPath());
+                dialog.onFileImported(uri, config -> {
+                    if (parent.isFinishing() || parent.isDestroyed() || target == null) return;
+                    // Follow the same row after a reorder, but never overwrite a later edit.
+                    var current = diskAdapter.getItems();
+                    for (int i = 0; i < current.size(); i++) {
+                        if (current.get(i) == target && originalPath.equals(target.optString("path", ""))) {
+                            diskAdapter.setPathAt(i, config.getFullPath());
+                            break;
+                        }
+                    }
+                });
             }
             pendingBrowsePosition = -1;
         };

@@ -659,6 +659,7 @@
     <string name="disk_info_lazy_refcounts">延遲引用計數已啟用</string>
     <string name="disk_info_loading">載入中\u2026</string>
     <string name="disk_info_load_failed">無法載入磁碟資訊</string>
+    <string name="disk_import_unconfirmed">匯入失敗或無法確認結果。請重新整理磁碟清單，確認映像是否已註冊後再嘗試匯入。註冊操作未修改映像檔案。</string>
     <string name="disk_info_tab_info">資訊</string>
     <string name="disk_info_tab_tree">層級</string>
     <string name="disk_info_tab_snapshot">快照</string>

@@ -18,10 +18,39 @@ import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.store.base.DiskConfigOwnership;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.DiskConfigClient;
 
 public final class DiskStore extends DataStore<DiskConfig> {
+    /** Worker-only registration. Does not create, rewrite or remove image files. */
+    public static void register(@NonNull Context context, @NonNull DiskConfig config) throws Exception {
+        var client = new DiskConfigClient(request -> DaemonConnection.getInstance().request(request));
+        if (client.readSupported()) {
+            var session = client.edit();
+            var document = session.document();
+            var store = new DiskStore();
+            if (!store.load(document)) throw new IOException("Cannot read disk registry");
+            requireNewRegistration(store, config);
+            // Append to the original JSON so untouched rows and root extensions stay exact.
+            document.getJSONArray("disks").put(config.toJson());
+            session.save(document);
+        } else {
+            DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                var store = new DiskStore();
+                if (!store.load(context)) throw new IOException("Cannot read disk registry");
+                requireNewRegistration(store, config);
+                store.add(config);
+                if (!store.save(context)) throw new IOException("Cannot save disk registry");
+            });
+        }
+    }
+
+    static void requireNewRegistration(DiskStore store, DiskConfig config) throws IOException {
+        if (store.findById(config.getId()) != null || store.findByPath(config.getFullPath()) != null)
+            throw new IOException("Disk is already registered: " + config.getFullPath());
+    }
+
     /** Worker-only planning snapshot. Never save this snapshot back to the legacy store. */
     public static DiskStore loadForPlanning(@NonNull Context context) {
         try {

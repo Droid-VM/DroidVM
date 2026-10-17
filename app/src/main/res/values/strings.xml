@@ -696,6 +696,7 @@
     <string name="disk_info_lazy_refcounts">Lazy refcounts enabled</string>
     <string name="disk_info_loading">Loading\u2026</string>
     <string name="disk_info_load_failed">Failed to load disk info</string>
+    <string name="disk_import_unconfirmed">Import failed or its result could not be confirmed. Refresh the disk list to check whether the image is registered before importing again. The image file has not been changed by registration.</string>
     <string name="disk_info_tab_info">Info</string>
     <string name="disk_info_tab_tree">Tree</string>
     <string name="disk_info_tab_snapshot">Snapshot</string>

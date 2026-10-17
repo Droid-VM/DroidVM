@@ -659,6 +659,7 @@
     <string name="disk_info_lazy_refcounts">延迟引用计数已启用</string>
     <string name="disk_info_loading">加载中\u2026</string>
     <string name="disk_info_load_failed">无法加载磁盘信息</string>
+    <string name="disk_import_unconfirmed">导入失败或无法确认结果。请刷新磁盘列表，确认镜像是否已注册后再尝试导入。注册操作未修改镜像文件。</string>
     <string name="disk_info_tab_info">信息</string>
     <string name="disk_info_tab_tree">层级</string>
     <string name="disk_info_tab_snapshot">快照</string>
