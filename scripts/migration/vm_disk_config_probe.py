@@ -149,7 +149,7 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
         caps = exchange(sock, "capabilities")
         check(caps["service_api_minor"] == 25 and caps["disk_operations"] == "revisioned-tasks-v1"
               and {"disk_operation_start", "disk_operation_recover"} <= set(caps["commands"])
-              and caps["disk_operation_actions"] == ["resize", "convert", "flatten"], "disk operations API25 advertised")
+              and caps["disk_operation_actions"] == ["resize", "convert", "flatten", "create", "clone"], "disk operations API25 advertised")
         states = pair(sock)
         documents = [entry[2] for entry in states]
         base_id, overlay_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -171,6 +171,13 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
         check(task["state"] == "succeeded" and task["kind"] == "disk_operation" and info["virtual-size"] == 2097152
               and info["backing-filename"] == images + "/base.raw", "TCP resize keeps overlay backing")
         check(exchange(sock, "disk_config_status")["revision"] == revision, "resize leaves the registry unchanged")
+        task = finish(sock, exchange(sock, "disk_operation_start", disk_revision=revision, action="create",
+                                     folder=images, name="tcp.qcow2", format="qcow2", size=1048576, backing_id=base_id))
+        rows = {row["id"]: row for row in json.loads(read("disks.json"))["disks"]}
+        check(task["state"] == "succeeded" and image(images + "/tcp.qcow2")["backing-filename"] == images + "/base.raw"
+              and any(row["name"] == "tcp.qcow2" and row.get("parent") == base_id for row in rows.values()),
+              "TCP create registers an overlay of the base")
+        revision = exchange(sock, "disk_config_status")["revision"]
         task = finish(sock, exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=overlay_id,
                                      action="flatten", compress="zstd"))
         info = image(images + "/ov.qcow2")
