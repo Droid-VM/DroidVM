@@ -301,6 +301,10 @@ def main():
             states = [e["data"]["state"] for e in events if e["data"].get("event") == "state" and e["data"].get("vm_id") == vm_id]
             for wanted in ("starting", "running", "suspended", "rebooting", "stopping", "stopped"):
                 check(wanted in states, "state event " + wanted)
+            lifecycle = read(data + "/cache/daemon.log")
+            for line in (f"VM {vm_id} ({name}): running pid=", f"VM {vm_id} ({name}): rebooting",
+                         f"VM {vm_id} ({name}): stopping", f"VM {vm_id} ({name}): exited code=0"):
+                check(line in lifecycle, "daemon log records " + line.split(": ", 1)[1].strip())
             outputs = [e for e in events if e["data"].get("event") == "output" and e["data"].get("stream") == "serial1"]
             check(outputs, "output events carry the serial stream")
             # Daemon death: the orphaned VMM is reclaimed by its helper identity.
