@@ -12,13 +12,30 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.lib.store.base.DataStore;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskConfigClient;
 
 public final class DiskStore extends DataStore<DiskConfig> {
+    /** Worker-only planning snapshot. Never save this snapshot back to the legacy store. */
+    public static DiskStore loadForPlanning(@NonNull Context context) {
+        try {
+            var client = new DiskConfigClient(request -> DaemonConnection.getInstance().request(request));
+            var store = new DiskStore();
+            boolean loaded = client.readSupported()
+                ? store.load(client.read().document()) : store.load(context);
+            if (!loaded) throw new IOException("Cannot read disk registry");
+            return store;
+        } catch (Exception error) {
+            throw new IllegalStateException("Cannot read disk registry", error);
+        }
+    }
+
     public DiskStore() {
         super();
     }
