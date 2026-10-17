@@ -38,7 +38,9 @@ public final class NetworkConfigDeleteTcpTest {
                 var network = new JSONObject().put("id", id).put("name", "TCP " + id).put("schema", 2)
                     .put("bridge_name", "j" + id.substring(0, 8)).put("bridge_type", "gvisor").put("uplink_mode", "l3")
                     .put("l3", new JSONObject().put("vlans", new JSONArray()))
-                    .put("extension", "保留 🌏".repeat(12000));
+                    // Native persisted JSON escapes Unicode: keep the encoded
+                    // edit below 256 KiB while still requiring several chunks.
+                    .put("extension", "保留 🌏".repeat(8000));
                 networks.create(id).save(network);
                 var vm = new JSONObject().put("id", vmId).put("name", "TCP VM").put("extension", 9007199254740993L)
                     .put("networks", new JSONArray().put(new JSONObject().put("network_id", id).put("extension", true)));
@@ -47,7 +49,7 @@ public final class NetworkConfigDeleteTcpTest {
                 // VM confirmation and network confirmation independently reject drift.
                 var staleVm = networks.deleteSession(id);
                 var edit = competingVms.edit();
-                vm.put("name", "changed during confirmation");
+                vm.put("name", "changed during confirmation " + vmId);
                 edit.saveVm(vm, false);
                 assertEquals("CONFLICT", assertThrows(VmConfigClient.RemoteFailure.class, staleVm::delete).code);
                 int submitted = commits[0];
@@ -100,7 +102,7 @@ public final class NetworkConfigDeleteTcpTest {
                             found = true;
                             assertEquals(0, row.getJSONArray("networks").length());
                             assertEquals(9007199254740993L, row.getLong("extension"));
-                            assertEquals("changed during confirmation", row.getString("name"));
+                            assertEquals("changed during confirmation " + vmId, row.getString("name"));
                             var currentVms = new VmConfigClient(reopened::request);
                             String revision = currentVms.status().revision;
                             row.getJSONArray("networks").put(new JSONObject().put("network_id", id));
