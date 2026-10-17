@@ -158,14 +158,6 @@
                     android:subtitle="@string/settings_daemon_checking"
                     android:text="@string/settings_daemon_status_title" />
 
-                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-                    android:id="@+id/item_native_configuration_owner"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:icon="@drawable/ic_server"
-                    android:subtitle="@string/settings_native_configuration_owner_summary"
-                    android:text="@string/settings_native_configuration_owner_title" />
-
                 <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
                     android:id="@+id/item_daemon_start"
                     android:layout_width="match_parent"

@@ -9,9 +9,7 @@ import static java.lang.Integer.parseInt;
 import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.AssetUtils.getAssetBinaryPath;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
-import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGINT;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.isPidExists;
-import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcessFile;
 import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
@@ -30,7 +28,6 @@ import androidx.annotation.Nullable;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
 import cn.classfun.droidvm.lib.ui.UIContext;
 
 public final class DaemonHelper {
@@ -114,30 +111,19 @@ public final class DaemonHelper {
     }
 
     /**
-     * Native configuration ownership, once requested or recorded, is permanent: a native daemon
-     * started without it would be refused by the persistent ownership gate.
-     */
-    public boolean useConfigurationOwner() {
-        var context = ctx.getContext();
-        return context.getSharedPreferences("droidvm_prefs", 0).getBoolean(
-            MainSettingsFragment.KEY_NATIVE_CONFIGURATION_OWNER, false)
-            || cn.classfun.droidvm.lib.store.base.VmConfigOwnership.claimed(context.getFilesDir());
-    }
-
-    /**
      * Launches droidvmd; it creates run/ itself and the launcher daemonizes it. The daemon takes
      * a single-instance lock, so a normal launch is a no-op when one is already running. With
      * {@code force}, the new daemon terminates the running one and takes over -- used for restart.
+     * The daemon always owns VM, network and disk configuration; the app has no other writer.
      */
     public boolean startDaemon(boolean force) {
         var cmd = fmt(
-            "%s %s --data-dir %s --apk %s%s%s",
+            "%s %s --data-dir %s --apk %s%s --configuration-owner",
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(getAssetBinaryPath("droidvmd")),
             escapedString(DATA_DIR),
             escapedString(getDaemonZipPath()),
-            force ? " --force" : "",
-            useConfigurationOwner() ? " --configuration-owner" : ""
+            force ? " --force" : ""
         );
         Log.i(TAG, fmt("Starting daemon: %s", cmd));
         var result = run(cmd);
@@ -150,17 +136,73 @@ public final class DaemonHelper {
         return true;
     }
 
+    /**
+     * Stops every droidvmd, not only the one in the pid file: a reinstall leaves the previous
+     * daemon running on a deleted data directory. Each gets SIGINT to tear its networks and VMs
+     * down, SIGKILL after the grace period; network helpers left without a daemon are killed.
+     */
     public boolean stopDaemon() {
-        Log.i(TAG, "Stopping daemon");
-        return shellKillProcessFile(getPidFile(), SIGINT);
+        Log.i(TAG, "Stopping all daemons");
+        var result = run(STOP_ALL);
+        result.printLog("droidvmd-stop");
+        return result.isSuccess();
     }
 
+    private static final String STOP_ALL =
+        "pids=$(pidof droidvmd); [ -n \"$pids\" ] && kill -INT $pids; i=0; "
+        + "while [ $i -lt 300 ] && pidof droidvmd >/dev/null; do sleep 0.1; i=$((i+1)); done; "
+        + "pids=$(pidof droidvmd); [ -n \"$pids\" ] && { echo \"killing $pids\"; kill -KILL $pids; sleep 0.5; }; "
+        + "for p in $(pidof pbridge netbox bridgedhcp gvswitch); do "
+        + "case \"$(readlink /proc/$p/exe)\" in *cn.classfun.droidvm*/bin/*) echo \"orphan $p\"; kill -KILL $p;; esac; done; "
+        + "! pidof droidvmd >/dev/null";
+
+    /** Networks running before a restart are started again, not only auto-up ones. */
     public boolean restartDaemon() {
         Log.i(TAG, "Restarting daemon");
+        var running = runningNetworks();
         stopDaemon();
-        while (isDaemonRunning())
-            threadSleepOrKill(1000);
-        return startDaemon();
+        if (!startDaemon()) return false;
+        restartNetworks(running);
+        return true;
+    }
+
+    @NonNull
+    private static java.util.List<String> runningNetworks() {
+        var ids = new java.util.ArrayList<String>();
+        try {
+            var rows = DaemonConnection.getInstance().request(
+                new org.json.JSONObject().put("command", "network_list")).optJSONArray("data");
+            for (int i = 0; rows != null && i < rows.length(); i++) {
+                var row = rows.getJSONObject(i);
+                if (row.optBoolean("desired_running", false) || "running".equals(row.optString("state")))
+                    ids.add(row.getString("id"));
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Cannot read running networks before restart", e);
+        }
+        return ids;
+    }
+
+    private static void restartNetworks(@NonNull java.util.List<String> ids) {
+        if (ids.isEmpty()) return;
+        var connection = DaemonConnection.getInstance();
+        for (int attempt = 0; attempt < 50; attempt++) {
+            try {
+                var rows = connection.request(new org.json.JSONObject().put("command", "network_list")).optJSONArray("data");
+                for (int i = 0; rows != null && i < rows.length(); i++) {
+                    var row = rows.getJSONObject(i);
+                    if (!ids.contains(row.getString("id")) || row.optBoolean("desired_running", false)) continue;
+                    var response = connection.request(new org.json.JSONObject()
+                        .put("command", "network_start").put("network_id", row.getString("id")));
+                    if (!response.optBoolean("success", false))
+                        Log.w(TAG, fmt("Network %s did not restart: %s", row.optString("name"), response.optString("message")));
+                }
+                return;
+            } catch (Exception e) {
+                threadSleepOrKill(200); // Connection is still being established.
+            }
+        }
+        Log.w(TAG, "Daemon unreachable; networks were not restarted");
     }
 
 

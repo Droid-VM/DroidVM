@@ -89,8 +89,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
     public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
-    /** One-way: the native daemon takes VM/network/disk configuration ownership. */
-    public static final String KEY_NATIVE_CONFIGURATION_OWNER = "native_configuration_owner";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -106,7 +104,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private SwitchRowWidget itemVMClearLogsBeforeStart;
     private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
-    private SwitchRowWidget itemConfigurationOwner;
     private TextRowWidget itemUsbAcmPorts;
     private TextRowWidget itemUsbPassthrough;
     private TextRowWidget itemUsbDevices;
@@ -155,30 +152,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         });
     }
 
-    /** Opt-in only after an explicit irreversible confirmation; cannot be switched back off. */
-    private void bindConfigurationOwner() {
-        var prefs = requireContext().getSharedPreferences(PREFS_NAME, 0);
-        boolean enabled = daemon.useConfigurationOwner();
-        itemConfigurationOwner.setChecked(enabled);
-        itemConfigurationOwner.setEnabled(!enabled);
-        itemConfigurationOwner.setOnCheckedChangeListener((btn, checked) -> {
-            if (daemon.useConfigurationOwner()) {
-                if (!checked) itemConfigurationOwner.setChecked(true); // One-way.
-                return;
-            }
-            if (!checked) return;
-            new com.google.android.material.dialog.MaterialAlertDialogBuilder(requireContext())
-                .setTitle(R.string.settings_native_configuration_owner_title)
-                .setMessage(R.string.settings_native_configuration_owner_confirm)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    prefs.edit().putBoolean(KEY_NATIVE_CONFIGURATION_OWNER, true).apply();
-                    itemConfigurationOwner.setEnabled(false);
-                })
-                .setNegativeButton(android.R.string.cancel, (d, w) -> itemConfigurationOwner.setChecked(false))
-                .setOnCancelListener(d -> itemConfigurationOwner.setChecked(false))
-                .show();
-        });
-    }
 
     @Override
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
@@ -196,7 +169,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
-        itemConfigurationOwner = view.findViewById(R.id.item_native_configuration_owner);
         itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
         itemUsbPassthrough = view.findViewById(R.id.item_usb_passthrough);
         itemUsbDevices = view.findViewById(R.id.item_usb_devices);
@@ -237,7 +209,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
-        bindConfigurationOwner();
         bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
         refreshUsbAcmPortsSummary();
         bindOnClick(itemUsbPassthrough, this::showUsbPassthrough);

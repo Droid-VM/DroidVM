@@ -950,9 +950,6 @@
     <string name="vm_info_sleepbtn">睡眠</string>
 
     <string name="settings_category_daemon">守护进程服务</string>
-    <string name="settings_native_configuration_owner_title">原生配置接管（预览）</string>
-    <string name="settings_native_configuration_owner_summary">由原生服务管理虚拟机、网络和磁盘配置并执行磁盘操作；下次启动服务时生效</string>
-    <string name="settings_native_configuration_owner_confirm">此操作会把虚拟机、网络和磁盘配置永久交给原生服务管理。Java 服务和旧版本应用将无法再修改这些配置，且无法关闭。确认后请重启服务以生效。</string>
     <string name="settings_daemon_status_title">服务状态</string>
     <string name="settings_daemon_running">运行中</string>
     <string name="settings_daemon_stopped">已停止</string>
