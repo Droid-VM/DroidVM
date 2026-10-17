@@ -175,7 +175,7 @@ public final class DiskActionDialog {
      * thread.
      */
     private final class Family {
-        final DiskStore disks = new DiskStore();
+        final DiskStore disks;
         final VMStore vms;
         final DiskConfig self;
         final TreeShape shape;
@@ -183,9 +183,7 @@ public final class DiskActionDialog {
         final List<AttachmentCursor> cursors;
 
         Family(@NonNull DiskConfig config, @Nullable LiveRows live) {
-            if (!disks.load(context))
-                throw new IllegalStateException(
-                    context.getString(R.string.disk_dependency_update_failed));
+            disks = DiskStore.loadForPlanning(context);
             var found = disks.findById(config.getId());
             if (found == null)
                 throw new IllegalStateException(
@@ -472,8 +470,8 @@ public final class DiskActionDialog {
         runOnPool(() -> {
             int children = -1;
             try {
-                var store = new DiskStore();
-                if (store.load(context))
+                var store = DiskStore.loadForPlanning(context);
+                if (store.findById(config.getId()) != null)
                     children = store.childrenOf(config.getId()).size();
             } catch (Exception e) {
                 Log.w(TAG, "Failed to check disk children", e);
@@ -607,55 +605,45 @@ public final class DiskActionDialog {
         return true;
     }
 
-    public DiskConfig onFileImported(Uri uri) {
-        if (uri == null) return null;
+    public void onFileImported(Uri uri) {
+        onFileImported(uri, null);
+    }
+
+    /** Notify the editor on the main thread only after a confirmed registry save. */
+    public void onFileImported(Uri uri, @Nullable Consumer<DiskConfig> onImported) {
+        if (uri == null) return;
         var path = resolveUriPath(context, uri);
         if (path == null || path.isEmpty()) {
             Toast.makeText(context, R.string.disk_create_error_folder_invalid, LENGTH_SHORT).show();
-            return null;
+            return;
         }
         if (!path.startsWith("/") || !path.contains("/")) {
             Toast.makeText(context, R.string.disk_create_error_folder_invalid, LENGTH_SHORT).show();
-            return null;
+            return;
         }
         var fileName = basename(path);
         var folder = dirname(path);
         var config = new DiskConfig();
         config.setName(fileName);
         config.item.set("folder", folder);
-        var store = new DiskStore();
         runOnPool(() -> {
             try {
-                store.load(context);
-                if (store.findByName(fileName) != null) {
-                    mainLooper.post(() -> Toast.makeText(
-                        context,
-                        R.string.disk_create_error_exists,
-                        LENGTH_SHORT
-                    ).show());
-                    return;
-                }
-                store.add(config);
-                store.save(context);
-            } catch (Exception ignored) {
-                mainLooper.post(() -> Toast.makeText(
-                    context,
-                    R.string.disk_create_error_folder_invalid,
-                    LENGTH_SHORT
-                ).show());
+                DiskStore.register(context, config);
+            } catch (Exception error) {
+                Log.w(TAG, "Disk registration failed or could not be confirmed", error);
+                fail(context.getString(R.string.disk_import_unconfirmed));
                 return;
             }
             mainLooper.post(() -> {
                 var str = context.getString(R.string.disk_create_success, fileName);
                 Toast.makeText(context, str, LENGTH_SHORT).show();
+                if (onImported != null) onImported.accept(config);
+                if (this.onUpdate != null) this.onUpdate.run();
             });
-            if (this.onUpdate != null)
-                this.onUpdate.run();
             // Resolve the imported image's backing chain: link/offer-to-import parents,
             // absolutize relative backing paths. Prompts (if any) come as a single dialog.
             BackingChainLinker.link(context, config.getId(), this.onUpdate);
         });
-        return config;
     }
 
     private void launchActivity(@NonNull Intent intent) {
