@@ -824,6 +824,7 @@
     <string name="disk_operation_title">磁碟操作</string>
     <string name="disk_operation_running">執行中\u2026</string>
     <string name="disk_operation_native_progress">執行中… %1$.1f%%</string>
+    <string name="disk_operation_unregistered">%1$s 不是已登記的磁碟，請先在磁碟頁登記</string>
     <string name="disk_operation_success">操作完成。</string>
     <string name="disk_operation_failed">操作失敗（退出碼 %1$d）。</string>
     <string name="disk_operation_native_unsupported">磁碟服務不支援此操作。</string>

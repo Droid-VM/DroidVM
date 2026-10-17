@@ -115,34 +115,6 @@ public final class DiskOperationActivity extends AppCompatActivity {
     }
 
     /**
-     * Intent that optimizes (and thereby decompresses) the qcow2 at
-     * {@code path} in place and returns {@code RESULT_OK} on success -- for
-     * launching via an {@code ActivityResultLauncher} so the caller can chain
-     * (e.g. start the VM once a crosvm-unreadable compressed image is fixed).
-     * Works without a registered {@link DiskConfig}, since a VM disk may point
-     * at an unregistered file.
-     */
-    @NonNull
-    public static Intent optimizeForResultIntent(
-        @NonNull Context context,
-        @NonNull String path,
-        @NonNull String name
-    ) {
-        var intent = new Intent(context, DiskOperationActivity.class);
-        try {
-            var obj = new JSONObject();
-            obj.put("action", "convert"); // no compress -> rewrites uncompressed
-            intent.putExtra(EXTRA_TASK_JSON, obj.toString());
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to build optimize task", e);
-        }
-        intent.putExtra(EXTRA_DISK_PATH, path);
-        intent.putExtra(EXTRA_DISK_NAME, name);
-        intent.putExtra(EXTRA_AUTOFINISH, true);
-        return intent;
-    }
-
-    /**
      * Post-import hook: optimize only when the imported image's compression isn't in
      * {@link DiskCompress#CROSVM_SUPPORTED} (an image crosvm already boots needs no rewrite).
      * The compression check runs off the main thread; {@code done} always runs on the main
@@ -299,7 +271,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
                 diskPath = diskConfig.getFullPath();
                 diskName = diskConfig.getName();
             } else {
-                // Path mode: operate on the file directly (no DiskStore entry).
+                // Path mode: only a new disk, which the daemon registers from its path.
                 diskPath = intent.getStringExtra(EXTRA_DISK_PATH);
                 if (diskPath == null) {
                     Log.e(TAG, "Missing disk id and path");
@@ -314,6 +286,12 @@ public final class DiskOperationActivity extends AppCompatActivity {
             // A new disk is created and registered by the daemon from its path.
             if (!nativeActions.isEmpty() && (diskConfig != null || isCreate(taskJsonStr))) {
                 runNative(taskJsonStr, diskPath, nativeActions);
+                return;
+            }
+            // Only creation may name a path: rewriting an unregistered file would bypass the
+            // daemon's leases and registry.
+            if (diskConfig == null && !isCreate(taskJsonStr)) {
+                runOnUiThread(() -> showFailed(getString(R.string.disk_operation_unregistered, diskName)));
                 return;
             }
             final String cmd;
