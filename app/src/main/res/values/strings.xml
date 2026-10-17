@@ -988,9 +988,6 @@
     <string name="vm_info_sleepbtn">Sleep</string>
 
     <string name="settings_category_daemon">Daemon Service</string>
-    <string name="settings_native_configuration_owner_title">Native configuration ownership (preview)</string>
-    <string name="settings_native_configuration_owner_summary">The native service manages VM, network and disk configuration and runs disk operations itself; applies the next time the service starts</string>
-    <string name="settings_native_configuration_owner_confirm">This permanently hands VM, network and disk configuration to the native service. The Java service and older app versions can no longer change it, and this cannot be turned off. Restart the service afterwards to apply it.</string>
     <string name="settings_daemon_status_title">Service Status</string>
     <string name="settings_daemon_running">Running</string>
     <string name="settings_daemon_stopped">Stopped</string>
