@@ -46,6 +46,12 @@ public final class VmConfigOwnership {
         }
     }
 
+    /** Read-only: the native service recorded ownership (a non-empty gate). Never creates it. */
+    public static boolean claimed(File directory) {
+        var gate = new File(directory, FILE_NAME);
+        return Files.isRegularFile(gate.toPath(), LinkOption.NOFOLLOW_LINKS) && gate.length() > 0;
+    }
+
     /** Startup check before --force can stop a native daemon, and again after
      * taking the shared daemon Instance lock. Does not create a root-owned gate. */
     public static synchronized void requireLegacy(File directory) throws Exception {

@@ -949,6 +949,9 @@
     <string name="settings_category_daemon">守護程序服務</string>
     <string name="settings_native_daemon_title">原生服務（預覽）</string>
     <string name="settings_native_daemon_summary">使用原生 droidvmd 服務取代 Java 服務；下次啟動服務時生效</string>
+    <string name="settings_native_configuration_owner_title">原生設定接管（預覽）</string>
+    <string name="settings_native_configuration_owner_summary">由原生服務管理虛擬機、網路和磁碟設定並執行磁碟操作；下次啟動服務時生效</string>
+    <string name="settings_native_configuration_owner_confirm">此操作會把虛擬機、網路和磁碟設定永久交給原生服務管理。Java 服務和舊版本應用將無法再修改這些設定，且無法關閉。確認後請重新啟動服務以生效。</string>
     <string name="settings_daemon_status_title">服務狀態</string>
     <string name="settings_daemon_running">執行中</string>
     <string name="settings_daemon_stopped">已停止</string>
