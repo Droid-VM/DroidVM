@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.base;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
@@ -51,6 +52,8 @@ final class BroadcastProfile {
         return cached;
     }
 
+    // Reflection runs only after HiddenApiBypass exempts IActivityManager.
+    @SuppressLint("BlockedPrivateApi")
     @Nullable
     private static JSONObject capture(@NonNull String pkg) throws Exception {
         // Both the method and the TRANSACTION_ field are hidden from apps.
