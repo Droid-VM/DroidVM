@@ -29,11 +29,15 @@ public final class DiskOperationClient {
     }
 
     public static final class Status {
-        public final String state, phase, errorCode, message;
+        public final String state, phase, unit, errorCode, message;
+        public final long completed, total;
         public final JSONObject result;
         Status(JSONObject task) {
             state = task.optString("state", "");
             phase = task.optString("phase", "");
+            unit = task.optString("unit", "");
+            completed = parseCount(task.optString("completed", "0"));
+            total = parseCount(task.optString("total", "0"));
             var error = task.optJSONObject("error");
             errorCode = error == null ? null : error.optString("code", "UNKNOWN");
             message = error == null ? null : error.optString("message", "");
@@ -43,6 +47,13 @@ public final class DiskOperationClient {
         public boolean succeeded() { return "succeeded".equals(state); }
         /** Files or registry may be half done; only daemon recovery may finish them. */
         public boolean needsRecovery() { return "COMMIT_UNCERTAIN".equals(errorCode); }
+        /** Percent done, or null while the daemon reports no measurable progress. */
+        public Double percent() {
+            return "basis_points".equals(unit) && total > 0 ? completed * 100.0 / total : null;
+        }
+        private static long parseCount(String text) {
+            try { return Long.parseLong(text); } catch (NumberFormatException e) { return 0; }
+        }
     }
 
     private JSONObject call(JSONObject request) throws IOException, JSONException {
@@ -98,9 +109,16 @@ public final class DiskOperationClient {
 
     /** Polls until the task ends. Status loss is reported as an exception, never as failure. */
     public Status await(Task task) throws IOException, JSONException, InterruptedException {
+        return await(task, null);
+    }
+
+    /** Same, passing every non-terminal status to {@code onProgress}. */
+    public Status await(Task task, java.util.function.Consumer<Status> onProgress)
+        throws IOException, JSONException, InterruptedException {
         for (;;) {
             var status = status(task);
             if (status.terminal()) return status;
+            if (onProgress != null) onProgress.accept(status);
             Thread.sleep(250);
         }
     }

@@ -516,7 +516,13 @@ public final class DiskOperationActivity extends AppCompatActivity {
         try {
             nativeTask = client.start(request);
             nativeClient = client;
-            status = client.await(nativeTask);
+            status = client.await(nativeTask, s -> {
+                var percent = s.percent();
+                if (percent == null) return;
+                runOnUiThread(() -> {
+                    if (!finished) tvStatus.setText(getString(R.string.disk_operation_native_progress, percent));
+                });
+            });
         } catch (DiskOperationClient.SubmitUnknown e) {
             Log.w(TAG, "Native disk operation submission unknown", e);
             runOnUiThread(() -> showFailed(getString(R.string.disk_operation_native_unknown)));
