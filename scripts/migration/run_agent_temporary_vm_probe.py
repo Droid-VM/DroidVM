@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Agent temporary VM (crosvm) under --configuration-owner: create, boot to the rescue shell, delete, never persisted."""
+"""Agent temporary VM (crosvm or QEMU/TCG) under --configuration-owner: create, boot to the rescue shell, delete, never persisted."""
 import argparse
 import hashlib
 import json
@@ -14,7 +14,8 @@ import uuid
 
 from run_daemon_probe import frame, receive, request
 
-STREAM = "serial1"
+# AgentVM.buildVM per backend: (hypervisor, operation console stream, guest device).
+BACKENDS = {"crosvm": ("auto", "serial1", "ttyS0"), "qemu": ("soft", "uart", "ttyAMA0")}
 
 
 def main():
@@ -22,7 +23,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--daemon", type=Path, default=root / "build/migration/standalone-arm64-v8a/droidvmd")
+    parser.add_argument("--backend", choices=BACKENDS, default="crosvm")
     args = parser.parse_args()
+    hypervisor, stream, device = BACKENDS[args.backend]
     nonce = uuid.uuid4().hex
     output = root / "build/migration/agent-temporary-vm" / nonce
     output.mkdir(parents=True)
@@ -33,7 +36,7 @@ def main():
     images = data + "/files/images"
     production = "/data/data/cn.classfun.droidvm"
     adb = ["adb", "-s", args.serial]
-    report, forwards = {"checks": []}, []
+    report, forwards = {"checks": [], "backend": args.backend}, []
     process, log, pid = None, None, None
 
     def shell(argv, **kwargs):
@@ -57,8 +60,8 @@ def main():
         assert condition, name
 
     def console(sock, vm_id):
-        history = exchange(sock, "vm_console_history", vm_id=vm_id, stream=STREAM)
-        return urllib.parse.unquote(history.get(STREAM, ""), errors="replace")
+        history = exchange(sock, "vm_console_history", vm_id=vm_id, stream=stream)
+        return urllib.parse.unquote(history.get(stream, ""), errors="replace")
 
     def wait_console(sock, vm_id, pattern, seconds):
         deadline = time.monotonic() + seconds
@@ -120,16 +123,16 @@ def main():
             check(task["state"] == "succeeded", "target disk registered")
             persisted = root_shell(f"cat {data}/files/vms.json", check=True).stdout
 
-            # AgentVM.buildVM shape on crosvm: first app-console serial port (serial1 = ttyS0).
+            # AgentVM.buildVM shape.
             vm_id = str(uuid.uuid4())
             config = {
                 "id": vm_id, "name": "Agent-" + nonce[:8], "temporary": True, "agent_mode": False,
-                "backend": "crosvm", "hypervisor": "auto", "cpu_count": 1, "memory_mb": 320,
+                "backend": args.backend, "hypervisor": hypervisor, "cpu_count": 1, "memory_mb": 320,
                 "hugepages": False, "rng": False, "balloon": False, "audio_enabled": False,
                 "boot": {"protocol": "linux", "linux": {"source": "manual",
                          "kernel": production + "/usr/share/droidvm/vmlinuz",
                          "initrd": production + "/usr/share/droidvm/initramfs.img",
-                         "cmdline": "console=ttyS0 rdinit=/bin/sh panic=-1"}},
+                         "cmdline": f"console={device} rdinit=/bin/sh panic=-1"}},
                 "disks": [{"path": images + "/target.raw", "bus": "virtio"}],
                 "networks": [],
             }
@@ -144,7 +147,7 @@ def main():
             text = wait_console(sock, vm_id, r"~ #|Run /bin/sh as init process", 180)
             report["boot_seconds"] = round(time.monotonic() - began, 1)
             check(True, "guest reaches the rescue shell")
-            exchange(sock, "vm_console_write", vm_id=vm_id, stream=STREAM, data="echo AGENT_$((40+2))_OK\n")
+            exchange(sock, "vm_console_write", vm_id=vm_id, stream=stream, data="echo AGENT_$((40+2))_OK\n")
             text = wait_console(sock, vm_id, r"AGENT_42_OK", 30)
             check(True, "guest shell executes a command")
             (output / "console.txt").write_text(text, encoding="utf-8")
