@@ -244,6 +244,14 @@ def main():
                 argv = crosvm_argv()
                 check(disk(image) and not disk(media), "optimize_sdcard=false keeps the shared-storage path")
                 check(exchange(sock, "vm_stop", vm_id=vm_id)["success"] and wait_state(sock, "stopped", 60) and not crosvm_pids(), "stop leaves no VMM")
+                # Automatic sizing off: the start neither raises the target nor waits for the pool.
+                check(exchange(sock, "set_app_config", config={"vm_hugepage_auto_reserve": False})["success"], "disable huge-page auto reserve")
+                check(exchange(sock, "vm_start", vm_id=vm_id)["success"], "start with auto reserve off")
+                time.sleep(3)
+                check(pool_want() == report["pool_want_before"], "vm_hugepage_auto_reserve=false leaves the reserve target alone")
+                exchange(sock, "vm_stop", vm_id=vm_id)
+                check(wait_state(sock, "stopped", 60), "stop the VM started without auto reserve")
+                check(exchange(sock, "set_app_config", config={})["success"], "auto reserve defaults back on")
             stop()
             port, token = start()
             with connect(port, token) as sock:

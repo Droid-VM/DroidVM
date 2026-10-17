@@ -487,6 +487,8 @@
     <string name="settings_vm_auto_console_summary">Automatically open the console when a VM is started</string>
     <string name="settings_vm_clear_logs_before_start_title">Clear logs before start</string>
     <string name="settings_vm_clear_logs_before_start_summary">Clear all console logs for the VM before it starts</string>
+    <string name="settings_vm_hugepage_auto_reserve_title">Adjust huge pages on start</string>
+    <string name="settings_vm_hugepage_auto_reserve_summary">Raise the huge-page reserve for each starting VM and wait for it to fill; when off, the reserve is left as set and a short reserve only warns</string>
     <string name="settings_optimize_compression_title">Optimize compression</string>
     <string name="settings_optimize_compression_ask">Ask every time</string>
     <string name="disk_compress_none">Uncompressed</string>
