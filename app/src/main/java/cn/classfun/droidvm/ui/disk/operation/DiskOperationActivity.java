@@ -467,8 +467,13 @@ public final class DiskOperationActivity extends AppCompatActivity {
             case "convert":
             case "flatten":
                 // The daemon carries an overlay's backing itself; an explicit one must match it.
-                if (task.has("output") && !task.getString("output").equals(disk.getFullPath())) return null;
                 if (task.has("backing_id") || task.optBoolean("drop_backing", false)) return null;
+                if (task.has("output") && !task.getString("output").equals(disk.getFullPath())) {
+                    // Converting into another file moves the row and its VM slots with it.
+                    var output = task.getString("output");
+                    if (!action.equals("convert") || !output.startsWith("/") || output.endsWith("/")) return null;
+                    request.put("folder", dirname(output)).put("name", basename(output));
+                }
                 if (task.has("format")) request.put("format", task.getString("format"));
                 var compress = task.optString("compress", "none");
                 if (!compress.equals("none")) request.put("compress", compress);
