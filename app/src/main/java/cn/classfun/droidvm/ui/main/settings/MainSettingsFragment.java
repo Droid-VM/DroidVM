@@ -89,9 +89,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
     public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
     public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
-    /** Start the native droidvmd instead of the Java daemon (read by DaemonHelper). */
-    public static final String KEY_NATIVE_DAEMON = "native_daemon";
-    public static final boolean DEFAULT_NATIVE_DAEMON = true;
     /** One-way: the native daemon takes VM/network/disk configuration ownership. */
     public static final String KEY_NATIVE_CONFIGURATION_OWNER = "native_configuration_owner";
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
@@ -109,7 +106,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private SwitchRowWidget itemVMClearLogsBeforeStart;
     private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
-    private SwitchRowWidget itemNativeDaemon;
     private SwitchRowWidget itemConfigurationOwner;
     private TextRowWidget itemUsbAcmPorts;
     private TextRowWidget itemUsbPassthrough;
@@ -200,7 +196,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
-        itemNativeDaemon = view.findViewById(R.id.item_native_daemon);
         itemConfigurationOwner = view.findViewById(R.id.item_native_configuration_owner);
         itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
         itemUsbPassthrough = view.findViewById(R.id.item_usb_passthrough);
@@ -242,7 +237,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
         bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
-        bindOnChecked(itemNativeDaemon, KEY_NATIVE_DAEMON, DEFAULT_NATIVE_DAEMON);
         bindConfigurationOwner();
         bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
         refreshUsbAcmPortsSummary();

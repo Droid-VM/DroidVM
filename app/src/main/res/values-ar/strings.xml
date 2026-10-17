@@ -987,8 +987,6 @@
     <string name="vm_info_sleepbtn">زر السكون</string>
 
     <string name="settings_category_daemon">خدمة الخلفية (Daemon)</string>
-    <string name="settings_native_daemon_title">الخدمة الأصلية (معاينة)</string>
-    <string name="settings_native_daemon_summary">تشغيل خدمة droidvmd الأصلية بدلًا من خدمة Java؛ يسري عند تشغيل الخدمة في المرة القادمة</string>
     <string name="settings_native_configuration_owner_title">إدارة الإعدادات الأصلية (معاينة)</string>
     <string name="settings_native_configuration_owner_summary">تتولى الخدمة الأصلية إدارة إعدادات الأجهزة الافتراضية والشبكات والأقراص وتنفيذ عمليات الأقراص؛ يُطبَّق عند بدء الخدمة في المرة القادمة</string>
     <string name="settings_native_configuration_owner_confirm">يؤدي هذا إلى تسليم إعدادات الأجهزة الافتراضية والشبكات والأقراص إلى الخدمة الأصلية بشكل دائم. لن تتمكن خدمة Java والإصدارات الأقدم من التطبيق من تعديلها، ولا يمكن إيقاف ذلك. أعد تشغيل الخدمة بعد ذلك لتطبيقه.</string>
