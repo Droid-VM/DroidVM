@@ -84,6 +84,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
     public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
+    /** Raise the huge-page reserve target for each starting Gunyah VM (read by the daemon too). */
+    public static final String KEY_VM_HUGEPAGE_AUTO_RESERVE = "vm_hugepage_auto_reserve";
     public static final String KEY_VM_OPTIMIZE_COMPRESSION = "vm_optimize_compression";
     /** Sentinel for {@link #KEY_VM_OPTIMIZE_COMPRESSION}: prompt on every optimize. */
     public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
@@ -102,6 +104,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private TextRowWidget itemDaemonRestart;
     private SwitchRowWidget itemVMAutoConsole;
     private SwitchRowWidget itemVMClearLogsBeforeStart;
+    private SwitchRowWidget itemVMHugepageAutoReserve;
     private TextRowWidget itemVMOptimizeCompression;
     private SwitchRowWidget itemOptimizeSdcard;
     private TextRowWidget itemUsbAcmPorts;
@@ -167,6 +170,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemDaemonRestart = view.findViewById(R.id.item_daemon_restart);
         itemVMAutoConsole = view.findViewById(R.id.item_vm_auto_console);
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
+        itemVMHugepageAutoReserve = view.findViewById(R.id.item_vm_hugepage_auto_reserve);
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
         itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
@@ -204,6 +208,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
         bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
+        bindOnChecked(itemVMHugepageAutoReserve, KEY_VM_HUGEPAGE_AUTO_RESERVE, true);
         bindOnClick(itemVMOptimizeCompression, this::showOptimizeCompressionDialog);
         refreshOptimizeCompressionSummary();
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
@@ -250,6 +255,11 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public static boolean isAutoConsoleEnabled(@NonNull Context context) {
         var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         return prefs.getBoolean(KEY_VM_AUTO_CONSOLE, false);
+    }
+
+    public static boolean isHugepageAutoReserveEnabled(@NonNull Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getBoolean(KEY_VM_HUGEPAGE_AUTO_RESERVE, true);
     }
 
     public static boolean isClearLogsBeforeStartEnabled(@NonNull Context context) {

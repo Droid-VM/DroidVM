@@ -14,6 +14,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isAutoConsoleEnabled;
 import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isClearLogsBeforeStartEnabled;
+import static cn.classfun.droidvm.ui.main.settings.MainSettingsFragment.isHugepageAutoReserveEnabled;
 
 import android.content.Context;
 import android.content.Intent;
@@ -448,8 +449,10 @@ public final class VMActions {
         @NonNull UIContext ui,
         @NonNull Runnable proceed
     ) {
+        var autoReserve = isHugepageAutoReserveEnabled(ui.getContext());
         runOnPool(() -> {
-            if (PoolPreflight.canResize(config.item)) {
+            // With automatic sizing off the daemon leaves the reserve alone: warn when it is short.
+            if (autoReserve && PoolPreflight.canResize(config.item)) {
                 mainHandler.post(proceed);
                 return;
             }

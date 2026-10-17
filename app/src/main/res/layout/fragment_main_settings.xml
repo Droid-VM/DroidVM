@@ -71,6 +71,14 @@
                     android:subtitle="@string/settings_vm_clear_logs_before_start_summary"
                     android:text="@string/settings_vm_clear_logs_before_start_title" />
 
+                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                    android:id="@+id/item_vm_hugepage_auto_reserve"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_card_multiple"
+                    android:subtitle="@string/settings_vm_hugepage_auto_reserve_summary"
+                    android:text="@string/settings_vm_hugepage_auto_reserve_title" />
+
                 <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
                     android:id="@+id/item_vm_optimize_compression"
                     android:layout_width="match_parent"

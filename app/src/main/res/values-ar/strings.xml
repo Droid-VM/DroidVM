@@ -487,6 +487,8 @@
     <string name="settings_vm_auto_console_summary">فتح شاشة الطرفية (Console) تلقائيًا عند بدء تشغيل الجهاز الافتراضي</string>
     <string name="settings_vm_clear_logs_before_start_title">مسح السجلات قبل البدء</string>
     <string name="settings_vm_clear_logs_before_start_summary">مسح جميع سجلات الطرفية للجهاز الافتراضي قبل بدء تشغيله</string>
+    <string name="settings_vm_hugepage_auto_reserve_title">ضبط الصفحات الكبيرة عند البدء</string>
+    <string name="settings_vm_hugepage_auto_reserve_summary">رفع احتياطي الصفحات الكبيرة لكل جهاز افتراضي عند بدئه وانتظار امتلائه؛ عند الإيقاف يبقى الاحتياطي كما هو ويُكتفى بالتنبيه عند نقصه</string>
     <string name="settings_optimize_compression_title">تحسين الضغط</string>
     <string name="settings_optimize_compression_ask">السؤال في كل مرة</string>
     <string name="disk_compress_none">غير مضغوط</string>
