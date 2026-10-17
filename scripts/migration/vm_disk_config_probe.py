@@ -149,7 +149,7 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
         caps = exchange(sock, "capabilities")
         check(caps["service_api_minor"] == 25 and caps["disk_operations"] == "revisioned-tasks-v1"
               and {"disk_operation_start", "disk_operation_recover"} <= set(caps["commands"])
-              and caps["disk_operation_actions"] == ["resize", "convert", "flatten", "create", "clone"], "disk operations API25 advertised")
+              and caps["disk_operation_actions"] == ["resize", "convert", "flatten", "create", "clone", "commit", "delete"], "disk operations API25 advertised")
         states = pair(sock)
         documents = [entry[2] for entry in states]
         base_id, overlay_id = str(uuid.uuid4()), str(uuid.uuid4())
@@ -185,6 +185,12 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
         check(task["state"] == "succeeded" and "backing-filename" not in info and "parent" not in rows[overlay_id]
               and info["format-specific"]["data"]["compression-type"] == "zstd"
               and exchange(sock, "disk_config_status")["revision"] != revision, "TCP flatten persists standalone link")
+        tcp_id = next(row["id"] for row in rows.values() if row["name"] == "tcp.qcow2")
+        revision = exchange(sock, "disk_config_status")["revision"]
+        task = finish(sock, exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=tcp_id,
+                                     action="delete", delete_files=True))
+        check(task["state"] == "succeeded" and "tcp.qcow2" not in shell(["ls", images]).stdout
+              and all(row["id"] != tcp_id for row in json.loads(read("disks.json"))["disks"]), "TCP delete removes row and file")
         check(exchange(sock, "disk_operation_recover")["pending"] == 0
               and "disk_operations.json" in shell(["ls", directory]).stdout, "no unrecovered disk operations")
     maps = shell(["cat", f"/proc/{pid}/maps"], check=True).stdout
