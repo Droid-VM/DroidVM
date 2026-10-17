@@ -615,27 +615,10 @@ public final class MainSettingsFragment extends MainBaseFragment {
         @NonNull Class<? extends DataStore<T>> store,
         @NonNull JSONObject json
     ) throws Exception {
-        var ctor = store.getDeclaredConstructor();
-        if (VMStore.class.equals(store)) {
-            VMStore.importPersisted(ctx, json);
-            return;
-        }
-        if (NetworkStore.class.equals(store)) {
-            NetworkStore.importPersisted(ctx, json);
-            return;
-        }
-        ctor.setAccessible(true);
-        var oldStore = ctor.newInstance();
-        var newStore = ctor.newInstance();
-        if (!oldStore.load(ctx) || !newStore.load(json))
-            throw new java.io.IOException("Cannot read configuration for import");
-        newStore.forEach((k, v) -> {
-            if (oldStore.findById(k) == null)
-                oldStore.add(v);
-            else
-                oldStore.update(v);
-        });
-        if (!oldStore.save(ctx)) throw new java.io.IOException("Configuration import was not saved");
+        if (VMStore.class.equals(store)) VMStore.importPersisted(ctx, json);
+        else if (NetworkStore.class.equals(store)) NetworkStore.importPersisted(ctx, json);
+        else if (DiskStore.class.equals(store)) DiskStore.importPersisted(ctx, json);
+        else throw new IllegalArgumentException("No importer for " + store.getSimpleName());
     }
 
     @SuppressWarnings("unused")

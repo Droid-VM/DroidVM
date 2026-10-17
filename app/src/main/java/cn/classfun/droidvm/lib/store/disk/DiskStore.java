@@ -46,6 +46,48 @@ public final class DiskStore extends DataStore<DiskConfig> {
         }
     }
 
+    /** Worker-only settings merge: replace rows by id, append new ones, one native commit. */
+    public static void importPersisted(@NonNull Context context, @NonNull JSONObject document) throws Exception {
+        var rows = document.getJSONArray("disks");
+        var imported = new DiskStore();
+        if (!imported.load(document)) throw new IOException("Cannot read imported disk registry");
+        if (imported.size() != rows.length())
+            throw new IOException("Imported disks contain unsupported entries");
+        var client = new DiskConfigClient(request -> DaemonConnection.getInstance().request(request));
+        if (client.readSupported()) {
+            var session = client.edit();
+            var current = session.document();
+            var store = new DiskStore();
+            if (!store.load(current)) throw new IOException("Cannot read disk registry");
+            var disks = current.getJSONArray("disks");
+            var index = new java.util.HashMap<String, Integer>();
+            for (int i = 0; i < disks.length(); i++)
+                index.put(disks.getJSONObject(i).optString("id"), i);
+            var configs = new ArrayList<DiskConfig>();
+            imported.forEach((id, config) -> configs.add(config));
+            for (var config : configs) {
+                var other = store.findByPath(config.getFullPath());
+                if (other != null && !other.getId().equals(config.getId()))
+                    throw new IOException("Disk is already registered: " + config.getFullPath());
+                var at = index.get(config.getId().toString());
+                // Replace in place so untouched rows and root extensions stay exact.
+                if (at != null) disks.put(at, config.toJson());
+                else disks.put(config.toJson());
+            }
+            session.save(current);
+        } else {
+            DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                var store = new DiskStore();
+                if (!store.load(context)) throw new IOException("Cannot read disk registry");
+                imported.forEach((id, config) -> {
+                    if (store.findById(id) == null) store.add(config);
+                    else store.update(config);
+                });
+                if (!store.save(context)) throw new IOException("Cannot save disk registry");
+            });
+        }
+    }
+
     static void requireNewRegistration(DiskStore store, DiskConfig config) throws IOException {
         if (store.findById(config.getId()) != null || store.findByPath(config.getFullPath()) != null)
             throw new IOException("Disk is already registered: " + config.getFullPath());

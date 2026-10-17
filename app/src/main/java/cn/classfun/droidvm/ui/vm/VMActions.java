@@ -32,6 +32,7 @@ import androidx.fragment.app.FragmentActivity;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -889,9 +890,30 @@ public final class VMActions {
             convertNext(ctx, convertLauncher, compressed, i + 1, proceed);
             return;
         }
-        var intent = DiskOperationActivity.optimizeForResultIntent(ctx, path, basename(path));
-        convertLauncher.launch(intent,
-            () -> convertNext(ctx, convertLauncher, compressed, i + 1, proceed));
+        // The daemon rewrites registered disks under its file leases; there is no
+        // path-only fallback, and an unregistered disk cannot start anyway.
+        var main = new Handler(android.os.Looper.getMainLooper());
+        runOnPool(() -> {
+            var disk = DiskStore.loadForPlanning(ctx).findByPath(path);
+            main.post(() -> {
+                if (ctx instanceof android.app.Activity && ((android.app.Activity) ctx).isFinishing()) return;
+                if (disk == null) {
+                    Toast.makeText(ctx, ctx.getString(R.string.disk_operation_unregistered, basename(path)), LENGTH_LONG).show();
+                    return;
+                }
+                final Intent intent;
+                try {
+                    // No compress: convert rewrites uncompressed and keeps an overlay's backing.
+                    intent = DiskOperationActivity.createIntent(ctx, disk.getId(), new JSONObject().put("action", "convert"));
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to build convert task", e);
+                    return;
+                }
+                intent.putExtra(DiskOperationActivity.EXTRA_AUTOFINISH, true);
+                convertLauncher.launch(intent,
+                    () -> convertNext(ctx, convertLauncher, compressed, i + 1, proceed));
+            });
+        });
     }
 
     /** Absolute paths of the VM's qcow2 disks (the ones crosvm reads as blocks). */

@@ -864,6 +864,7 @@
     <string name="disk_operation_title">Disk Operation</string>
     <string name="disk_operation_running">Running\u2026</string>
     <string name="disk_operation_native_progress">Running… %1$.1f%%</string>
+    <string name="disk_operation_unregistered">%1$s is not a registered disk; register it in Disks first</string>
     <string name="disk_operation_success">Completed successfully.</string>
     <string name="disk_operation_failed">Failed (exit code %1$d).</string>
     <string name="disk_operation_native_unsupported">The disk service cannot run this operation.</string>
