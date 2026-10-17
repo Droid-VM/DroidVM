@@ -134,9 +134,21 @@ public final class DaemonHelper {
             MainSettingsFragment.KEY_NATIVE_DAEMON, MainSettingsFragment.DEFAULT_NATIVE_DAEMON);
     }
 
+    /**
+     * Native configuration ownership, once requested or recorded, is permanent: a native daemon
+     * started without it would be refused by the persistent ownership gate.
+     */
+    public boolean useConfigurationOwner() {
+        var context = ctx.getContext();
+        return context.getSharedPreferences("droidvm_prefs", 0).getBoolean(
+            MainSettingsFragment.KEY_NATIVE_CONFIGURATION_OWNER, false)
+            || cn.classfun.droidvm.lib.store.base.VmConfigOwnership.claimed(context.getFilesDir());
+    }
+
     public boolean startDaemon(boolean force) {
         var zipPath = getDaemonZipPath();
-        if (useNativeDaemon()) return startNativeDaemon(zipPath, force);
+        // The Java daemon cannot serve configuration the native service owns.
+        if (useNativeDaemon() || useConfigurationOwner()) return startNativeDaemon(zipPath, force);
         Log.i(TAG, fmt("Starting daemon via app_process64 with %s (force=%b)", zipPath, force));
         var runDir = pathJoin(DATA_DIR, "run");
         var uid = Process.myUid();
@@ -173,12 +185,13 @@ public final class DaemonHelper {
     /** droidvmd creates run/ itself; the same launcher daemonizes it. */
     private boolean startNativeDaemon(@NonNull String zipPath, boolean force) {
         var cmd = fmt(
-            "%s %s --data-dir %s --apk %s%s",
+            "%s %s --data-dir %s --apk %s%s%s",
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(getAssetBinaryPath("droidvmd")),
             escapedString(DATA_DIR),
             escapedString(zipPath),
-            force ? " --force" : ""
+            force ? " --force" : "",
+            useConfigurationOwner() ? " --configuration-owner" : ""
         );
         Log.i(TAG, fmt("Starting native daemon: %s", cmd));
         var result = run(cmd);
