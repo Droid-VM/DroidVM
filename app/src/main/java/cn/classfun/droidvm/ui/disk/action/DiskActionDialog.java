@@ -41,6 +41,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -48,6 +49,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DiskConfigOwnership;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -687,7 +689,7 @@ public final class DiskActionDialog {
                     paths.add(String.valueOf(fam.shape.pathOf(id)));
                 }
                 mainLooper.post(() ->
-                    showDeleteDialog(subtree, names, paths, isRoot, plan, onConfirmed));
+                    showDeleteDialog(fam, live, subtree, names, paths, isRoot, plan, onConfirmed));
             } catch (Exception e) {
                 Log.w(TAG, "delete pre-checks failed", e);
                 fail(String.valueOf(e.getMessage()));
@@ -696,6 +698,8 @@ public final class DiskActionDialog {
     }
 
     private void showDeleteDialog(
+        @NonNull Family baseline,
+        @Nullable LiveRows live,
         @NonNull List<UUID> subtree,
         @NonNull List<String> names,
         @NonNull List<String> paths,
@@ -721,28 +725,53 @@ public final class DiskActionDialog {
         DialogInterface.OnClickListener onclick = (d, w) -> {
             boolean isChecked = checkBox.isChecked();
             runOnPool(() -> {
-                var store = new DiskStore();
-                if (!store.load(context) || !DiskDependencyUpdater.applyPlan(context, plan)) {
+                try {
+                    // Reject native ownership before any VM rewrite. Native deletion needs the
+                    // cross-resource coordinator, not a registry-only upload followed by unlink.
+                    DiskConfigOwnership.requireLegacy(context.getFilesDir());
+                    var current = new Family(baseline.self, live);
+                    if (!DiskPlanValidation.sameRegistry(baseline.disks, current.disks)
+                            || !DiskPlanValidation.sameCursors(baseline.cursors, current.cursors)) {
+                        fail(context.getString(R.string.disk_delete_plan_changed));
+                        return;
+                    }
+                    if (isChecked && DiskPlanValidation.hasSurvivingPathAlias(current.disks,
+                            new java.util.HashSet<>(subtree)))
+                        throw new IOException("Another disk entry still uses an image selected for deletion");
+                    if (!DiskDependencyUpdater.applyPlan(context, plan))
+                        throw new IOException("Cannot update disk dependencies");
+                    // Do not nest the VM and disk ownership gates. Reload after the VM write
+                    // and reject disk changes before removing registry entries.
+                    DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                        var store = new DiskStore();
+                        if (!store.load(context) || !DiskPlanValidation.sameRegistry(baseline.disks, store))
+                            throw new IOException("Disk registry changed during deletion");
+                        for (int i = subtree.size() - 1; i >= 0; i--)
+                            store.removeById(subtree.get(i));
+                        if (!store.save(context)) throw new IOException("Cannot save disk registry");
+                    });
+                } catch (Exception error) {
+                    Log.w(TAG, "Disk deletion stopped; keeping image files", error);
                     fail(context.getString(R.string.disk_dependency_update_failed));
                     return;
                 }
-                // Registry first, leaves first. Files stay present until both VM references and
-                // the registry have been saved, so an I/O failure cannot create dangling slots.
-                for (int i = subtree.size() - 1; i >= 0; i--)
-                    store.removeById(subtree.get(i));
-                if (!store.save(context)) {
-                    fail(context.getString(R.string.disk_dependency_update_failed));
-                    return;
-                }
+                boolean cleanupFailed = false;
                 if (isChecked) {
-                    for (int i = paths.size() - 1; i >= 0; i--)
-                        runList("rm", "-f", paths.get(i));
+                    for (int i = paths.size() - 1; i >= 0; i--) {
+                        try {
+                            if (!runList("rm", "-f", paths.get(i)).isSuccess()) cleanupFailed = true;
+                        } catch (Exception error) {
+                            Log.w(TAG, "Image cleanup failed after registry removal", error);
+                            cleanupFailed = true;
+                        }
+                    }
                 }
                 if (this.onUpdate != null)
                     mainLooper.post(this.onUpdate);
                 // After the registry is written, so a listener re-reading it (e.g. to redo the
                 // lock state of a disk that just lost its last overlay) sees the new truth.
                 if (onConfirmed != null) mainLooper.post(onConfirmed);
+                if (cleanupFailed) fail(context.getString(R.string.disk_delete_files_failed));
             });
         };
         new MaterialAlertDialogBuilder(context)

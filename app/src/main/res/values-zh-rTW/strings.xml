@@ -659,6 +659,8 @@
     <string name="disk_info_lazy_refcounts">延遲引用計數已啟用</string>
     <string name="disk_info_loading">載入中\u2026</string>
     <string name="disk_info_load_failed">無法載入磁碟資訊</string>
+    <string name="disk_delete_plan_changed">磁碟相依關係或虛擬機器狀態已變更。請重新開啟刪除對話方塊，核對目前影響。</string>
+    <string name="disk_delete_files_failed">磁碟註冊項目已移除，但部分映像檔案無法刪除。請檢查原始檔案位置。</string>
     <string name="disk_import_unconfirmed">匯入失敗或無法確認結果。請重新整理磁碟清單，確認映像是否已註冊後再嘗試匯入。註冊操作未修改映像檔案。</string>
     <string name="disk_info_tab_info">資訊</string>
     <string name="disk_info_tab_tree">層級</string>
