@@ -75,12 +75,16 @@ public final class DaemonHelper {
         try {
             var pid = parseInt(shellReadFile(getPidFile()).trim());
             if (isPidExists(pid)) {
+                // argv[0], not comm: some ROMs rename the main thread (e.g. "Binder:droidvmd")
+                // once the daemon joins the Binder thread pool.
                 try {
-                    var comm = shellReadFile(fmt("/proc/%d/comm", pid)).trim();
-                    if (comm.equals("droidvmd")) return pid;
-                    Log.i(TAG, fmt("proctitle mismatch: %s", comm));
+                    var cmdline = shellReadFile(fmt("/proc/%d/cmdline", pid));
+                    var end = cmdline.indexOf('\0');
+                    var argv0 = end < 0 ? cmdline.trim() : cmdline.substring(0, end);
+                    if (argv0.equals("droidvmd") || argv0.endsWith("/droidvmd")) return pid;
+                    Log.i(TAG, fmt("cmdline mismatch: %s", argv0));
                 } catch (Exception e) {
-                    Log.w(TAG, "Failed to read proctitle", e);
+                    Log.w(TAG, "Failed to read cmdline", e);
                 }
                 Log.w(TAG, "pid file maybe stale");
             }
