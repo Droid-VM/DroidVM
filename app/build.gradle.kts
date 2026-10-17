@@ -421,6 +421,7 @@ dependencies {
     implementation(libs.libsu.core)
     implementation(libs.libsu.nio)
     implementation(libs.libsu.service)
+    implementation(libs.hiddenapibypass)
     // The renderer itself lives in src/main/vendor; these are what it needs.
     implementation(libs.markdown.parser)
     implementation(libs.kotlinx.collections.immutable)
