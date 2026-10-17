@@ -621,6 +621,8 @@
     <string name="disk_size_unknown">未知</string>
     <string name="disk_delete_confirm">确定要移除此磁盘条目吗？</string>
     <string name="disk_delete_file">同时删除磁盘文件</string>
+    <string name="disk_delete_registry_only">保留镜像文件；文件删除功能尚不可用。</string>
+    <string name="disk_delete_unconfirmed">无法确认移除结果，镜像文件已保留。请重新读取磁盘列表与 VM 设置后再操作。</string>
     <string name="disk_add_title">添加磁盘</string>
     <string name="disk_add_import">导入已有文件</string>
     <string name="disk_add_create">新建磁盘镜像</string>

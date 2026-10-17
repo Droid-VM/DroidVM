@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.HashSet;
 import java.io.IOException;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
@@ -78,6 +79,27 @@ public final class DiskDependencyUpdater {
             Log.e(TAG, "Failed to commit VM disk dependencies; keeping disk files", error);
             return false;
         }
+    }
+
+    /** Rewrite only planned disk arrays in a private full document, preserving raw extensions. */
+    static JSONObject applyToDocument(JSONObject baseline, CursorPlan plan) throws Exception {
+        if (plan.isRefused()) throw new IOException("Disk plan contains running VM references");
+        var document = new JSONObject(baseline.toString());
+        var updates = applyChanges(new VMStore(document), plan.persistedChanges());
+        var rows = document.getJSONArray("vms");
+        for (int i = 0; i < updates.length(); i++) {
+            var update = updates.getJSONObject(i);
+            int matched = 0;
+            for (int j = 0; j < rows.length(); j++) {
+                var row = rows.getJSONObject(j);
+                if (update.getString("id").equals(row.optString("id"))) {
+                    row.put("disks", update.getJSONArray("disks"));
+                    matched++;
+                }
+            }
+            if (matched != 1) throw new IOException("VM identity is ambiguous in disk plan");
+        }
+        return document;
     }
 
     private static JSONArray applyChanges(VMStore vmStore, List<CursorPlan.Change> changes) throws Exception {
