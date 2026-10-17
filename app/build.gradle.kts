@@ -173,8 +173,17 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
     @get:Input
     abstract val expectedAbis: ListProperty<String>
 
+    // AGP strips only jniLibs; executables shipped as assets keep their debug info otherwise.
+    // The unstripped build stays in cmakeOutputDir for symbolization.
+    @get:InputDirectory
+    abstract val ndkDirectory: DirectoryProperty
+
     @TaskAction
     fun copy() {
+        val prebuilt = File(ndkDirectory.get().asFile, "toolchains/llvm/prebuilt")
+        val strip = prebuilt.listFiles().orEmpty().flatMap { host ->
+            listOf(File(host, "bin/llvm-strip.exe"), File(host, "bin/llvm-strip"))
+        }.firstOrNull { it.isFile } ?: error("llvm-strip not found under $prebuilt")
         val outDir = outputDir.get().asFile
         val cmakeDir = cmakeOutputDir.get().asFile
         val binaries = setOf("droidvm", "daemon", "droidvmd")
@@ -184,7 +193,10 @@ abstract class CopyNativeBinAssetsTask : DefaultTask() {
         inputs.forEach { src ->
             val dest = File(outDir, "bin/${src.parentFile.name}/${src.name}")
             dest.parentFile.mkdirs()
-            src.copyTo(dest, overwrite = true)
+            val process = ProcessBuilder(strip.absolutePath, "--strip-unneeded", "-o", dest.absolutePath, src.absolutePath)
+                .redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            require(process.waitFor() == 0 && dest.length() > 0) { "llvm-strip failed for $src: $output" }
         }
     }
 }
@@ -382,6 +394,7 @@ androidComponents {
                 )
             )
             expectedAbis.set(android.defaultConfig.ndk.abiFilters.sorted())
+            ndkDirectory.set(androidComponents.sdkComponents.ndkDirectory)
             outputDir.set(
                 layout.buildDirectory.dir(
                     "generated/droidvm_assets/${variant.name}"
