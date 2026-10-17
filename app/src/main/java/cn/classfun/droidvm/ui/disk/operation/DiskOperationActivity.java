@@ -41,6 +41,8 @@ import org.json.JSONObject;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.utils.RunUtils;
@@ -81,6 +83,8 @@ public final class DiskOperationActivity extends AppCompatActivity {
     private String taskAction = null;
     private DiskStore diskStore = null;
     private DiskConfig diskConfig = null;
+    private volatile DiskOperationClient nativeClient = null;
+    private volatile DiskOperationClient.Task nativeTask = null;
 
     private final TerminalSessionClient sessionClient = new SimpleTerminalSessionClient(this) {
         @Override
@@ -268,33 +272,47 @@ public final class DiskOperationActivity extends AppCompatActivity {
             finish();
             return;
         }
-        diskStore = new DiskStore();
-        diskStore.load(this);
-        final String diskPath;
-        final String diskName;
-        if (diskIdStr != null) {
-            diskConfig = diskStore.findById(UUID.fromString(diskIdStr));
-            if (diskConfig == null) {
-                Log.e(TAG, fmt("Disk not found: %s", diskIdStr));
-                finish();
-                return;
-            }
-            diskPath = diskConfig.getFullPath();
-            diskName = diskConfig.getName();
-        } else {
-            // Path mode: operate on the file directly (no DiskStore entry).
-            diskPath = intent.getStringExtra(EXTRA_DISK_PATH);
-            if (diskPath == null) {
-                Log.e(TAG, "Missing disk id and path");
-                finish();
-                return;
-            }
-            var name = intent.getStringExtra(EXTRA_DISK_NAME);
-            diskName = name != null ? name : basename(diskPath);
-        }
-        tvFilename.setText(diskName);
         tvStatus.setText(R.string.disk_operation_running);
         runOnPool(() -> {
+            final String diskPath;
+            final String diskName;
+            final java.util.Set<String> nativeActions;
+            try {
+                // Registry and capability reads are RPCs: never on the main thread.
+                diskStore = DiskStore.loadForPlanning(getApplicationContext());
+                nativeActions = new DiskOperationClient(
+                    request -> DaemonConnection.getInstance().request(request)).actions();
+            } catch (Exception e) {
+                Log.e(TAG, "Cannot read disk registry or daemon capabilities", e);
+                runOnUiThread(() -> showFailed(getString(R.string.disk_info_load_failed)));
+                return;
+            }
+            if (diskIdStr != null) {
+                diskConfig = diskStore.findById(UUID.fromString(diskIdStr));
+                if (diskConfig == null) {
+                    Log.e(TAG, fmt("Disk not found: %s", diskIdStr));
+                    runOnUiThread(this::finish);
+                    return;
+                }
+                diskPath = diskConfig.getFullPath();
+                diskName = diskConfig.getName();
+            } else {
+                // Path mode: operate on the file directly (no DiskStore entry).
+                diskPath = intent.getStringExtra(EXTRA_DISK_PATH);
+                if (diskPath == null) {
+                    Log.e(TAG, "Missing disk id and path");
+                    runOnUiThread(this::finish);
+                    return;
+                }
+                var name = intent.getStringExtra(EXTRA_DISK_NAME);
+                diskName = name != null ? name : basename(diskPath);
+            }
+            runOnUiThread(() -> tvFilename.setText(diskName));
+            // The daemon owns registered disks once it offers native operations: no su shell.
+            if (diskConfig != null && !nativeActions.isEmpty()) {
+                runNative(taskJsonStr, nativeActions);
+                return;
+            }
             final String cmd;
             try {
                 var task = new JSONObject(taskJsonStr);
@@ -416,6 +434,107 @@ public final class DiskOperationActivity extends AppCompatActivity {
         } catch (Exception e) {
             Log.e(TAG, "flatten follow-up failed", e);
             return false;
+        }
+    }
+
+    /**
+     * Maps a task JSON to the daemon request. Null when the task cannot be expressed exactly
+     * (for example converting into a different file), so nothing runs.
+     */
+    @Nullable
+    static JSONObject nativeRequest(@NonNull JSONObject task, @NonNull DiskConfig disk) throws Exception {
+        var action = task.optString("action", "");
+        var request = new JSONObject().put("action", action).put("disk_id", disk.getId().toString());
+        switch (action) {
+            case "resize":
+                request.put("size", Long.parseLong(task.getString("size")));
+                if (task.optBoolean("shrink", false)) request.put("shrink", true);
+                return request;
+            case "convert":
+            case "flatten":
+                // The daemon carries an overlay's backing itself; an explicit one must match it.
+                if (task.has("output") && !task.getString("output").equals(disk.getFullPath())) return null;
+                if (task.has("backing_id") || task.optBoolean("drop_backing", false)) return null;
+                if (task.has("format")) request.put("format", task.getString("format"));
+                var compress = task.optString("compress", "none");
+                if (!compress.equals("none")) request.put("compress", compress);
+                if (task.optBoolean("preallocate", false)) request.put("preallocate", true);
+                return request;
+            case "commit":
+                return request;
+            case "clone": {
+                var output = task.optString("output", "");
+                if (!output.startsWith("/") || output.endsWith("/")) return null;
+                return request.put("folder", dirname(output)).put("name", basename(output));
+            }
+            default:
+                return null;
+        }
+    }
+
+    private void runNative(@NonNull String taskJson, @NonNull java.util.Set<String> actions) {
+        final JSONObject request;
+        try {
+            var task = new JSONObject(taskJson);
+            taskAction = task.optString("action", "");
+            request = nativeRequest(task, diskConfig);
+        } catch (Exception e) {
+            Log.e(TAG, "Bad native disk task", e);
+            runOnUiThread(() -> showFailed(getString(R.string.disk_operation_bad_task)));
+            return;
+        }
+        if (request == null || !actions.contains(request.optString("action"))) {
+            runOnUiThread(() -> showFailed(getString(R.string.disk_operation_native_unsupported)));
+            return;
+        }
+        var client = new DiskOperationClient(r -> DaemonConnection.getInstance().request(r));
+        DiskOperationClient.Status status;
+        try {
+            nativeTask = client.start(request);
+            nativeClient = client;
+            status = client.await(nativeTask);
+        } catch (DiskOperationClient.SubmitUnknown e) {
+            Log.w(TAG, "Native disk operation submission unknown", e);
+            runOnUiThread(() -> showFailed(getString(R.string.disk_operation_native_unknown)));
+            return;
+        } catch (cn.classfun.droidvm.lib.daemon.VmConfigClient.RemoteFailure e) {
+            Log.w(TAG, fmt("Native disk operation rejected: %s", e.code), e);
+            runOnUiThread(() -> showFailed(getString(R.string.disk_operation_native_failed, e.getMessage())));
+            return;
+        } catch (Exception e) {
+            // Admitted work keeps running in the daemon; only its progress view was lost.
+            Log.w(TAG, "Lost native disk operation status", e);
+            runOnUiThread(() -> showFailed(getString(R.string.disk_operation_native_unknown)));
+            return;
+        }
+        final var done = status;
+        runOnUiThread(() -> finishNative(done));
+    }
+
+    private void finishNative(@NonNull DiskOperationClient.Status status) {
+        if (finished) return;
+        finished = true;
+        if (status.succeeded() && successIntent != null) {
+            startActivity(successIntent);
+            finish();
+            return;
+        }
+        if (status.succeeded() && autoFinish) {
+            setResult(RESULT_OK);
+            finish();
+            return;
+        }
+        progressSpinner.setVisibility(GONE);
+        ivStatus.setVisibility(VISIBLE);
+        btnCancel.setVisibility(GONE);
+        if (status.succeeded()) {
+            ivStatus.setImageResource(R.drawable.ic_large_success);
+            tvStatus.setText(R.string.disk_operation_success);
+        } else {
+            ivStatus.setImageResource(R.drawable.ic_large_error);
+            tvStatus.setText("cancelled".equals(status.state) ? getString(R.string.disk_operation_native_failed, status.state)
+                : status.needsRecovery() ? getString(R.string.disk_operation_native_unknown)
+                : getString(R.string.disk_operation_native_failed, String.valueOf(status.message)));
         }
     }
 
@@ -573,6 +692,16 @@ public final class DiskOperationActivity extends AppCompatActivity {
     }
 
     private void sendSigint() {
+        var client = nativeClient;
+        var task = nativeTask;
+        if (client != null && task != null && !finished) {
+            // Cooperative: the daemon refuses once the image replacement has begun.
+            runOnPool(() -> {
+                try { client.cancel(task); }
+                catch (Exception e) { Log.w(TAG, "Native disk operation cancel failed", e); }
+            });
+            return;
+        }
         if (session != null && !finished && session.isRunning()) {
             Log.i(TAG, "Sending SIGINT to process");
             shellKillProcess(session.getPid(), SIGHUP);

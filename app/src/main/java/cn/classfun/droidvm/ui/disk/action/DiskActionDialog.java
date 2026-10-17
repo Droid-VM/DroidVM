@@ -51,6 +51,7 @@ import java.util.function.Consumer;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.ConfigurationClient;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.store.base.DiskConfigOwnership;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
@@ -186,6 +187,8 @@ public final class DiskActionDialog {
         final Set<UUID> ids;
         final List<AttachmentCursor> cursors;
         final ConfigurationClient.EditSession joint;
+        /** The daemon deletes registry rows, slots and image files itself. */
+        final boolean nativeDelete;
 
         Family(@NonNull DiskConfig config, @Nullable LiveRows live) {
             this(config, live, false);
@@ -195,6 +198,8 @@ public final class DiskActionDialog {
             try {
                 var client = new ConfigurationClient(request -> DaemonConnection.getInstance().request(request));
                 joint = jointDelete && client.supported() ? client.edit() : null;
+                nativeDelete = joint != null && new DiskOperationClient(
+                    request -> DaemonConnection.getInstance().request(request)).actions().contains("delete");
                 disks = joint == null ? DiskStore.loadForPlanning(context) : new DiskStore(joint.disks());
                 vms = joint == null ? DiskDependencyUpdater.loadForPlanning(context) : new VMStore(joint.vms());
             } catch (Exception error) {
@@ -723,9 +728,9 @@ public final class DiskActionDialog {
         var layout = new LinearLayout(context);
         var checkBox = new CheckBox(context);
         checkBox.setText(R.string.disk_delete_file);
-        // Native image deletion must wait for service-side file leases. Registry removal
-        // already uses the joint transaction and never invokes a client-side unlink.
-        if (baseline.joint != null) {
+        // Native image deletion needs the daemon's leased delete operation. Without it,
+        // registry removal uses the joint transaction and never invokes a client-side unlink.
+        if (baseline.joint != null && !baseline.nativeDelete) {
             checkBox.setEnabled(false);
             checkBox.setText(R.string.disk_delete_registry_only);
         }
@@ -755,7 +760,15 @@ public final class DiskActionDialog {
                     if (isChecked && DiskPlanValidation.hasSurvivingPathAlias(current.disks,
                             new java.util.HashSet<>(subtree)))
                         throw new IOException("Another disk entry still uses an image selected for deletion");
-                    if (baseline.joint != null) {
+                    if (baseline.nativeDelete) {
+                        // One leased daemon operation against the confirmed registry revision.
+                        var client = new DiskOperationClient(r -> DaemonConnection.getInstance().request(r));
+                        var request = new JSONObject().put("action", "delete")
+                            .put("disk_id", baseline.self.getId().toString()).put("delete_files", isChecked);
+                        var status = client.await(client.start(request, baseline.joint.diskRevision()));
+                        if (!status.succeeded()) throw new IOException("Native disk deletion " + status.state
+                            + ": " + status.errorCode + " " + status.message);
+                    } else if (baseline.joint != null) {
                         if (isChecked) throw new IOException("Native image deletion is unavailable");
                         var vmDocument = DiskDependencyUpdater.applyToDocument(baseline.joint.vms(), plan);
                         var diskDocument = baseline.joint.disks();
@@ -787,7 +800,7 @@ public final class DiskActionDialog {
                     return;
                 }
                 boolean cleanupFailed = false;
-                if (isChecked) {
+                if (isChecked && !baseline.nativeDelete) {
                     for (int i = paths.size() - 1; i >= 0; i--) {
                         try {
                             if (!runList("rm", "-f", paths.get(i)).isSuccess()) cleanupFailed = true;

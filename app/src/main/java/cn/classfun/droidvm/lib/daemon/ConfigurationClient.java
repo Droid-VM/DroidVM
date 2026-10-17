@@ -60,6 +60,8 @@ public final class ConfigurationClient {
         }
         public JSONObject vms() throws JSONException { return vmBaseline.document(); }
         public JSONObject disks() throws JSONException { return diskBaseline.document(); }
+        /** Pins a native disk operation to the registry this session confirmed. */
+        public String diskRevision() { return diskBaseline.revision; }
         /** Settings import: null means retain that registry, matching IDs replace complete rows. */
         public synchronized Result merge(JSONArray importedVms, JSONArray importedDisks) throws IOException, JSONException {
             var vms = vms(); var disks = disks();

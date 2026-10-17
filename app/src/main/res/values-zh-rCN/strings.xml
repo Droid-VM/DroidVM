@@ -825,6 +825,9 @@
     <string name="disk_operation_running">执行中\u2026</string>
     <string name="disk_operation_success">操作完成。</string>
     <string name="disk_operation_failed">操作失败（退出码 %1$d）。</string>
+    <string name="disk_operation_native_unsupported">磁盘服务不支持此操作。</string>
+    <string name="disk_operation_native_failed">操作失败：%1$s</string>
+    <string name="disk_operation_native_unknown">结果未知，请重新加载磁盘列表后再试。</string>
     <string name="disk_operation_finalizing">正在保存磁盘依赖关系…</string>
     <string name="disk_operation_dependency_failed">磁盘数据操作已完成，但无法保存 VM／磁盘依赖关系；可保留源镜像时已予以保留。</string>
     <string name="disk_operation_bad_task">无效的任务参数。</string>
