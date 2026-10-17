@@ -49,6 +49,8 @@ import java.util.UUID;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.ConfigurationClient;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DiskConfigOwnership;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
@@ -183,15 +185,26 @@ public final class DiskActionDialog {
         final TreeShape shape;
         final Set<UUID> ids;
         final List<AttachmentCursor> cursors;
+        final ConfigurationClient.EditSession joint;
 
         Family(@NonNull DiskConfig config, @Nullable LiveRows live) {
-            disks = DiskStore.loadForPlanning(context);
+            this(config, live, false);
+        }
+
+        Family(@NonNull DiskConfig config, @Nullable LiveRows live, boolean jointDelete) {
+            try {
+                var client = new ConfigurationClient(request -> DaemonConnection.getInstance().request(request));
+                joint = jointDelete && client.supported() ? client.edit() : null;
+                disks = joint == null ? DiskStore.loadForPlanning(context) : new DiskStore(joint.disks());
+                vms = joint == null ? DiskDependencyUpdater.loadForPlanning(context) : new VMStore(joint.vms());
+            } catch (Exception error) {
+                throw new IllegalStateException("Cannot read disk deletion configuration", error);
+            }
             var found = disks.findById(config.getId());
             if (found == null)
                 throw new IllegalStateException(
                     context.getString(R.string.disk_tree_not_registered));
             self = found;
-            vms = DiskDependencyUpdater.loadForPlanning(context);
             shape = TreeShape.of(disks);
             ids = shape.familyOf(self.getId());
             var inUse = VmRunningQuery.inUseAmong(
@@ -671,7 +684,7 @@ public final class DiskActionDialog {
         @NonNull DiskConfig config, @Nullable LiveRows live, @Nullable Runnable onConfirmed) {
         runOnPool(() -> {
             try {
-                var fam = new Family(config, live);
+                var fam = new Family(config, live, true);
                 var self = fam.self;
                 // BFS order, self first; deletion goes leaves-first, i.e. reversed.
                 var subtree = new ArrayList<>(fam.shape.subtreeOf(self.getId()));
@@ -710,6 +723,12 @@ public final class DiskActionDialog {
         var layout = new LinearLayout(context);
         var checkBox = new CheckBox(context);
         checkBox.setText(R.string.disk_delete_file);
+        // Native image deletion must wait for service-side file leases. Registry removal
+        // already uses the joint transaction and never invokes a client-side unlink.
+        if (baseline.joint != null) {
+            checkBox.setEnabled(false);
+            checkBox.setText(R.string.disk_delete_registry_only);
+        }
         int pad = (int) (16 * context.getResources().getDisplayMetrics().density);
         layout.setPadding(pad, 0, pad, 0);
         layout.addView(checkBox);
@@ -726,9 +745,7 @@ public final class DiskActionDialog {
             boolean isChecked = checkBox.isChecked();
             runOnPool(() -> {
                 try {
-                    // Reject native ownership before any VM rewrite. Native deletion needs the
-                    // cross-resource coordinator, not a registry-only upload followed by unlink.
-                    DiskConfigOwnership.requireLegacy(context.getFilesDir());
+                    if (baseline.joint == null) DiskConfigOwnership.requireLegacy(context.getFilesDir());
                     var current = new Family(baseline.self, live);
                     if (!DiskPlanValidation.sameRegistry(baseline.disks, current.disks)
                             || !DiskPlanValidation.sameCursors(baseline.cursors, current.cursors)) {
@@ -738,21 +755,35 @@ public final class DiskActionDialog {
                     if (isChecked && DiskPlanValidation.hasSurvivingPathAlias(current.disks,
                             new java.util.HashSet<>(subtree)))
                         throw new IOException("Another disk entry still uses an image selected for deletion");
-                    if (!DiskDependencyUpdater.applyPlan(context, plan))
-                        throw new IOException("Cannot update disk dependencies");
-                    // Do not nest the VM and disk ownership gates. Reload after the VM write
-                    // and reject disk changes before removing registry entries.
-                    DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
-                        var store = new DiskStore();
-                        if (!store.load(context) || !DiskPlanValidation.sameRegistry(baseline.disks, store))
-                            throw new IOException("Disk registry changed during deletion");
-                        for (int i = subtree.size() - 1; i >= 0; i--)
-                            store.removeById(subtree.get(i));
-                        if (!store.save(context)) throw new IOException("Cannot save disk registry");
-                    });
+                    if (baseline.joint != null) {
+                        if (isChecked) throw new IOException("Native image deletion is unavailable");
+                        var vmDocument = DiskDependencyUpdater.applyToDocument(baseline.joint.vms(), plan);
+                        var diskDocument = baseline.joint.disks();
+                        var rows = diskDocument.getJSONArray("disks");
+                        var removed = new java.util.HashSet<>(subtree);
+                        for (int i = rows.length() - 1; i >= 0; i--)
+                            if (removed.remove(UUID.fromString(rows.getJSONObject(i).getString("id")))) rows.remove(i);
+                        if (!removed.isEmpty()) throw new IOException("Disk disappeared since confirmation");
+                        baseline.joint.save(vmDocument, diskDocument);
+                    } else {
+                        if (!DiskDependencyUpdater.applyPlan(context, plan))
+                            throw new IOException("Cannot update disk dependencies");
+                        // Do not nest the VM and disk ownership gates. Reload after the VM write
+                        // and reject disk changes before removing registry entries.
+                        DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+                            var store = new DiskStore();
+                            if (!store.load(context) || !DiskPlanValidation.sameRegistry(baseline.disks, store))
+                                throw new IOException("Disk registry changed during deletion");
+                            for (int i = subtree.size() - 1; i >= 0; i--)
+                                store.removeById(subtree.get(i));
+                            if (!store.save(context)) throw new IOException("Cannot save disk registry");
+                        });
+                    }
                 } catch (Exception error) {
                     Log.w(TAG, "Disk deletion stopped; keeping image files", error);
-                    fail(context.getString(R.string.disk_dependency_update_failed));
+                    fail(context.getString(baseline.joint == null ? R.string.disk_dependency_update_failed
+                        : R.string.disk_delete_unconfirmed));
+                    if (baseline.joint != null && this.onUpdate != null) mainLooper.post(this.onUpdate);
                     return;
                 }
                 boolean cleanupFailed = false;

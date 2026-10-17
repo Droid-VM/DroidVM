@@ -658,6 +658,8 @@
     <string name="disk_size_unknown">N/A</string>
     <string name="disk_delete_confirm">Are you sure you want to remove this disk entry?</string>
     <string name="disk_delete_file">Also delete the disk file</string>
+    <string name="disk_delete_registry_only">Image files will be kept; file deletion is not yet available.</string>
+    <string name="disk_delete_unconfirmed">Removal could not be confirmed. Image files were kept. Reload the disk list and VM settings before trying again.</string>
     <string name="disk_add_title">Add Disk</string>
     <string name="disk_add_import">Import existing file</string>
     <string name="disk_add_create">Create new disk</string>
