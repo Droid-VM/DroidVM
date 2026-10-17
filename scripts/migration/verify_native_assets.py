@@ -35,7 +35,8 @@ def main():
                 if names.count(asset) != 1:
                     raise RuntimeError(f"Missing or duplicate executable: {asset}")
                 content = archive.read(asset)
-                built = root / "app/build/intermediates/native_binaries" / args.variant / abi / name
+                # Packaging strips the build output; compare with the stripped copy it ships.
+                built = root / "app/build/generated/droidvm_assets" / args.variant / "bin" / abi / name
                 if content != built.read_bytes():
                     raise RuntimeError(f"APK contains a stale executable: {asset}")
                 if content[:6] != b"\x7fELF\x02\x01" or struct.unpack_from("<H", content, 18)[0] != machine:
