@@ -36,6 +36,7 @@ public final class VmConfigClientTest {
                 if (loseCommitReply && ("vm_config_upload_commit".equals(request.getString("command"))
                     || "vm_config_apply".equals(request.getString("command"))
                     || "network_config_delete_commit".equals(request.getString("command"))
+                    || "configuration_vm_disks_commit".equals(request.getString("command"))
                     || "disk_config_upload_commit".equals(request.getString("command")))) {
                     loseCommitReply = false;
                     throw new IOException("Simulated lost successful commit reply");
