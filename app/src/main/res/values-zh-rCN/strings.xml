@@ -823,6 +823,7 @@
 
     <string name="disk_operation_title">磁盘操作</string>
     <string name="disk_operation_running">执行中\u2026</string>
+    <string name="disk_operation_native_progress">执行中… %1$.1f%%</string>
     <string name="disk_operation_success">操作完成。</string>
     <string name="disk_operation_failed">操作失败（退出码 %1$d）。</string>
     <string name="disk_operation_native_unsupported">磁盘服务不支持此操作。</string>
