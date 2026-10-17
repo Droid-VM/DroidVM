@@ -54,6 +54,7 @@ import java.util.UUID;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.archive.Compression;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.pkg.DiskChainPlan;
 import cn.classfun.droidvm.lib.pkg.DiskRef;
 import cn.classfun.droidvm.lib.pkg.Phase;
@@ -417,6 +418,14 @@ public final class VMPkgExportActivity extends AppCompatActivity
             if (adapter.selected.contains(idx)) diskIndices.put(idx);
         }
         var inst = DaemonConnection.getInstance();
+        // A daemon that owns VM configuration already holds the saved VM and refuses a push.
+        boolean daemonOwnsConfig;
+        try {
+            daemonOwnsConfig = new VmConfigClient(inst::request).supported();
+        } catch (Exception e) {
+            onExportFailure(e.getMessage());
+            return;
+        }
         mainHandler.post(() -> {
             setExporting(true);
             fabCreate.setVisibility(GONE);
@@ -447,6 +456,10 @@ public final class VMPkgExportActivity extends AppCompatActivity
             .onUnsuccessful(f)
             .onError(err)
             .invoke();
+        if (daemonOwnsConfig) {
+            onCreateModify.onResponse(null);
+            return;
+        }
         DaemonConnection.OnResponse onExists = resp ->
             inst.buildRequest(resp.optBoolean("exists", false) ? "vm_modify" : "vm_create")
             .put("config", config)
