@@ -35,10 +35,10 @@ import java.util.UUID;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
-import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.disk.action.BackingChainLinker;
 import cn.classfun.droidvm.ui.disk.action.DiskActionDialog;
+import cn.classfun.droidvm.ui.disk.action.DiskDependencyUpdater;
 import cn.classfun.droidvm.ui.disk.action.DiskOverlayCreateDialog;
 import cn.classfun.droidvm.ui.disk.tree.AttachmentCursors.LiveRows;
 import cn.classfun.droidvm.ui.vm.VmRunningQuery;
@@ -98,8 +98,7 @@ public final class DiskBranchPanel {
     private final Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
 
-    // All written on the main thread; refresh() reads them from the pool only after being
-    // posted from the main thread, so it always sees the latest values.
+    // Main-thread state; workers receive fixed inputs for each refresh generation.
     private TreeShape shape = TreeShape.empty();
     private List<AttachmentCursor> liveCursors = new ArrayList<>();
     private boolean first = true;
@@ -115,6 +114,8 @@ public final class DiskBranchPanel {
     private boolean confirmed;
     private boolean refreshOnFocus;
     private boolean closed;
+    private long refreshGeneration;
+    private boolean ready;
 
     private DiskBranchPanel(
         @NonNull Context context,
@@ -144,7 +145,11 @@ public final class DiskBranchPanel {
         var main = new Handler(Looper.getMainLooper());
         runOnPool(() -> {
             var store = new DiskStore();
-            store.load(context);
+            if (!store.load(context)) {
+                main.post(() -> Toast.makeText(
+                    context, R.string.disk_info_load_failed, LENGTH_SHORT).show());
+                return;
+            }
             var current = store.findByPath(currentPath);
             if (current == null) {
                 main.post(() -> Toast.makeText(
@@ -161,12 +166,20 @@ public final class DiskBranchPanel {
 
     /** Reload both stores, move the in-memory cursors along, re-root and repaint. */
     private void refresh() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(this::refresh);
+            return;
+        }
+        if (closed) return;
+        final long generation = ++refreshGeneration;
+        final boolean initial = first;
+        final var previousShape = shape;
+        final var previousCursors = new ArrayList<>(liveCursors);
+        setReady(false);
         runOnPool(() -> {
             try {
-                var disks = new DiskStore();
-                disks.load(context);
-                var vms = new VMStore();
-                vms.load(vms, context);
+                var disks = DiskStore.loadForPlanning(context);
+                var vms = DiskDependencyUpdater.loadForPlanning(context);
                 var newShape = TreeShape.of(disks);
                 var all = newShape.nodes();
                 var inUse = VmRunningQuery.inUseAmong(
@@ -174,11 +187,11 @@ public final class DiskBranchPanel {
                 var persisted = AttachmentCursors.collectPersisted(
                     disks, vms, all, live == null ? null : live.vmId, inUse);
                 List<AttachmentCursor> liveNow;
-                if (first) {
+                if (initial) {
                     liveNow = live == null ? List.of()
                         : AttachmentCursors.collectLive(disks, all, live, inUse);
                 } else {
-                    var plan = CursorPlan.reconcile(liveCursors, persisted, shape, newShape);
+                    var plan = CursorPlan.reconcile(previousCursors, persisted, previousShape, newShape);
                     boolean pinned = live != null && live.vmId != null
                         && inUse.contains(live.vmName);
                     liveNow = new ArrayList<>();
@@ -195,19 +208,30 @@ public final class DiskBranchPanel {
                 final var activeNode = focus == null ? null : activeNodeOf(liveNow);
                 final var finalLive = liveNow;
                 main.post(() -> {
-                    if (closed) return;
+                    if (closed || generation != refreshGeneration) return;
                     shape = newShape;
                     liveCursors = finalLive;
                     boolean wasFirst = first;
                     first = false;
                     if (dialog == null) build();
                     render(family, familyIds, labels, activeNode);
+                    setReady(true);
                     if (!wasFirst) listener.onRegistryChanged();
                 });
             } catch (Exception e) {
                 Log.w(TAG, "branch panel refresh failed", e);
+                main.post(() -> {
+                    if (closed || generation != refreshGeneration) return;
+                    Toast.makeText(context, R.string.disk_info_load_failed, LENGTH_SHORT).show();
+                });
             }
         });
+    }
+
+    private void setReady(boolean value) {
+        ready = value;
+        if (dialog != null && live != null)
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setEnabled(value);
     }
 
     @Nullable
@@ -323,6 +347,8 @@ public final class DiskBranchPanel {
      * attachments go; the editor's rows follow silently and are applied when the panel closes.
      */
     private void showNodeMenu(@NonNull View anchor, @NonNull DiskTree.Node node) {
+        if (!ready) return;
+        final long generation = refreshGeneration;
         var popup = new MaterialMenu(context, anchor);
         popup.inflate(R.menu.menu_disk_tree_node);
         // Reset only makes sense for a writable leaf overlay: a base's content belongs to its
@@ -330,6 +356,7 @@ public final class DiskBranchPanel {
         popup.setItemVisible(R.id.menu_disk_reset,
             node.config.getParentId() != null && !node.hasChildren());
         popup.setOnMenuItemClickListener(item -> {
+            if (closed || !ready || generation != refreshGeneration) return true;
             var actions = new DiskActionDialog(context, null, null);
             int id = item.getItemId();
             if (id == R.id.menu_disk_create_increment) {
@@ -364,7 +391,7 @@ public final class DiskBranchPanel {
             if (observer.isAlive()) observer.removeOnWindowFocusChangeListener(focusListener);
         }
         var rows = new LinkedHashMap<Integer, String>();
-        if (live != null) {
+        if (live != null && ready) {
             var selected = confirmed ? tree.getSelectedId() : null;
             for (var c : liveCursors) {
                 String path;
@@ -378,6 +405,6 @@ public final class DiskBranchPanel {
                 if (path == null || !path.equals(original)) rows.put(c.slot, path);
             }
         }
-        listener.onClosed(new Result(confirmed, rows, !shape.contains(subjectId)));
+        listener.onClosed(new Result(confirmed && ready, rows, ready && !shape.contains(subjectId)));
     }
 }

@@ -40,9 +40,10 @@ public final class DiskDependencyUpdater {
     public static VMStore loadForPlanning(@NonNull Context context) {
         try {
             var client = new VmConfigClient(request -> DaemonConnection.getInstance().request(request));
-            if (client.supported()) return new VMStore(client.read().document());
             var store = new VMStore();
-            if (!store.load(context)) throw new IOException("Cannot read VM disk dependencies");
+            boolean loaded = client.supported()
+                ? store.load(client.read().document()) : store.load(context);
+            if (!loaded) throw new IOException("Cannot read VM disk dependencies");
             return store;
         } catch (Exception error) {
             throw new IllegalStateException("Cannot read VM disk dependencies", error);
