@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskConfigClient;
 import cn.classfun.droidvm.lib.store.base.DiskConfigOwnership;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
@@ -84,16 +86,14 @@ public final class BackingChainLinker {
         var main = new Handler(Looper.getMainLooper());
         runOnPool(() -> {
             try {
-                DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
-                    var store = loadRegistry(context);
+                editRegistry(context, (store, images) -> {
                     var config = store.findById(diskId);
                     if (config == null) throw new IOException("Disk disappeared before chain repair");
                     var hops = new ArrayList<Hop>();
-                    walkChain(store, config.getFullPath(), hops);
-                    if (!hops.isEmpty()) {
-                        registerParents(store, hops);
-                        saveRegistry(context, store);
-                    }
+                    walkChain(store, config.getFullPath(), hops, images);
+                    if (hops.isEmpty()) return false;
+                    registerParents(store, hops);
+                    return true;
                 });
             } catch (Exception e) {
                 Log.w(TAG, "chain repair failed", e);
@@ -124,21 +124,15 @@ public final class BackingChainLinker {
         };
         runOnPool(() -> {
             try {
-                DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
-                    var store = loadRegistry(context);
+                var hops = new ArrayList<Hop>();
+                var missingParent = new String[1];
+                var found = new boolean[1];
+                // Links needing no confirmation (parent already registered) are saved first.
+                editRegistry(context, (store, images) -> {
                     var config = store.findById(diskId);
-                    if (config == null) {
-                        done.run();
-                        return;
-                    }
-                    var hops = new ArrayList<Hop>();
-                    String missingParent = walkChain(store, config.getFullPath(), hops);
-                    if (hops.isEmpty() && missingParent == null) {
-                        done.run();
-                        return;
-                    }
-
-                    // Apply links that need no confirmation (parent already registered).
+                    if (config == null) return false;
+                    found[0] = true;
+                    missingParent[0] = walkChain(store, config.getFullPath(), hops, images);
                     boolean changed = false;
                     for (var hop : hops) {
                         if (hop.registeredParent == null) continue;
@@ -149,13 +143,18 @@ public final class BackingChainLinker {
                             changed = true;
                         }
                     }
-                    if (changed) saveRegistry(context, store);
-
+                    return changed;
+                });
+                if (!found[0] || (hops.isEmpty() && missingParent[0] == null)) {
+                    done.run();
+                    return;
+                }
+                {
                     var toImport = new ArrayList<Hop>();
                     for (var hop : hops)
                         if (hop.registeredParent == null) toImport.add(hop);
 
-                    final var missing = missingParent;
+                    final var missing = missingParent[0];
                     new Handler(Looper.getMainLooper()).post(() -> {
                         if (missing != null) {
                             new MaterialAlertDialogBuilder(context)
@@ -183,7 +182,7 @@ public final class BackingChainLinker {
                             })
                             .show();
                     });
-                });
+                }
             } catch (Exception e) {
                 Log.w(TAG, "backing chain link failed", e);
                 new Handler(Looper.getMainLooper()).post(() -> Toast.makeText(context,
@@ -197,17 +196,51 @@ public final class BackingChainLinker {
      * Walk the chain upward from {@code startPath}, absolutizing headers as it goes. Fills
      * {@code hops} child-first; returns the path of a missing parent file, or null.
      */
-    @Nullable
-    private static String walkChain(
-        @NonNull DiskStore store, @NonNull String startPath, @NonNull List<Hop> hops) throws Exception {
-        return walkChain(store, startPath, hops, new Images() {
-            public Header inspect(String path) throws Exception {
-                var info = ImageUtils.getImageInfo(path);
-                var raw = info.optString("backing-filename", "");
-                return new Header(raw, info.optString("full-backing-filename", raw));
+    private static final Images LEGACY_IMAGES = new Images() {
+        public Header inspect(String path) throws Exception {
+            var info = ImageUtils.getImageInfo(path);
+            var raw = info.optString("backing-filename", "");
+            return new Header(raw, info.optString("full-backing-filename", raw));
+        }
+        public boolean exists(String path) { return new File(path).exists(); }
+        public void rebase(String path, String backing) throws Exception { ImageUtils.rebaseBacking(path, backing); }
+    };
+
+    /**
+     * The native daemon owns registered images: it resolves relative header names against the
+     * image's own path and pins every parent by lease, so the client never rewrites headers.
+     */
+    private static final Images NATIVE_IMAGES = new Images() {
+        public Header inspect(String path) throws Exception { return LEGACY_IMAGES.inspect(path); }
+        public boolean exists(String path) { return LEGACY_IMAGES.exists(path); }
+        public void rebase(String path, String backing) { }
+    };
+
+    interface RegistryWork {
+        /** True when the registry changed and must be saved. */
+        boolean run(DiskStore store, Images images) throws Exception;
+    }
+
+    /**
+     * One registry edit: a revisioned native session when the daemon owns disks, otherwise the
+     * legacy file under its ownership gate. Untouched rows and root extensions stay exact.
+     */
+    private static void editRegistry(@NonNull Context context, @NonNull RegistryWork work) throws Exception {
+        var client = new DiskConfigClient(request -> DaemonConnection.getInstance().request(request));
+        if (client.readSupported()) {
+            var session = client.edit();
+            var document = session.document();
+            var store = new DiskStore();
+            if (!store.load(document)) throw new IOException("Cannot read disk registry");
+            if (work.run(store, NATIVE_IMAGES)) {
+                document.put("disks", store.toJson().getJSONArray("disks"));
+                session.save(document);
             }
-            public boolean exists(String path) { return new File(path).exists(); }
-            public void rebase(String path, String backing) throws Exception { ImageUtils.rebaseBacking(path, backing); }
+            return;
+        }
+        DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
+            var store = loadRegistry(context);
+            if (work.run(store, LEGACY_IMAGES)) saveRegistry(context, store);
         });
     }
 
@@ -258,19 +291,18 @@ public final class BackingChainLinker {
     public static void repairAllBlocking(
         @NonNull Context context, @NonNull List<String> paths) throws Exception {
         if (paths.isEmpty()) return;
-        DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
-            var store = loadRegistry(context);
+        editRegistry(context, (store, images) -> {
             var hops = new ArrayList<Hop>();
             for (var path : paths) {
                 var config = store.findByPath(path);
                 if (config != null) {
-                    var missing = walkChain(store, config.getFullPath(), hops);
+                    var missing = walkChain(store, config.getFullPath(), hops, images);
                     if (missing != null) throw new IOException("Missing backing image: " + missing);
                 }
             }
-            if (hops.isEmpty()) return;
+            if (hops.isEmpty()) return false;
             registerParents(store, hops);
-            saveRegistry(context, store);
+            return true;
         });
     }
 
@@ -278,10 +310,9 @@ public final class BackingChainLinker {
     private static void registerParents(
         @NonNull Context context, @NonNull List<Hop> toImport, @Nullable Runnable onUpdate) {
         try {
-            DiskConfigOwnership.legacyWrite(context.getFilesDir(), () -> {
-                var store = loadRegistry(context);
+            editRegistry(context, (store, images) -> {
                 registerParents(store, toImport);
-                saveRegistry(context, store);
+                return true;
             });
         } catch (Exception e) {
             Log.w(TAG, "parent registration failed", e);

@@ -451,14 +451,18 @@ public final class DiskDownloadManager {
         return current;
     }
 
-    private static DiskConfig registerDisk(Context ctx, String name, String folder) {
-        var store = new DiskStore();
-        store.load(ctx);
+    /** Registers through the native registry when it owns disks; a failure is reported, not dropped. */
+    private static DiskConfig registerDisk(Context ctx, String name, String folder) throws IOException {
         var config = new DiskConfig();
         config.setName(name);
         config.item.set("folder", folder);
-        store.add(config);
-        store.save(ctx);
+        try {
+            DiskStore.register(ctx, config);
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IOException("Cannot register downloaded disk", e);
+        }
         return config;
     }
 

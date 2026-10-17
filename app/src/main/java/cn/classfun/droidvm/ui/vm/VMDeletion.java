@@ -28,6 +28,8 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskConfigClient;
+import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.store.base.VmConfigOwnership;
 import org.json.JSONObject;
@@ -146,6 +148,17 @@ public final class VMDeletion {
     ) {
         if (requestedPaths.isEmpty()) return;
         try {
+            var operations = new DiskOperationClient(request -> DaemonConnection.getInstance().request(request));
+            if (operations.actions().contains("delete")) {
+                cleanupNativeDisks(context, vmId, requestedPaths, operations);
+                return;
+            }
+        } catch (Exception error) {
+            Log.w(TAG, "Native disk cleanup unavailable", error);
+            showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
+            return;
+        }
+        try {
             // Config attachments cannot change or transition to native ownership
             // between the reference scan and file removal. Native cleanup needs
             // its own service transaction; the persistent gate refuses it here.
@@ -235,6 +248,64 @@ public final class VMDeletion {
             Log.w(TAG, "Failed to clean up disks after VM deletion", e);
             showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
         }
+    }
+
+    /**
+     * Native owner: each registered leaf goes through one leased daemon delete (row and file
+     * together), repeated so overlays go before their bases; references are re-read each round.
+     */
+    private static void cleanupNativeDisks(
+        @NonNull Context context,
+        @NonNull UUID vmId,
+        @NonNull LinkedHashSet<String> requestedPaths,
+        @NonNull DiskOperationClient operations
+    ) {
+        var rpc = (VmConfigClient.Rpc) request -> DaemonConnection.getInstance().request(request);
+        int deleted = 0, attachedByOthers = 0, failed = 0;
+        var candidates = new LinkedHashSet<>(requestedPaths);
+        try {
+            var vmStore = new VMStore(new VmConfigClient(rpc).read().document());
+            if (vmStore.findById(vmId) != null) {
+                showResult(context, new Outcome(0, 0, 0, requestedPaths.size()));
+                return;
+            }
+            var referenced = VmDiskSharing.pathsAttachedByOthers(vmStore, vmId);
+            for (var path : requestedPaths) {
+                if (referenced.contains(path)) { attachedByOthers++; candidates.remove(path); }
+            }
+            boolean progress;
+            do {
+                progress = false;
+                var diskStore = new DiskStore(new DiskConfigClient(rpc).read().document());
+                for (var path : new ArrayList<>(candidates)) {
+                    var registrations = registrationsForPath(diskStore, path);
+                    if (registrations.size() > 1) { candidates.remove(path); failed++; continue; }
+                    if (registrations.isEmpty()) {
+                        // Not a registered image: outside the daemon's registry, as before.
+                        var file = new File(path);
+                        if (!file.exists() || file.isFile() && file.delete()) deleted++;
+                        else failed++;
+                        candidates.remove(path);
+                        continue;
+                    }
+                    var disk = registrations.get(0);
+                    if (diskStore.hasChildren(disk.getId())) continue;
+                    var status = operations.await(operations.start(new JSONObject().put("action", "delete")
+                        .put("disk_id", disk.getId().toString()).put("delete_files", true)));
+                    candidates.remove(path);
+                    if (status.succeeded()) deleted++;
+                    else failed++;
+                    progress = true;
+                    break; // The registry changed: re-read before the next decision.
+                }
+            } while (progress && !candidates.isEmpty());
+        } catch (Exception e) {
+            Log.w(TAG, "Native disk cleanup after VM deletion stopped", e);
+            failed += candidates.size();
+            candidates.clear();
+        }
+        // Whatever is left is a base of overlays this VM did not own.
+        showResult(context, new Outcome(deleted, attachedByOthers, candidates.size(), failed));
     }
 
     @NonNull
