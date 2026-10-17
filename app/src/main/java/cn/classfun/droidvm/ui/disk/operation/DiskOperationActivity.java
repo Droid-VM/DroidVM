@@ -309,8 +309,9 @@ public final class DiskOperationActivity extends AppCompatActivity {
             }
             runOnUiThread(() -> tvFilename.setText(diskName));
             // The daemon owns registered disks once it offers native operations: no su shell.
-            if (diskConfig != null && !nativeActions.isEmpty()) {
-                runNative(taskJsonStr, nativeActions);
+            // A new disk is created and registered by the daemon from its path.
+            if (!nativeActions.isEmpty() && (diskConfig != null || isCreate(taskJsonStr))) {
+                runNative(taskJsonStr, diskPath, nativeActions);
                 return;
             }
             final String cmd;
@@ -442,8 +443,21 @@ public final class DiskOperationActivity extends AppCompatActivity {
      * (for example converting into a different file), so nothing runs.
      */
     @Nullable
-    static JSONObject nativeRequest(@NonNull JSONObject task, @NonNull DiskConfig disk) throws Exception {
+    static JSONObject nativeRequest(
+        @NonNull JSONObject task, @Nullable DiskConfig disk, @NonNull String path) throws Exception {
         var action = task.optString("action", "");
+        if (action.equals("create")) {
+            // Only a registered backing can be pinned by the daemon's leases.
+            if (disk != null || task.has("backing_path") || !path.startsWith("/")) return null;
+            var request = new JSONObject().put("action", action).put("folder", dirname(path)).put("name", basename(path))
+                .put("format", task.getString("format")).put("size", Long.parseLong(task.getString("size")));
+            if (task.has("backing_id")) request.put("backing_id", task.getString("backing_id"));
+            var compress = task.optString("compress", "none");
+            if (!compress.equals("none")) request.put("compress", compress);
+            if (task.optBoolean("preallocate", false)) request.put("preallocate", true);
+            return request;
+        }
+        if (disk == null) return null;
         var request = new JSONObject().put("action", action).put("disk_id", disk.getId().toString());
         switch (action) {
             case "resize":
@@ -472,12 +486,17 @@ public final class DiskOperationActivity extends AppCompatActivity {
         }
     }
 
-    private void runNative(@NonNull String taskJson, @NonNull java.util.Set<String> actions) {
+    private static boolean isCreate(@NonNull String taskJson) {
+        try { return "create".equals(new JSONObject(taskJson).optString("action")); }
+        catch (Exception e) { return false; }
+    }
+
+    private void runNative(@NonNull String taskJson, @NonNull String path, @NonNull java.util.Set<String> actions) {
         final JSONObject request;
         try {
             var task = new JSONObject(taskJson);
             taskAction = task.optString("action", "");
-            request = nativeRequest(task, diskConfig);
+            request = nativeRequest(task, diskConfig, path);
         } catch (Exception e) {
             Log.e(TAG, "Bad native disk task", e);
             runOnUiThread(() -> showFailed(getString(R.string.disk_operation_bad_task)));

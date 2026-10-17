@@ -40,12 +40,15 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.SimpleTextWatcher;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
+import cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextInputRowWidget;
@@ -275,23 +278,12 @@ public final class DiskCreateActivity extends AppCompatActivity {
         // Link the overlay to its registered backing so the tree and lock rules see it. A
         // manually-typed backing path counts too when it resolves to a registered disk.
         var manualBacking = backing;
-        runOnPool(() -> {
-            var store = new DiskStore();
-            store.load(this);
-            if (backingId != null) {
-                config.setParentId(backingId);
-            } else if (!manualBacking.isEmpty()) {
-                var registered = store.findByPath(manualBacking);
-                if (registered != null) config.setParentId(registered.getId());
-            }
-            store.add(config);
-            store.save(this);
-        });
+        final JSONObject obj;
         try {
             DiskFormat format = chooseFormat.getSelectedItem();
             DiskCompress compress = chooseCompress.getSelectedItem();
             var preallocate = switchPreallocate.isChecked() && supportsPreallocate(format);
-            var obj = new JSONObject();
+            obj = new JSONObject();
             obj.put("action", "create");
             obj.put("format", format.name().toLowerCase());
             obj.put("size", String.valueOf(sizeBytes));
@@ -302,18 +294,53 @@ public final class DiskCreateActivity extends AppCompatActivity {
                 obj.put("backing_id", backingId.toString());
             } else if (!backing.isEmpty() && format == DiskFormat.QCOW2)
                 obj.put("backing_path", backing);
-            var intent = createIntent(this, config.getId(), obj);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to build create task", e);
+            return;
+        }
+        runOnPool(() -> {
+            final Intent intent;
+            try {
+                var store = DiskStore.loadForPlanning(this);
+                if (backingId != null) {
+                    config.setParentId(backingId);
+                } else if (!manualBacking.isEmpty()) {
+                    var registered = store.findByPath(manualBacking);
+                    if (registered != null) config.setParentId(registered.getId());
+                }
+                var operations = new DiskOperationClient(r -> DaemonConnection.getInstance().request(r));
+                if (operations.actions().contains("create")) {
+                    // The daemon creates and registers in one operation; only a registered
+                    // backing can be pinned by its leases.
+                    if (obj.has("backing_path")) {
+                        if (config.getParentId() == null) throw new IllegalStateException("Backing disk is not registered");
+                        obj.remove("backing_path");
+                        obj.put("backing_id", config.getParentId().toString());
+                    }
+                    intent = new Intent(this, DiskOperationActivity.class);
+                    intent.putExtra(DiskOperationActivity.EXTRA_DISK_PATH, config.getFullPath());
+                    intent.putExtra(DiskOperationActivity.EXTRA_DISK_NAME, name);
+                    intent.putExtra(DiskOperationActivity.EXTRA_TASK_JSON, obj.toString());
+                } else {
+                    store.add(config);
+                    store.save(this);
+                    intent = createIntent(this, config.getId(), obj);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to start create activity", e);
+                runOnUiThread(() -> inputName.setError(String.valueOf(e.getMessage())));
+                return;
+            }
             // A create that worked needs no success screen: the new disk showing up (in the
             // list, or in the VM row that asked for it) is the feedback. Failures still stay.
-            intent.putExtra(cn.classfun.droidvm.ui.disk.operation.DiskOperationActivity
-                .EXTRA_AUTOFINISH, true);
-            startActivity(intent);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to start create activity", e);
-        }
-        var resultData = new Intent();
-        resultData.putExtra("result_disk_path", config.getFullPath());
-        setResult(RESULT_OK, resultData);
-        finish();
+            intent.putExtra(DiskOperationActivity.EXTRA_AUTOFINISH, true);
+            runOnUiThread(() -> {
+                startActivity(intent);
+                var resultData = new Intent();
+                resultData.putExtra("result_disk_path", config.getFullPath());
+                setResult(RESULT_OK, resultData);
+                finish();
+            });
+        });
     }
 }
