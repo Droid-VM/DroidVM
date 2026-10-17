@@ -179,18 +179,26 @@ public final class AssetUtils {
             final var tgtAsset = pathJoin(type, SUPPORTED_ABIS[0], name);
             final var tgtFile = new File(context.getDataDir(), pathJoin(type, name));
             Log.i(TAG, fmt("Extracting %s %s from asset %s", name, type, tgtAsset));
-            if (tgtFile.exists() && tgtFile.delete())
-                Log.d(TAG, fmt("Deleted old %s file: %s", type, tgtFile));
-            Log.d(TAG, context.getApplicationInfo().nativeLibraryDir);
+            // A running binary (droidvmd) cannot be rewritten in place (ETXTBSY), and the
+            // directory may be root-owned: stage a complete copy, then swap the entry so the
+            // running process keeps its old inode.
+            var staged = new File(context.getCacheDir(), fmt("%s-%s.extract", type, name));
             try (var in = context.getAssets().open(tgtAsset);
-                var out = new FileOutputStream(tgtFile)) {
+                var out = new FileOutputStream(staged)) {
                 copyStream(in, out);
             } catch (IOException e) {
                 Log.e(TAG, fmt("Failed to extract: %s", tgtAsset), e);
+                if (!staged.delete()) Log.w(TAG, fmt("Failed to remove staged %s", staged));
                 continue;
             }
-            if (!tgtFile.setExecutable(true, false))
-                Log.w(TAG, fmt("Failed to set executable permission on %s", tgtFile));
+            if (!staged.setExecutable(true, false))
+                Log.w(TAG, fmt("Failed to set executable permission on %s", staged));
+            if (!staged.renameTo(tgtFile)
+                && !RunUtils.runList("mv", "-f", staged.getAbsolutePath(), tgtFile.getAbsolutePath()).isSuccess()) {
+                Log.e(TAG, fmt("Failed to install extracted %s", tgtFile));
+                if (!staged.delete()) Log.w(TAG, fmt("Failed to remove staged %s", staged));
+                continue;
+            }
             var hash = getAssetHash(context, tgtAsset, hashFile);
             localHash.put(pathJoin(type, name), hash);
         }
