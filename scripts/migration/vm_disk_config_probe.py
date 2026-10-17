@@ -128,7 +128,7 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
     shell([tool, "create", "-q", "-f", "raw", images + "/base.raw", "1M"], check=True)
     shell(["sh", "-c", f"printf BASEDATA | dd of={images}/base.raw conv=notrunc 2>/dev/null"], check=True)
     shell([tool, "create", "-q", "-f", "qcow2", "-F", "raw", "-b", images + "/base.raw", images + "/ov.qcow2"], check=True)
-    process, pid, local, _, token = start("--vm-disks")
+    process, pid, local, remote, token = start("--vm-disks")
 
     def finish(sock, started):
         assert started["success"], started
@@ -193,6 +193,16 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
               and all(row["id"] != tcp_id for row in json.loads(read("disks.json"))["disks"]), "TCP delete removes row and file")
         check(exchange(sock, "disk_operation_recover")["pending"] == 0
               and "disk_operations.json" in shell(["ls", directory]).stdout, "no unrecovered disk operations")
+    java = shell(["am", "instrument", "-w", "-r", "-e", "class",
+                  "cn.classfun.droidvm.migration.DiskOperationTcpTest", "-e", "port", remote,
+                  "-e", "token", token, "-e", "images", images,
+                  "cn.classfun.droidvm.migration.test/androidx.test.runner.AndroidJUnitRunner"], timeout=120)
+    (output / "java-disk-operation-tests.txt").write_text(java.stdout + java.stderr, encoding="utf-8")
+    check(java.returncode == 0 and "OK (1 test)" in java.stdout,
+          "production Java disk operation client: create, stale revision, resize, lost reply, delete")
+    listing = shell(["ls", "-a", images]).stdout
+    check(not any(name in listing for name in ("java.raw", "java-copy.raw", ".dvm-")),
+          "Java-driven operations leave no images or temporaries")
     maps = shell(["cat", f"/proc/{pid}/maps"], check=True).stdout
     check("libart.so" not in maps and "libjvm" not in maps, "disk operation fixture has no ART/JVM")
     stop(process, pid)

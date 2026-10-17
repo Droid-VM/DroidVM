@@ -862,6 +862,9 @@
     <string name="disk_operation_running">قيد التنفيذ\u2026</string>
     <string name="disk_operation_success">اكتملت بنجاح.</string>
     <string name="disk_operation_failed">فشلت العملية (رمز الخروج %1$d).</string>
+    <string name="disk_operation_native_unsupported">لا تدعم خدمة الأقراص هذه العملية.</string>
+    <string name="disk_operation_native_failed">فشلت العملية: %1$s</string>
+    <string name="disk_operation_native_unknown">النتيجة غير معروفة. أعد تحميل قائمة الأقراص قبل المحاولة مرة أخرى.</string>
     <string name="disk_operation_finalizing">جارٍ حفظ تبعيات القرص...</string>
     <string name="disk_operation_dependency_failed">اكتملت معالجة بيانات القرص، ولكن تعذر حفظ تبعيات الجهاز الافتراضي/القرص. تم الإبقاء على الصورة الأصلية قدر الإمكان.</string>
     <string name="disk_operation_bad_task">معلمات المهمة غير صالحة.</string>

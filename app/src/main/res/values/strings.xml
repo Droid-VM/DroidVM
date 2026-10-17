@@ -863,6 +863,9 @@
     <string name="disk_operation_running">Running\u2026</string>
     <string name="disk_operation_success">Completed successfully.</string>
     <string name="disk_operation_failed">Failed (exit code %1$d).</string>
+    <string name="disk_operation_native_unsupported">The disk service cannot run this operation.</string>
+    <string name="disk_operation_native_failed">Failed: %1$s</string>
+    <string name="disk_operation_native_unknown">The result is unknown. Reload the disk list before trying again.</string>
     <string name="disk_operation_finalizing">Saving disk dependencies...</string>
     <string name="disk_operation_dependency_failed">The disk data operation finished, but its VM/disk dependencies could not be saved. The source image was kept when possible.</string>
     <string name="disk_operation_bad_task">Invalid task parameters.</string>
