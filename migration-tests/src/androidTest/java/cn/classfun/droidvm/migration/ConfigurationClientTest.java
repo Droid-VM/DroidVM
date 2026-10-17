@@ -53,6 +53,8 @@ public final class ConfigurationClientTest {
                 .put("vms", new JSONObject(result.toString()).put("revision", "vm-saved"))
                 .put("disks", new JSONObject(result.toString()));
             if (mode.equals("missing-vms")) pair.remove("vms");
+            if (mode.equals("uncertain-success")) pair.getJSONObject("disks").put("durability_uncertain", true);
+            if (mode.equals("unpersisted-success")) pair.getJSONObject("vms").put("persisted", false);
             return pair;
         }
     }
@@ -77,6 +79,40 @@ public final class ConfigurationClientTest {
         assertThrows(IOException.class, () -> edit.save(vms, disks));
     }
 
+    @Test public void jointImportReplacesAndAppendsWithoutLosingUnrelatedData() throws Exception {
+        var backend = new Backend();
+        backend.vm.document.getJSONArray("vms").put(new JSONObject().put("id", "existing").put("old", true));
+        var originalDisk = backend.disk.document.getJSONArray("disks").getJSONObject(0);
+        var disks = new JSONArray().put(new JSONObject(originalDisk.toString()).put("imported", true));
+        var vms = new JSONArray().put(new JSONObject().put("id", "existing").put("updated", true))
+            .put(new JSONObject().put("id", "new").put("integer", 9007199254740993L));
+        var edit = new ConfigurationClient(backend).edit();
+        edit.merge(vms, disks);
+        var saved = new JSONObject(backend.upload.uploaded.toString(StandardCharsets.UTF_8.name()));
+        assertEquals(1, backend.upload.commits);
+        assertEquals(2, saved.getJSONObject("vms").getJSONArray("vms").length());
+        assertFalse(saved.getJSONObject("vms").getJSONArray("vms").getJSONObject(0).has("old"));
+        assertEquals(9007199254740993L, saved.getJSONObject("vms").getLong("root"));
+        assertEquals(9007199254740993L, saved.getJSONObject("vms").getJSONArray("vms").getJSONObject(1).getLong("integer"));
+        var savedDisks = saved.getJSONObject("disks").getJSONArray("disks");
+        assertEquals(2, savedDisks.length()); assertTrue(savedDisks.getJSONObject(0).getBoolean("imported"));
+        assertEquals(backend.disk.document.getJSONArray("disks").getJSONObject(1).toString(), savedDisks.getJSONObject(1).toString());
+        assertThrows(IOException.class, () -> edit.merge(vms, disks));
+    }
+
+    @Test public void invalidSecondImportDoesNotSubmitFirstAndCanBeCorrected() throws Exception {
+        var backend = new Backend(); var edit = new ConfigurationClient(backend).edit();
+        var vms = new JSONArray().put(new JSONObject().put("id", "new"));
+        var disk = backend.disk.document.getJSONArray("disks").getJSONObject(0);
+        assertThrows(IOException.class, () -> edit.merge(vms, new JSONArray().put(disk).put(disk)));
+        assertEquals(0, backend.begins); assertEquals(0, backend.upload.commits);
+        assertEquals(0, edit.vms().getJSONArray("vms").length());
+        edit.merge(vms, null);
+        var saved = new JSONObject(backend.upload.uploaded.toString(StandardCharsets.UTF_8.name()));
+        assertEquals(edit.disks().toString(), saved.getJSONObject("disks").toString());
+        assertEquals(1, backend.upload.commits);
+    }
+
     @Test public void capabilityAbsenceIsNotLegacyPermissionAndPartialApiFails() throws Exception {
         assertFalse(new ConfigurationClient(r -> new JSONObject().put("success", true)).supported());
         assertThrows(IOException.class, () -> new ConfigurationClient(r -> new JSONObject().put("success", true)).edit());
@@ -92,7 +128,7 @@ public final class ConfigurationClientTest {
     }
 
     @Test public void commitFailuresNeverRetryAbortOrRebase() throws Exception {
-        for (String mode : new String[]{"lost", "malformed", "missing-vms", "CONFLICT", "COMMIT_UNCERTAIN", "INTERNAL"}) {
+        for (String mode : new String[]{"lost", "malformed", "missing-vms", "uncertain-success", "unpersisted-success", "CONFLICT", "COMMIT_UNCERTAIN", "INTERNAL"}) {
             var backend = new Backend(); backend.mode = mode;
             var edit = new ConfigurationClient(backend).edit();
             if (mode.equals("CONFLICT") || mode.equals("COMMIT_UNCERTAIN"))

@@ -53,6 +53,8 @@ import cn.classfun.droidvm.lib.api.ApiManager;
 import cn.classfun.droidvm.lib.api.Privacy;
 import cn.classfun.droidvm.daemon.vm.UsbAcmPool;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
+import cn.classfun.droidvm.lib.daemon.ConfigurationClient;
+import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.data.Language;
 import cn.classfun.droidvm.lib.store.base.DataConfig;
@@ -653,23 +655,40 @@ public final class MainSettingsFragment extends MainBaseFragment {
                 for (String key : new String[]{"networks", "disks", "vms"})
                     if (importJson.has(key)) importJson.getJSONArray(key);
                 int count = 0;
+                ConfigurationClient.EditSession joint = null;
+                org.json.JSONArray importedVms = null, importedDisks = null;
+                if (importJson.has("vms") || importJson.has("disks")) {
+                    var client = new ConfigurationClient(request -> DaemonConnection.getInstance().request(request));
+                    if (client.supported()) {
+                        // Parse/migrate before the first write; capture both revisions once.
+                        if (importJson.has("vms")) importedVms = new VMStore(importJson).toJson().getJSONArray("vms");
+                        if (importJson.has("disks")) importedDisks = new DiskStore(importJson).toJson().getJSONArray("disks");
+                        joint = client.edit();
+                    }
+                }
                 // Dependencies must exist before the VM service validates NICs.
-                // These remain separate commits; report completed categories if
-                // a later category conflicts or has an unknown result.
+                // Network and VM/disk remain separate commits; report completed
+                // categories if the later transaction conflicts or is uncertain.
                 if (importJson.has("networks")) {
                     loadStore(ctx, NetworkStore.class, importJson);
                     completed.add("networks");
                     count++;
                 }
-                if (importJson.has("disks")) {
-                    loadStore(ctx, DiskStore.class, importJson);
-                    completed.add("disks");
-                    count++;
-                }
-                if (importJson.has("vms")) {
-                    loadStore(ctx, VMStore.class, importJson);
-                    completed.add("VM");
-                    count++;
+                if (joint != null) {
+                    joint.merge(importedVms, importedDisks);
+                    if (importedDisks != null) { completed.add("disks"); count++; }
+                    if (importedVms != null) { completed.add("VM"); count++; }
+                } else {
+                    if (importJson.has("disks")) {
+                        loadStore(ctx, DiskStore.class, importJson);
+                        completed.add("disks");
+                        count++;
+                    }
+                    if (importJson.has("vms")) {
+                        loadStore(ctx, VMStore.class, importJson);
+                        completed.add("VM");
+                        count++;
+                    }
                 }
                 final int imported = count;
                 mainHandler.post(() -> Toast.makeText(ctx,

@@ -143,20 +143,7 @@ public final class VmConfigClient {
             if (reloadRequired) throw new IOException("Reload configuration before saving again");
             if (configs.length() == 0) return;
             JSONObject next = document();
-            JSONArray vms = next.getJSONArray("vms");
-            var positions = new java.util.HashMap<String, Integer>();
-            for (int i = 0; i < vms.length(); i++)
-                positions.put(vms.getJSONObject(i).getString("id"), i);
-            var targets = new java.util.HashSet<String>();
-            for (int i = 0; i < configs.length(); i++) {
-                JSONObject config = configs.getJSONObject(i);
-                String id = config.getString("id");
-                Integer index = positions.get(id);
-                if (!targets.add(id)) throw new IOException("Repeated VM in configuration update");
-                if (create != null && create == (index != null)) throw new IOException("VM no longer matches the editor baseline");
-                // Detach caller-owned objects; large batches use the existing chunk upload.
-                vms.put(index == null ? vms.length() : index, new JSONObject(config.toString()));
-            }
+            mergeRows(next.getJSONArray("vms"), configs, create);
             commitEdit(next, () -> replace(revision, next));
         }
         public synchronized void deleteVm(String id) throws IOException, JSONException {
@@ -189,6 +176,22 @@ public final class VmConfigClient {
         }
     }
     private interface Commit { Version run() throws IOException, JSONException; }
+    /** Shared ID-based import; callers supply a private document and publish only on success. */
+    static void mergeRows(JSONArray rows, JSONArray configs, Boolean create) throws IOException, JSONException {
+        var positions = new java.util.HashMap<String, Integer>();
+        for (int i = 0; i < rows.length(); i++)
+            if (positions.put(rows.getJSONObject(i).getString("id"), i) != null)
+                throw new IOException("Repeated identity in configuration baseline");
+        var targets = new java.util.HashSet<String>();
+        for (int i = 0; i < configs.length(); i++) {
+            JSONObject config = configs.getJSONObject(i);
+            String id = config.getString("id");
+            Integer index = positions.get(id);
+            if (!targets.add(id)) throw new IOException("Repeated identity in configuration update");
+            if (create != null && create == (index != null)) throw new IOException("Configuration no longer matches the editor baseline");
+            rows.put(index == null ? rows.length() : index, new JSONObject(config.toString()));
+        }
+    }
     public EditSession edit() throws IOException, JSONException { return new EditSession(read()); }
 
     public Snapshot read() throws IOException, JSONException {
