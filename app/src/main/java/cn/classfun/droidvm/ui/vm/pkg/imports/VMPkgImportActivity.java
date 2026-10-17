@@ -504,55 +504,63 @@ public final class VMPkgImportActivity extends AppCompatActivity
         boolean nativeConfig
     ) {
         try {
-            var diskStore = new DiskStore();
-            if (!diskStore.load(this)) throw new IOException("Cannot read imported disk registry");
-            var pathByArchive = new HashMap<String, String>();
-            for (int i = 0; i < disks.length(); i++) {
-                var diskJson = disks.optJSONObject(i);
-                if (diskJson == null) continue;
-                var path = diskJson.optString("path");
-                var file = new File(path);
-                var folder = file.getParent();
-                var name = file.getName();
-                if (path.isEmpty()) {
-                    name = diskJson.optString("name", "");
-                    folder = diskJson.optString("folder", "");
-                    path = pathJoin(folder, name);
-                }
-                var archive = diskJson.optString("archive_path", "");
-                if (!archive.isEmpty() && !path.isEmpty()) pathByArchive.put(archive, path);
-                if (!path.isEmpty() && diskStore.findByPath(path) != null) continue;
-                var disk = new DiskConfig();
-                disk.setName(name);
-                disk.item.set("folder", folder == null ? "" : folder);
-                diskStore.add(disk);
-            }
-            linkImportedChains(diskStore, disks, pathByArchive);
-            // Native import creates networks through its persistent network service.
-            // The legacy Java path still requires the UI to persist that result.
-            if (!nativeConfig) {
-                var networkStore = new NetworkStore();
-                if (!networkStore.load(this)) throw new IOException("Cannot read imported networks");
-                for (int i = 0; i < networks.length(); i++) {
-                    var netJson = networks.optJSONObject(i);
-                    if (netJson == null) continue;
-                    var net = new NetworkConfig(netJson);
-                    if (networkStore.findById(net.getId()) == null) networkStore.add(net);
-                }
-                if (!networkStore.save(this)) throw new IOException("Cannot save imported networks");
-            }
-            if (!diskStore.save(this)) throw new IOException("Cannot save imported disk registry");
-            if (!nativeConfig) {
-                VmConfigOwnership.legacyWrite(getFilesDir(), () -> {
-                    var vmStore = new VMStore();
-                    if (!vmStore.load(this)) throw new IOException("Cannot read VM configuration");
-                    // Replayed completion must not overwrite later edits to an existing VM.
-                    if (vmStore.findById(vm.getId()) == null) {
-                        vmStore.add(vm);
-                        if (!vmStore.save(this)) throw new IOException("Cannot save imported VM");
+            var joint = new cn.classfun.droidvm.lib.daemon.ConfigurationClient(
+                request -> DaemonConnection.getInstance().request(request));
+            if (nativeConfig && joint.supported()) {
+                // The package task owns the joint commit. Completion never writes a second
+                // registry version or recreates entries removed after the task finished.
+                verifyImportedDisks(disks);
+            } else {
+                var diskStore = new DiskStore();
+                if (!diskStore.load(this)) throw new IOException("Cannot read imported disk registry");
+                var pathByArchive = new HashMap<String, String>();
+                for (int i = 0; i < disks.length(); i++) {
+                    var diskJson = disks.optJSONObject(i);
+                    if (diskJson == null) continue;
+                    var path = diskJson.optString("path");
+                    var file = new File(path);
+                    var folder = file.getParent();
+                    var name = file.getName();
+                    if (path.isEmpty()) {
+                        name = diskJson.optString("name", "");
+                        folder = diskJson.optString("folder", "");
+                        path = pathJoin(folder, name);
                     }
-                });
-            }
+                    var archive = diskJson.optString("archive_path", "");
+                    if (!archive.isEmpty() && !path.isEmpty()) pathByArchive.put(archive, path);
+                    if (!path.isEmpty() && diskStore.findByPath(path) != null) continue;
+                    var disk = new DiskConfig();
+                    disk.setName(name);
+                    disk.item.set("folder", folder == null ? "" : folder);
+                    diskStore.add(disk);
+                }
+                linkImportedChains(diskStore, disks, pathByArchive);
+                // Native import creates networks through its persistent network service.
+                // The legacy Java path still requires the UI to persist that result.
+                if (!nativeConfig) {
+                    var networkStore = new NetworkStore();
+                    if (!networkStore.load(this)) throw new IOException("Cannot read imported networks");
+                    for (int i = 0; i < networks.length(); i++) {
+                        var netJson = networks.optJSONObject(i);
+                        if (netJson == null) continue;
+                        var net = new NetworkConfig(netJson);
+                        if (networkStore.findById(net.getId()) == null) networkStore.add(net);
+                    }
+                    if (!networkStore.save(this)) throw new IOException("Cannot save imported networks");
+                }
+                if (!diskStore.save(this)) throw new IOException("Cannot save imported disk registry");
+                if (!nativeConfig) {
+                    VmConfigOwnership.legacyWrite(getFilesDir(), () -> {
+                        var vmStore = new VMStore();
+                        if (!vmStore.load(this)) throw new IOException("Cannot read VM configuration");
+                        // Replayed completion must not overwrite later edits to an existing VM.
+                        if (vmStore.findById(vm.getId()) == null) {
+                            vmStore.add(vm);
+                            if (!vmStore.save(this)) throw new IOException("Cannot save imported VM");
+                        }
+                    });
+                }
+                }
             mainHandler.post(() -> {
                 if (isFinishing() || isDestroyed()) return;
                 setImporting(false);
@@ -567,6 +575,33 @@ public final class VMPkgImportActivity extends AppCompatActivity
             });
         } catch (Exception e) {
             onImportFailure(e.getMessage());
+        }
+    }
+
+    /** Worker-only confirmation; never repair an uncertain import through local files. */
+    private void verifyImportedDisks(JSONArray imported) throws Exception {
+        var client = new cn.classfun.droidvm.lib.daemon.DiskConfigClient(
+            request -> DaemonConnection.getInstance().request(request));
+        var snapshot = client.read();
+        if (!snapshot.persisted || snapshot.durabilityUncertain)
+            throw new IOException("Imported disk registry is not durably confirmed");
+        var store = new DiskStore(snapshot.document());
+        var byArchive = new HashMap<String, DiskConfig>();
+        for (int i = 0; i < imported.length(); i++) {
+            var entry = imported.getJSONObject(i);
+            var disk = store.findByPath(entry.getString("path"));
+            if (disk == null) throw new IOException("Imported disk is no longer registered; reload");
+            if (byArchive.put(entry.getString("archive_path"), disk) != null)
+                throw new IOException("Repeated imported disk archive path");
+        }
+        for (int i = 0; i < imported.length(); i++) {
+            var entry = imported.getJSONObject(i);
+            var disk = byArchive.get(entry.getString("archive_path"));
+            var backing = entry.optString("backing_archive", "");
+            var parent = byArchive.get(backing);
+            if (backing.isEmpty() ? disk.getParentId() != null
+                    : parent == null || !parent.getId().equals(disk.getParentId()))
+                throw new IOException("Imported disk chain changed; reload");
         }
     }
 
