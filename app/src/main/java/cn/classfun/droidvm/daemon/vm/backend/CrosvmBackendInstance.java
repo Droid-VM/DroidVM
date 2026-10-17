@@ -616,7 +616,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             path = patchOptimizedPath(path);
             var readonly = disk.optBoolean("readonly", false);
             var bus = optEnum(disk, "bus", DiskBus.VIRTIO);
-            var arg = new StringBuilder(path);
+            var arg = new StringBuilder(crosvmOptionValue(path));
             switch (bus) {
                 case SCSI:
                     arg.append(",lock=false");

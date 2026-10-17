@@ -154,6 +154,19 @@ public abstract class VMBackendInstance {
         args.add(pathJoin(dir, "strace.log"));
     }
 
+    // Backend option-list encoding; these values never pass through a shell.
+    protected static String qemuOptionValue(@NonNull String value) {
+        if (value.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in QEMU option value");
+        return value.replace(",", ",,");
+    }
+
+    protected static String crosvmOptionValue(@NonNull String value) {
+        if (value.indexOf('\0') >= 0) throw new IllegalArgumentException("NUL in crosvm option value");
+        if (!value.isEmpty() && value.indexOf(',') < 0 && value.indexOf('[') < 0
+                && value.indexOf(']') < 0 && value.indexOf('"') < 0 && value.indexOf('\'') < 0) return value;
+        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
     protected String patchOptimizedPath(@NonNull String path) {
         return FileUtils.patchOptimizedPath(
             path,

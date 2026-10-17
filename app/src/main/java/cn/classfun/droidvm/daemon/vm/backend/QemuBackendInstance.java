@@ -292,6 +292,8 @@ public final class QemuBackendInstance extends VMBackendInstance {
             var path = disk.optString("path", "");
             if (path.isEmpty()) continue;
             path = patchOptimizedPath(path);
+            var filePath = path;
+            path = qemuOptionValue(path);
             var readonly = disk.optBoolean("readonly", false);
             var bus = optEnum(disk, "bus", DiskBus.VIRTIO);
             switch (bus) {
@@ -332,7 +334,7 @@ public final class QemuBackendInstance extends VMBackendInstance {
                 }
                 case PMEM: {
                     var pmId = fmt("pmem%d", pmemCounter++);
-                    long fileSize = new File(path).length();
+                    long fileSize = new File(filePath).length();
                     if (fileSize <= 0) fileSize = 64L * 1024 * 1024;
                     args.add("-object");
                     args.add(fmt("memory-backend-file,id=%s,mem-path=%s,share=on,size=%d",

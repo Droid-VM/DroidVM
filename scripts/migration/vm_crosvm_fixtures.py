@@ -30,6 +30,10 @@ def fixtures():
         tests.append(test)
 
     case("base")
+    for bus in ("virtio", "scsi", "pmem", "cdrom"):
+        for index, path in enumerate(("/data/local/tmp/a,readonly=off,ro=false.img",
+                                      '/data/local/tmp/[a]"b\'c\\d.img', "/data/local/tmp/a\0b")):
+            case(f"disk_path_encoding_{bus}_{index}", disks=[{"path": path, "bus": bus, "readonly": True}])
     case("prepare_process", prepare=True, environment_variables=["FOO=bar", " K = v ", "=x", "bad", 5, "LD_PRELOAD=/x.so"])
     case("kernel_boot", boot=kernel)
     case("kernel_boot_empty", boot={"uefi": False, "kernel": "", "initrd": "", "cmdline": ""})
