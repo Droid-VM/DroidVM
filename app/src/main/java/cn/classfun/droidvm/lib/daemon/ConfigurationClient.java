@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONArray;
 
 /** Worker-only joint registry edits. No image operations, local fallback or automatic retries. */
 public final class ConfigurationClient {
@@ -45,6 +46,8 @@ public final class ConfigurationClient {
         private Result(JSONObject response) throws IOException, JSONException {
             vms = new VmConfigClient.Version(response.getJSONObject("vms"));
             disks = new VmConfigClient.Version(response.getJSONObject("disks"));
+            if (!vms.persisted || !disks.persisted || vms.durabilityUncertain || disks.durabilityUncertain)
+                throw new IOException("Joint configuration durability is not confirmed; reload");
         }
     }
 
@@ -57,6 +60,13 @@ public final class ConfigurationClient {
         }
         public JSONObject vms() throws JSONException { return vmBaseline.document(); }
         public JSONObject disks() throws JSONException { return diskBaseline.document(); }
+        /** Settings import: null means retain that registry, matching IDs replace complete rows. */
+        public synchronized Result merge(JSONArray importedVms, JSONArray importedDisks) throws IOException, JSONException {
+            var vms = vms(); var disks = disks();
+            if (importedVms != null) VmConfigClient.mergeRows(vms.getJSONArray("vms"), importedVms, null);
+            if (importedDisks != null) VmConfigClient.mergeRows(disks.getJSONArray("disks"), importedDisks, null);
+            return save(vms, disks);
+        }
         public synchronized Result save(JSONObject vms, JSONObject disks) throws IOException, JSONException {
             if (submitted) throw new IOException("Reload both configurations before saving again");
             vms.getJSONArray("vms"); disks.getJSONArray("disks");
