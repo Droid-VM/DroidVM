@@ -117,6 +117,9 @@ public final class DaemonHelper {
      * The daemon always owns VM, network and disk configuration; the app has no other writer.
      */
     public boolean startDaemon(boolean force) {
+        // Clearing app data or reinstalling leaves the old daemon running on a deleted run
+        // directory, invisible to the new lock: kill it and the helpers it leaves behind.
+        run(KILL_STALE).printLog("droidvmd-stale");
         var cmd = fmt(
             "%s %s --data-dir %s --apk %s%s --configuration-owner",
             escapedString(getAssetBinaryPath("daemon")),
@@ -155,6 +158,13 @@ public final class DaemonHelper {
         + "for p in $(pidof pbridge netbox bridgedhcp gvswitch); do "
         + "case \"$(readlink /proc/$p/exe)\" in *cn.classfun.droidvm*/bin/*) echo \"orphan $p\"; kill -KILL $p;; esac; done; "
         + "! pidof droidvmd >/dev/null";
+
+    private static final String KILL_STALE =
+        "for p in $(pidof droidvmd); do "
+        + "case \"$(ls -l /proc/$p/fd 2>/dev/null)\" in *'run/droidvmd.lock (deleted)'*) echo \"stale $p\"; kill -KILL $p;; esac; done; "
+        + "sleep 0.2; for p in $(pidof pbridge netbox bridgedhcp gvswitch); do "
+        + "[ \"$(awk '/^PPid/{print $2}' /proc/$p/status)\" = 1 ] || continue; "
+        + "case \"$(readlink /proc/$p/exe)\" in *cn.classfun.droidvm*/bin/*) echo \"orphan $p\"; kill -KILL $p;; esac; done; true";
 
     /** Networks running before a restart are started again, not only auto-up ones. */
     public boolean restartDaemon() {
