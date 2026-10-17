@@ -15,7 +15,7 @@ import org.json.JSONException;
 import org.junit.Test;
 
 public final class DiskConfigClientTest {
-    private static final class Backend implements VmConfigClient.Rpc {
+    static final class Backend implements VmConfigClient.Rpc {
         final JSONObject document = new JSONObject().put("disks", new JSONArray()).put("root", 9007199254740993L);
         int releases;
         String revision = "observed";
