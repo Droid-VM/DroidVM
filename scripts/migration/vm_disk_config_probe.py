@@ -2,6 +2,8 @@
 """Joint registry TCP checks using the isolated runner's lifecycle and cleanup."""
 import base64
 import json
+import time
+import uuid
 
 
 def run(start, stop, connect, exchange, snapshot, check, shell, read, output, directory):
@@ -32,7 +34,7 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
             assert exchange(sock, prefix + suffix)["error"]["code"] == "UNAUTHENTICATED"
     with connect(local, token) as sock:
         caps = exchange(sock, "capabilities")
-        check(caps["service_api_minor"] == 24 and caps["configuration_vm_disks"] == "revisioned-chunks-v1",
+        check(caps["service_api_minor"] == 25 and caps["configuration_vm_disks"] == "revisioned-chunks-v1",
               "joint registry API24 advertised")
         initial = pair(sock)
         states = [entry[1] for entry in initial]
@@ -116,3 +118,68 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
                       f"joint recovery publishes matching documents: {mode} {stage}")
                 persisted(actual)
             stop(process, pid)
+
+    # Native disk operations: the fixture reads <directory>/usr/bin/qemu-img.
+    installed = "/data/data/cn.classfun.droidvm/usr/bin/qemu-img"
+    tool, images = directory + "/usr/bin/qemu-img", directory + "/images"
+    copied = shell(["su", "-c", f"mkdir -p {directory}/usr/bin {images} && cp {installed} {tool} && "
+                    f"chown -R 2000:2000 {directory}/usr {images} && chmod 0755 {tool}"])
+    check(copied.returncode == 0, "isolated qemu-img copy for the fixture")
+    shell([tool, "create", "-q", "-f", "raw", images + "/base.raw", "1M"], check=True)
+    shell(["sh", "-c", f"printf BASEDATA | dd of={images}/base.raw conv=notrunc 2>/dev/null"], check=True)
+    shell([tool, "create", "-q", "-f", "qcow2", "-F", "raw", "-b", images + "/base.raw", images + "/ov.qcow2"], check=True)
+    process, pid, local, _, token = start("--vm-disks")
+
+    def finish(sock, started):
+        assert started["success"], started
+        deadline = time.monotonic() + 30
+        while True:
+            task = exchange(sock, "task_get", epoch=started["epoch"], task_id=started["task_id"])["task"]
+            if task["state"] in ("succeeded", "failed", "cancelled"):
+                return task
+            check(time.monotonic() < deadline, "disk operation task completes")
+            time.sleep(.02)
+
+    def image(path):
+        return json.loads(shell([tool, "info", "--output=json", path], check=True).stdout)
+
+    with connect(local) as sock:
+        assert exchange(sock, "disk_operation_start")["error"]["code"] == "UNAUTHENTICATED"
+    with connect(local, token) as sock:
+        caps = exchange(sock, "capabilities")
+        check(caps["service_api_minor"] == 25 and caps["disk_operations"] == "revisioned-tasks-v1"
+              and {"disk_operation_start", "disk_operation_recover"} <= set(caps["commands"])
+              and caps["disk_operation_actions"] == ["resize", "convert", "flatten"], "disk operations API25 advertised")
+        states = pair(sock)
+        documents = [entry[2] for entry in states]
+        base_id, overlay_id = str(uuid.uuid4()), str(uuid.uuid4())
+        documents[1] = dict(documents[1], disks=documents[1]["disks"] + [
+            {"id": base_id, "name": "base.raw", "folder": images},
+            {"id": overlay_id, "name": "ov.qcow2", "folder": images, "parent": base_id}])
+        assert exchange(sock, prefix + "commit", upload_id=upload(sock, [e[1] for e in states], documents))["success"]
+        revision = exchange(sock, "disk_config_status")["revision"]
+        assert exchange(sock, "disk_operation_start", disk_revision="stale", disk_id=overlay_id,
+                        action="flatten")["error"]["code"] == "CONFLICT"
+        assert exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=overlay_id,
+                        action="flatten", output="/elsewhere")["error"]["code"] == "INVALID_ARGUMENT"
+        assert exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=base_id,
+                        action="convert")["error"]["code"] == "CONFLICT"
+        check(True, "disk operation admission: stale revision, unknown field and base with overlays")
+        task = finish(sock, exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=overlay_id,
+                                     action="resize", size=2097152))
+        info = image(images + "/ov.qcow2")
+        check(task["state"] == "succeeded" and task["kind"] == "disk_operation" and info["virtual-size"] == 2097152
+              and info["backing-filename"] == images + "/base.raw", "TCP resize keeps overlay backing")
+        check(exchange(sock, "disk_config_status")["revision"] == revision, "resize leaves the registry unchanged")
+        task = finish(sock, exchange(sock, "disk_operation_start", disk_revision=revision, disk_id=overlay_id,
+                                     action="flatten", compress="zstd"))
+        info = image(images + "/ov.qcow2")
+        rows = {row["id"]: row for row in json.loads(read("disks.json"))["disks"]}
+        check(task["state"] == "succeeded" and "backing-filename" not in info and "parent" not in rows[overlay_id]
+              and info["format-specific"]["data"]["compression-type"] == "zstd"
+              and exchange(sock, "disk_config_status")["revision"] != revision, "TCP flatten persists standalone link")
+        check(exchange(sock, "disk_operation_recover")["pending"] == 0
+              and "disk_operations.json" in shell(["ls", directory]).stdout, "no unrecovered disk operations")
+    maps = shell(["cat", f"/proc/{pid}/maps"], check=True).stdout
+    check("libart.so" not in maps and "libjvm" not in maps, "disk operation fixture has no ART/JVM")
+    stop(process, pid)
