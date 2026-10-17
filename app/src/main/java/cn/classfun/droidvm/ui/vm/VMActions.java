@@ -548,11 +548,10 @@ public final class VMActions {
             // the overlay tree (or images rebased outside the app) lock correctly from here on.
             // Cheap and unambiguous at this point: a chain whose members are all present is
             // exactly the case where linking is right, and a broken one can't boot anyway.
-            BackingChainLinker.repairAllBlocking(appContext, qcow2DiskPaths(config));
             var lockedPaths = new ArrayList<String>();
             try {
-                var diskStore = new DiskStore();
-                diskStore.load(appContext);
+                BackingChainLinker.repairAllBlocking(appContext, qcow2DiskPaths(config));
+                var diskStore = DiskStore.loadForPlanning(appContext);
                 for (var path : VmDiskSharing.attachedPaths(config, true)) {
                     var registered = diskStore.findByPath(path);
                     if (registered != null && diskStore.hasChildren(registered.getId()))
@@ -560,6 +559,8 @@ public final class VMActions {
                 }
             } catch (Exception e) {
                 Log.w(TAG, "locked-parent check failed", e);
+                showError(mainHandler, ui, e.getMessage());
+                return;
             }
             if (lockedPaths.isEmpty()) {
                 mainHandler.post(proceed);
