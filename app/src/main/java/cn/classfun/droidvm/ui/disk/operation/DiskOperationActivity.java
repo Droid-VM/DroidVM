@@ -36,6 +36,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.UUID;
@@ -45,6 +46,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.lib.utils.RunUtils;
 import cn.classfun.droidvm.lib.ui.termux.SimpleTerminalSessionClient;
 import cn.classfun.droidvm.lib.ui.termux.TerminalPanelView;
@@ -502,6 +504,9 @@ public final class DiskOperationActivity extends AppCompatActivity {
             var task = new JSONObject(taskJson);
             taskAction = task.optString("action", "");
             request = nativeRequest(task, diskConfig, path);
+            // The settings' qemu-img cores, bound by the daemon as taskset did.
+            var cpus = CpuUtils.parseCpuSet(MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext()));
+            if (request != null && !cpus.isEmpty()) request.put("cpus", new JSONArray(cpus));
         } catch (Exception e) {
             Log.e(TAG, "Bad native disk task", e);
             runOnUiThread(() -> showFailed(getString(R.string.disk_operation_bad_task)));

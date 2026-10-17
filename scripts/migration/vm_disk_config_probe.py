@@ -34,7 +34,7 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
             assert exchange(sock, prefix + suffix)["error"]["code"] == "UNAUTHENTICATED"
     with connect(local, token) as sock:
         caps = exchange(sock, "capabilities")
-        check(caps["service_api_minor"] == 25 and caps["configuration_vm_disks"] == "revisioned-chunks-v1",
+        check(caps["service_api_minor"] == 26 and caps["configuration_vm_disks"] == "revisioned-chunks-v1",
               "joint registry API24 advertised")
         initial = pair(sock)
         states = [entry[1] for entry in initial]
@@ -147,9 +147,10 @@ def run(start, stop, connect, exchange, snapshot, check, shell, read, output, di
         assert exchange(sock, "disk_operation_start")["error"]["code"] == "UNAUTHENTICATED"
     with connect(local, token) as sock:
         caps = exchange(sock, "capabilities")
-        check(caps["service_api_minor"] == 25 and caps["disk_operations"] == "revisioned-tasks-v1"
+        check(caps["service_api_minor"] == 26 and caps["disk_operations"] == "revisioned-tasks-v1"
               and {"disk_operation_start", "disk_operation_recover"} <= set(caps["commands"])
-              and caps["disk_operation_actions"] == ["resize", "convert", "flatten", "create", "clone", "commit", "delete", "reset"], "disk operations API25 advertised")
+              and caps["disk_operation_actions"] == ["resize", "convert", "flatten", "create", "clone", "commit", "delete", "reset"]
+              and caps["disk_operation_options"] == ["cpus"], "disk operations API26 advertised")
         states = pair(sock)
         documents = [entry[2] for entry in states]
         base_id, overlay_id = str(uuid.uuid4()), str(uuid.uuid4())
