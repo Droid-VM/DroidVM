@@ -1,0 +1,81 @@
+{
+  "memory_mb": 512,
+  "cpu_count": 1,
+  "swiotlb_mb": 256,
+  "balloon": false,
+  "pmu": true,
+  "rng": true,
+  "smt": true,
+  "sandbox": false,
+  "hugepages": true,
+  "strace": false,
+  "gpu_vram_folio_threshold_kb": 1024,
+  "backend": "crosvm",
+  "extra_options": [],
+  "environment_variables": [],
+  "cpu_affinity": "",
+  "cpu_topology_auto": true,
+  "cpu_capacity": "",
+  "cpu_clusters": "",
+  "boot": {
+    "protocol": "uefi",
+    "uefi": { "firmware": "", "vars_enabled": true, "vars": "" },
+    "linux": {
+      "source": "manual",
+      "cmdline": "root=/dev/vda2",
+      "image": { "cmdline": "", "disk": 0, "vdafix": true, "wait": 2 }
+    }
+  },
+  "auto_up": false,
+  "disks": [],
+  "shared_dirs": [],
+  "networks": [],
+  "screens": {
+    "gpu-0": {
+      "enabled": false,
+      "exporter": "native",
+      "transport_cap": "gpu",
+      "input_enabled": true,
+      "vnc": { "host": "127.0.0.1", "port": 5900 },
+      "width": 1280,
+      "height": 720,
+      "refresh_rate": 120,
+      "dpi_h": 160,
+      "dpi_v": 160
+    },
+    "simplefb": {
+      "enabled": true,
+      "exporter": "native",
+      "transport_cap": "gpu",
+      "input_enabled": true,
+      "vnc": { "host": "127.0.0.1", "port": 5909 },
+      "width": 1280,
+      "height": 720,
+      "poll_hz": 60
+    }
+  },
+  "display_blit_provider": "turnip",
+  "gpu_cgroup_enabled": false,
+  "gpu_cgroup_path": "/dev/cpuset/gpuworker",
+  "gpu_cgroup_cpus": "",
+  "vpu_enabled": false,
+  "vpu_host_pool_mb": 256,
+  "vpu_guest_pool_mb": 128,
+  "peripherals": [
+    {
+      "type": "virtio_sound",
+      "endpoints": [
+        { "mode": "speaker", "host_device": "DEFAULT|system default", "host_label": "" },
+        { "mode": "microphone", "host_device": "DEFAULT|system default", "host_label": "" }
+      ]
+    },
+    { "type": "xhci_usb", "id": "xhci-0", "usb2_ports": 8, "usb3_ports": 8 }
+  ],
+  "xhci_next": 1,
+  "serial_ports": [
+    { "hardware": "serial", "num": 1, "backend": "app_console", "console": true, "fixed": true },
+    { "hardware": "serial", "num": 2, "backend": "sink", "fixed": true },
+    { "hardware": "serial", "num": 3, "backend": "sink", "fixed": true },
+    { "hardware": "serial", "num": 4, "backend": "sink", "fixed": true }
+  ]
+}
