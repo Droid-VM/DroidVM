@@ -40,6 +40,11 @@
         android:theme="@style/Theme.DroidVM"
         android:usesCleartextTraffic="true">
 
+        <activity android:name=".ui.webui.WebUiActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false" android:theme="@style/Theme.DroidVM.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+
         <activity
             android:name=".ui.SplashActivity"
             android:exported="true"
