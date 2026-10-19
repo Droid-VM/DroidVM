@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_disk_defaults_title">إعدادات القرص الافتراضية المشتركة</string>
+    <string name="settings_disk_defaults_legacy">تستخدم هذه الخدمة إعدادات قرص محلية. حدّثها لمشاركة الإعدادات مع واجهة الويب.</string>
+    <string name="settings_disk_defaults_unavailable">تعذّر تأكيد إعدادات القرص. افتح الإعدادات للتحديث أو للاستعلام عن الحفظ المعلّق.</string>
+</resources>

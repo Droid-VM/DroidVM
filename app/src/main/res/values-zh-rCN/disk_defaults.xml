@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_disk_defaults_title">共享磁盘默认设置</string>
+    <string name="settings_disk_defaults_legacy">此守护进程使用本机磁盘默认设置，更新后可与 WebUI 共享。</string>
+    <string name="settings_disk_defaults_unavailable">无法确认磁盘默认设置，请前往设置刷新或查询待确认的保存。</string>
+</resources>
