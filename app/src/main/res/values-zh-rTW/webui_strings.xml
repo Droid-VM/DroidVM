@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webui_title">WebUI</string>
+    <string name="webui_summary">瀏覽器存取、配對與工作階段</string>
+    <string name="webui_enable">啟用 WebUI</string>
+    <string name="webui_scope">監聽範圍</string>
+    <string name="webui_lan">僅區域網路（預設）</string>
+    <string name="webui_all">所有網路</string>
+    <string name="webui_lan_auto_login">區域網路免配對</string>
+    <string name="webui_lan_auto_login_help">預設關閉。開啟後，直接連線至同一區域網路的瀏覽器無需配對即可管理此裝置；跨網路存取仍需配對。要禁止區域網路免配對存取，請關閉此項。</string>
+    <string name="webui_port">連接埠</string>
+    <string name="webui_origins">外部存取位址</string>
+    <string name="webui_origins_help">選用：每行一個 HTTP 位址，包含瀏覽器存取時使用的連接埠。</string>
+    <string name="webui_addresses">存取位址</string>
+    <string name="webui_pair">產生配對碼</string>
+    <string name="webui_pair_help">在瀏覽器登入頁面輸入配對碼，五分鐘內有效，僅可使用一次。選擇「記住此瀏覽器」可保留配對 30 天，重新啟動後仍有效。</string>
+    <string name="webui_sessions">瀏覽器授權</string>
+    <string name="webui_session">瀏覽器 %1$d</string>
+    <string name="webui_session_id">授權：%1$s\n撤銷授權也會清除其記住的配對。區域網路免配對開啟時，本機網路的瀏覽器仍可再次進入。</string>
+    <string name="webui_revoke">撤銷瀏覽器授權</string>
+    <string name="webui_no_sessions">目前沒有瀏覽器授權</string>
+    <string name="webui_refresh">重新整理</string>
+    <string name="webui_reload">重新讀取已儲存的設定</string>
+    <string name="webui_save">儲存</string>
+    <string name="webui_open">在瀏覽器開啟</string>
+    <string name="webui_copy">複製</string>
+    <string name="webui_copied">已複製</string>
+    <string name="webui_no_browser">沒有可開啟此位址的瀏覽器。</string>
+    <string name="webui_loading">正在讀取 WebUI 狀態…</string>
+    <string name="webui_disabled">WebUI 已關閉。</string>
+    <string name="webui_running">WebUI 正在執行。</string>
+    <string name="webui_local_only">目前僅此裝置可存取 WebUI。</string>
+    <string name="webui_discovery_failed">網路探索失敗，目前僅保留本機入口，服務會再次檢查。</string>
+    <string name="webui_listen_failed">部分位址無法監聽。請檢查連接埠與網路，然後重新讀取設定。</string>
+    <string name="webui_unknown">操作結果未確認，請重新讀取已儲存的設定後再操作。</string>
+    <string name="webui_conflict">設定已被其他操作變更，請重新讀取後再儲存。</string>
+    <string name="webui_unsupported">目前的原生服務不支援 WebUI 管理，請使用包含 WebUI 的版本。</string>
+    <string name="webui_unavailable">無法讀取服務結果，請檢查原生服務是否執行後重新整理。</string>
+    <string name="webui_limit">配對碼或工作階段數量已達上限，請稍後重試，或登出不使用的瀏覽器後重新整理。</string>
+    <string name="webui_invalid_port">請輸入 1024–65535 之間的連接埠。</string>
+    <string name="webui_invalid_origins">最多填寫八個 HTTP 位址，每行一個，不包含路徑、查詢參數或憑證。</string>
+</resources>

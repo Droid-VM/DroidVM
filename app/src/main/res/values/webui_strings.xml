@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webui_title">WebUI</string>
+    <string name="webui_summary">Browser access, pairing and sessions</string>
+    <string name="webui_enable">Enable WebUI</string>
+    <string name="webui_scope">Listen on</string>
+    <string name="webui_lan">Local network (default)</string>
+    <string name="webui_all">All networks</string>
+    <string name="webui_lan_auto_login">Skip pairing on the local network</string>
+    <string name="webui_lan_auto_login_help">Off by default. When enabled, browsers directly connected to the same local network can manage this device without pairing. Access across networks still requires pairing. To block local access, turn this off.</string>
+    <string name="webui_port">Port</string>
+    <string name="webui_origins">External access addresses</string>
+    <string name="webui_origins_help">Optional: one HTTP address per line, including the port used by your browser.</string>
+    <string name="webui_addresses">Access addresses</string>
+    <string name="webui_pair">Generate pairing code</string>
+    <string name="webui_pair_help">Enter the code on the browser login page. It is valid for five minutes and can be used once. Choose “Remember this browser” to stay paired for 30 days, including after restarts.</string>
+    <string name="webui_sessions">Browser authorizations</string>
+    <string name="webui_session">Browser %1$d</string>
+    <string name="webui_session_id">Authorization: %1$s\nRevoking this authorization also removes its remembered pairing. Local browsers can still sign in while local network access without pairing is enabled.</string>
+    <string name="webui_revoke">Revoke browser authorization</string>
+    <string name="webui_no_sessions">No browser authorizations</string>
+    <string name="webui_refresh">Refresh</string>
+    <string name="webui_reload">Reload saved settings</string>
+    <string name="webui_save">Save</string>
+    <string name="webui_open">Open in browser</string>
+    <string name="webui_copy">Copy</string>
+    <string name="webui_copied">Copied</string>
+    <string name="webui_no_browser">No browser is available to open this address.</string>
+    <string name="webui_loading">Reading WebUI status…</string>
+    <string name="webui_disabled">WebUI is off.</string>
+    <string name="webui_running">WebUI is running.</string>
+    <string name="webui_local_only">Only this device can currently access WebUI.</string>
+    <string name="webui_discovery_failed">Network discovery failed. Only the local entry is available; the service will check again.</string>
+    <string name="webui_listen_failed">Some addresses could not be opened. Check the port and network, then reload settings.</string>
+    <string name="webui_unknown">The result could not be confirmed. Reload saved settings before making another change.</string>
+    <string name="webui_conflict">Settings changed elsewhere. Reload them before saving again.</string>
+    <string name="webui_unsupported">This native service does not support WebUI management. Use a build that includes WebUI.</string>
+    <string name="webui_unavailable">Unable to read the service result. Check that the native service is running, then refresh.</string>
+    <string name="webui_limit">Too many pairing codes or sessions. Wait a moment or sign out an unused browser, then refresh.</string>
+    <string name="webui_invalid_port">Enter a port from 1024 to 65535.</string>
+    <string name="webui_invalid_origins">Enter up to eight HTTP addresses, one per line, without a path, query or credentials.</string>
+</resources>

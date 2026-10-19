@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fitsSystemWindows="true" android:orientation="vertical">
+    <com.google.android.material.appbar.MaterialToolbar
+        android:id="@+id/toolbar" android:layout_width="match_parent"
+        android:layout_height="?attr/actionBarSize" app:navigationIcon="?attr/homeAsUpIndicator"
+        app:title="@string/webui_title" />
+    <androidx.core.widget.NestedScrollView android:layout_width="match_parent"
+        android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:padding="16dp">
+            <TextView android:id="@+id/webui_status" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:accessibilityLiveRegion="polite"
+                android:textAppearance="?attr/textAppearanceBodyLarge" android:text="@string/webui_loading" />
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/webui_progress" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginVertical="12dp"
+                android:indeterminate="true" android:visibility="gone" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/webui_refresh"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="48dp" android:text="@string/webui_refresh" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/webui_enabled"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:text="@string/webui_enable" android:saveEnabled="false" />
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget android:id="@+id/webui_scope"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:text="@string/webui_scope" />
+            <com.google.android.material.materialswitch.MaterialSwitch android:id="@+id/webui_lan_auto_login"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:text="@string/webui_lan_auto_login"
+                android:saveEnabled="false" android:visibility="gone" />
+            <TextView android:id="@+id/webui_lan_auto_login_help" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:visibility="gone"
+                android:textAppearance="?attr/textAppearanceBodyMedium" android:text="@string/webui_lan_auto_login_help" />
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget android:id="@+id/webui_port"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:text="@string/webui_port" />
+            <cn.classfun.droidvm.ui.widgets.row.TextRowWidget android:id="@+id/webui_origins"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:minHeight="56dp" android:text="@string/webui_origins"
+                android:subtitle="@string/webui_origins_help" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:accessibilityHeading="true"
+                android:textAppearance="?attr/textAppearanceTitleMedium" android:text="@string/webui_addresses" />
+            <LinearLayout android:id="@+id/webui_addresses" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+            <com.google.android.material.button.MaterialButton android:id="@+id/webui_pair"
+                android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="16dp" android:minHeight="48dp" android:text="@string/webui_pair" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodyMedium" android:text="@string/webui_pair_help" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="20dp" android:accessibilityHeading="true"
+                android:textAppearance="?attr/textAppearanceTitleMedium" android:text="@string/webui_sessions" />
+            <LinearLayout android:id="@+id/webui_sessions" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:orientation="vertical" />
+        </LinearLayout>
+    </androidx.core.widget.NestedScrollView>
+</LinearLayout>

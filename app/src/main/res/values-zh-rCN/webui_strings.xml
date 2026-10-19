@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="webui_title">WebUI</string>
+    <string name="webui_summary">浏览器访问、配对与会话</string>
+    <string name="webui_enable">启用 WebUI</string>
+    <string name="webui_scope">监听范围</string>
+    <string name="webui_lan">仅局域网（默认）</string>
+    <string name="webui_all">所有网络</string>
+    <string name="webui_lan_auto_login">局域网免配对</string>
+    <string name="webui_lan_auto_login_help">默认关闭。开启后，直连同一局域网的浏览器无需配对即可管理本机；跨网络访问仍需配对。要禁止局域网免配对访问，请关闭此项。</string>
+    <string name="webui_port">端口</string>
+    <string name="webui_origins">外部访问地址</string>
+    <string name="webui_origins_help">可选：每行一个 HTTP 地址，包含浏览器访问时使用的端口。</string>
+    <string name="webui_addresses">访问地址</string>
+    <string name="webui_pair">生成配对码</string>
+    <string name="webui_pair_help">在浏览器登录页面输入配对码，五分钟内有效，仅可使用一次。选择“记住此浏览器”可保留配对 30 天，重启后仍有效。</string>
+    <string name="webui_sessions">浏览器授权</string>
+    <string name="webui_session">浏览器 %1$d</string>
+    <string name="webui_session_id">授权：%1$s\n撤销授权也会清除其记住的配对。局域网免配对开启时，本地浏览器仍可再次进入。</string>
+    <string name="webui_revoke">撤销浏览器授权</string>
+    <string name="webui_no_sessions">暂无浏览器授权</string>
+    <string name="webui_refresh">刷新</string>
+    <string name="webui_reload">重新读取已保存的设置</string>
+    <string name="webui_save">保存</string>
+    <string name="webui_open">在浏览器打开</string>
+    <string name="webui_copy">复制</string>
+    <string name="webui_copied">已复制</string>
+    <string name="webui_no_browser">没有可打开此地址的浏览器。</string>
+    <string name="webui_loading">正在读取 WebUI 状态…</string>
+    <string name="webui_disabled">WebUI 已关闭。</string>
+    <string name="webui_running">WebUI 正在运行。</string>
+    <string name="webui_local_only">目前仅本机可访问 WebUI。</string>
+    <string name="webui_discovery_failed">网络发现失败，目前仅保留本机入口，服务会再次检查。</string>
+    <string name="webui_listen_failed">部分地址无法监听。请检查端口与网络，然后重新读取设置。</string>
+    <string name="webui_unknown">操作结果未确认，请重新读取已保存的设置后再操作。</string>
+    <string name="webui_conflict">设置已被其他操作更改，请重新读取后再保存。</string>
+    <string name="webui_unsupported">当前原生服务不支持 WebUI 管理，请使用包含 WebUI 的构建。</string>
+    <string name="webui_unavailable">无法读取服务结果，请检查原生服务是否运行后刷新。</string>
+    <string name="webui_limit">配对码或会话数量已达上限，请稍后重试，或退出不用的浏览器会话后刷新。</string>
+    <string name="webui_invalid_port">请输入 1024–65535 之间的端口。</string>
+    <string name="webui_invalid_origins">最多填写八个 HTTP 地址，每行一个，不包含路径、查询参数或凭据。</string>
+</resources>
