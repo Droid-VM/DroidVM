@@ -94,6 +94,17 @@ public final class VmConfigClient {
      */
     public void start(Snapshot snapshot, String vmId, JSONObject overrides, String bootEntry, boolean clearLogs)
         throws IOException, JSONException {
+        startInternal(snapshot, vmId, overrides, bootEntry, clearLogs);
+    }
+
+    /** Shared defaults are evaluated by the daemon at admission, not from an old App mirror. */
+    public void startWithSharedDefaults(Snapshot snapshot, String vmId, JSONObject overrides, String bootEntry, boolean legacyClearLogs)
+        throws IOException, JSONException {
+        startInternal(snapshot, vmId, overrides, bootEntry, HostPreferencesClient.supported(rpc) ? null : legacyClearLogs);
+    }
+
+    private void startInternal(Snapshot snapshot, String vmId, JSONObject overrides, String bootEntry, Boolean clearLogs)
+        throws IOException, JSONException {
         if (vmId == null || vmId.isEmpty() || vmId.length() > 128) throw new IOException("Invalid VM ID");
         boolean found = false;
         JSONArray rows = snapshot.document().getJSONArray("vms");
@@ -103,8 +114,9 @@ public final class VmConfigClient {
         String boot = bootEntry == null ? "" : bootEntry;
         if (boot.getBytes(StandardCharsets.UTF_8).length > (64 << 10)) throw new IOException("Boot entry exceeds start request limit");
         JSONObject request = new JSONObject().put("revision", snapshot.revision).put("vm_id", vmId)
-            .put("boot_entry", boot).put("clear_logs_before_start", clearLogs)
+            .put("boot_entry", boot)
             .put("overrides", overrides == null ? new JSONObject() : new JSONObject(overrides.toString()));
+        if (clearLogs != null) request.put("clear_logs_before_start", clearLogs);
         try {
             JSONObject response = call("vm_start_configured", request);
             if (!vmId.equals(response.getString("vm_id")) || !snapshot.revision.equals(response.getString("revision")))

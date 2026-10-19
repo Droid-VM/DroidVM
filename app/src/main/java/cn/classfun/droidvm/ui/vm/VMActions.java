@@ -47,6 +47,7 @@ import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.HostPreferencesClient;
 import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
@@ -450,8 +451,25 @@ public final class VMActions {
         @NonNull UIContext ui,
         @NonNull Runnable proceed
     ) {
-        var autoReserve = isHugepageAutoReserveEnabled(ui.getContext());
         runOnPool(() -> {
+            boolean autoReserve;
+            try {
+                var preferences = HostPreferencesClient.getInstance().synchronizeLegacy();
+                if (!preferences.writable) {
+                    showError(mainHandler, ui, ui.getContext().getString(R.string.settings_host_preferences_unavailable));
+                    return;
+                }
+                autoReserve = preferences.value(HostPreferencesClient.AUTO_RESERVE);
+            } catch (HostPreferencesClient.Blocked error) {
+                if (!error.unsupported) {
+                    showError(mainHandler, ui, ui.getContext().getString(R.string.settings_host_preferences_unavailable));
+                    return;
+                }
+                autoReserve = isHugepageAutoReserveEnabled(ui.getContext());
+            } catch (Exception error) {
+                showError(mainHandler, ui, ui.getContext().getString(R.string.settings_host_preferences_unavailable));
+                return;
+            }
             // With automatic sizing off the daemon leaves the reserve alone: warn when it is short.
             if (autoReserve && PoolPreflight.canResize(config.item)) {
                 mainHandler.post(proceed);
@@ -1006,7 +1024,9 @@ public final class VMActions {
                     if (isAutoConsoleEnabled(appContext)) wantOpenConsole.set(true);
                     return;
                 }
-                mainHandler.post(() -> pushAndStart(config, mainHandler, ui, wantOpenConsole, bootEntry));
+                final Boolean clearLogs = HostPreferencesClient.getInstance().supported()
+                    ? null : isClearLogsBeforeStartEnabled(appContext);
+                mainHandler.post(() -> pushAndStart(config, mainHandler, ui, wantOpenConsole, bootEntry, clearLogs));
             } catch (Exception e) { showError(mainHandler, ui, e.getMessage()); }
         });
     }
@@ -1016,7 +1036,8 @@ public final class VMActions {
         @NonNull Handler mainHandler,
         @NonNull UIContext ui,
         @NonNull AtomicBoolean wantOpenConsole,
-        @Nullable String bootEntry
+        @Nullable String bootEntry,
+        @Nullable Boolean clearLogs
     ) {
         var conn = DaemonConnection.getInstance();
         DaemonConnection.OnError err = e ->
@@ -1030,7 +1051,7 @@ public final class VMActions {
         DaemonConnection.OnResponse onCreateModify = resp -> conn
             .buildRequest("vm_start")
             .copy(resp, "vm_id")
-            .put("clear_logs_before_start", isClearLogsBeforeStartEnabled(ui.getContext()))
+            .put("clear_logs_before_start", clearLogs)
             .put("boot_entry", bootEntry == null ? "" : bootEntry)
             .onResponse(onStart)
             .onUnsuccessful(f)

@@ -20,6 +20,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.widget.Toast;
+import android.widget.TextView;
+import android.widget.ScrollView;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -55,6 +57,9 @@ import cn.classfun.droidvm.daemon.vm.UsbAcmPool;
 import cn.classfun.droidvm.lib.daemon.DaemonHelper;
 import cn.classfun.droidvm.lib.daemon.ConfigurationClient;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
+import cn.classfun.droidvm.lib.daemon.HostPreferencesClient;
+import cn.classfun.droidvm.lib.daemon.DiskDefaultsClient;
+import cn.classfun.droidvm.lib.daemon.UsbAcmClient;
 import cn.classfun.droidvm.lib.daemon.VMEventHandler;
 import cn.classfun.droidvm.lib.data.Language;
 import cn.classfun.droidvm.lib.store.base.DataConfig;
@@ -83,14 +88,14 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private static final long DAEMON_REFRESH_INTERVAL_MS = 1000L;
     private static final String PREFS_NAME = "droidvm_prefs";
     public static final String KEY_VM_AUTO_CONSOLE = "vm_auto_console";
-    public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = "vm_clear_logs_before_start";
+    public static final String KEY_VM_CLEAR_LOGS_BEFORE_START = HostPreferencesClient.CLEAR_LOGS;
     /** Raise the huge-page reserve target for each starting Gunyah VM (read by the daemon too). */
-    public static final String KEY_VM_HUGEPAGE_AUTO_RESERVE = "vm_hugepage_auto_reserve";
-    public static final String KEY_VM_OPTIMIZE_COMPRESSION = "vm_optimize_compression";
+    public static final String KEY_VM_HUGEPAGE_AUTO_RESERVE = HostPreferencesClient.AUTO_RESERVE;
+    public static final String KEY_VM_OPTIMIZE_COMPRESSION = DiskDefaultsClient.LEGACY_COMPRESSION;
     /** Sentinel for {@link #KEY_VM_OPTIMIZE_COMPRESSION}: prompt on every optimize. */
     public static final String OPTIMIZE_COMPRESSION_ASK = "ask";
-    public static final String KEY_QEMU_IMG_CPU_AFFINITY = "qemu_img_cpu_affinity";
-    public static final String KEY_OPTIMIZE_SDCARD = "optimize_sdcard";
+    public static final String KEY_QEMU_IMG_CPU_AFFINITY = DiskDefaultsClient.LEGACY_CPUS;
+    public static final String KEY_OPTIMIZE_SDCARD = HostPreferencesClient.OPTIMIZE_SDCARD;
     public static final String KEY_AUTO_CHECK_UPDATE = "auto_check_update";
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Runnable daemonStatusRefreshRunnable = this::periodRefreshDaemonStatus;
@@ -106,8 +111,18 @@ public final class MainSettingsFragment extends MainBaseFragment {
     private SwitchRowWidget itemVMClearLogsBeforeStart;
     private SwitchRowWidget itemVMHugepageAutoReserve;
     private TextRowWidget itemVMOptimizeCompression;
+    private TextRowWidget itemDiskDefaults;
+    private DiskDefaultsClient.Snapshot diskDefaults;
+    private boolean diskDefaultsBusy, diskDefaultsLegacy;
+    private int diskDefaultsGeneration;
     private SwitchRowWidget itemOptimizeSdcard;
+    private TextRowWidget itemHostPreferences;
+    private HostPreferencesClient.Snapshot hostPreferences;
+    private boolean hostPreferencesBusy, bindingHostPreferences;
+    private int hostPreferencesGeneration;
     private TextRowWidget itemUsbAcmPorts;
+    private UsbAcmClient.Snapshot usbAcm;
+    private boolean usbAcmBusy;
     private TextRowWidget itemUsbPassthrough;
     private TextRowWidget itemUsbDevices;
     private TextRowWidget itemCpuAffinity;
@@ -163,6 +178,8 @@ public final class MainSettingsFragment extends MainBaseFragment {
         daemon = new DaemonHelper(ui);
         daemon.setOnRefreshDaemonStatus(this::onRefreshDaemonStatus);
         itemLanguage = view.findViewById(R.id.item_language);
+        view.findViewById(R.id.item_webui).setOnClickListener(v -> startActivity(
+            new Intent(requireContext(), cn.classfun.droidvm.ui.webui.WebUiActivity.class)));
         itemFeedback = view.findViewById(R.id.item_feedback);
         itemDaemonStatus = view.findViewById(R.id.item_daemon_status);
         itemDaemonStart = view.findViewById(R.id.item_daemon_start);
@@ -172,7 +189,9 @@ public final class MainSettingsFragment extends MainBaseFragment {
         itemVMClearLogsBeforeStart = view.findViewById(R.id.item_vm_clear_logs_before_start);
         itemVMHugepageAutoReserve = view.findViewById(R.id.item_vm_hugepage_auto_reserve);
         itemVMOptimizeCompression = view.findViewById(R.id.item_vm_optimize_compression);
+        itemDiskDefaults = view.findViewById(R.id.item_disk_defaults);
         itemOptimizeSdcard = view.findViewById(R.id.item_optimize_sdcard);
+        itemHostPreferences = view.findViewById(R.id.item_host_preferences);
         itemUsbAcmPorts = view.findViewById(R.id.item_usb_acm_ports);
         itemUsbPassthrough = view.findViewById(R.id.item_usb_passthrough);
         itemUsbDevices = view.findViewById(R.id.item_usb_devices);
@@ -207,13 +226,17 @@ public final class MainSettingsFragment extends MainBaseFragment {
         bindOnClick(itemDaemonStop, daemon::asyncStopDaemon);
         bindOnClick(itemDaemonRestart, daemon::asyncRestartDaemon);
         bindOnChecked(itemVMAutoConsole, KEY_VM_AUTO_CONSOLE, false);
-        bindOnChecked(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START, false);
-        bindOnChecked(itemVMHugepageAutoReserve, KEY_VM_HUGEPAGE_AUTO_RESERVE, true);
+        bindSharedPreference(itemVMClearLogsBeforeStart, KEY_VM_CLEAR_LOGS_BEFORE_START);
+        bindSharedPreference(itemVMHugepageAutoReserve, KEY_VM_HUGEPAGE_AUTO_RESERVE);
+        bindOnClick(itemHostPreferences, this::refreshHostPreferences);
         bindOnClick(itemVMOptimizeCompression, this::showOptimizeCompressionDialog);
+        bindOnClick(itemDiskDefaults, () -> workDiskDefaults(null, null));
+        itemVMOptimizeCompression.setEnabled(false);
+        itemCpuAffinity.setEnabled(false);
         refreshOptimizeCompressionSummary();
         bindOnClick(itemCpuAffinity, this::showCpuAffinityDialog);
         refreshCpuAffinitySummary();
-        bindOnChecked(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD, true);
+        bindSharedPreference(itemOptimizeSdcard, KEY_OPTIMIZE_SDCARD);
         bindOnClick(itemUsbAcmPorts, this::showUsbAcmPortsDialog);
         refreshUsbAcmPortsSummary();
         bindOnClick(itemUsbPassthrough, this::showUsbPassthrough);
@@ -244,12 +267,109 @@ public final class MainSettingsFragment extends MainBaseFragment {
     public void onResume() {
         super.onResume();
         mainHandler.post(daemonStatusRefreshRunnable);
+        refreshHostPreferences();
+        refreshUsbAcmPreferences(false);
+        workDiskDefaults(null, null);
     }
 
     @Override
     public void onPause() {
         super.onPause();
         mainHandler.removeCallbacks(daemonStatusRefreshRunnable);
+    }
+
+    @Override
+    public void onDestroyView() {
+        ++hostPreferencesGeneration;
+        hostPreferencesBusy = false;
+        hostPreferences = null;
+        usbAcm = null;
+        usbAcmBusy = false;
+        ++diskDefaultsGeneration;
+        diskDefaults = null;
+        diskDefaultsBusy = diskDefaultsLegacy = false;
+        super.onDestroyView();
+    }
+
+    private void bindSharedPreference(SwitchRowWidget row, String key) {
+        row.setEnabled(false);
+        row.setOnCheckedChangeListener((button, checked) -> {
+            if (bindingHostPreferences) return;
+            final var baseline = hostPreferences;
+            renderHostPreferences(); // A tap is a request, never a successful local save.
+            if (baseline != null && !hostPreferencesBusy) updateHostPreference(baseline, key, checked);
+        });
+    }
+
+    private void renderHostPreferences() {
+        bindingHostPreferences = true;
+        try {
+            if (hostPreferences != null) {
+                itemVMClearLogsBeforeStart.setChecked(hostPreferences.value(KEY_VM_CLEAR_LOGS_BEFORE_START));
+                itemVMHugepageAutoReserve.setChecked(hostPreferences.value(KEY_VM_HUGEPAGE_AUTO_RESERVE));
+                itemOptimizeSdcard.setChecked(hostPreferences.value(KEY_OPTIMIZE_SDCARD));
+            }
+            boolean editable = hostPreferences != null && hostPreferences.writable && !hostPreferencesBusy
+                && !HostPreferencesClient.getInstance().hasPending();
+            itemVMClearLogsBeforeStart.setEnabled(editable);
+            itemVMHugepageAutoReserve.setEnabled(editable);
+            itemOptimizeSdcard.setEnabled(editable);
+        } finally { bindingHostPreferences = false; }
+    }
+
+    /** Also serves as explicit retry/query: no failed or unknown patch is replayed. */
+    private void refreshHostPreferences() {
+        if (!isAdded() || getView() == null || hostPreferencesBusy) return;
+        workHostPreferences(null, null, false);
+    }
+
+    private void updateHostPreference(HostPreferencesClient.Snapshot baseline, String key, boolean value) {
+        workHostPreferences(baseline, key, value);
+    }
+
+    private void workHostPreferences(HostPreferencesClient.Snapshot baseline, String key, boolean value) {
+        hostPreferencesBusy = true;
+        final int generation = ++hostPreferencesGeneration;
+        final View owner = getView();
+        itemHostPreferences.setVisibility(GONE);
+        renderHostPreferences();
+        runOnPool(() -> {
+            HostPreferencesClient.Snapshot snapshot = null;
+            int message = R.string.settings_host_preferences_ready;
+            try {
+                var client = HostPreferencesClient.getInstance();
+                var receipt = baseline == null ? client.queryPending() : client.patch(baseline, key, value);
+                snapshot = client.synchronizeLegacy();
+                if (receipt != null && !receipt.succeeded)
+                    message = "CONFLICT".equals(receipt.errorCode)
+                        ? R.string.settings_host_preferences_conflict : R.string.settings_host_preferences_failed;
+                else if (baseline != null) message = R.string.settings_host_preferences_saved;
+                if (!snapshot.writable) message = R.string.settings_host_preferences_unavailable;
+            } catch (HostPreferencesClient.Blocked error) {
+                message = error.uncertain ? R.string.settings_host_preferences_pending
+                    : error.unsupported ? R.string.settings_host_preferences_unsupported
+                    : R.string.settings_host_preferences_failed;
+                if (!error.uncertain && !error.unsupported) {
+                    try { snapshot = HostPreferencesClient.getInstance().refresh(); }
+                    catch (Exception ignored) { /* Read failure must not re-enable cached switches. */ }
+                    if ("CONFLICT".equals(error.code)) message = snapshot == null
+                        ? R.string.settings_host_preferences_unavailable : R.string.settings_host_preferences_conflict;
+                }
+            } catch (Exception error) { message = R.string.settings_host_preferences_unavailable; }
+            final var result = snapshot;
+            final int status = message;
+            mainHandler.post(() -> {
+                if (!isAdded() || getView() != owner || generation != hostPreferencesGeneration) return;
+                hostPreferencesBusy = false;
+                hostPreferences = result;
+                itemHostPreferences.setSubtitle(status);
+                boolean pending = HostPreferencesClient.getInstance().hasPending();
+                itemHostPreferences.setText(getString(pending ? R.string.hugepage_operation_query : R.string.menu_refresh));
+                itemHostPreferences.setVisibility(pending || result == null || !result.writable ? VISIBLE : GONE);
+                renderHostPreferences();
+                if (baseline != null) Toast.makeText(requireContext(), status, LENGTH_LONG).show();
+            });
+        });
     }
 
     public static boolean isAutoConsoleEnabled(@NonNull Context context) {
@@ -282,11 +402,6 @@ public final class MainSettingsFragment extends MainBaseFragment {
         return OPTIMIZE_COMPRESSION_ASK;
     }
 
-    public static void setOptimizeCompression(@NonNull Context context, @NonNull String value) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_VM_OPTIMIZE_COMPRESSION, value).apply();
-    }
-
     @StringRes
     private static int optimizeCompressionLabel(@NonNull String value) {
         var compress = DiskCompress.fromValue(value);
@@ -296,7 +411,79 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void refreshOptimizeCompressionSummary() {
         itemVMOptimizeCompression.setSubtitle(
-            optimizeCompressionLabel(getOptimizeCompression(requireContext())));
+            optimizeCompressionLabel(diskDefaults == null ? getOptimizeCompression(requireContext()) : diskDefaults.optimizeCompression));
+    }
+
+    private void renderDiskDefaults() {
+        boolean writable = !diskDefaultsBusy && !DiskDefaultsClient.getInstance().hasPending()
+            && (diskDefaultsLegacy || (diskDefaults != null && diskDefaults.writable));
+        itemVMOptimizeCompression.setEnabled(writable);
+        itemCpuAffinity.setEnabled(writable);
+        refreshOptimizeCompressionSummary();
+        refreshCpuAffinitySummary();
+    }
+
+    /** The status row only queries an existing operation; it never retries a previous save. */
+    private void workDiskDefaults(DiskDefaultsClient.Snapshot baseline, JSONObject changes) {
+        if (!isAdded() || getView() == null || diskDefaultsBusy) return;
+        diskDefaultsBusy = true;
+        final int generation = ++diskDefaultsGeneration;
+        final View owner = getView();
+        final var context = requireContext().getApplicationContext();
+        itemDiskDefaults.setVisibility(GONE);
+        renderDiskDefaults();
+        runOnPool(() -> {
+            DiskDefaultsClient.Snapshot snapshot = null;
+            boolean legacy = false;
+            int message = R.string.settings_host_preferences_ready;
+            try {
+                var client = DiskDefaultsClient.getInstance();
+                if (changes == null) {
+                    var receipt = client.queryPending();
+                    if (receipt != null) message = receipt.succeeded ? R.string.settings_host_preferences_saved
+                        : "CONFLICT".equals(receipt.errorCode) ? R.string.settings_host_preferences_conflict : R.string.settings_host_preferences_failed;
+                }
+                if (changes != null && baseline == null) {
+                    // The daemon may have upgraded while a legacy dialog was open.
+                    if (client.hasPending() || client.supported()) throw new java.io.IOException("Legacy disk defaults are no longer writable");
+                    var edit = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit();
+                    if (changes.has(DiskDefaultsClient.COMPRESSION)) edit.putString(KEY_VM_OPTIMIZE_COMPRESSION, changes.getString(DiskDefaultsClient.COMPRESSION));
+                    if (changes.has(DiskDefaultsClient.CPUS)) {
+                        var cpus = changes.getJSONArray(DiskDefaultsClient.CPUS);
+                        var csv = new StringBuilder();
+                        for (int i = 0; i < cpus.length(); i++) { if (i > 0) csv.append(','); csv.append(cpus.getInt(i)); }
+                        edit.putString(KEY_QEMU_IMG_CPU_AFFINITY, csv.toString());
+                    }
+                    if (!edit.commit()) throw new java.io.IOException("Could not save local disk defaults");
+                } else if (changes != null) {
+                    var receipt = client.patch(baseline, changes);
+                    message = receipt.succeeded ? R.string.settings_host_preferences_saved
+                        : "CONFLICT".equals(receipt.errorCode) ? R.string.settings_host_preferences_conflict : R.string.settings_host_preferences_failed;
+                }
+                snapshot = client.synchronizeLegacy();
+                if (!snapshot.writable) message = R.string.settings_host_preferences_unavailable;
+            } catch (DiskDefaultsClient.Blocked error) {
+                legacy = error.unsupported && !DiskDefaultsClient.getInstance().hasPending() && baseline == null;
+                message = legacy ? R.string.settings_disk_defaults_legacy : error.uncertain ? R.string.settings_host_preferences_pending
+                    : "CONFLICT".equals(error.code) ? R.string.settings_host_preferences_conflict : R.string.settings_host_preferences_unavailable;
+                if (!error.uncertain && !error.unsupported) {
+                    try { snapshot = DiskDefaultsClient.getInstance().refresh(); } catch (Exception ignored) { }
+                }
+            } catch (Exception error) { message = R.string.settings_host_preferences_unavailable; }
+            final var result = snapshot;
+            final boolean oldDaemon = legacy;
+            final int status = message;
+            mainHandler.post(() -> {
+                if (!isAdded() || getView() != owner || generation != diskDefaultsGeneration) return;
+                diskDefaultsBusy = false; diskDefaults = result; diskDefaultsLegacy = oldDaemon;
+                itemDiskDefaults.setSubtitle(status);
+                boolean pending = DiskDefaultsClient.getInstance().hasPending();
+                itemDiskDefaults.setText(getString(pending ? R.string.hugepage_operation_query : R.string.menu_refresh));
+                itemDiskDefaults.setVisibility(pending || (!oldDaemon && (result == null || !result.writable)) ? VISIBLE : GONE);
+                renderDiskDefaults();
+                if (changes != null) Toast.makeText(requireContext(), status, LENGTH_LONG).show();
+            });
+        });
     }
 
     /** Whether the USB ACM feature is switched on; VMs with an ACM port refuse to boot
@@ -317,18 +504,64 @@ public final class MainSettingsFragment extends MainBaseFragment {
     }
 
     private void refreshUsbAcmPortsSummary() {
-        itemUsbAcmPorts.setSubtitle(isUsbAcmEnabled(requireContext())
-            ? getString(R.string.settings_usb_acm_ports_summary, getUsbAcmPorts(requireContext()))
-            : getString(R.string.settings_usb_acm_disabled));
+        if (UsbAcmClient.getInstance().hasPending()) itemUsbAcmPorts.setSubtitle(R.string.settings_host_preferences_pending);
+        else if (usbAcm == null) itemUsbAcmPorts.setSubtitle(R.string.settings_usb_acm_loading);
+        else if (!usbAcm.writable) itemUsbAcmPorts.setSubtitle(R.string.settings_usb_acm_unavailable);
+        else itemUsbAcmPorts.setSubtitle(getString(usbAcm.live.applied
+            ? R.string.settings_usb_acm_saved_applied : R.string.settings_usb_acm_saved_pending,
+            usbAcm.enabled ? getString(R.string.settings_usb_acm_ports_summary, usbAcm.ports) : getString(R.string.settings_usb_acm_disabled)));
     }
 
-    // One dialog for the whole feature: the enable toggle on top (the daemon builds or tears
-    // the pool down as soon as the config lands), pool sizes below. The re-enumeration note
-    // sits under the toggle permanently instead of nagging through a second dialog.
     private void showUsbAcmPortsDialog() {
+        refreshUsbAcmPreferences(true);
+    }
+
+    private void refreshUsbAcmPreferences(boolean openDialog) {
+        if (!isAdded() || getView() == null || usbAcmBusy) return;
+        usbAcmBusy = true;
+        final View owner = getView();
+        itemUsbAcmPorts.setEnabled(false);
+        itemUsbAcmPorts.setSubtitle(R.string.settings_usb_acm_loading);
+        runOnPool(() -> {
+            UsbAcmClient.Snapshot snapshot = null;
+            int errorMessage = 0;
+            try {
+                var client = UsbAcmClient.getInstance();
+                if (openDialog) client.queryPending();
+                snapshot = client.synchronizeLegacy();
+            } catch (UsbAcmClient.Blocked error) {
+                errorMessage = error.uncertain ? R.string.settings_host_preferences_pending
+                    : error.unsupported ? R.string.settings_usb_acm_unsupported : R.string.settings_usb_acm_unavailable;
+            } catch (Exception error) { errorMessage = R.string.settings_usb_acm_unavailable; }
+            final var result = snapshot;
+            final int error = errorMessage;
+            mainHandler.post(() -> {
+                if (!isAdded() || getView() != owner) return;
+                usbAcmBusy = false; usbAcm = result; itemUsbAcmPorts.setEnabled(true);
+                if (error != 0) {
+                    itemUsbAcmPorts.setSubtitle(error);
+                    if (openDialog) Toast.makeText(requireContext(), error, LENGTH_LONG).show();
+                } else {
+                    refreshUsbAcmPortsSummary();
+                    if (openDialog) showUsbAcmDraft(result);
+                }
+            });
+        });
+    }
+
+    private void showUsbAcmDraft(UsbAcmClient.Snapshot baseline) {
         var context = requireContext();
-        var prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         var view = getLayoutInflater().inflate(R.layout.dialog_usb_acm_ports, null);
+        TextView observation = view.findViewById(R.id.text_acm_observation);
+        String owners = baseline.live.owners.isEmpty() ? getString(R.string.settings_usb_acm_no_owners)
+            : baseline.live.owners.stream().map(owner -> getString(R.string.settings_usb_acm_owner, owner.slot, owner.vmId))
+                .collect(java.util.stream.Collectors.joining("\n"));
+        String unknown = getString(R.string.settings_usb_acm_unknown);
+        observation.setText(getString(R.string.settings_usb_acm_observation,
+            baseline.enabled ? getString(R.string.settings_usb_acm_ports_summary, baseline.ports) : getString(R.string.settings_usb_acm_disabled),
+            baseline.live.applied ? getString(R.string.settings_usb_acm_applied) : getString(R.string.settings_usb_acm_not_applied),
+            baseline.live.udcBound == null ? unknown : getString(baseline.live.udcBound ? R.string.settings_usb_acm_bound : R.string.settings_usb_acm_unbound),
+            baseline.live.ports == null ? unknown : Integer.toString(baseline.live.ports), owners));
         MaterialSwitch enable = view.findViewById(R.id.switch_acm_enable);
         RadioGroup group = view.findViewById(R.id.group_acm_ports);
         for (int i = 1; i <= UsbAcmPool.MAX_PORTS; i++) {
@@ -338,45 +571,91 @@ public final class MainSettingsFragment extends MainBaseFragment {
             radio.setMinHeight(48);
             group.addView(radio);
         }
-        enable.setChecked(isUsbAcmEnabled(context));
-        group.check(getUsbAcmPorts(context));
-        for (int i = 0; i < group.getChildCount(); i++)
-            group.getChildAt(i).setEnabled(enable.isChecked());
-        enable.setOnCheckedChangeListener((btn, checked) -> {
-            prefs.edit().putBoolean(UsbAcmPool.KEY_USB_ACM_ENABLE, checked).apply();
-            VMEventHandler.sendAppConfig(requireActivity());
-            for (int i = 0; i < group.getChildCount(); i++)
-                group.getChildAt(i).setEnabled(checked);
-            refreshUsbAcmPortsSummary();
-        });
-        group.setOnCheckedChangeListener((g, checkedId) -> {
-            if (checkedId <= 0) return;
-            prefs.edit().putInt(UsbAcmPool.KEY_USB_ACM_PORTS, checkedId).apply();
-            VMEventHandler.sendAppConfig(requireActivity());
-            refreshUsbAcmPortsSummary();
-        });
-        new MaterialAlertDialogBuilder(context)
+        enable.setChecked(baseline.enabled);
+        group.check(baseline.ports);
+        boolean writable = baseline.writable && baseline.live.owners.isEmpty() && !UsbAcmClient.getInstance().hasPending();
+        enable.setEnabled(writable);
+        if (!baseline.live.owners.isEmpty()) observation.append("\n" + getString(R.string.settings_usb_acm_owners_block));
+        if (!baseline.writable) observation.append("\n" + getString(R.string.settings_usb_acm_unavailable));
+        var scroll = new ScrollView(context);
+        scroll.addView(view);
+        var dialog = new MaterialAlertDialogBuilder(context)
             .setTitle(R.string.settings_usb_acm_ports_title)
-            .setView(view)
-            .setPositiveButton(android.R.string.ok, null)
-            .show();
+            .setView(scroll)
+            .setPositiveButton(R.string.settings_usb_acm_save_apply, null)
+            .setNeutralButton(R.string.settings_usb_acm_apply_saved, null)
+            .setNegativeButton(android.R.string.cancel, null).create();
+        dialog.setOnShowListener(ignored -> {
+            Runnable update = () -> {
+                boolean dirty = enable.isChecked() != baseline.enabled || group.getCheckedRadioButtonId() != baseline.ports;
+                for (int i = 0; i < group.getChildCount(); i++) group.getChildAt(i).setEnabled(writable && enable.isChecked());
+                dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setEnabled(writable && dirty);
+                dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setEnabled(writable && !dirty && !baseline.live.applied);
+            };
+            enable.setOnCheckedChangeListener((button, checked) -> update.run());
+            group.setOnCheckedChangeListener((buttons, checked) -> update.run());
+            dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).setOnClickListener(button -> {
+                dialog.dismiss(); submitUsbAcm(baseline, false, enable.isChecked(), group.getCheckedRadioButtonId());
+            });
+            dialog.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).setOnClickListener(button -> {
+                dialog.dismiss(); submitUsbAcm(baseline, true, baseline.enabled, baseline.ports);
+            });
+            update.run();
+        });
+        dialog.show();
+    }
+
+    private void submitUsbAcm(UsbAcmClient.Snapshot baseline, boolean apply, boolean enabled, int ports) {
+        if (usbAcmBusy) return;
+        usbAcmBusy = true;
+        final View owner = getView();
+        itemUsbAcmPorts.setEnabled(false); itemUsbAcmPorts.setSubtitle(R.string.settings_usb_acm_loading);
+        runOnPool(() -> {
+            int message;
+            UsbAcmClient.Snapshot snapshot = null;
+            try {
+                var client = UsbAcmClient.getInstance();
+                var receipt = apply ? client.apply(baseline) : client.configure(baseline, enabled, ports);
+                message = receipt.applied ? R.string.settings_usb_acm_success : receipt.saved
+                    ? R.string.settings_usb_acm_apply_failed : "CONFLICT".equals(receipt.errorCode)
+                        ? R.string.settings_host_preferences_conflict : R.string.settings_host_preferences_failed;
+                snapshot = client.refresh();
+            } catch (UsbAcmClient.Blocked error) {
+                message = error.uncertain ? R.string.settings_host_preferences_pending
+                    : error.unsupported ? R.string.settings_usb_acm_unsupported : R.string.settings_usb_acm_unavailable;
+                if (!error.uncertain && !error.unsupported) {
+                    try { snapshot = UsbAcmClient.getInstance().refresh(); }
+                    catch (Exception ignored) {}
+                    if (snapshot != null && "CONFLICT".equals(error.code)) message = R.string.settings_host_preferences_conflict;
+                }
+            } catch (Exception error) { message = R.string.settings_usb_acm_unavailable; }
+            final int status = message; final var result = snapshot;
+            mainHandler.post(() -> {
+                if (!isAdded() || getView() != owner) return;
+                usbAcmBusy = false; usbAcm = result; itemUsbAcmPorts.setEnabled(true);
+                itemUsbAcmPorts.setSubtitle(status); Toast.makeText(requireContext(), status, LENGTH_LONG).show();
+            });
+        });
     }
 
     // Ask + every crosvm-supported compression; the list grows as CROSVM_SUPPORTED does.
     private void showOptimizeCompressionDialog() {
+        if (diskDefaultsBusy || DiskDefaultsClient.getInstance().hasPending()
+            || (!diskDefaultsLegacy && (diskDefaults == null || !diskDefaults.writable))) return;
+        final var baseline = diskDefaults;
         var values = new ArrayList<String>();
         values.add(OPTIMIZE_COMPRESSION_ASK);
         for (var compress : DiskCompress.CROSVM_SUPPORTED) values.add(compress.value());
         var labels = new String[values.size()];
         for (int i = 0; i < values.size(); i++)
             labels[i] = getString(optimizeCompressionLabel(values.get(i)));
-        var current = getOptimizeCompression(requireContext());
+        var current = baseline == null ? getOptimizeCompression(requireContext()) : baseline.optimizeCompression;
         int checked = Math.max(0, values.indexOf(current));
         new MaterialAlertDialogBuilder(requireContext())
             .setTitle(R.string.settings_optimize_compression_title)
             .setSingleChoiceItems(labels, checked, (d, which) -> {
-                setOptimizeCompression(requireContext(), values.get(which));
-                refreshOptimizeCompressionSummary();
+                try { workDiskDefaults(baseline, new JSONObject().put(DiskDefaultsClient.COMPRESSION, values.get(which))); }
+                catch (JSONException error) { throw new IllegalStateException(error); }
                 d.dismiss();
             })
             .setNegativeButton(android.R.string.cancel, null)
@@ -459,7 +738,7 @@ public final class MainSettingsFragment extends MainBaseFragment {
 
     private void refreshCpuAffinitySummary() {
         if (itemCpuAffinity == null) return;
-        var csv = getQemuImgCpuAffinity(requireContext());
+        var csv = diskDefaults == null ? getQemuImgCpuAffinity(requireContext()) : diskDefaults.cpuCsv();
         if (csv.isEmpty()) {
             itemCpuAffinity.setSubtitle(R.string.settings_cpu_affinity_all_cores);
         } else {
@@ -469,16 +748,18 @@ public final class MainSettingsFragment extends MainBaseFragment {
     }
 
     private void showCpuAffinityDialog() {
+        if (diskDefaultsBusy || DiskDefaultsClient.getInstance().hasPending()
+            || (!diskDefaultsLegacy && (diskDefaults == null || !diskDefaults.writable))) return;
+        final var baseline = diskDefaults;
         var ctx = requireContext();
         // Saved selection, or the "filter out little cores" default when unset.
-        var savedCsv = getQemuImgCpuAffinity(ctx);
+        var savedCsv = baseline == null ? getQemuImgCpuAffinity(ctx) : baseline.cpuCsv();
         CpuCorePickerDialog.show(
             ctx, R.string.settings_cpu_affinity_title,
             savedCsv.isEmpty() ? CpuUtils.defaultBigCoresCsv() : savedCsv,
             picked -> {
-                ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit().putString(KEY_QEMU_IMG_CPU_AFFINITY, picked).apply();
-                refreshCpuAffinitySummary();
+                try { workDiskDefaults(baseline, new JSONObject().put(DiskDefaultsClient.CPUS, new org.json.JSONArray(CpuUtils.parseCpuSet(picked)))); }
+                catch (JSONException error) { throw new IllegalStateException(error); }
             });
     }
 

@@ -6,6 +6,7 @@ package cn.classfun.droidvm.ui.vm.edit.peripheral;
 import static android.widget.Toast.LENGTH_SHORT;
 import static android.widget.Toast.makeText;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -20,6 +21,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.UsbAcmClient;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.SerialBackend;
 import cn.classfun.droidvm.lib.store.vm.SerialHardware;
@@ -44,6 +46,7 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
     // "parameter must be a descendant of this view" when layout chases the replaced focused
     // view). Same idiom as VMDiskEditAdapter.
     private boolean updatingViews = false;
+    private UsbAcmClient.Snapshot usbAcm;
 
     public VMSerialEditAdapter(@NonNull Context context) {
         super(context);
@@ -183,10 +186,13 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
             new VMSerialConfig(items.get(pos)).setBackend((SerialBackend) newVal);
             // Configuring is allowed either way, but a VM with an ACM port refuses to boot
             // until the feature is switched on -- say so now, not at boot time.
-            if (newVal == SerialBackend.USB_ACM
-                && !MainSettingsFragment.isUsbAcmEnabled(context))
-                makeText(context, R.string.edit_vm_serial_usb_disabled_hint, LENGTH_SHORT)
-                    .show();
+            if (newVal == SerialBackend.USB_ACM) {
+                if (usbAcm != null && !usbAcm.enabled)
+                    makeText(context, R.string.edit_vm_serial_usb_disabled_hint, LENGTH_SHORT).show();
+                else if (usbAcm == null)
+                    makeText(context, R.string.settings_usb_acm_unavailable, LENGTH_SHORT).show();
+                refreshUsbAcm();
+            }
             notifyItemChangedSafe(pos);
         });
         if (backend.usesPath()) {
@@ -210,9 +216,48 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
         }
     }
 
-    /** Slots come from the app-wide pool-size setting; each is one stable host COM port. */
+    /** Refreshes the read mirror when this editor is shown, without changing VM drafts. */
+    public void refreshUsbAcm() {
+        runOnPool(() -> {
+            try {
+                var snapshot = UsbAcmClient.getInstance().synchronizeLegacy();
+                mainHandler.post(() -> usbAcm = snapshot);
+            } catch (Exception ignored) { mainHandler.post(() -> usbAcm = null); }
+        });
+    }
+
+    /** A picker always re-reads the owner; a cached pool size never grants new choices. */
     private void showUsbSlotPicker(int position) {
-        var slots = MainSettingsFragment.getUsbAcmPorts(context);
+        if (position < 0 || position >= items.size()) return;
+        final String reviewed = items.get(position).toString();
+        runOnPool(() -> {
+            try {
+                var snapshot = UsbAcmClient.getInstance().synchronizeLegacy();
+                mainHandler.post(() -> {
+                    usbAcm = snapshot;
+                    if (!snapshot.writable || !snapshot.enabled || UsbAcmClient.getInstance().hasPending()) {
+                        makeText(context, !snapshot.enabled ? R.string.edit_vm_serial_usb_disabled_hint : R.string.settings_usb_acm_unavailable, LENGTH_SHORT).show();
+                        return;
+                    }
+                    showUsbSlotPicker(position, reviewed, snapshot.ports);
+                });
+            } catch (UsbAcmClient.Blocked error) {
+                mainHandler.post(() -> {
+                    if (error.unsupported) {
+                        makeText(context, R.string.settings_usb_acm_unsupported, LENGTH_SHORT).show();
+                        showUsbSlotPicker(position, reviewed, MainSettingsFragment.getUsbAcmPorts(context));
+                    } else makeText(context, R.string.settings_usb_acm_unavailable, LENGTH_SHORT).show();
+                });
+            } catch (Exception error) { mainHandler.post(() -> makeText(context, R.string.settings_usb_acm_unavailable, LENGTH_SHORT).show()); }
+        });
+    }
+
+    private void showUsbSlotPicker(int position, String reviewed, int slots) {
+        if (context instanceof android.app.Activity) {
+            var activity = (android.app.Activity) context;
+            if (activity.isFinishing() || activity.isDestroyed()) return;
+        }
+        if (position >= items.size() || !reviewed.equals(items.get(position).toString())) return;
         var menu = new PopupMenu(context, null).getMenu();
         for (int i = 0; i < slots; i++)
             menu.add(Menu.NONE, i, i,
@@ -221,6 +266,7 @@ public final class VMSerialEditAdapter extends CardItemAdapter<VMSerialEditViewH
             .setTitle(R.string.edit_vm_serial_usb_slot)
             .setMenu(menu)
             .setListener(item -> {
+                if (position >= items.size() || !reviewed.equals(items.get(position).toString())) return true;
                 new VMSerialConfig(items.get(position)).setUsbSlot(item.getItemId());
                 notifyItemChangedSafe(position);
                 return true;

@@ -135,6 +135,13 @@ public final class VMEditActivity extends SwipeableTabActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (tabs != null) for (var tab : tabs)
+            if (tab instanceof VMEditPeripheralTab) ((VMEditPeripheralTab) tab).refreshUsbAcm();
+    }
+
+    @Override
     public int getCurrentTabIndex() {
         return currentTab.ordinal();
     }

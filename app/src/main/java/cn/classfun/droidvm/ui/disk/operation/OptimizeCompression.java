@@ -4,9 +4,14 @@
 package cn.classfun.droidvm.ui.disk.operation;
 
 import android.content.Context;
+import android.content.ContextWrapper;
+import android.app.Activity;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.RadioGroup;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
@@ -18,8 +23,12 @@ import com.google.android.material.radiobutton.MaterialRadioButton;
 import java.util.function.Consumer;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.daemon.DiskDefaultsClient;
 import cn.classfun.droidvm.ui.disk.create.DiskCompress;
 import cn.classfun.droidvm.ui.main.settings.MainSettingsFragment;
+
+import org.json.JSONObject;
+import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 /**
  * Resolves the compression a disk optimize should target: the preferred-compression setting
@@ -44,8 +53,48 @@ public final class OptimizeCompression {
         @NonNull Runnable onCancel,
         @NonNull Consumer<DiskCompress> onChosen
     ) {
-        var preferred = DiskCompress.fromValue(
-            MainSettingsFragment.getOptimizeCompression(context));
+        var main = new Handler(Looper.getMainLooper());
+        runOnPool(() -> {
+            DiskDefaultsClient.Snapshot snapshot = null;
+            String preference;
+            try {
+                snapshot = DiskDefaultsClient.getInstance().forNewOperation();
+                preference = snapshot.optimizeCompression;
+            } catch (DiskDefaultsClient.Blocked error) {
+                if (!error.unsupported) { main.post(() -> unavailable(context, onCancel)); return; }
+                preference = MainSettingsFragment.getOptimizeCompression(context);
+            } catch (Exception error) { main.post(() -> unavailable(context, onCancel)); return; }
+            final var baseline = snapshot;
+            final var selected = preference;
+            main.post(() -> {
+                if (!alive(context)) { onCancel.run(); return; }
+                resolveWithSnapshot(context, selected, baseline, onCancel, onChosen);
+            });
+        });
+    }
+
+    private static boolean alive(Context context) {
+        Context current = context;
+        while (current instanceof ContextWrapper) {
+            if (current instanceof Activity) {
+                var activity = (Activity) current;
+                return !activity.isFinishing() && !activity.isDestroyed();
+            }
+            Context next = ((ContextWrapper) current).getBaseContext();
+            if (next == current) break;
+            current = next;
+        }
+        return true;
+    }
+
+    private static void unavailable(Context context, Runnable onCancel) {
+        if (alive(context)) Toast.makeText(context, R.string.settings_disk_defaults_unavailable, Toast.LENGTH_LONG).show();
+        onCancel.run();
+    }
+
+    private static void resolveWithSnapshot(Context context, String preference,
+        DiskDefaultsClient.Snapshot baseline, Runnable onCancel, Consumer<DiskCompress> onChosen) {
+        var preferred = DiskCompress.fromValue(preference);
         if (preferred != null && preferred.isCrosvmSupported()) {
             onChosen.accept(preferred);
             return;
@@ -73,9 +122,26 @@ public final class OptimizeCompression {
                 var checked = group.findViewById(group.getCheckedRadioButtonId());
                 var chosen = checked == null
                     ? DiskCompress.NONE : (DiskCompress) checked.getTag();
-                if (remember.isChecked())
-                    MainSettingsFragment.setOptimizeCompression(context, chosen.value());
-                onChosen.accept(chosen);
+                if (!remember.isChecked()) { onChosen.accept(chosen); return; }
+                // Saving a shared default is its own CAS operation. A lost result must not
+                // be presented as remembered or silently retried with a new identity.
+                var main = new Handler(Looper.getMainLooper());
+                runOnPool(() -> {
+                    try {
+                        var client = DiskDefaultsClient.getInstance();
+                        if (baseline == null) {
+                            if (client.hasPending() || client.supported()) throw new java.io.IOException("Legacy disk defaults no longer writable");
+                            if (!context.getSharedPreferences("droidvm_prefs", Context.MODE_PRIVATE).edit()
+                                .putString(DiskDefaultsClient.LEGACY_COMPRESSION, chosen.value()).commit())
+                                throw new java.io.IOException("Could not save compression default");
+                        } else {
+                            var receipt = client.patch(baseline, new JSONObject().put(DiskDefaultsClient.COMPRESSION, chosen.value()));
+                            if (!receipt.succeeded) throw new java.io.IOException("Compression default was not saved");
+                            client.refresh();
+                        }
+                        main.post(() -> { if (alive(context)) onChosen.accept(chosen); else onCancel.run(); });
+                    } catch (Exception error) { main.post(() -> unavailable(context, onCancel)); }
+                });
             })
             .show();
     }
