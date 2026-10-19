@@ -3,7 +3,6 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.lib.daemon;
 
-import static android.content.Context.MODE_PRIVATE;
 import static android.widget.Toast.LENGTH_LONG;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.FileUtils.calcHashForFile;
@@ -221,22 +220,10 @@ public final class VMEventHandler implements
     }
 
     public static void sendAppConfig(Activity act) {
-        var req = new JSONObject();
-        try {
-            var pref = act.getSharedPreferences("droidvm_prefs", MODE_PRIVATE);
-            req.put("command", "set_app_config");
-            req.put("config", new JSONObject(pref.getAll()));
-        } catch (Exception e) {
-            Log.w(TAG, "Failed to prepare app config", e);
-        }
+        HostPreferencesClient.initialize(act);
         ThreadUtils.runOnPool(() -> {
             try {
-                var conn = DaemonConnection.getInstance();
-                var resp = conn.request(req);
-                if (!resp.optBoolean("success", false)) {
-                    var msg = resp.optString("message", "unknown error");
-                    Log.w(TAG, fmt("set_app_config failed: %s", msg));
-                }
+                HostPreferencesClient.getInstance().synchronizeAppConfig();
             } catch (Exception e) {
                 Log.w(TAG, "Failed to send app config to daemon", e);
             }

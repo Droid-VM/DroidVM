@@ -44,6 +44,7 @@ import java.util.UUID;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.DiskOperationClient;
+import cn.classfun.droidvm.lib.daemon.DiskDefaultsClient;
 import cn.classfun.droidvm.lib.store.disk.DiskConfig;
 import cn.classfun.droidvm.lib.store.disk.DiskStore;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
@@ -224,10 +225,10 @@ public final class DiskOperationActivity extends AppCompatActivity {
         terminalPanel = findViewById(R.id.terminal_panel);
         terminalPanel.setInteractive(false);
         btnCancel.setOnClickListener(v -> confirmCancel());
-        initialize();
+        initialize(savedInstanceState != null);
     }
 
-    private void initialize() {
+    private void initialize(boolean restored) {
         toolbar.setTitle(R.string.disk_operation_title);
         toolbar.setNavigationOnClickListener(v -> confirmFinish());
         getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
@@ -241,6 +242,12 @@ public final class DiskOperationActivity extends AppCompatActivity {
         var taskJsonStr = intent.getStringExtra(EXTRA_TASK_JSON);
         autoFinish = intent.getBooleanExtra(EXTRA_AUTOFINISH, false);
         successIntent = intent.getParcelableExtra(EXTRA_SUCCESS_INTENT, Intent.class);
+        // Recreation is not authorization for another disk mutation or a fresh default read.
+        if (restored) {
+            autoFinish = false;
+            showFailed(getString(R.string.disk_operation_native_unknown));
+            return;
+        }
         if (taskJsonStr == null) {
             Log.e(TAG, "Missing task JSON");
             finish();
@@ -251,6 +258,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             final String diskPath;
             final String diskName;
             final java.util.Set<String> nativeActions;
+            final String cpuAffinity;
             try {
                 // Registry and capability reads are RPCs: never on the main thread.
                 diskStore = DiskStore.loadForPlanning(getApplicationContext());
@@ -259,6 +267,14 @@ public final class DiskOperationActivity extends AppCompatActivity {
             } catch (Exception e) {
                 Log.e(TAG, "Cannot read disk registry or daemon capabilities", e);
                 runOnUiThread(() -> showFailed(getString(R.string.disk_info_load_failed)));
+                return;
+            }
+            try {
+                // Freeze once for this new operation, before choosing native or legacy execution.
+                cpuAffinity = resolveCpuAffinity();
+            } catch (Exception error) {
+                Log.e(TAG, "Cannot confirm shared disk defaults", error);
+                runOnUiThread(() -> showFailed(getString(R.string.settings_disk_defaults_unavailable)));
                 return;
             }
             if (diskIdStr != null) {
@@ -285,7 +301,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             // The daemon owns registered disks once it offers native operations: no su shell.
             // A new disk is created and registered by the daemon from its path.
             if (!nativeActions.isEmpty() && (diskConfig != null || isCreate(taskJsonStr))) {
-                runNative(taskJsonStr, diskPath, nativeActions);
+                runNative(taskJsonStr, diskPath, nativeActions, cpuAffinity);
                 return;
             }
             // Only creation may name a path: rewriting an unregistered file would bypass the
@@ -298,8 +314,7 @@ public final class DiskOperationActivity extends AppCompatActivity {
             try {
                 var task = new JSONObject(taskJsonStr);
                 var gen = new ImageCommandGenerate(diskStore);
-                gen.setCpuAffinity(
-                    MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext()));
+                gen.setCpuAffinity(cpuAffinity);
                 cmd = gen.buildCommand(task, diskPath);
                 taskAction = task.optString("action", "");
                 outputPath = gen.getOutputPath();
@@ -476,14 +491,23 @@ public final class DiskOperationActivity extends AppCompatActivity {
         catch (Exception e) { return false; }
     }
 
-    private void runNative(@NonNull String taskJson, @NonNull String path, @NonNull java.util.Set<String> actions) {
+    private String resolveCpuAffinity() throws java.io.IOException, org.json.JSONException {
+        try { return DiskDefaultsClient.getInstance().forNewOperation().cpuCsv(); }
+        catch (DiskDefaultsClient.Blocked error) {
+            if (!error.unsupported) throw error;
+            return MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext());
+        }
+    }
+
+    private void runNative(@NonNull String taskJson, @NonNull String path, @NonNull java.util.Set<String> actions,
+        @NonNull String cpuAffinity) {
         final JSONObject request;
         try {
             var task = new JSONObject(taskJson);
             taskAction = task.optString("action", "");
             request = nativeRequest(task, diskConfig, path);
             // The settings' qemu-img cores, bound by the daemon as taskset did.
-            var cpus = CpuUtils.parseCpuSet(MainSettingsFragment.getQemuImgCpuAffinity(getApplicationContext()));
+            var cpus = CpuUtils.parseCpuSet(cpuAffinity);
             if (request != null && !cpus.isEmpty()) request.put("cpus", new JSONArray(cpus));
         } catch (Exception e) {
             Log.e(TAG, "Bad native disk task", e);

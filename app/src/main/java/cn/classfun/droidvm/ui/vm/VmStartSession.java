@@ -38,7 +38,7 @@ final class VmStartSession {
                 return new Observed(new VMStore(snapshot.document()).findById(id), snapshot);
             }
             public void start(Observed observed, VmStartPlan plan, String bootEntry, boolean clearLogs) throws Exception {
-                client.start(observed.snapshot, id.toString(), plan.overrides(), bootEntry, clearLogs);
+                client.startWithSharedDefaults(observed.snapshot, id.toString(), plan.overrides(), bootEntry, clearLogs);
             }
         }, selected);
     }

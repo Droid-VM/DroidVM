@@ -32,6 +32,11 @@
                     android:text="@string/settings_language_title" />
 
                 <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_webui" android:layout_width="match_parent"
+                    android:layout_height="wrap_content" android:icon="@drawable/ic_language"
+                    android:text="@string/webui_title" android:subtitle="@string/webui_summary" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
                     android:id="@+id/item_hugepage_reserve"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -54,6 +59,15 @@
                 android:layout_height="wrap_content"
                 android:title="@string/settings_category_vm"
                 app:cc_collapsible="false">
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_host_preferences"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_memory"
+                    android:visibility="gone"
+                    android:text="@string/menu_refresh"
+                    android:subtitle="@string/settings_host_preferences_loading" />
 
                 <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
                     android:id="@+id/item_vm_auto_console"
@@ -78,6 +92,15 @@
                     android:icon="@drawable/ic_card_multiple"
                     android:subtitle="@string/settings_vm_hugepage_auto_reserve_summary"
                     android:text="@string/settings_vm_hugepage_auto_reserve_title" />
+
+                <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
+                    android:id="@+id/item_disk_defaults"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:icon="@drawable/ic_wand"
+                    android:visibility="gone"
+                    android:text="@string/menu_refresh"
+                    android:subtitle="@string/settings_host_preferences_loading" />
 
                 <cn.classfun.droidvm.ui.widgets.row.TextRowWidget
                     android:id="@+id/item_vm_optimize_compression"

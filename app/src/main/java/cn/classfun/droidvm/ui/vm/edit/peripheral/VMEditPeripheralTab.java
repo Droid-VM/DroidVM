@@ -67,6 +67,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
     private CardItemListView listPeripherals;
     private CardItemListView listSerialPorts;
     private VMPeripheralEditAdapter adapter;
+    private VMSerialEditAdapter serialAdapter;
     /**
      * The VM's controller-id counter, carried across the edit.
      *
@@ -100,7 +101,8 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         adapter.setXhciHost(this);
-        listSerialPorts.setAdapter(VMSerialEditAdapter.class);
+        serialAdapter = listSerialPorts.setAdapter(VMSerialEditAdapter.class);
+        serialAdapter.refreshUsbAcm();
         if (!parent.editMode) {
             var seed = DataItem.newObject();
             var peripherals = DataItem.newArray();
@@ -125,11 +127,16 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         // rows were last bound. The rules are deliberately not re-read -- that is a once-per-
         // session load, and reading it again here would throw away rows the user just added.
         if (adapter != null) adapter.refreshHostDevices();
+        if (serialAdapter != null) serialAdapter.refreshUsbAcm();
         loadHostDevices();
         // The master switch is the exception to that: it lives on the rules page, it is not a
         // row, and reading it back cannot lose an edit -- so the warning it drives is refreshed
         // rather than left at what it said when the editor opened.
         refreshUsbEnabled();
+    }
+
+    public void refreshUsbAcm() {
+        if (serialAdapter != null) serialAdapter.refreshUsbAcm();
     }
 
     /** Whether the unsaved peripheral rows give the guest a host microphone. */
