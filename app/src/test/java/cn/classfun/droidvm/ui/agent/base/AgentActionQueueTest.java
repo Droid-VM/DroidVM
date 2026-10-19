@@ -4,7 +4,7 @@ package cn.classfun.droidvm.ui.agent.base;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
+import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 
 import androidx.annotation.NonNull;
 
@@ -60,6 +60,11 @@ public final class AgentActionQueueTest {
 
         var actions = BaseAction.createActions(vm);
         var script = BaseAction.buildRescueScript(actions);
+        // These resources are also embedded by the daemon; both consumers use one payload.
+        assertTrue(script.startsWith(AgentScripts.PREAMBLE));
+        assertTrue(script.endsWith(AgentScripts.EPILOGUE));
+        assertTrue(script.contains("CHANGE_NORMAL_USERS='true'\n" + AgentScripts.CHPASSWD));
+        assertTrue(script.contains("DISK='/dev/vda'\n" + AgentScripts.AUTOGROW));
         assertTrue(script.indexOf("ACTION_TYPE=chpasswd")
             < script.indexOf("ACTION_TYPE=autogrow"));
         assertEquals(1, occurrences(script, "marker RESULT:OK"));
@@ -114,8 +119,11 @@ public final class AgentActionQueueTest {
         // keep the scratch state and the mount points the script creates inside a temp dir.
         var sandbox = Files.createTempDirectory("droidvm-agent-test");
         script = script
-            .replace("STATE_DIR=/run/droidvm-agent", fmt("STATE_DIR=%s/state", sandbox))
-            .replace("mkdir -p /mnt /mnt-autogrow", fmt("mkdir -p %s/mnt", sandbox));
+            .replace("STATE_DIR=/run/droidvm-agent", "STATE_DIR="
+                + escapedString(sandbox.resolve("state").toString().replace('\\', '/')))
+            // Override cleanup before any action runs: the host owns its mount points.
+            .replace("mkdir -p /mnt /mnt-autogrow", "release_mounts() { :; }\nmkdir -p "
+                + escapedString(sandbox.resolve("mnt").toString().replace('\\', '/')));
         var scriptFile = sandbox.resolve("rescue.sh");
         Files.writeString(scriptFile, script);
         var process = new ProcessBuilder("sh", scriptFile.toString())

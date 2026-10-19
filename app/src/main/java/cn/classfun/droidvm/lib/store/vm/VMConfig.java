@@ -65,98 +65,25 @@ public class VMConfig extends DataConfig {
     public static VMConfig createWithCustomizeDefaults(@NonNull Context context) {
         var config = new VMConfig();
         var item = config.item;
-        item.set("memory_mb", 512L);
-        item.set("cpu_count", 1L);
-        item.set("swiotlb_mb", 256L);
-        item.set("balloon", false);
-        item.set("pmu", NEW_VM_DEFAULT_PMU);
-        item.set("rng", NEW_VM_DEFAULT_RNG);
-        item.set("smt", NEW_VM_DEFAULT_SMT);
-        item.set("sandbox", false);
-        item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
-        item.set("strace", false);
-        item.set("gpu_vram_folio_threshold_kb", 1024L);
+        try {
+            // Embed the same static template as the daemon, including nested defaults.
+            // Merge into the new config so its UUID and creation time stay intact.
+            var defaults = new JSONObject(cn.classfun.droidvm.BuildConfig.VM_DEFAULTS_JSON);
+            var keys = defaults.keys();
+            while (keys.hasNext()) {
+                var key = keys.next();
+                item.set(key, DataItem.from(defaults.get(key)));
+            }
+        } catch (JSONException e) {
+            throw new IllegalStateException("Invalid embedded VM defaults", e);
+        }
         item.set(LendMthpMode.KEY, LendMthpMode.defaultForDevice(context));
-        item.set("backend", VMBackend.DEFAULT);
         var hypervisor = VMHypervisor.defaultForNewVm(VMBackend.DEFAULT);
         item.set("hypervisor", hypervisor);
         item.set("protected_vm", ProtectedVM.defaultFor(VMBackend.DEFAULT, hypervisor));
-        item.set("extra_options", DataItem.newArray());
-        item.set("environment_variables", DataItem.newArray());
-        item.set(CpuPlacementPlan.KEY_AFFINITY, "");
-        item.set(CpuPlacementPlan.KEY_AUTO, true);
-        item.set(CpuPlacementPlan.KEY_CAPACITY, "");
-        item.set(CpuPlacementPlan.KEY_CLUSTERS, "");
-
         var boot = BootConfig.of(config);
-        boot.setProtocol(BootConfig.Protocol.UEFI);
-        boot.setUefiFirmware("");
-        boot.setUefiVarsEnabled(true);
-        boot.setUefiVars("");
-        boot.setLinuxSource(BootConfig.LinuxSource.MANUAL);
         boot.setKernel(PATH_BUILTIN_KERNEL);
         boot.setInitrd(PATH_BUILTIN_INITRD);
-        boot.setCmdline(BootConfig.DEFAULT_MANUAL_CMDLINE);
-        boot.setImageCmdline("");
-        boot.setImageDisk(0);
-        boot.setVdafix(true);
-        boot.setBootWait(BootConfig.DEFAULT_BOOT_WAIT);
-        item.set("auto_up", false);
-
-        item.set("disks", DataItem.newArray());
-        item.set("shared_dirs", DataItem.newArray());
-        item.set("networks", DataItem.newArray());
-
-        var gpu = VMScreenConfig.of(item, VMScreenConfig.ID_GPU0);
-        gpu.setEnabled(false);
-        // Set even though the screen is off, because this is what the editor shows the moment the
-        // user turns virtio-gpu on -- the row's own default stopped being reachable when a new VM
-        // started going through loadConfig like an existing one. Nothing is exported until the
-        // screen is enabled: save() writes NONE for a screen that is off, and the backend emits
-        // exporters only for enabled screens.
-        gpu.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
-        gpu.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_GPU0, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
-        gpu.setInputEnabled(true);
-        // Written even though the screen is off and its exporter is not VNC, for the same reason
-        // the exporter above is: the editor loads this config over its rows, so what it shows the
-        // moment the user switches this screen to VNC is what is written here. The two screens get
-        // different ports because they can be exported at once and two servers may not share one.
-        gpu.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
-        gpu.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_GPU0));
-        gpu.setWidth(VMScreenConfig.DEFAULT_WIDTH);
-        gpu.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
-        gpu.setRefreshRate(VMScreenConfig.DEFAULT_REFRESH_RATE);
-        gpu.setDpiH(VMScreenConfig.DEFAULT_DPI);
-        gpu.setDpiV(VMScreenConfig.DEFAULT_DPI);
-
-        var simpleFb = VMScreenConfig.of(item, VMScreenConfig.ID_SIMPLEFB);
-        simpleFb.setEnabled(true);
-        simpleFb.setExporter(VMScreenConfig.NEW_VM_DEFAULT_EXPORTER);
-        simpleFb.setTransportCap(DisplayTransportCap.defaultFor(
-            VMScreenConfig.ID_SIMPLEFB, VMScreenConfig.NEW_VM_DEFAULT_EXPORTER));
-        simpleFb.setInputEnabled(true);
-        simpleFb.setVncHost(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
-        simpleFb.setVncPort(VMScreenConfig.newVmDefaultVncPort(VMScreenConfig.ID_SIMPLEFB));
-        simpleFb.setWidth(VMScreenConfig.DEFAULT_WIDTH);
-        simpleFb.setHeight(VMScreenConfig.DEFAULT_HEIGHT);
-        simpleFb.setPollHz(VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
-        item.set("display_blit_provider", GpuBlitProvider.TURNIP);
-        item.set(CpuPlacementPlan.KEY_GPU_CGROUP, false);
-        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH,
-            CpuPlacementPlan.DEFAULT_GPU_CGROUP_PATH);
-        item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, "");
-        VpuConfig.setEnabled(item, false);
-        VpuConfig.setHostPoolMb(item, VpuConfig.DEFAULT_HOST_POOL_MB);
-        VpuConfig.setGuestPoolMb(item, VpuConfig.DEFAULT_GUEST_POOL_MB);
-
-        var peripherals = DataItem.newArray();
-        peripherals.append(VMPeripheralConfig.createDefaultVirtioSound().item);
-        item.set(VMXhciConfig.KEY_PERIPHERALS, peripherals);
-        // Through the minting path rather than a literal entry, so the id and the counter behind
-        // it are the same "xhci-0" the migration of an old config produces.
-        if (NEW_VM_DEFAULT_USB) VMXhciConfig.addController(item);
-        VMSerialConfig.ensureDefaults(item);
         return config;
     }
 

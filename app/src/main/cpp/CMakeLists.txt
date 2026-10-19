@@ -138,7 +138,7 @@ target_compile_options(vnc_jni PRIVATE -Wall -Wextra -O2)
 # platform Vulkan loader at runtime (dlopen, not linked) and reports which blit extensions the
 # stock driver lacks, so the UI can warn before the bridge silently degrades to a CPU copy.
 add_library(vkprobe SHARED vkprobe/vkprobe.cpp)
-target_link_libraries(vkprobe log)
+target_link_libraries(vkprobe PRIVATE droidvm_vulkan_probe)
 target_compile_options(vkprobe PRIVATE -Wall -Wextra -O2)
 
 

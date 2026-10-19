@@ -15,7 +15,8 @@ import java.util.Map;
 
 public final class QcomGunyahSupports {
     private static final String TAG = "QcomGunyahSupports";
-    private static final String GUNYAH_ASSET = "data/gunyah.yaml";
+    // JSON is a YAML subset; retain the existing asset loader and table rules.
+    private static final String GUNYAH_ASSET = "data/gunyah.json";
     private final Map<String, Map<String, Boolean>> socCapabilities = new HashMap<>();
     private final Context ctx;
 
