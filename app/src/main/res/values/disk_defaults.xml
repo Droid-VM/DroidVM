@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_disk_defaults_title">Shared disk defaults</string>
+    <string name="settings_disk_defaults_legacy">This daemon uses local disk defaults. Update it to share these settings.</string>
+    <string name="settings_disk_defaults_unavailable">Disk defaults could not be confirmed. Open Settings to refresh or query the pending save.</string>
+</resources>

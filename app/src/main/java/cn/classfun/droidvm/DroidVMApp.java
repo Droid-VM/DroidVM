@@ -25,6 +25,10 @@ public final class DroidVMApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        cn.classfun.droidvm.lib.daemon.HugePageOperationClient.initialize(this);
+        cn.classfun.droidvm.lib.daemon.HostPreferencesClient.initialize(this);
+        cn.classfun.droidvm.lib.daemon.UsbAcmClient.initialize(this);
+        cn.classfun.droidvm.lib.daemon.DiskDefaultsClient.initialize(this);
         DynamicColors.applyToActivitiesIfAvailable(this);
         registerActivityLifecycleCallbacks(new ImeInsetsApplier());
         vmEventHandler = new VMEventHandler(this);

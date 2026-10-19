@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_disk_defaults_title">共用磁碟預設設定</string>
+    <string name="settings_disk_defaults_legacy">此守護程式使用本機磁碟預設設定，更新後可與 WebUI 共用。</string>
+    <string name="settings_disk_defaults_unavailable">無法確認磁碟預設設定，請前往設定重新整理或查詢待確認的儲存。</string>
+</resources>
