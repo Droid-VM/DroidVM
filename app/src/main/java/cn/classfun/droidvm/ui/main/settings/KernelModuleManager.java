@@ -146,6 +146,7 @@ public final class KernelModuleManager {
 
     /** {@code insmod} the module; true on success. */
     public static boolean load(@NonNull String path) {
+        if (isCoordinatedHugepage(path)) return false;
         return RunUtils.run("insmod %s%s", RunUtils.escapedString(path), insmodArgsFor(path))
                 .isSuccess();
     }
@@ -184,6 +185,7 @@ public final class KernelModuleManager {
 
     /** {@code rmmod} the module by name; true on success. */
     public static boolean unload(@NonNull String name) {
+        if (isCoordinatedHugepage(name)) return false;
         return RunUtils.run("rmmod %s", name).isSuccess();
     }
 
@@ -210,6 +212,7 @@ public final class KernelModuleManager {
      * unverified module out of the boot path regardless. Returns false when refused.
      */
     public static boolean setAutostart(@NonNull Context ctx, @NonNull String name, boolean enabled) {
+        if (isCoordinatedHugepage(name)) return false;
         if (enabled && !isVerified(name)) return false;
         var set = autostartSet(ctx);
         if (enabled) set.add(name);
@@ -232,8 +235,16 @@ public final class KernelModuleManager {
         var enabled = autostartSet(ctx);
         if (enabled.isEmpty()) return;
         for (var mod : list(ctx)) {
+            if (isCoordinatedHugepage(mod.name)) continue;
             if (enabled.contains(mod.name) && !mod.loaded)
                 load(mod.path);
         }
+    }
+
+    /** This module belongs to the native huge-page service, including its boot setting. */
+    private static boolean isCoordinatedHugepage(String pathOrName) {
+        String name = new File(pathOrName).getName().replace('-', '_');
+        if (name.endsWith(".ko")) name = name.substring(0, name.length() - 3);
+        return "gh_hugepage_reserve".equals(name);
     }
 }

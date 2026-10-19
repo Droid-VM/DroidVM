@@ -5,11 +5,9 @@ package cn.classfun.droidvm.ui.hugepage;
 
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
-import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
-import static cn.classfun.droidvm.lib.utils.StringUtils.joinNonEmpty;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
 import android.os.SystemClock;
@@ -30,29 +28,39 @@ import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
-import cn.classfun.droidvm.lib.run.RunResult;
+import cn.classfun.droidvm.lib.daemon.HugePageOperationClient;
 import cn.classfun.droidvm.lib.utils.Try;
 
-/**
- * The single huge-page facade both screens ({@link HugePageActivity},
- * {@link HugePageProcessActivity}) talk to.
- *
- * <p>It hides the {@code gh_hugepage_reserve} module's <b>v6/v7 differences</b>:
- * callers ask for a high-level operation and never branch on version or poke raw
- * sysfs. Version is never decided ahead of time -- each mutation is a
- * <b>degradation ladder</b> that just tries the best knob and falls back
- * (e.g. the migrating {@code acquire} knob -> {@code manual_refill};
- * {@code pool_want=0} soft-disable -> {@code rmmod}). The internal {@link Try}
- * ladder is collapsed to a small {@link Result} ({@code OK / UNSUPPORTED /
- * FAILED}) for the GUI -- that is the "return an error when it can't run" contract.
- *
- * <p>Reads are cached with short TTLs so the per-second refresh loop doesn't
- * block on the daemon or re-read a static knob every tick. Each screen owns its
- * own instance (separate caches); everything here is context-free (pure data) and
- * never holds an Activity reference. Mutations do shell I/O -- call them off the UI
- * thread.
- */
+/** Read facade for huge-page screens. All mutations use the coordinated native owner. */
 final class HugePageModel {
+    private Result operate(String kind, Object... fields) {
+        var receipt = HugePageOperationClient.getInstance().execute(
+            HugePageOperationClient.operation(kind, fields));
+        return new Result(receipt.succeeded ? Outcome.OK : Outcome.FAILED,
+            receipt.implementation, receipt.error, receipt.degraded, receipt.saved, receipt.applied);
+    }
+
+    Result saveTargets(long pages, long withCma, int acquireMode) {
+        return operate("targets", "poolPages", pages, "cmaPages", withCma < 0 ? null : withCma,
+            "persist", true, "acquireMode", acquireMode);
+    }
+
+    Result setCma(boolean enabled, long pages, boolean persist, @Nullable String lever) {
+        return operate("cma", "enabled", enabled, "pages", pages, "persist", persist, "lever", lever);
+    }
+
+    Result saveCma(long pages, @Nullable String lever) {
+        return operate("cma-save", "pages", pages, "lever", lever);
+    }
+
+    Result reconcile() {
+        return operate("reconcile");
+    }
+
+    Result dismissCrash() {
+        return operate("dismiss-crash");
+    }
+
     static final String SYSFS_BASE = "/sys/module/gh_hugepage_reserve";
     static final String SYSFS_PARAMS = pathJoin(SYSFS_BASE, "parameters");
     private static final String SYSFS_OWNERS = pathJoin(SYSFS_PARAMS, "vm_owners");
@@ -60,17 +68,8 @@ final class HugePageModel {
     private static final String MODULE_PROP = pathJoin(MAGISK_BASE, "module.prop");
     private static final String DISABLE_FILE = pathJoin(MAGISK_BASE, "disable");
     private static final String SETTINGS_PROP = pathJoin(MAGISK_BASE, "settings.prop");
-    private static final String KO_PATH = pathJoin(MAGISK_BASE, "gh_hugepage_reserve.ko");
-    /** The module's own preflight+insmod script (v10.1+); preferred load path. */
-    private static final String LOAD_SCRIPT = pathJoin(MAGISK_BASE, "load.sh");
-    /** ABI/BTF preflight helper the boot script feeds into insmod. */
-    private static final String KAPI_CHECK = pathJoin(MAGISK_BASE, "kapi_check");
-    /** insmod params are pasted into a shell line: allow only inert characters. */
-    private static final Pattern SAFE_PARAM = Pattern.compile("[A-Za-z0-9_,.-]+");
     /** A THP huge page is 2 MiB = 2048 KiB. */
     private static final long KB_PER_PAGE = 2048;
-    /** Default target if settings.prop has none (pages): 1024 x 2 MB = 2 GB. */
-    private static final long DEFAULT_WANT_PAGES = 1024;
 
     /** meminfo/smaps values are "<n> kB"; strip everything but the digits once. */
     private static final Pattern NON_DIGITS = Pattern.compile("[^0-9]");
@@ -106,13 +105,22 @@ final class HugePageModel {
          * fallback, {@code degraded} says that it is one.
          */
         final boolean degraded;
+        final boolean saved;
+        final boolean applied;
 
         private Result(@NonNull Outcome outcome, @Nullable String impl,
                        @Nullable String detail, boolean degraded) {
+            this(outcome, impl, detail, degraded, false, false);
+        }
+
+        private Result(@NonNull Outcome outcome, @Nullable String impl,
+                       @Nullable String detail, boolean degraded, boolean saved, boolean applied) {
             this.outcome = outcome;
             this.impl = impl;
             this.detail = detail;
             this.degraded = degraded;
+            this.saved = saved;
+            this.applied = applied;
         }
 
         boolean ok() {
@@ -347,45 +355,15 @@ final class HugePageModel {
         return existsSticky(pathJoin(SYSFS_PARAMS, "served_summary"));
     }
 
-    /**
-     * Bring the running pool up (true) or down (false), choosing the deepest action
-     * the module supports:
-     * <ul>
-     *   <li><b>enable</b>: not loaded -> insmod (targeting the saved size); loaded ->
-     *       restore the target by writing the saved {@code pool_want} (v6 loaded is
-     *       already active, so this is a no-op there);</li>
-     *   <li><b>disable</b>: try {@code pool_want=0} (soft -- frees the reserve but
-     *       keeps per-VM tracking); if that write can't happen (v6 has no such knob)
-     *       fall back to {@code rmmod}.</li>
-     * </ul>
-     */
+    /** The native owner performs load/restore/acquire or stop/wait/disable as one operation. */
     @NonNull
     Result setRuntimeEnabled(boolean on) {
-        if (on) {
-            if (!existsSticky(SYSFS_BASE)) {
-                return collapse(loadLadder(savedWantPages()));   // insmod
-            }
-            // Loaded: restore the target. Succeeds on v7; on v6 there's no pool_want
-            // and a loaded module is already active, so treat a failed write as "already enabled".
-            var t = writeKnob("pool_want", Long.toString(savedWantPages()));
-            return t.ok() ? Result.ok("soft-enable") : Result.ok("already-active");
-        }
-        // Disable. Pick soft-vs-rmmod by *capability* (does the pool_want knob
-        // exist?), NOT by write success: a v7 soft-disable can also fail
-        // transiently (the module refuses a resize mid-acquire, or a root hiccup),
-        // and escalating that to rmmod would destroy the per-VM tracking that
-        // soft-disable exists to preserve. So v7 only ever soft-disables (a failed
-        // write is reported as FAILED to retry); only v6 (no knob) falls to rmmod.
-        if (existsSticky(pathJoin(SYSFS_PARAMS, "pool_want"))) {
-            var soft = writeKnob("pool_want", "0");
-            return soft.ok() ? Result.ok("soft") : Result.failed("soft", soft.error);
-        }
-        return collapse(unloadLadder());
+        return operate("runtime", "enabled", on);
     }
 
     @NonNull
     Result unload() {
-        return collapse(unloadLadder());
+        return operate("unload");
     }
 
     /**
@@ -394,52 +372,19 @@ final class HugePageModel {
      */
     @NonNull
     Result setBootEnabled(boolean on) {
-        var r = on
-            ? runList("rm", "-f", DISABLE_FILE)
-            : run("touch %s", DISABLE_FILE);
-        return r.isSuccess()
-            ? Result.ok(on ? "enable-boot" : "disable-boot")
-            : Result.failed("disable-file", reason(r, "disable"));
+        return operate("boot", "enabled", on);
     }
 
-    /**
-     * Fill the pool toward its target with acquire algorithm {@code mode}
-     * (1 = original scan, 2 = migrate + system reclaim, 3 = migrate + per-block
-     * evict). Prefers the migrating {@code acquire} knob; on any failure (v6 has no
-     * such knob, or -ENOSYS where this kernel can't run that mode) degrades to
-     * {@code manual_refill}. Fire-and-return -- poll {@link #state()} for completion.
-     */
+    /** Request one acquire from the native owner. Only it may select a supported implementation. */
     @NonNull
     Result acquire(int mode) {
-        // Drop the whole VM page cache + reclaimable slab first so more 2 MB windows
-        // are already free (or trivially assemblable) before the sweep - the module's
-        // own acquire_drop_slab covers slab only, not the page cache. Best-effort: a
-        // failed drop doesn't block the acquire.
-        run("echo 3 > /proc/sys/vm/drop_caches");
-        // Walk the requested mode down to the gentlest migrating mode: the module
-        // returns -ENOSYS for a mode whose symbols didn't resolve (e.g. v3 on a
-        // kernel lacking the folio/reclaim symbols, or v2 with no alloc_contig_range),
-        // so try mode -> ... -> 1 before giving up on migration and falling back to a
-        // plain manual_refill. Any acquire mode is pollable via acquire_active, so the
-        // winning impl is uniformly "acquire" (the running mode surfaces in acquire_mode).
-        for (int m = mode; m >= 1; m--) {
-            if (writeKnob("acquire", Integer.toString(m)).ok()) {
-                // impl names the actual migrating mode that ran ("v1".."v3");
-                // degraded when it's below what was asked for.
-                return Result.ok(fmt("v%d", m), m != mode);
-            }
-        }
-        var refill = writeKnob("manual_refill", "1");
-        return refill.ok()
-            ? Result.ok("manual_refill", true)
-            : Result.unsupported("no acquire / manual_refill knob");
+        return operate("acquire", "mode", mode);
     }
 
-    /** Interrupt a running acquire (write 0 to the knob). No worker exists on v6. */
+    /** Stop an acquire through the same native coordinator as runtime and target edits. */
     @NonNull
     Result stopAcquire() {
-        var t = writeKnob("acquire", "0");
-        return t.ok() ? Result.ok("acquire") : Result.unsupported(t.error);
+        return operate("stop-acquire");
     }
 
     /* ================================================================== */
@@ -449,7 +394,6 @@ final class HugePageModel {
     /** settings.prop values recording which movable->CMA lever the user saved. */
     static final String LEVER_HOOK = "hook";
     static final String LEVER_FLAG = "flag";
-    private static final String CMA_LEVER_KEY = "cma_movable_lever";
 
     private static final String MTC_VENDER = "moveable_to_cma_vender_already_allowed";
     private static final String MTC_RESTRICT = "moveable_to_cma_restrict_cma_redirect_disabled";
@@ -487,8 +431,7 @@ final class HugePageModel {
      */
     @NonNull
     Result setRestrictFlip(boolean on) {
-        var t = writeKnob(MTC_RESTRICT, on ? "1" : "0");
-        return t.ok() ? Result.ok(MTC_RESTRICT) : Result.failed(MTC_RESTRICT, t.error);
+        return operate("restrict", "enabled", on);
     }
 
     /** Read the flag state: 1 = redirect open, 0 = blocked, -1 = unresolvable. */
@@ -502,8 +445,7 @@ final class HugePageModel {
      */
     @NonNull
     Result setGfpHook(boolean on) {
-        var t = writeKnob(MTC_GFP_HOOK, on ? "1" : "0");
-        return t.ok() ? Result.ok(MTC_GFP_HOOK) : Result.failed(MTC_GFP_HOOK, t.error);
+        return operate("gfp-hook", "enabled", on);
     }
 
     /** Read the gfp hook arm state: 1 = armed, 0 = disarmed, -1 = absent. */
@@ -511,41 +453,25 @@ final class HugePageModel {
         return readIntParam(MTC_GFP_HOOK, -1);
     }
 
-    /**
-     * Persist the chosen movable->CMA lever ({@link #LEVER_HOOK} /
-     * {@link #LEVER_FLAG}) under an app-owned settings.prop key, so a future
-     * boot script can re-apply it as an insmod param. The shipped load.sh does
-     * not read it yet, so this only records intent - deliberate: the lever is
-     * applied live and only saved once it has proven it doesn't crash the boot.
-     */
+    /** Save lever intent through the native owner; never rewrites settings.prop in the App. */
     @NonNull
     Result saveCmaLever(@NonNull String lever) {
-        var changes = new LinkedHashMap<String, String>();
-        changes.put(CMA_LEVER_KEY, lever);
-        var t = updateSettings(changes);
-        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+        return operate("cma-lever", "value", lever);
     }
 
     /** Forget the persisted lever (CMA switched off, or the user declined save). */
     @NonNull
     Result clearCmaLever() {
-        var changes = new LinkedHashMap<String, String>();
-        changes.put(CMA_LEVER_KEY, null);   // null value = remove the key
-        var t = updateSettings(changes);
-        return t.ok() ? Result.ok("settings") : Result.failed("settings", t.error);
+        return operate("cma-lever", "value", null);
     }
 
-    /**
-     * Drop a stale {@code cma_probe_result} left by an older app version. The
-     * shipped boot script still cold-starts the whole CMA side on
-     * {@code cma_probe_result=0}, so a leftover denial from the removed probe
-     * would keep v11's reservoir off; remove it on sight. No-op when absent.
-     */
-    void clearLegacyProbeKey() {
-        if (!parseProp(safeRead(SETTINGS_PROP)).containsKey("cma_probe_result")) return;
-        var changes = new LinkedHashMap<String, String>();
-        changes.put("cma_probe_result", null);
-        updateSettings(changes);
+    /** Explicit legacy-settings migration; reading or opening a screen never triggers it. */
+    boolean hasLegacySettings() {
+        return parseProp(safeRead(SETTINGS_PROP)).containsKey("cma_probe_result");
+    }
+
+    Result migrateSettings() {
+        return operate("migrate-settings");
     }
 
     /* ================================================================== */
@@ -561,22 +487,6 @@ final class HugePageModel {
     static final List<String> ADVANCED_KEYS = List.of(
         "system_reserve_mb", "cma_reservoir_floor_mb",
         "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
-
-    /**
-     * Knobs whose module param is writable at runtime (0600), so a save shows up
-     * without waiting for the next load. Two different reasons to be on this
-     * list: {@code cma_reservoir_floor_mb} is consulted on every flip, so writing
-     * it actually takes effect; the {@code boot_acquire} trio is writable
-     * precisely because the module never reads it - the write changes nothing and
-     * exists so a saved setting is visible somewhere the user can see it.
-     *
-     * <p>{@code system_reserve_mb} is deliberately absent: it sizes a table built
-     * once at insmod, so a later write would only lie about what is in force. An
-     * older module has these as 0400 and the write simply fails - the value still
-     * persisted, it just waits for the next load.
-     */
-    private static final List<String> LIVE_WRITABLE = List.of(
-        "cma_reservoir_floor_mb", "boot_acquire", "boot_acquire_runs", "boot_acquire_wait");
 
     /** Module param carrying THIS device's default reserve, {@code min(RAM/2, 6144)}. */
     private static final String SYSTEM_RESERVE_DEFAULT = "system_reserve_mb_default";
@@ -622,23 +532,10 @@ final class HugePageModel {
         return readIntParam(SYSTEM_RESERVE_DEFAULT, -1);
     }
 
-    /**
-     * Persist one advanced key ({@code null} removes it, restoring the module
-     * default), and apply it live when the param allows it. Persisting is the
-     * operation that matters - these keys exist to survive a reload - so a failed
-     * live write is not a failure, just a value that waits for the next load.
-     */
+    /** The native owner validates, saves and applies this advanced setting; the receipt records both outcomes. */
     @NonNull
     Result saveAdvanced(@NonNull String key, @Nullable String value) {
-        var changes = new LinkedHashMap<String, String>();
-        changes.put(key, value);
-        var t = updateSettings(changes);
-        if (!t.ok()) return Result.failed("settings", t.error);
-        if (value != null && LIVE_WRITABLE.contains(key)
-            && existsSticky(pathJoin(SYSFS_PARAMS, key))
-            && writeKnob(key, value).ok())
-            return Result.ok(key);
-        return Result.ok("settings");
+        return operate("advanced", "key", key, "value", value);
     }
 
     /** Read an integer sysfs param, or {@code def} when absent/unparseable. */
@@ -667,119 +564,27 @@ final class HugePageModel {
         return 0;
     }
 
-    /**
-     * Persist the with-CMA total for the next boot and best-effort apply it to
-     * the running module. A non-zero target is also remembered under the
-     * {@code _last} key for the next re-enable. Like {@link #saveTargets}, the
-     * result reports whether the live write landed ({@code degraded} when only
-     * the persist took effect).
-     */
+    /** Save and apply the CMA target as one coordinated native operation. */
     @NonNull
     Result saveCmaTarget(long pages) {
-        var persisted = updateSettings(cmaTargetChanges(pages));
-        if (!persisted.ok()) return Result.failed("settings", persisted.error);
-        var live = writeKnob("pool_want_with_cma", Long.toString(pages));
-        return Result.ok(live.ok() ? "pool_want_with_cma" : "settings", !live.ok());
+        return operate("cma-target", "pages", pages, "persist", true);
     }
 
-    /**
-     * Persist pool target and with-CMA total in ONE settings.prop rewrite, then
-     * apply both live knobs ({@code pool_want} first - a value above the old
-     * with-CMA total drags it up, and the second write then pins it exact).
-     * {@code withCma < 0} leaves the CMA keys untouched and only sets the pool
-     * target (persisted under both {@code pool_want} and legacy
-     * {@code pool_target}; on v6 only the persist takes effect). Does <b>not</b>
-     * fire an acquire -- the caller drives that from {@link Snapshot#deficit}.
-     */
+    /** Save coupled targets without acquiring; withCma=-1 preserves the CMA target. */
     @NonNull
     Result saveTargets(long pages, long withCma) {
-        // Persist the EFFECTIVE targets, not the raw input. The module is the
-        // single source of truth for clamping (to pool_size_max), coupling
-        // (pool_want <= pool_want_with_cma, sec. 4) and S-alignment. So when it is
-        // loaded: write the user's values to sysfs, read the pair BACK, and
-        // persist what actually stuck. settings.prop, the running pool and the
-        // UI then all agree, and the coupling/clamp/align rules are never
-        // reimplemented here (they drift - this once did its own Math.max yet
-        // still missed size_max and S-alignment).
-        if (existsSticky(pathJoin(SYSFS_PARAMS, "pool_want"))) {
-            var live = writeKnob("pool_want", Long.toString(pages));
-            boolean liveOk = live.ok();
-            if (withCma >= 0)
-                liveOk &= writeKnob("pool_want_with_cma", Long.toString(withCma)).ok();
-            long effWant = readKnobLong("pool_want", pages);
-            long effCma = withCma >= 0 ? readKnobLong("pool_want_with_cma", withCma) : -1;
-            var changes = new LinkedHashMap<String, String>();
-            changes.put("pool_want", Long.toString(effWant));
-            changes.put("pool_target", Long.toString(effWant));
-            if (effCma >= 0) changes.putAll(cmaTargetChanges(effCma));
-            var persisted = updateSettings(changes);
-            if (!persisted.ok()) return Result.failed("settings", persisted.error);
-            return Result.ok(liveOk ? "pool_want" : "settings", !liveOk);
-        }
-        // Not loaded: no sysfs to clamp against. Persist the raw values (with the
-        // minimal want<=with_cma coupling so the prop is self-consistent); insmod
-        // clamps/aligns them next boot, and the UI reads the effective pair back
-        // once the module is up.
-        if (withCma >= 0) withCma = Math.max(withCma, pages);
-        var changes = new LinkedHashMap<String, String>();
-        changes.put("pool_want", Long.toString(pages));
-        changes.put("pool_target", Long.toString(pages));
-        if (withCma >= 0) changes.putAll(cmaTargetChanges(withCma));
-        var persisted = updateSettings(changes);
-        if (!persisted.ok()) return Result.failed("settings", persisted.error);
-        return Result.ok("settings", false);   // saved for next boot, not applied now
+        return saveTargets(pages, withCma, 0);
     }
 
-    /** Read a single-value sysfs knob as a long; fallback if absent/unparseable. */
-    private static long readKnobLong(@NonNull String knob, long fallback) {
-        var t = safeRead(pathJoin(SYSFS_PARAMS, knob)).trim();
-        if (!t.isEmpty()) try {
-            return Long.parseLong(t);
-        } catch (NumberFormatException ignored) {
-        }
-        return fallback;
-    }
-
-    @NonNull
-    private static Map<String, String> cmaTargetChanges(long pages) {
-        var changes = new LinkedHashMap<String, String>();
-        changes.put("pool_want_with_cma", Long.toString(pages));
-        if (pages > 0) changes.put("pool_want_with_cma_last", Long.toString(pages));
-        return changes;
-    }
-
-    /**
-     * Live {@code pool_want_with_cma} write only (no settings.prop persist), so
-     * the reservoir target set here is undone by a reboot. The enable flow uses
-     * it to build the reservoir at runtime before the user decides whether to
-     * save the movable->CMA lever.
-     */
+    /** Apply the live CMA target without persisting it, through the native owner. */
     @NonNull
     Result writeWantWithCma(long pages) {
-        var t = writeKnob("pool_want_with_cma", Long.toString(pages));
-        return t.ok() ? Result.ok("pool_want_with_cma")
-            : Result.failed("pool_want_with_cma", t.error);
+        return operate("cma-target", "pages", pages, "persist", false);
     }
 
     /* ================================================================== */
-    /*  Ladder plumbing (internal)                                        */
+    /*  Read-source selection                                             */
     /* ================================================================== */
-
-    /**
-     * insmod ladder, richest first. {@code load.sh} is the module's own
-     * preflight+insmod (v10+) and needs nothing from us. The remaining rungs
-     * exist only for the released modules that predate it: v9 wants its ABI
-     * guard, v6..v8 take size keys alone. Each rung drops the parameter group an
-     * older module wouldn't recognise.
-     */
-    private enum LoadImpl {
-        SCRIPT,
-        GUARD_BOTH, GUARD_WANT, GUARD_TARGET,   // ABI guard (v9)
-        BOTH, POOL_WANT, POOL_TARGET, BARE      // no guard (v6/v7/v8)
-    }
-
-    /** Marker for single-implementation actions. */
-    private enum Only { DEFAULT }
 
     private static <I, V> boolean rung(
         @Nullable I only, @NonNull List<Try<I, V>> log,
@@ -791,17 +596,6 @@ final class HugePageModel {
         return t.ok();
     }
 
-    /** Collapse a finished ladder trace into a {@link Result}. */
-    @NonNull
-    private static <I, V> Result collapse(@NonNull List<Try<I, V>> log) {
-        if (log.isEmpty()) return Result.failed(null, "no attempt");
-        var last = log.get(log.size() - 1);
-        boolean degraded = log.size() > 1;   // earlier rungs failed before this won
-        return last.ok()
-            ? Result.ok(String.valueOf(last.impl), degraded)
-            : Result.failed(String.valueOf(last.impl), last.error);
-    }
-
     @NonNull
     private static Usage usageOf(@NonNull List<Try<Source, List<UsageEntry>>> log) {
         var last = log.isEmpty() ? null : log.get(log.size() - 1);
@@ -809,188 +603,6 @@ final class HugePageModel {
             return new Usage(last.value, last.impl);
         }
         return new Usage(new ArrayList<>(), Source.SCAN);
-    }
-
-    /* ================================================================== */
-    /*  Module lifecycle ladders                                          */
-    /* ================================================================== */
-
-    @NonNull
-    private List<Try<LoadImpl, Void>> loadLadder(long pages) {
-        var log = new ArrayList<Try<LoadImpl, Void>>();
-        // Best rung: the module's own load.sh - the exact preflight+insmod the
-        // boot script performs, so a runtime enable reproduces the boot-time
-        // configuration and future preflight changes need no app change. It
-        // reads the size from settings.prop, which is where `pages` came from.
-        if (existsSticky(LOAD_SCRIPT) && rung(null, log, LoadImpl.SCRIPT, () -> {
-            var r = run("sh %s", escapedString(LOAD_SCRIPT));
-            return (r.isSuccess() && existsSticky(SYSFS_BASE))
-                ? Try.<LoadImpl, Void>ok(LoadImpl.SCRIPT, null)
-                : Try.<LoadImpl, Void>fail(LoadImpl.SCRIPT, reason(r, "load.sh"));
-        })) return log;
-        var w = fmt("pool_want=\"%d\"", pages);
-        var t = fmt("pool_target=\"%d\"", pages);
-        // No load.sh: a released module that predates it (v6..v9). Those have no
-        // CMA parameters at all, so there is nothing to reconstruct here - only
-        // v9's ABI guard, without which an ABI-drifted symbol can kCFI-panic on
-        // first call. Every v10+ preflight lives in load.sh alone, so it can
-        // never drift from what this app passes.
-        var guard = kapiGuardArg();
-        if (!guard.isEmpty()) {
-            if (rung(null, log, LoadImpl.GUARD_BOTH,
-                () -> insmod(LoadImpl.GUARD_BOTH, joinNonEmpty(" ", guard, w, t)))) return log;
-            if (rung(null, log, LoadImpl.GUARD_WANT,
-                () -> insmod(LoadImpl.GUARD_WANT, joinNonEmpty(" ", guard, w)))) return log;
-            if (rung(null, log, LoadImpl.GUARD_TARGET,
-                () -> insmod(LoadImpl.GUARD_TARGET, joinNonEmpty(" ", guard, t)))) return log;
-        }
-        // Pass BOTH size params first. A lenient kernel silently ignores the param
-        // the module doesn't have, so it still gets the right size via the one it
-        // does - pool_want (v7) or pool_target (v6). This is essential: on a v6
-        // module `pool_want=` alone loads fine (returns 0) but is ignored, leaving
-        // the pool at its compiled 1024 default - the ladder must not stop there.
-        // Strict kernels reject the unknown param, so fall back to each key alone,
-        // then a bare (default-size) load.
-        if (rung(null, log, LoadImpl.BOTH,
-            () -> insmod(LoadImpl.BOTH, joinNonEmpty(" ", w, t)))) return log;
-        if (rung(null, log, LoadImpl.POOL_WANT,
-            () -> insmod(LoadImpl.POOL_WANT, w))) return log;
-        if (rung(null, log, LoadImpl.POOL_TARGET,
-            () -> insmod(LoadImpl.POOL_TARGET, t))) return log;
-        rung(null, log, LoadImpl.BARE, () -> insmod(LoadImpl.BARE, null));
-        return log;
-    }
-
-    /**
-     * v9's ABI guard, read from the module's {@code kapi_check} helper: it
-     * compares the running kernel's real symbol signatures (from vmlinux BTF)
-     * against what this .ko expects and names the drifted ones, which insmod
-     * then leaves unresolved (their feature returns -ENOSYS) instead of
-     * kCFI-panicking on first call. "" when the helper is absent (v6..v8) or
-     * nothing drifted - fail-open, exactly like the v9 boot script.
-     */
-    @NonNull
-    private String kapiGuardArg() {
-        if (!existsSticky(KAPI_CHECK)) return "";
-        var out = run("%s /sys/kernel/btf/vmlinux", escapedString(KAPI_CHECK));
-        for (var line : out.getOutString().split("\n")) {
-            line = line.trim();
-            if (!line.startsWith("disable=")) continue;
-            var v = line.substring("disable=".length()).trim();
-            // A symbol-name list, pasted into a shell line: refuse anything else.
-            if (!v.isEmpty() && SAFE_PARAM.matcher(v).matches())
-                return fmt("disable_kapi=%s", v);
-        }
-        return "";
-    }
-
-    private static Try<LoadImpl, Void> insmod(@NonNull LoadImpl impl, @Nullable String arg) {
-        var r = (arg == null)
-            ? run("insmod %s", escapedString(KO_PATH))
-            : run("insmod %s %s", escapedString(KO_PATH), arg);
-        return r.isSuccess() ? Try.ok(impl, null) : Try.fail(impl, reason(r, "insmod"));
-    }
-
-    @NonNull
-    private List<Try<Only, Void>> unloadLadder() {
-        var log = new ArrayList<Try<Only, Void>>();
-        rung(null, log, Only.DEFAULT, () -> {
-            var r = runList("rmmod", "gh_hugepage_reserve");
-            return r.isSuccess()
-                ? Try.<Only, Void>ok(Only.DEFAULT, null)
-                : Try.<Only, Void>fail(Only.DEFAULT, reason(r, "rmmod"));
-        });
-        return log;
-    }
-
-    /** The configured target from settings.prop (pool_want, legacy pool_target). */
-    private long savedWantPages() {
-        if (existsSticky(SETTINGS_PROP)) {
-            var s = parseProp(safeRead(SETTINGS_PROP));
-            var v = s.getOrDefault("pool_want", s.get("pool_target"));
-            if (v != null) try {
-                return Long.parseLong(v.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return DEFAULT_WANT_PAGES;
-    }
-
-    /* ================================================================== */
-    /*  Shell helpers                                                     */
-    /* ================================================================== */
-
-    /** Write a knob; returns a bare success/fail Try (single-impl call sites). */
-    private static Try<Only, Void> writeKnob(@NonNull String knob, @NonNull String value) {
-        return writeKnobTry(Only.DEFAULT, knob, value);
-    }
-
-    /** Write a knob under the given impl marker; the Try carries the errno reason. */
-    private static <I> Try<I, Void> writeKnobTry(
-        @NonNull I impl, @NonNull String knob, @NonNull String value
-    ) {
-        var r = run("echo %s > %s/%s", value, SYSFS_PARAMS, knob);
-        return r.isSuccess()
-            ? Try.<I, Void>ok(impl, null)
-            : Try.<I, Void>fail(impl, reason(r, knob));
-    }
-
-    /** Persist the target to settings.prop under both keys (whichever loader reads). */
-    private static Try<Only, Void> writeSettings(long pages) {
-        var changes = new LinkedHashMap<String, String>();
-        changes.put("pool_want", Long.toString(pages));
-        changes.put("pool_target", Long.toString(pages));
-        return updateSettings(changes);
-    }
-
-    /** Serializes settings.prop read-modify-write cycles within this process. */
-    private static final Object SETTINGS_LOCK = new Object();
-
-    /**
-     * Read-modify-write settings.prop: apply {@code changes} (a null value
-     * <b>removes</b> that key) and keep every other key (the file also carries
-     * app-owned CMA state - {@code pool_want_with_cma}, {@code cma_movable_lever}
-     * - that a blind rewrite would wipe). The boot script {@code source}s the
-     * file, so lines stay plain {@code key=value}. Locked so concurrent writers
-     * (a lever/CMA save vs a pool-size save) can't interleave their read/write
-     * pairs and drop each other's keys.
-     */
-    private static Try<Only, Void> updateSettings(@NonNull Map<String, String> changes) {
-        synchronized (SETTINGS_LOCK) {
-            String raw;
-            try {
-                raw = shellReadFile(SETTINGS_PROP);
-            } catch (Exception e) {
-                // A missing file legitimately starts empty; an EXISTING file that
-                // failed to read must abort - rewriting from an empty map would
-                // silently drop every other persisted key (lever choice, CMA
-                // targets) on a transient root hiccup.
-                if (existsSticky(SETTINGS_PROP))
-                    return Try.fail(Only.DEFAULT, "settings.prop: read failed");
-                raw = "";
-            }
-            var s = parseProp(raw);
-            for (var e : changes.entrySet()) {
-                if (e.getValue() == null) s.remove(e.getKey());
-                else s.put(e.getKey(), e.getValue());
-            }
-            var content = new StringBuilder();
-            for (var e : s.entrySet())
-                content.append(e.getKey()).append('=').append(e.getValue()).append('\n');
-            var r = run("printf '%%s' %s > %s",
-                escapedString(content.toString()), SETTINGS_PROP);
-            return r.isSuccess()
-                ? Try.<Only, Void>ok(Only.DEFAULT, null)
-                : Try.<Only, Void>fail(Only.DEFAULT, reason(r, "settings.prop"));
-        }
-    }
-
-    @NonNull
-    private static String reason(@NonNull RunResult r, @NonNull String what) {
-        var msg = r.getErrString().trim();
-        if (msg.isEmpty()) msg = r.getOutString().trim();
-        if (msg.isEmpty()) msg = fmt("exit %d", r.getCode());
-        return fmt("%s: %s", what, msg);
     }
 
     /**
@@ -1065,11 +677,7 @@ final class HugePageModel {
     private Try<Source, List<UsageEntry>> usageFromKo() {
         if (!koAvailable()) return Try.fail(Source.KO, "KO attribution knobs absent");
         try {
-            // Reconcile, then read the per-owner live page counts. One code
-            // path spans both module generations: the pre-v12 module computes
-            // these stats inside the reconcile pass (the write is required),
-            // while v12 keeps them live and accepts reconcile as a no-op.
-            run("echo 1 > %s/reconcile", SYSFS_PARAMS);
+            // Pure read: reconciliation is an explicit native-owner operation.
             var livePages = new LinkedHashMap<Integer, Long>();
             for (var ln : safeRead(pathJoin(SYSFS_PARAMS, "served_summary")).split("\n")) {
                 ln = ln.trim();
