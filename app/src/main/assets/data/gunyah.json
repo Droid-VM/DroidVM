@@ -1,0 +1,24 @@
+{
+  "gunyah": [
+    {
+      "name": "Qualcomm Snapdragon 7s(+) Gen 3/4",
+      "socs": ["SM7635", "SM7635AC", "SM7675", "SM7675AB", "SM7675AC"],
+      "capabilities": {"gunyah": true}
+    },
+    {
+      "name": "Qualcomm Snapdragon 8(s) Gen 3",
+      "socs": ["SG8350P", "SM8650", "SM8635", "SM8650AA", "SM8650AB", "SM8650AC", "SM8650Q", "SM8650QAA", "SM8650QAB"],
+      "capabilities": {"gunyah": true, "mthp_single": true}
+    },
+    {
+      "name": "Qualcomm Snapdragon 8 Elite",
+      "socs": ["SM8735", "SM8735P", "SM8750", "SM87503AB", "SM8750AB", "SM8750AC", "SM8750P"],
+      "capabilities": {"gunyah": true}
+    },
+    {
+      "name": "Qualcomm Snapdragon 8 Elite Gen 5",
+      "socs": ["SM8845", "SM8850", "SM8850AC", "SM8850P"],
+      "capabilities": {"gunyah": true}
+    }
+  ]
+}

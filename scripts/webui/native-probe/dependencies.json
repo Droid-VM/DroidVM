@@ -1,0 +1,9 @@
+{
+  "libwebsockets": {
+    "version": "4.5.8",
+    "commit": "fbb0baf6af9c4324f0f1591734c78b0089b599d4",
+    "url": "https://codeload.github.com/warmcat/libwebsockets/tar.gz/fbb0baf6af9c4324f0f1591734c78b0089b599d4",
+    "archive": "libwebsockets-4.5.8.tar.gz",
+    "sha256": "d27137ea290c856e95c6b6c314f57c3f76d079932f497ffff8874fdaad69e55c"
+  }
+}

@@ -1,4 +1,30 @@
 license:
+  - name: libwebsockets
+    description: Native WebUI HTTP and WebSocket transport; upstream notices included in assets/licenses/webui-third-party.txt
+    license: MIT and BSD-3-Clause
+    urls:
+      - https://github.com/warmcat/libwebsockets
+
+  - name: Vue / Vue Router / Vue I18n
+    description: WebUI rendering, navigation and languages; upstream notices included in assets/licenses/webui-third-party.txt
+    license: MIT
+    urls:
+      - https://github.com/vuejs/core
+      - https://github.com/vuejs/router
+      - https://github.com/intlify/vue-i18n
+
+  - name: lossless-json
+    description: WebUI configuration editing with exact JSON numbers; upstream notices included in assets/licenses/webui-third-party.txt
+    license: MIT
+    urls:
+      - https://github.com/josdejong/lossless-json
+
+  - name: AJV
+    description: WebUI precompiled API contract validation; upstream notices included in assets/licenses/webui-third-party.txt
+    license: MIT
+    urls:
+      - https://github.com/ajv-validator/ajv
+
   - name: droidvm
     description: DroidVM App
     license: GPL-3.0-or-later

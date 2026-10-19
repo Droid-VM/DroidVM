@@ -50,6 +50,9 @@ val generatedVersionName: String = if (gitDescribe.matches(Regex(".*-0-g[0-9a-f]
 
 val generatedVersionCode: Int = gitCommitCount * 10
 
+val webUiNativeRoot = layout.buildDirectory.dir("intermediates/webui_native")
+val webUiAssetsCpp = layout.buildDirectory.file("generated/webui/webui_assets.cpp")
+
 println("Version name: $generatedVersionName")
 println("Version code: $generatedVersionCode")
 
@@ -66,6 +69,11 @@ android {
         targetSdk = 37
         versionCode = generatedVersionCode
         versionName = generatedVersionName
+        // The App and daemon embed the same creation template; no runtime asset
+        // access is needed, so the existing null-Context model tests still work.
+        buildConfigField("String", "VM_DEFAULTS_JSON", groovy.json.JsonOutput.toJson(
+            providers.fileContents(layout.projectDirectory.file("src/main/assets/data/vm-defaults.json")).asText.get()
+        ))
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -75,6 +83,9 @@ android {
             cmake {
                 cppFlags += "-std=c++20"
                 arguments += "-DANDROID_STL=c++_static"
+                arguments += "-DDROIDVM_WEB_HTTP_TRANSPORT=ON"
+                arguments += "-DDROIDVM_WEB_LWS_DIR=${webUiNativeRoot.get().dir("deps/libwebsockets").asFile.invariantSeparatorsPath}"
+                arguments += "-DDROIDVM_WEB_ASSETS_CPP=${webUiAssetsCpp.get().asFile.invariantSeparatorsPath}"
                 arguments += "-DDROIDVM_VERSION=${versionName}"
                 arguments += "-DDROIDVM_VERSION_NAME=${versionName}"
                 arguments += "-DDROIDVM_VERSION_CODE=${versionCode}"
@@ -130,6 +141,8 @@ android {
         getByName("main") {
             // The daemon owns the shared Binder contract; generate both sides from one source.
             aidl.srcDir(rootProject.file("daemon/api/aidl"))
+            // One rescue script source for App actions and the native Agent core.
+            resources.srcDir(rootProject.file("daemon/agent/scripts"))
             // Third-party source kept in the tree rather than pulled as an artifact, in its own
             // root so that "not ours, and under its own licence" is structural. See its README.
             kotlin.srcDir("src/main/vendor")
@@ -160,6 +173,22 @@ android {
         // lingering in the prebuilts submodule can't double the APK size. The
         // runtime prebuilt-<abi>.tar.xz + .json stay packaged as assets.
         ignoreAssetsPatterns += listOf("*-comptime.zip", "*.7z")
+    }
+}
+
+abstract class CopyWebUiNoticesTask : DefaultTask() {
+    @get:Inject
+    abstract val fs: FileSystemOperations
+
+    @get:InputDirectory
+    abstract val sourceDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        fs.sync { from(sourceDir); into(outputDir) }
     }
 }
 
@@ -332,6 +361,77 @@ abstract class FetchTerminalFontTask : DefaultTask() {
 
 val prebuiltRootDir = rootProject.layout.projectDirectory.dir("DroidVM-Prebuilt-Root")
 val prebuiltsSubmoduleDir = rootProject.layout.projectDirectory.dir("app/src/main/assets/prebuilts")
+
+// One production bundle shared by both build types and ABIs. These tasks are
+// dependencies of native configuration, not preBuild: Java-only tests need no Node.
+// No dependency downloads occur inside CMake or on an Android device.
+val webUiDir = rootProject.layout.projectDirectory.dir("webui")
+val webUiScripts = rootProject.layout.projectDirectory.dir("scripts/webui")
+val windowsHost = System.getProperty("os.name").startsWith("Windows")
+val webUiNpm = providers.gradleProperty("webuiNpm").orElse(if (windowsHost) "npm.cmd" else "npm")
+val webUiNode = providers.gradleProperty("webuiNode").orElse("node")
+val webUiPython = providers.gradleProperty("webuiPython").orElse(if (windowsHost) "python" else "python3")
+val webUiOffline = gradle.startParameter.isOffline
+fun npmCommand(vararg args: String): List<String> =
+    (if (windowsHost) listOf("cmd", "/d", "/c", webUiNpm.get()) else listOf(webUiNpm.get())) + args
+
+val installWebUiDependencies = tasks.register<Exec>("installWebUiDependencies") {
+    description = "Install locked WebUI build dependencies (Node 24 required)"
+    workingDir(webUiDir)
+    inputs.files(webUiDir.file("package.json"), webUiDir.file("package-lock.json"))
+    inputs.property("npm", webUiNpm)
+    outputs.dir(webUiDir.dir("node_modules"))
+    commandLine(npmCommand("ci", "--engine-strict", "--no-audit", "--no-fund") + if (webUiOffline) listOf("--offline") else emptyList())
+}
+val buildWebUi = tasks.register<Exec>("buildWebUi") {
+    description = "Check and build the production WebUI without development fixtures"
+    dependsOn(installWebUiDependencies)
+    workingDir(webUiDir)
+    inputs.files(fileTree(webUiDir) {
+        exclude("node_modules/**", "dist/**", "test-results/**", "playwright-report/**", ".gitignore", "README.md")
+    })
+    inputs.dir(rootProject.file("contracts/webui"))
+    inputs.property("npm", webUiNpm)
+    outputs.dir(webUiDir.dir("dist"))
+    commandLine(npmCommand("run", "build"))
+}
+val embedWebUiAssets = tasks.register<Exec>("embedWebUiAssets") {
+    description = "Embed immutable production assets and deterministic gzip into droidvmd"
+    dependsOn(buildWebUi)
+    inputs.dir(webUiDir.dir("dist"))
+    inputs.file(webUiScripts.file("embed-assets.mjs"))
+    inputs.property("node", webUiNode)
+    outputs.file(webUiAssetsCpp)
+    workingDir(rootDir)
+    commandLine(webUiNode.get(), webUiScripts.file("embed-assets.mjs").asFile.absolutePath,
+        "--dist", webUiDir.dir("dist").asFile.absolutePath, "--output", webUiAssetsCpp.get().asFile.absolutePath)
+}
+val prepareWebUiNative = tasks.register<Exec>("prepareWebUiNative") {
+    description = "Prepare checksum-verified libwebsockets sources for the APK"
+    inputs.files(webUiScripts.file("native-probe/fetch_deps.py"), webUiScripts.file("native-probe/dependencies.json"))
+    inputs.property("python", webUiPython)
+    outputs.dir(webUiNativeRoot.map { it.dir("deps") })
+    workingDir(rootDir)
+    commandLine(listOf(webUiPython.get(), webUiScripts.file("native-probe/fetch_deps.py").asFile.absolutePath,
+        "--output", webUiNativeRoot.get().asFile.absolutePath) + if (webUiOffline) listOf("--offline") else emptyList())
+}
+val generateWebUiNotices = tasks.register<Exec>("generateWebUiNotices") {
+    description = "Retain WebUI and libwebsockets upstream license notices in APK assets"
+    dependsOn(installWebUiDependencies, prepareWebUiNative)
+    inputs.files(webUiDir.file("package-lock.json"), webUiScripts.file("third-party-notices.mjs"),
+        webUiScripts.file("native-probe/dependencies.json"))
+    inputs.dir(webUiScripts.dir("licenses"))
+    inputs.property("node", webUiNode)
+    outputs.file(layout.buildDirectory.file("generated/webui_notices/licenses/webui-third-party.txt"))
+    workingDir(rootDir)
+    commandLine(webUiNode.get(), webUiScripts.file("third-party-notices.mjs").asFile.absolutePath,
+        "--modules", webUiDir.dir("node_modules").asFile.absolutePath,
+        "--lws", webUiNativeRoot.get().dir("deps/libwebsockets").asFile.absolutePath,
+        "--output", layout.buildDirectory.file("generated/webui_notices/licenses/webui-third-party.txt").get().asFile.absolutePath)
+}
+tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") || (it.name.startsWith("externalNativeBuild") && !it.name.startsWith("externalNativeBuildClean")) }
+    .configureEach { dependsOn(prepareWebUiNative, embedWebUiAssets) }
+
 val regenPrebuilts = tasks.register<RegenPrebuiltsTask>("regenPrebuilts") {
     description = "Regenerate prebuilts from DroidVM-Prebuilt-Root if it exists and has auto-build/ content"
     prebuiltRoot.set(prebuiltRootDir)
@@ -354,6 +454,12 @@ val regenPrebuilts = tasks.register<RegenPrebuiltsTask>("regenPrebuilts") {
 androidComponents {
     onVariants { variant ->
         val variantName = variant.name.replaceFirstChar { it.uppercase() }
+        val copyWebUiNotices = tasks.register<CopyWebUiNoticesTask>("copyWebUiNotices${variantName}") {
+            dependsOn(generateWebUiNotices)
+            sourceDir.set(layout.buildDirectory.dir("generated/webui_notices"))
+            outputDir.set(layout.buildDirectory.dir("generated/webui_notice_assets/${variant.name}"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(copyWebUiNotices, CopyWebUiNoticesTask::outputDir)
         val unpackComptimeTask = tasks.register<UnpackComptimeJniLibsTask>(
             "unpackComptimeJniLibs${variantName}"
         ) {
@@ -434,6 +540,7 @@ dependencies {
     implementation(libs.termux.emulator)
     implementation(libs.termux.view)
     testImplementation(libs.junit)
+    testImplementation(libs.json.jvm) // Real org.json behavior in local IPC contract tests.
     annotationProcessor(libs.auto.service)
     androidTestImplementation(libs.espresso.core)
     androidTestImplementation(libs.ext.junit)
