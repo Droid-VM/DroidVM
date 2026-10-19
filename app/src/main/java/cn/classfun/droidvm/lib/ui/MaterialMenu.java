@@ -219,6 +219,15 @@ public final class MaterialMenu {
         @MenuRes int menuId,
         @Nullable MenuItem.OnMenuItemClickListener listener
     ) {
+        return setupToolbarMenu(toolbar, menuId, listener, null);
+    }
+
+    public static MenuItem setupToolbarMenu(
+        @NonNull MaterialToolbar toolbar,
+        @MenuRes int menuId,
+        @Nullable MenuItem.OnMenuItemClickListener listener,
+        @Nullable java.util.function.Consumer<Menu> prepare
+    ) {
         var id = View.generateViewId();
         var menu = toolbar.getMenu();
         var item = menu.add(0, id, 0, R.string.menu);
@@ -230,6 +239,7 @@ public final class MaterialMenu {
                 var anchor = toolbar.findViewById(id);
                 var popup = new MaterialMenu(ctx, anchor);
                 popup.inflate(menuId);
+                if (prepare != null) prepare.accept(popup.getMenu());
                 popup.setOnMenuItemClickListener(listener);
                 popup.show();
                 return true;

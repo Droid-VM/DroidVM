@@ -8,10 +8,8 @@ import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
-import static cn.classfun.droidvm.lib.utils.RunUtils.runList;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
-import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 import static cn.classfun.droidvm.lib.ui.MaterialMenu.setupToolbarMenu;
 
 import android.content.Context;
@@ -72,6 +70,20 @@ public final class HugePageActivity extends AppCompatActivity {
     private static final String KEY_SKIP_ACQUIRE_CONFIRM = "hugepage_acquire_skip_confirm";
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HugePageModel model = new HugePageModel();
+
+    private void runOnPool(Runnable action) {
+        cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool(() -> runGuarded(action));
+    }
+
+    private void runGuarded(Runnable action) {
+        HugePageOperationUi.run(this, action, () -> {
+            mainAcquiring = false;
+            mainAcquireMode = -1;
+            cmaBusy = false;
+            refreshStatus();
+        });
+    }
+
     private boolean resumed = false;
     private MaterialToolbar toolbar;
     private MaterialCardView cardCrashWarning;
@@ -115,6 +127,7 @@ public final class HugePageActivity extends AppCompatActivity {
     private SwitchRowWidget rowCmaEnable;
     private boolean cmaSwitchSyncing = false;   // programmatic setChecked guard
     private boolean cmaInputLoaded = false;     // seed the CMA size input once per show
+    private boolean hasLegacySettings;
     private boolean cmaBusy = false;            // an enable/disable flow is in flight
     // Two-way size link (pool_want <= pool_want_with_cma): which input the
     // user touched last decides who yields when they cross.
@@ -170,7 +183,11 @@ public final class HugePageActivity extends AppCompatActivity {
     private void initialize() {
         toolbar.setTitle(R.string.hugepage_title);
         toolbar.setNavigationOnClickListener(v -> finish());
-        setupToolbarMenu(toolbar, R.menu.menu_hugepage, this::onMenuItemClicked);
+        setupToolbarMenu(toolbar, R.menu.menu_hugepage, this::onMenuItemClicked, menu -> {
+            menu.findItem(R.id.action_hugepage_migrate).setVisible(hasLegacySettings);
+            menu.findItem(R.id.action_hugepage_query).setVisible(
+                cn.classfun.droidvm.lib.daemon.HugePageOperationClient.getInstance().hasPending());
+        });
         btnSavePoolSize.setOnClickListener(v -> {
             if (moduleAcquiring) interruptAcquire();
             else savePoolSize();
@@ -234,10 +251,7 @@ public final class HugePageActivity extends AppCompatActivity {
         applyAcquireState();
         cardCrashWarning.setOnClickListener(v -> doDismissCrash());
         loadPoolSize();
-        // One-time migration: drop a stale cma_probe_result from the removed
-        // probe, which the shipped boot script would otherwise treat as a denial
-        // and keep the module's CMA side cold.
-        runOnPool(model::clearLegacyProbeKey);
+        // Legacy-settings migration is an explicit menu action, never a read side effect.
     }
 
     /**
@@ -364,7 +378,7 @@ public final class HugePageActivity extends AppCompatActivity {
         mainAcquiring = true;
         mainAcquireMode = mode;                 // we know which we just started
         applyAcquireState();                    // immediate spinner feedback
-        new Thread(() -> {
+        new Thread(() -> runGuarded(() -> {
             var res = model.acquire(mode);
             if (!res.ok()) {
                 mainAcquiring = false;
@@ -386,13 +400,15 @@ public final class HugePageActivity extends AppCompatActivity {
                     Toast.LENGTH_LONG).show();
                 refreshStatus();
             });
-        }, "hugepage-acquire").start();
+        }), "hugepage-acquire").start();
     }
 
     /** Tapping an acquire spinner interrupts the run; the refresh clears the flag. */
     private void stopMainAcquire() {
         runOnPool(() -> {
-            model.stopAcquire();
+            var result = model.stopAcquire();
+            if (!result.ok()) runOnUiThread(() -> Toast.makeText(this,
+                R.string.hugepage_refill_failed, LENGTH_SHORT).show());
             runOnUiThread(this::refreshStatus);
         });
     }
@@ -426,6 +442,7 @@ public final class HugePageActivity extends AppCompatActivity {
         runOnPool(() -> {
             // One version-unified read of module + pool state.
             var snap = model.state();
+            var legacySettings = model.hasLegacySettings();
             var crashStamp = shellCheckExists(CRASH_FILE);
             // Per-VM breakdown through the usage ladder (KO attribution, degrading
             // to a THP scan of running VMs), so this bar matches the usage screen.
@@ -445,8 +462,10 @@ public final class HugePageActivity extends AppCompatActivity {
                 ? new LinkedHashMap<>() : model.vmNames(false);
             // Reservoir occupancy for the two-tone CMA block (module caches ~1s).
             var cmaUsage = snap.cmaActive() ? model.cmaUsage() : null;
-            runOnUiThread(() ->
-                updateUI(snap, crashStamp, owners, allPids, vmMap, cmaUsage));
+            runOnUiThread(() -> {
+                hasLegacySettings = legacySettings;
+                updateUI(snap, crashStamp, owners, allPids, vmMap, cmaUsage);
+            });
         });
     }
 
@@ -694,7 +713,6 @@ public final class HugePageActivity extends AppCompatActivity {
         btnModuleToggle.setEnabled(false);
         runOnPool(() -> {
             var res = model.setRuntimeEnabled(true);
-            if (res.ok()) model.acquire(1);   // GUI drives the fill (v1 = gentlest)
             runOnUiThread(() -> {
                 Toast.makeText(this, res.ok()
                     ? R.string.hugepage_loaded : R.string.hugepage_load_failed,
@@ -712,7 +730,6 @@ public final class HugePageActivity extends AppCompatActivity {
     private void doDisable() {
         btnModuleToggle.setEnabled(false);
         runOnPool(() -> {
-            stopAcquireAndWait();
             var res = model.setRuntimeEnabled(false);
             runOnUiThread(() -> {
                 if (!res.ok()) Toast.makeText(this,
@@ -732,25 +749,6 @@ public final class HugePageActivity extends AppCompatActivity {
             model.stopAcquire();
             runOnUiThread(this::refreshStatus);
         });
-    }
-
-    /**
-     * Interrupt any running acquire and block (on the pool thread) until the
-     * worker is quiescent. pool_want can't be set while an acquire runs, so call
-     * this before a soft-disable. The worker can be mid-migration, so this may take
-     * a moment; bounded so a wedged worker can't hang us forever.
-     */
-    private void stopAcquireAndWait() {
-        if (!model.acquiring()) return;   // nothing running (also the v6 case)
-        model.stopAcquire();
-        for (int i = 0; i < 60; i++) {
-            if (!model.acquiring()) return;
-            try {
-                Thread.sleep(500);
-            } catch (InterruptedException ignored) {
-                return;
-            }
-        }
     }
 
     private void loadPoolSize() {
@@ -885,19 +883,10 @@ public final class HugePageActivity extends AppCompatActivity {
             }
             // Persist for the next load and apply to the running pool where the
             // live knob exists (v7); v6's read-only target only lands next boot.
-            // One settings.prop rewrite carries the pool target and (while the
-            // reservoir is on) the with-CMA total together.
-            var res = model.saveTargets(pages.longValue(), cmaPages);
-            // A grow leaves a deficit -> kick one fill so the raised target
-            // starts filling at once (a shrink is applied by the write itself).
-            // The GUI drives acquire; the model's save deliberately doesn't.
-            // Only the mode-2/3 sweep runs the reservoir-building Phase R
-            // ("mode 1 remains pool-only legacy"), so a CMA-era grow needs v3.
-            var snap = model.state();
-            if (res.ok() && snap.loaded && snap.deficit > 0)
-                model.acquire(snap.cmaActive() ? 3 : 1);
+            // The native coordinator owns coupled targets, persistence and optional acquire.
+            var res = model.saveTargets(pages.longValue(), cmaPages, cmaPages > 0 ? 3 : 1);
             boolean okSaved = res.ok();
-            boolean appliedNow = "pool_want".equals(res.impl);   // live write actually landed
+            boolean appliedNow = res.applied;
             runOnUiThread(() -> {
                 int msg = !okSaved ? R.string.hugepage_pool_size_failed
                     : appliedNow ? R.string.hugepage_pool_size_applied
@@ -970,10 +959,7 @@ public final class HugePageActivity extends AppCompatActivity {
     private void doCmaDisable() {
         cmaBusy = true;
         runOnPool(() -> {
-            model.setGfpHook(false);
-            model.setRestrictFlip(false);
-            model.clearCmaLever();
-            var res = model.saveCmaTarget(0);
+            var res = model.setCma(false, 0, true, null);
             runOnUiThread(() -> {
                 cmaBusy = false;
                 Toast.makeText(this, res.ok() ? R.string.hugepage_cma_disabled
@@ -1060,11 +1046,7 @@ public final class HugePageActivity extends AppCompatActivity {
     private void enableCmaDirect(@NonNull HugePageModel.Snapshot snap) {
         runOnPool(() -> {
             long target = reservoirTarget(snap);
-            boolean ok = target > 0 && model.saveCmaTarget(target).ok();
-            if (ok) {
-                var s2 = model.state();
-                if (s2.loaded && s2.deficit > 0) model.acquire(3);
-            }
+            boolean ok = target > 0 && model.setCma(true, target, true, null).ok();
             boolean fOk = ok;
             runOnUiThread(() -> {
                 cmaBusy = false;
@@ -1078,31 +1060,13 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     /**
-     * Arm a movable->CMA lever <b>live only</b> - nothing is persisted yet. On
-     * 6.1 the {@code restrict_cma_redirect} flag is side-effect-free, so try it
-     * first and fall back to the gfp hook; on 6.6/6.12 that same key also backs
-     * {@code cma_has_pcplist()}, so arm the narrower hook directly (and only try
-     * the flag as a last resort). Then build the reservoir toward a target so the
-     * user can watch it fill, and offer to save the lever for next boot.
+     * Run the kernel-appropriate lever plus reservoir setup as one native operation.
+     * A failed or unknown result stops this flow; saving remains a separate user choice.
      */
     private void tryCmaLever(@NonNull HugePageModel.Snapshot snap) {
         cmaBusy = true;
         runOnPool(() -> {
-            boolean is61 = model.kernelIs61();
-            String lever = null;
-            if (is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
-            else if (model.setGfpHook(true).ok()) lever = HugePageModel.LEVER_HOOK;
-            else if (!is61 && flipFlagWorks()) lever = HugePageModel.LEVER_FLAG;
-            if (lever == null) {
-                runOnUiThread(() -> {
-                    cmaBusy = false;
-                    setCmaSwitch(false);
-                    Toast.makeText(this, R.string.hugepage_cma_lever_failed,
-                        LENGTH_SHORT).show();
-                    refreshStatus();
-                });
-                return;
-            }
+            String lever = model.kernelIs61() ? HugePageModel.LEVER_FLAG : HugePageModel.LEVER_HOOK;
             buildReservoirAndPromptSave(snap, lever);
         });
     }
@@ -1128,10 +1092,13 @@ public final class HugePageActivity extends AppCompatActivity {
     private void buildReservoirAndPromptSave(@NonNull HugePageModel.Snapshot snap,
                                              @Nullable String lever) {
         long target = reservoirTarget(snap);
-        if (target > 0) {
-            model.writeWantWithCma(target);
-            var s2 = model.state();
-            if (s2.loaded && s2.deficit > 0) model.acquire(3);
+        if (target <= 0 || !model.setCma(true, target, false, lever).ok()) {
+            runOnUiThread(() -> {
+                cmaBusy = false;
+                Toast.makeText(this, R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
+                refreshStatus();
+            });
+            return;
         }
         runOnUiThread(() -> {
             cmaInputLoaded = false;
@@ -1142,11 +1109,6 @@ public final class HugePageActivity extends AppCompatActivity {
             }
             promptSaveLever(lever, target);
         });
-    }
-
-    /** Flip the restrict flag on and confirm the kernel actually opened it. */
-    private boolean flipFlagWorks() {
-        return model.setRestrictFlip(true).ok() && model.readRestrictState() == 1;
     }
 
     /** With-CMA target to build: the last saved total, else the pool size. */
@@ -1182,15 +1144,11 @@ public final class HugePageActivity extends AppCompatActivity {
      */
     private void finishCmaEnable(@Nullable String lever, long target, boolean save) {
         runOnPool(() -> {
-            if (save) {
-                if (lever != null) model.saveCmaLever(lever);
-                else model.clearCmaLever();
-                if (target > 0) model.saveCmaTarget(target);
-            }
+            boolean succeeded = !save || (target > 0 && model.saveCma(target, lever).ok());
             runOnUiThread(() -> {
                 cmaBusy = false;
-                setCmaSwitch(true);
-                Toast.makeText(this, R.string.hugepage_cma_enabled, LENGTH_SHORT).show();
+                Toast.makeText(this, succeeded ? R.string.hugepage_cma_enabled
+                    : R.string.hugepage_cma_toggle_failed, LENGTH_SHORT).show();
                 cmaInputLoaded = false;
                 refreshStatus();
             });
@@ -1207,6 +1165,31 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     private boolean onMenuItemClicked(@NonNull android.view.MenuItem item) {
+        if (item.getItemId() == R.id.action_hugepage_reconcile
+            || item.getItemId() == R.id.action_hugepage_migrate) {
+            boolean reconcile = item.getItemId() == R.id.action_hugepage_reconcile;
+            runOnPool(() -> {
+                var result = reconcile ? model.reconcile() : model.migrateSettings();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, result.ok() ? getString(R.string.hugepage_operation_resolved)
+                        : getString(R.string.hugepage_operation_failed, result.detail), Toast.LENGTH_LONG).show();
+                    refreshStatus();
+                });
+            });
+            return true;
+        }
+        if (item.getItemId() == R.id.action_hugepage_query) {
+            runOnPool(() -> {
+                var result = cn.classfun.droidvm.lib.daemon.HugePageOperationClient.getInstance().queryPending();
+                runOnUiThread(() -> {
+                    Toast.makeText(this, result == null || result.succeeded
+                        ? getString(R.string.hugepage_operation_resolved)
+                        : getString(R.string.hugepage_operation_failed, result.error), Toast.LENGTH_LONG).show();
+                    refreshStatus();
+                });
+            });
+            return true;
+        }
         if (item.getItemId() == R.id.action_unload_module) {
             confirmUnloadModule();
             return true;
@@ -1226,7 +1209,6 @@ public final class HugePageActivity extends AppCompatActivity {
     private void doUnloadModule() {
         btnModuleToggle.setEnabled(false);
         runOnPool(() -> {
-            stopAcquireAndWait();
             var res = model.unload();
             runOnUiThread(() -> {
                 Toast.makeText(this, res.ok()
@@ -1239,10 +1221,11 @@ public final class HugePageActivity extends AppCompatActivity {
 
     private void doDismissCrash() {
         runOnPool(() -> {
-            runList("rm", "-f", CRASH_FILE);
+            var result = model.dismissCrash();
             runOnUiThread(() -> {
-                cardCrashWarning.setVisibility(GONE);
-                Toast.makeText(this, R.string.hugepage_crash_dismissed, LENGTH_SHORT).show();
+                if (result.ok()) cardCrashWarning.setVisibility(GONE);
+                Toast.makeText(this, result.ok() ? getString(R.string.hugepage_crash_dismissed)
+                    : getString(R.string.hugepage_operation_failed, result.detail), LENGTH_SHORT).show();
             });
         });
     }

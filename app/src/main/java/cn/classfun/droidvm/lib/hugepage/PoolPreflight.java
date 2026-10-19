@@ -5,7 +5,6 @@ package cn.classfun.droidvm.lib.hugepage;
 
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellCheckExists;
 import static cn.classfun.droidvm.lib.utils.FileUtils.shellReadFile;
-import static cn.classfun.droidvm.lib.utils.RunUtils.run;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
@@ -18,6 +17,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.daemon.HugePageOperationClient;
 import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
@@ -137,17 +137,10 @@ public final class PoolPreflight {
 
     /** Live non-CMA target only. Never persist it or write the CMA reservoir knobs. */
     public static boolean setReservedPages(long pages) {
-        try {
-            if (writeKnob("pool_want", Long.toString(pages))) {
-                long actual = readPages("pool_want", -1);
-                // Kernels may round a nonzero target up to pageblock alignment.
-                if (actual == pages || (pages > 0 && actual > pages)) return true;
-            }
-            Log.w(TAG, fmt("Could not set huge-page reserve to %d pages", pages));
-        } catch (Exception e) {
-            Log.w(TAG, "Could not resize huge-page reserve", e);
-        }
-        return false;
+        var result = HugePageOperationClient.getInstance().execute(
+            HugePageOperationClient.operation("targets", "poolPages", pages,
+                "cmaPages", null, "persist", false));
+        return result.succeeded && result.applied;
     }
 
     /** Reads the reserve and sizes this VM against it. Never throws. */
@@ -220,7 +213,11 @@ public final class PoolPreflight {
             }
             if (i == acquireAt) {
                 Log.i(TAG, fmt("reserve still short at attempt %d; asking it to acquire", i));
-                acquirePages.run();
+                try { acquirePages.run(); }
+                catch (RuntimeException failure) {
+                    Log.w(TAG, "Refill result unavailable; refusing to continue startup", failure);
+                    return false;
+                }
             }
             try {
                 Thread.sleep(sleepMs);
@@ -240,16 +237,11 @@ public final class PoolPreflight {
         return false;
     }
 
-    /** Request refill once, with a fallback for older modules. */
+    /** Ask the coordinated owner once; no shell fallback after a failed or unknown result. */
     private static void acquire() {
-        if (!writeKnob("acquire", "2")) writeKnob("manual_refill", "1");
-    }
-
-    private static boolean writeKnob(@NonNull String knob, @NonNull String value) {
-        var path = pathJoin(SYSFS_PARAMS, knob);
-        if (!shellCheckExists(path))
-            return false;
-        return run("echo %s > %s", value, path).isSuccess();
+        var result = HugePageOperationClient.getInstance().execute(
+            HugePageOperationClient.operation("acquire", "mode", 2));
+        if (!result.succeeded) throw new IllegalStateException(result.error);
     }
 
     private static long readPages(@NonNull String knob, long fallback) {

@@ -8,4 +8,12 @@
         android:title="@string/hugepage_unload_module"
         app:showAsAction="never" />
 
+    <item android:id="@+id/action_hugepage_reconcile"
+        android:title="@string/hugepage_operation_reconcile" app:showAsAction="never" />
+    <item android:id="@+id/action_hugepage_migrate"
+        android:visible="false"
+        android:title="@string/hugepage_operation_migrate" app:showAsAction="never" />
+    <item android:id="@+id/action_hugepage_query"
+        android:visible="false"
+        android:title="@string/hugepage_operation_query" app:showAsAction="never" />
 </menu>

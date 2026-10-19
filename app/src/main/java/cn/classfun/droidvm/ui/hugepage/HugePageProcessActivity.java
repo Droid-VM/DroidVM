@@ -12,7 +12,6 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGKILL;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.SIGTERM;
 import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
-import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.os.Bundle;
 import android.os.Handler;
@@ -61,6 +60,19 @@ public final class HugePageProcessActivity extends AppCompatActivity
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final HugePageModel model = new HugePageModel();
+
+    private void runOnPool(Runnable action) {
+        cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool(() -> runGuarded(action));
+    }
+
+    private void runGuarded(Runnable action) {
+        HugePageOperationUi.run(this, action, () -> {
+            acquireWatching = false;
+            adapter.setAcquireState(false, -1);
+            refresh();
+        });
+    }
+
     private boolean resumed = false;
     // scanMode = the user's preference; koPresent = whether the KO attribution
     // API is available. The effective mode shown is (scanMode || !koPresent) -
@@ -450,10 +462,8 @@ public final class HugePageProcessActivity extends AppCompatActivity
         // thus the periodic refresh that animates the climbing numbers) is never
         // blocked. The kernel 'acquire' write returns immediately; the worker
         // migrates in the background and we watch acquire_active for completion.
-        new Thread(() -> {
-            // Fill the pool via the acquire ladder: the migrating 'acquire' knob,
-            // degrading to 'manual_refill' on any failure (e.g. -ENOSYS on kernels
-            // that can't migrate). The trace's last entry says what actually ran.
+        new Thread(() -> runGuarded(() -> {
+            // Submit once to the native owner; an uncertain receipt aborts this action.
             var res = model.acquire(mode);
             boolean triggered = res.ok();
             // Only a migrating acquire mode exposes acquire_active to poll; the
@@ -463,8 +473,10 @@ public final class HugePageProcessActivity extends AppCompatActivity
             final String actualImpl = res.impl != null ? res.impl : "";
             if (!triggered) {
                 acquireWatching = false;
-                runOnUiThread(() -> Toast.makeText(this,
-                    R.string.hugepage_refill_failed, LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    Toast.makeText(this, R.string.hugepage_refill_failed, LENGTH_SHORT).show();
+                    refresh();
+                });
                 return;
             }
             if (!migrating) {
@@ -508,7 +520,7 @@ public final class HugePageProcessActivity extends AppCompatActivity
                     LENGTH_LONG).show();
                 refresh();
             });
-        }, "hugepage-acquire").start();
+        }), "hugepage-acquire").start();
     }
 
     /** Short-press an acquire button: confirm (unless the user opted out), then run. */
@@ -527,7 +539,9 @@ public final class HugePageProcessActivity extends AppCompatActivity
     @Override
     public void onStopAcquire() {
         runOnPool(() -> {
-            model.stopAcquire();
+            var result = model.stopAcquire();
+            if (!result.ok()) runOnUiThread(() -> Toast.makeText(this,
+                R.string.hugepage_refill_failed, LENGTH_SHORT).show());
             runOnUiThread(this::refresh);
         });
     }

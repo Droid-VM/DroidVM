@@ -7,7 +7,6 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.widget.Toast.LENGTH_SHORT;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
-import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.os.Bundle;
 import android.os.SystemClock;
@@ -61,6 +60,17 @@ public final class HugePageAdvancedActivity extends AppCompatActivity {
     private static final long RESERVE_TAP_WINDOW_MS = 1500;
 
     private final HugePageModel model = new HugePageModel();
+
+    private void runOnPool(Runnable action) {
+        cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool(() -> runGuarded(action));
+    }
+
+    private void runGuarded(Runnable action) {
+        HugePageOperationUi.run(this, action, () -> {
+            load();
+        });
+    }
+
     /** Rows keyed by parameter name, in {@link HugePageModel#ADVANCED_KEYS} order. */
     private final Map<String, TextRowWidget> rows = new LinkedHashMap<>();
     /** Last read of the knobs, so opening an editor needs no shell I/O. */
