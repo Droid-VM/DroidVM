@@ -16,6 +16,19 @@ import cn.classfun.droidvm.lib.data.HostAudioDevices;
 
 public final class VMCreationDefaultsTest {
     @Test
+    public void sharedTemplateMatchesMaterializedDefaults() throws Exception {
+        var config = VMConfig.createWithCustomizeDefaults(null);
+        var actual = new org.json.JSONObject(config.item.toString());
+        for (var key : new String[]{"id", "created_at", "prepare_lend_mthp", "hypervisor", "protected_vm"})
+            actual.remove(key);
+        actual.getJSONObject("boot").getJSONObject("linux").remove("kernel");
+        actual.getJSONObject("boot").getJSONObject("linux").remove("initrd");
+        var expected = new org.json.JSONObject(cn.classfun.droidvm.BuildConfig.VM_DEFAULTS_JSON);
+        assertEquals(cn.classfun.droidvm.lib.store.base.DataItem.from(expected),
+            cn.classfun.droidvm.lib.store.base.DataItem.from(actual));
+    }
+
+    @Test
     public void requestedCreateVmDefaultsAreStable() {
         assertEquals(60, VMScreenConfig.NEW_VM_DEFAULT_POLL_HZ);
         assertEquals("127.0.0.1", VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST);
@@ -59,8 +72,8 @@ public final class VMCreationDefaultsTest {
         // Only LendMthpMode.defaultForDevice reads it, inside its own try/catch.
         var item = VMConfig.createWithCustomizeDefaults(null).item;
 
-        // One xHCI controller, minted through the counter so a new VM and a converted old one
-        // both carry "xhci-0" -- the id every USB rule for this VM will name.
+        // The shared template includes one controller and its next-id counter, so a new VM and
+        // a converted old one both carry "xhci-0" -- the id USB rules for this VM will name.
         var controllers = VMXhciConfig.listControllers(item);
         assertEquals(1, controllers.size());
         assertEquals("xhci-0", controllers.get(0).getControllerId());
