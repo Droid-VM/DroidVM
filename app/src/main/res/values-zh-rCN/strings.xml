@@ -192,6 +192,7 @@
     <string name="create_vm_error_hypervisor_not_supported">所选后端不支持选中的虚拟化模式</string>
     <string name="create_vm_error_path_invalid">无效的绝对路径</string>
     <string name="create_vm_error_native_display_only_crosvm">原生显示只在使用CrosVM后端时有效</string>
+    <string name="create_vm_error_kms_display_rules">手机屏幕直驱只能用于 CrosVM 后端的 gpu-0 屏幕，且本虚拟机不能再有其他导出方式。</string>
     <string name="create_vm_category_kernel">Linux 内核</string>
     <string name="create_vm_kernel_hint">内核</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -315,6 +316,7 @@
     <string name="create_vm_screen_exporter_none">Sink（丢弃）</string>
     <string name="create_vm_screen_exporter_native">原生显示</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_screen_exporter_kms">手机屏幕直驱（DRM/KMS）</string>
     <string name="create_vm_screen_transport">传输管线</string>
     <string name="create_vm_screen_transport_cpu">CPU Copy</string>
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>

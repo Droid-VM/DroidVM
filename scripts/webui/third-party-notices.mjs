@@ -7,7 +7,7 @@ const { values } = parseArgs({ options: { modules: { type: 'string' }, lws: { ty
 if (!values.modules || !values.lws || !values.output) throw new Error('--modules, --lws and --output are required')
 const notices = ['DroidVM WebUI — third-party notices\n\nIncludes runtime packages and their shared upstream notices.\n']
 // The serial terminal embeds xterm.js and its local layout addon (both MIT).
-for (const name of ['vue', '@vue/runtime-dom', '@vue/runtime-core', '@vue/reactivity', '@vue/shared', '@vue/devtools-api', 'vue-router', 'vue-i18n', '@intlify/core-base', '@intlify/message-compiler', '@intlify/shared', 'source-map-js', 'ajv', 'lossless-json', '@xterm/xterm', '@xterm/addon-fit', '@novnc/novnc', '@noble/hashes']) {
+for (const name of ['vue', '@vue/runtime-dom', '@vue/runtime-core', '@vue/reactivity', '@vue/shared', '@vue/devtools-api', 'vue-router', 'vue-i18n', '@intlify/core-base', '@intlify/message-compiler', '@intlify/shared', 'source-map-js', 'ajv', 'lossless-json', '@xterm/xterm', '@xterm/addon-fit', '@novnc/novnc', '@noble/hashes', '@material/web', 'lit', 'lit-html', 'lit-element', '@lit/reactive-element', 'tslib']) {
   const root = join(values.modules, name)
   const manifest = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'))
   const licenses = (await readdir(root)).filter(name => /^licen[sc]e(?:\..*)?$/i.test(name)).sort()
@@ -27,6 +27,9 @@ for (const name of ['vue', '@vue/runtime-dom', '@vue/runtime-core', '@vue/reacti
     notices.push('\n=== noVNC DES upstream attribution ===\n', des.slice(0, des.indexOf('*/') + 2))
   }
 }
+// Icon paths are copied into src/shared/ui/AppIcon.vue; same Apache-2.0 text as @material/web.
+notices.push('\n=== Material Symbols (Apache-2.0, https://github.com/google/material-design-icons) ===\n')
+notices.push(await readFile(join(values.modules, '@material/web', 'LICENSE'), 'utf8'))
 notices.push('\n=== libwebsockets (version and hash pinned in native-probe/dependencies.json) ===\n')
 notices.push(await readFile(join(values.lws, 'LICENSE'), 'utf8'))
 const sha1 = await readFile(join(values.lws, 'lib/misc/sha-1.c'), 'utf8')

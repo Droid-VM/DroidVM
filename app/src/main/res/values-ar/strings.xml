@@ -197,6 +197,7 @@
     <string name="create_vm_error_hypervisor_not_supported">نظام الـ Hypervisor المحدّد غير مدعوم من الواجهة الخلفية (Backend) المختارة</string>
     <string name="create_vm_error_path_invalid">مسار مطلق (Absolute Path) غير صالح</string>
     <string name="create_vm_error_native_display_only_crosvm">شاشة العرض الأصلية (Native Display) تعمل فقط مع واجهة CrosVM الخلفية.</string>
+    <string name="create_vm_error_kms_display_rules">يتطلب الإخراج إلى شاشة الهاتف واجهة CrosVM الخلفية وشاشة gpu-0 وعدم وجود أي مُصدّر آخر لهذا الجهاز الافتراضي.</string>
     <string name="create_vm_category_kernel">كيرنل Linux</string>
     <string name="create_vm_kernel_hint">الكيرنل (Kernel)</string>
     <string name="create_vm_initrd_hint">ملف Initrd</string>
@@ -320,6 +321,7 @@
     <string name="create_vm_screen_exporter_none">مصرّف العرض (تجاهل الإخراج)</string>
     <string name="create_vm_screen_exporter_native">شاشة العرض الأصلية (Native display)</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_screen_exporter_kms">شاشة الهاتف مباشرة (DRM/KMS)</string>
     <string name="create_vm_screen_transport">مسار نقل البيانات (Transport pipeline)</string>
     <string name="create_vm_screen_transport_cpu">نسخ عبر المعالج (CPU Copy)</string>
     <string name="create_vm_screen_transport_gpu">نسخ عبر معالج الرسوميات (GPU Copy)</string>

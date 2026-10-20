@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DroidVM WebUI API",
-    "version": "0.46.0",
+    "version": "0.47.0",
     "description": "HTTP/WS，同源部署。磁盘条件任务与详情、宿主能力、资源目录、USB 条件目标/规则任务、只读规则预览及配置提交复用原生服务，精确整数大小和偏移使用字符串。完整资源管理与设备验收继续实施。"
   },
   "paths": {
@@ -5254,6 +5254,170 @@
         }
       }
     },
+    "/api/v1/host/android-display": {
+      "get": {
+        "operationId": "readAndroidDisplay",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "description": "host.android-display.v1. Read who owns the Android panel: the Android framework, a KMS-exported VM, or a manual browser stop. GET never stops or restores Android. supported=false means this host cannot hand over its panel; watchdog.verified=false blocks stops with the stated reason.",
+        "responses": {
+          "200": {
+            "description": "Android display ownership observation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AndroidDisplayObservation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "501": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/android-display-operations": {
+      "post": {
+        "operationId": "submitAndroidDisplayOperation",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "description": "Administrator/task permission, Origin, CSRF and context required. stop freezes system_server and stops SurfaceFlinger plus the display HAL (display tier only: zygote, netd and wpa_supplicant keep running, so Wi-Fi and this daemon stay reachable). A detached sentinel restores Android on request, on daemon death, after autoRestoreSeconds (default 1800) and, with restoreOnNetworkLoss (default true), once the default-route link has stayed down for 30 s. restore is refused while a VM owns the panel. Unknown admission is queried, never replayed.",
+        "parameters": [
+          {
+            "name": "X-DroidVM-CSRF",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AndroidDisplayOperationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Identity-scoped Android display task receipt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "501": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/api/v1/android-display-operations/{requestId}": {
+      "get": {
+        "operationId": "findAndroidDisplayOperation",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9_.:-]+$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Android display task receipt, or null when the request is unknown.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VmOperationLookup"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "501": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/api/v1/disks/{diskId}/compression": {
       "get": {
         "operationId": "inspectDiskCompression",
@@ -8871,6 +9035,9 @@
           },
           "usbAcmResult": {
             "$ref": "#/components/schemas/UsbAcmResult"
+          },
+          "androidDisplayResult": {
+            "$ref": "#/components/schemas/AndroidDisplayResult"
           },
           "diskDefaultResult": {
             "$ref": "#/components/schemas/DiskDefaultResult"
@@ -14065,6 +14232,462 @@
           },
           {
             "$ref": "#/components/schemas/UsbAcmCancelledResult"
+          }
+        ]
+      },
+      "AndroidDisplayExpected": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision"
+        ],
+        "properties": {
+          "revision": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_.:-]+$"
+          }
+        }
+      },
+      "AndroidDisplayState": {
+        "type": "string",
+        "enum": [
+          "android",
+          "stopping",
+          "stopped",
+          "restoring"
+        ]
+      },
+      "AndroidDisplayNetwork": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "interface",
+              "operstate"
+            ],
+            "properties": {
+              "interface": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^[A-Za-z0-9_.:-]+$"
+              },
+              "operstate": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32,
+                    "pattern": "^[A-Za-z0-9_.:-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "AndroidDisplayOwner": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "vmId",
+              "vmName"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "manual",
+                  "vm"
+                ]
+              },
+              "vmId": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9_.:-]+$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vmName": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "AndroidDisplayRestore": {
+        "anyOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "ok",
+              "uncertain",
+              "message",
+              "atMs"
+            ],
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "uncertain": {
+                "type": "boolean"
+              },
+              "message": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "atMs": {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 20
+              }
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "AndroidDisplayObservation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "context",
+          "capability",
+          "supported",
+          "expected",
+          "state",
+          "owner",
+          "sinceMs",
+          "autoRestoreAtMs",
+          "restoreOnNetworkLoss",
+          "progress",
+          "network",
+          "panelLit",
+          "watchdog",
+          "services",
+          "lastRestore"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ServerContext"
+          },
+          "capability": {
+            "const": "android-display-v1"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "expected": {
+            "$ref": "#/components/schemas/AndroidDisplayExpected"
+          },
+          "state": {
+            "$ref": "#/components/schemas/AndroidDisplayState"
+          },
+          "owner": {
+            "$ref": "#/components/schemas/AndroidDisplayOwner"
+          },
+          "sinceMs": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "autoRestoreAtMs": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$",
+                "maxLength": 20
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "restoreOnNetworkLoss": {
+            "type": "boolean"
+          },
+          "progress": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "network": {
+            "$ref": "#/components/schemas/AndroidDisplayNetwork"
+          },
+          "panelLit": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "watchdog": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "verified",
+              "reason"
+            ],
+            "properties": {
+              "verified": {
+                "type": "boolean"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "services": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "surfaceflinger",
+              "composer"
+            ],
+            "properties": {
+              "surfaceflinger": {
+                "type": "string",
+                "maxLength": 32
+              },
+              "composer": {
+                "type": "string",
+                "maxLength": 32
+              }
+            }
+          },
+          "lastRestore": {
+            "$ref": "#/components/schemas/AndroidDisplayRestore"
+          }
+        }
+      },
+      "AndroidDisplayOperation": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "stop"
+              },
+              "autoRestoreSeconds": {
+                "type": "integer",
+                "minimum": 60,
+                "maximum": 86400
+              },
+              "restoreOnNetworkLoss": {
+                "type": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "restore"
+              }
+            }
+          }
+        ]
+      },
+      "AndroidDisplayOperationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "context",
+          "requestId",
+          "expected",
+          "operation"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ServerContext"
+          },
+          "requestId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "expected": {
+            "$ref": "#/components/schemas/AndroidDisplayExpected"
+          },
+          "operation": {
+            "$ref": "#/components/schemas/AndroidDisplayOperation"
+          }
+        }
+      },
+      "AndroidDisplayOperationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected",
+          "kind",
+          "state",
+          "stopped",
+          "restored",
+          "uncertain",
+          "revision",
+          "network",
+          "message"
+        ],
+        "properties": {
+          "expected": {
+            "$ref": "#/components/schemas/AndroidDisplayExpected"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stop",
+              "restore"
+            ]
+          },
+          "state": {
+            "$ref": "#/components/schemas/AndroidDisplayState"
+          },
+          "stopped": {
+            "type": "boolean"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "uncertain": {
+            "type": "boolean"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_.:-]+$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "network": {
+            "$ref": "#/components/schemas/AndroidDisplayNetwork"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "AndroidDisplayCancelledResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected",
+          "kind",
+          "state",
+          "revision",
+          "network",
+          "message",
+          "stopped",
+          "restored",
+          "uncertain"
+        ],
+        "properties": {
+          "expected": {
+            "type": "null"
+          },
+          "kind": {
+            "type": "null"
+          },
+          "state": {
+            "type": "null"
+          },
+          "revision": {
+            "type": "null"
+          },
+          "network": {
+            "type": "null"
+          },
+          "message": {
+            "type": "null"
+          },
+          "stopped": {
+            "const": false
+          },
+          "restored": {
+            "const": false
+          },
+          "uncertain": {
+            "const": false
+          }
+        }
+      },
+      "AndroidDisplayResult": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AndroidDisplayOperationResult"
+          },
+          {
+            "$ref": "#/components/schemas/AndroidDisplayCancelledResult"
           }
         ]
       },

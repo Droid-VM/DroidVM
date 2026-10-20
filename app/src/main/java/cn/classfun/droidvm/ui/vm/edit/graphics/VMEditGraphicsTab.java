@@ -852,6 +852,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
      */
     private boolean validateScreens() {
         var crosvm = parent.get("backend", VMBackend.DEFAULT) == VMBackend.CROSVM;
+        // Same rule the daemon enforces (crosvm_kms_screen): KMS is gpu-0 only, crosvm only,
+        // and the only exporter on the VM, because crosvm replaces its whole backend list.
+        var kms = screenGpu0.isScreenEnabled() && screenGpu0.getExporter() == DisplayExporter.KMS;
+        var fbExports = screenFb.isScreenEnabled() && screenFb.getExporter() != DisplayExporter.NONE;
+        if (screenFb.isScreenEnabled() && screenFb.getExporter() == DisplayExporter.KMS)
+            return showValidateFailed(R.string.create_vm_error_kms_display_rules);
+        if (kms && (!crosvm || fbExports))
+            return showValidateFailed(R.string.create_vm_error_kms_display_rules);
         for (var row : new ScreenBindingRow[]{screenGpu0, screenFb}) {
             if (!row.isScreenEnabled()) continue;
             if (row.getExporter() == DisplayExporter.NATIVE && !crosvm)
