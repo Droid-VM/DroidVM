@@ -29,6 +29,11 @@ public enum DisplayExporter implements StringEnum {
     // by which constant happens to be first.
     NATIVE(1, "native", R.string.create_vm_screen_exporter_native),
     VNC(2, "vnc", R.string.create_vm_screen_exporter_vnc),
+    // The panel itself: crosvm scans the guest out over DRM/KMS while the daemon holds the
+    // Android display stack stopped. Only gpu-0, crosvm only, and no other exporter beside it
+    // (crosvm swaps its whole backend list for KMS). There is no console for it in this app --
+    // the phone screen is the console -- so the console chooser skips it.
+    KMS(3, "kms", R.string.create_vm_screen_exporter_kms),
     // Unlike the NONE sentinels of the other persisted enums, this one is a real, selectable
     // choice: a screen nobody is watching is a state, not a fault -- crosvm accepts it too. So
     // it carries a label instead of R.string.nullptr; a nullptr entry reports isDisplay() ==

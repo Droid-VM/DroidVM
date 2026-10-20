@@ -566,8 +566,10 @@ final class ScreenBindingRow {
         options.setVisibility(enabled ? VISIBLE : GONE);
         // No exporter, no edge for a transport to run along, so the row would be a ceiling on
         // nothing. Its value is kept while hidden, like the VNC block's.
+        // The KMS edge has no ladder either: the panel scans the guest's buffer out directly.
         chooseTransport.setVisibility(
-            enabled && exporter != DisplayExporter.NONE ? VISIBLE : GONE);
+            enabled && exporter != DisplayExporter.NONE && exporter != DisplayExporter.KMS
+                ? VISIBLE : GONE);
         vncOptions.setVisibility(
             enabled && exporter == DisplayExporter.VNC ? VISIBLE : GONE);
         passwordOptions.setVisibility(swPasswordAuth.isChecked() ? VISIBLE : GONE);

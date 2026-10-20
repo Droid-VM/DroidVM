@@ -196,6 +196,7 @@
     <string name="create_vm_error_hypervisor_not_supported">Selected hypervisor is not supported by selected backend</string>
     <string name="create_vm_error_path_invalid">Invalid absolute path</string>
     <string name="create_vm_error_native_display_only_crosvm">Native display only applies to CrosVM backend.</string>
+    <string name="create_vm_error_kms_display_rules">Phone panel export needs the CrosVM backend, the gpu-0 screen, and no other exporter on this VM.</string>
     <string name="create_vm_category_kernel">Linux Kernel</string>
     <string name="create_vm_kernel_hint">Kernel</string>
     <string name="create_vm_initrd_hint">Initrd</string>
@@ -319,6 +320,7 @@
     <string name="create_vm_screen_exporter_none">Sink (discard)</string>
     <string name="create_vm_screen_exporter_native">Native display</string>
     <string name="create_vm_screen_exporter_vnc">VNC</string>
+    <string name="create_vm_screen_exporter_kms">Phone panel (DRM/KMS)</string>
     <string name="create_vm_screen_transport">Transport pipeline</string>
     <string name="create_vm_screen_transport_cpu">CPU Copy</string>
     <string name="create_vm_screen_transport_gpu">GPU Copy</string>
