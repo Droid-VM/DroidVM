@@ -168,8 +168,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private float hoverLastY = Float.NaN;
 
     /**
-     * 已转发给 guest 的物理鼠标按键状态。Android 可能为同一次点击同时发送
-     * ACTION_DOWN/UP 和 ACTION_BUTTON_PRESS/RELEASE；只转发状态变化，避免双击。
+     * Physical mouse button state already forwarded to the guest. Android may send both
+     * ACTION_DOWN/UP and ACTION_BUTTON_PRESS/RELEASE for one click; forward state changes only.
      */
     private int hostMouseButtons;
 
@@ -478,8 +478,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     /**
-     * 鼠标点击不走手指触摸或手势转换器，三个按键均直接转发。TABLET 模式使用
-     * 绝对指针设备以匹配 hover 位置，其余模式使用相对鼠标设备。
+     * Physical mouse clicks bypass touch and gesture translation. All three buttons are forwarded
+     * directly. TABLET mode uses the absolute pointer device; other modes use the relative mouse.
      */
     private boolean onSurfaceTouch(View v, MotionEvent event) {
         if (isPhysicalMouse(event)) {
@@ -537,11 +537,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     /**
-     * 将 Android 鼠标三键的当前状态与已发送状态比较，只发送发生变化的键。
+     * Compare Android's three-button state with the state already sent and forward changes only.
      *
-     * 同一次点击可能先后出现在 touch、generic motion、captured pointer 回调里。
-     * BUTTON_PRESS/RELEASE 的 getButtonState() 在部分设备上仍是变化前的状态，
-     * 因此优先按 getActionButton() 修正本次事件的状态。
+     * One click may appear in touch, generic-motion, and captured-pointer callbacks.
+     * On some devices getButtonState() for BUTTON_PRESS/RELEASE still reports the old state,
+     * so getActionButton() takes precedence when correcting this event's state.
      */
     private void forwardPhysicalMouseButtons(@NonNull MotionEvent event) {
         if (!isPhysicalMouse(event)) return;
@@ -583,7 +583,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         } else if (action == MotionEvent.ACTION_BUTTON_RELEASE) {
             buttons &= ~actionButton;
         } else if (action == MotionEvent.ACTION_DOWN) {
-            // 部分设备在 DOWN 中尚未更新 buttonState。
+            // Some devices have not updated buttonState yet during DOWN.
             if (buttons == 0 && actionButton == 0)
                 buttons |= MotionEvent.BUTTON_PRIMARY;
         } else if (action == MotionEvent.ACTION_UP) {
@@ -597,7 +597,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         return buttons;
     }
 
-    /** 失焦或销毁时释放 guest 中可能仍处于按下状态的鼠标键。 */
+    /** Release mouse buttons that may still be held in the guest after focus loss or destruction. */
     private void releasePhysicalMouseButtons() {
         int buttons = hostMouseButtons;
         hostMouseButtons = 0;
@@ -682,7 +682,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                 if (isPhysicalMouse(event)) {
                     forwardPhysicalMouseButtons(event);
                 } else {
-                    // 保留触控笔侧键的原有行为。
+                    // Preserve the existing stylus side-button behavior.
                     short btn = mapActionButton(event.getActionButton());
                     if (btn != 0 && inputForwarder != null) {
                         inputForwarder.sendPointerButton(btn,
@@ -796,8 +796,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     /**
-     * 指针捕获后事件不再经过普通 hover/generic-motion 路径，因此这里必须同时处理
-     * 移动和按键，不能只处理 ACTION_MOVE。
+     * After pointer capture, events no longer pass through the regular hover/generic-motion path,
+     * so both movement and buttons must be handled here instead of only ACTION_MOVE.
      */
     private boolean onCapturedPointerEvent(View v, MotionEvent event) {
         if (inputForwarder == null || inputMode != InputMode.MOUSE) {
