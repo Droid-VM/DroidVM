@@ -19,6 +19,8 @@ import android.view.SurfaceView;
 
 import androidx.annotation.NonNull;
 
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -84,6 +86,36 @@ final class DisplayProvider {
     private boolean cursorSurfaceSent = false;
 
     private final IBinder.DeathRecipient deathRecipient;
+
+    /**
+     * Per display service (one per VM), the provider whose Surfaces crosvm has: index 0 the
+     * scanout, 1 the cursor.
+     *
+     * A console coming back is a new activity created before the one it replaces stops (the
+     * orientation flip on entry, a relaunch with CLEAR_TASK), so the old provider's
+     * surfaceDestroyed runs after the new one's setSurface. removeSurface names no Surface: from
+     * the old provider it took the new one away, and the screen kept its last frame while the
+     * guest ran on, until something re-created the Surface. Only the provider that sent the
+     * Surface crosvm holds may save its frame or remove it. Main thread only.
+     */
+    private static final Map<IBinder, DisplayProvider[]> surfaceOwners = new WeakHashMap<>();
+
+    private void ownSurface(@NonNull ICrosvmAndroidDisplayService svc, boolean forCursor) {
+        DisplayProvider[] owners = surfaceOwners.get(svc.asBinder());
+        if (owners == null) {
+            owners = new DisplayProvider[2];
+            surfaceOwners.put(svc.asBinder(), owners);
+        }
+        owners[forCursor ? 1 : 0] = this;
+    }
+
+    /** Whether this provider's Surface is the one crosvm holds; it stops being so either way. */
+    private boolean releaseSurface(@NonNull ICrosvmAndroidDisplayService svc, boolean forCursor) {
+        DisplayProvider[] owners = surfaceOwners.get(svc.asBinder());
+        if (owners == null || owners[forCursor ? 1 : 0] != this) return false;
+        owners[forCursor ? 1 : 0] = null;
+        return true;
+    }
     /** One binder hunt at a time: both the death path and surfaceCreated ask for one. */
     private final AtomicBoolean fetching = new AtomicBoolean();
 
@@ -288,12 +320,14 @@ final class DisplayProvider {
         }
         try {
             svc.setSurface(surface, false);
+            ownSurface(svc, false);
             markSent();
         } catch (IllegalArgumentException e) {
             // KNOWN/BENIGN: the reference TerminalApp DisplayProvider documents that setSurface
             // throws IllegalArgumentException from the binder reply path even though crosvm DID
             // receive and configure the surface. Treat as delivered.
             Log.w(TAG, "setSurface: IllegalArgumentException (known/benign) - treating as delivered");
+            ownSurface(svc, false);
             markSent();
         } catch (Exception e) {
             Log.e(TAG, "setSurface failed", e);
@@ -332,6 +366,10 @@ final class DisplayProvider {
             needsSend = false;
             var svc = displayService;
             if (svc == null) return;
+            if (!releaseSurface(svc, false)) {
+                Log.i(TAG, "main surface destroyed after a newer console took the display; leaving it");
+                return;
+            }
             try {
                 svc.saveFrameForSurface(false);
                 hasSavedFrame = true;
@@ -412,6 +450,7 @@ final class DisplayProvider {
                 cursorSurfaceSent = false;
                 var svc = displayService;
                 if (svc == null) return;
+                if (!releaseSurface(svc, true)) return; // a newer console has the cursor plane
                 // Keep the last pointer image the same way the scanout keeps its last frame. A
                 // cursor surface that really did die (the activity left the foreground, or the
                 // death path bounced it) comes back empty otherwise, and nothing repaints it: only
@@ -440,10 +479,12 @@ final class DisplayProvider {
         try {
             svc.setSurface(surface, true);
             cursorSurfaceSent = true;
+            ownSurface(svc, true);
             Log.i(TAG, "cursor surface delivered");
         } catch (IllegalArgumentException e) {
             // Same known/benign binder reply behaviour as the main surface.
             cursorSurfaceSent = true;
+            ownSurface(svc, true);
         } catch (Exception e) {
             Log.w(TAG, "setSurface(cursor) failed", e);
             return;
