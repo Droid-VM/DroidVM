@@ -65,4 +65,16 @@ public interface DisplaySource {
      */
     default void setCursorListener(java.util.function.BiConsumer<Integer, Integer> listener) {
     }
+
+    /**
+     * Show the guest's picture turned this many quarter turns clockwise (0-3), without the guest
+     * knowing. A source that cannot turn it answers false and stays at 0. Main thread.
+     */
+    default boolean setQuarterTurns(int turns) {
+        return (turns & 3) == 0;
+    }
+
+    /** Told, on the main thread, when the source turns out unable to turn the picture after all. */
+    default void setOnQuarterTurnsRejected(java.util.function.Consumer<Integer> listener) {
+    }
 }

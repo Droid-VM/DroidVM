@@ -55,6 +55,17 @@ public final class NativeSurfaceSource implements DisplaySource {
     }
 
     @Override
+    public boolean setQuarterTurns(int turns) {
+        provider.setQuarterTurns(turns);
+        return true;
+    }
+
+    @Override
+    public void setOnQuarterTurnsRejected(java.util.function.Consumer<Integer> listener) {
+        provider.setOnQuarterTurnsRejected(listener);
+    }
+
+    @Override
     public void start() {
     }
 

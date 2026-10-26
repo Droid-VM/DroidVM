@@ -1144,6 +1144,10 @@
     <string name="usb_input_no_device">No USB keyboard or mouse found</string>
     <string name="usb_input_status">USB input: %1$d keyboard(s), %2$d mouse(es)</string>
     <string name="vnc_menu_rotate">Rotate Screen</string>
+    <string name="display_rotate_left">Turn the display left (the guest then rotates itself)</string>
+    <string name="display_rotate_right">Turn the display right (the guest then rotates itself)</string>
+    <string name="screen_rotate">Rotate the screen (Android rotates it)</string>
+    <string name="display_rotation_unsupported">This VM\'s crosvm cannot turn the display; update it</string>
 
     <string name="vnc_op_mouse_move">Mouse Move</string>
     <string name="vnc_op_left_click">Left Click</string>

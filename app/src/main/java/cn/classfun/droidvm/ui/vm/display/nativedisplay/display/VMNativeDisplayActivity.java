@@ -11,6 +11,8 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.pm.ActivityInfo;
+import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -130,6 +132,16 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Last viewport transform, mirrored so the cursor overlay can be placed without asking the
     // controller to recompute it. Written only by onViewportChanged, read only on the main thread.
     private float vpBaseW, vpBaseH, vpViewScale = 1f, vpOffsetX, vpOffsetY;
+    // Quarter turns clockwise the guest's picture is shown at (the Display orientation). The guest
+    // knows nothing of it: crosvm's buffers keep the guest's size and SurfaceFlinger turns them, and
+    // touches are turned back here before they go to the guest.
+    private int displayQuarterTurns = 0;
+    // The Screen orientation: locked, the activity keeps its rotation and the guest turns its own
+    // UI (what a turn of the Display implies); unlocked, Android turns the activity as
+    // screenOrientationRequest asks (USER_PORTRAIT/USER_LANDSCAPE, so the system's rotation lock
+    // still holds) and the guest stays upright in it. Both are kept per screen of a VM.
+    private boolean screenRotationLocked = false;
+    private int screenOrientationRequest = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
     // True while a finger is on the container in relative-pointer mode. This is the gate for
     // viewport follow: a cursor move from a REMOTE DESKTOP session is byte-identical to one the
@@ -168,6 +180,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private InputMode inputMode = InputMode.TOUCH;
     private static final String INPUT_PREFS = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
+    private static final String KEY_DISPLAY_TURNS = "display_quarter_turns_";
+    private static final String KEY_SCREEN_LOCKED = "screen_rotation_locked_";
+    private static final String KEY_SCREEN_REQUEST = "screen_orientation_request_";
     // Chrome memory, shared with the VNC path: extra-keys on/off per typing surface + whether
     // the physical keyboard is up.
     private static final String KEY_KEYBOARD_MODE = "display_keyboard_mode";
@@ -292,6 +307,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         guestWidth = (int) intent.getLongExtra(EXTRA_WIDTH, 1280);
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
+        restoreRotationState();
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
@@ -365,7 +381,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                 public void onContentSize(int width, int height) {
                     guestWidth = width;
                     guestHeight = height;
-                    viewport.setContentSize(width, height);
+                    viewport.setContentSize(shownWidth(), shownHeight());
                     // Keep the status-bar resolution label in step with a live resize.
                     if (connected)
                         setStatus(fmt(getString(R.string.native_display_connected),
@@ -384,6 +400,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // assignment on a background thread and the cursor layer was wired only by luck.
         displaySource.setCursorView(cursorView);
         displaySource.setCursorListener(this::onGuestCursorMoved);
+        displaySource.setOnQuarterTurnsRejected(turns -> {
+            Toast.makeText(this, R.string.display_rotation_unsupported, Toast.LENGTH_LONG).show();
+            displayQuarterTurns = 0;
+            applyDisplayTurns();
+            saveRotationState();
+        });
+        if (displayQuarterTurns != 0) displaySource.setQuarterTurns(displayQuarterTurns);
         displaySource.start();
     }
 
@@ -551,9 +574,58 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (inputMode != InputMode.TOUCH) return false;
         if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
         if (isMouseButtonTouch(event)) return true;
-        var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
-        inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
+        if (displayQuarterTurns == 0) {
+            var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
+            inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
+            return true;
+        }
+        // The view shows the picture turned; the guest's digitizer is the unturned panel. Turn the
+        // touch back about the view's centre into a rect of the panel's shape, then scale as usual.
+        int w = v.getWidth(), h = v.getHeight();
+        int panelW = pictureSideways() ? h : w, panelH = pictureSideways() ? w : h;
+        var unturn = unturnAbout(w / 2f, h / 2f);
+        unturn.postTranslate((panelW - w) / 2f, (panelH - h) / 2f);
+        var unturned = MotionEvent.obtain(event);
+        unturned.transform(unturn);
+        var tf = TouchScaleCalculator.compute(panelW, panelH);
+        inputForwarder.sendTouchEvent(unturned, tf.scaleX, tf.scaleY);
+        unturned.recycle();
         return true;
+    }
+
+    // The guest's picture as shown: a quarter (or three-quarter) turn makes it as wide as the guest
+    // is tall.
+    private boolean pictureSideways() {
+        return (displayQuarterTurns & 1) != 0;
+    }
+
+    private int shownWidth() {
+        return pictureSideways() ? guestHeight : guestWidth;
+    }
+
+    private int shownHeight() {
+        return pictureSideways() ? guestWidth : guestHeight;
+    }
+
+    // From the shown picture back to the guest's: the picture's turn undone about a centre point.
+    // The unturned picture has the same centre, so a shown rect about it maps onto the guest's.
+    @NonNull
+    private Matrix unturnAbout(float centreX, float centreY) {
+        var m = new Matrix();
+        m.setRotate(-90f * displayQuarterTurns, centreX, centreY);
+        return m;
+    }
+
+    // Where a guest framebuffer point is in the shown picture, in the picture's own units (its size
+    // being shownWidth() x shownHeight()). The inverse of unturnAbout, for the cursor overlay.
+    @NonNull
+    private float[] guestToShown(float gx, float gy) {
+        switch (displayQuarterTurns) {
+            case 1: return new float[]{guestHeight - gy, gx};
+            case 2: return new float[]{guestWidth - gx, guestHeight - gy};
+            case 3: return new float[]{gy, guestWidth - gx};
+            default: return new float[]{gx, gy};
+        }
     }
 
     // MOUSE/TABLET gesture surface: the whole container is active; the translator pins gestures
@@ -579,7 +651,21 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             default:
                 break;
         }
-        return gestureTranslator.onTouchEvent(event, displayRectInContainer(), unitW, unitH);
+        var rect = displayRectInContainer();
+        if (displayQuarterTurns == 0) {
+            return gestureTranslator.onTouchEvent(event, rect, unitW, unitH);
+        }
+        // Undo the picture's turn about its centre: absolute positions land in the unturned
+        // picture's rect, and relative moves turn with them.
+        float cx = rect.centerX(), cy = rect.centerY();
+        float halfW = (pictureSideways() ? rect.height() : rect.width()) / 2f;
+        float halfH = (pictureSideways() ? rect.width() : rect.height()) / 2f;
+        var unturned = MotionEvent.obtain(event);
+        unturned.transform(unturnAbout(cx, cy));
+        boolean handled = gestureTranslator.onTouchEvent(unturned,
+            new RectF(cx - halfW, cy - halfH, cx + halfW, cy + halfH), unitW, unitH);
+        unturned.recycle();
+        return handled;
     }
 
     /**
@@ -606,7 +692,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         lastCursorY = gy;
         positionCursorOverlay();
         if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null) {
-            viewport.panToShowContentPoint(gx, gy, CURSOR_FOLLOW_MARGIN_PX);
+            float[] shown = guestToShown(gx, gy);
+            viewport.panToShowContentPoint(shown[0], shown[1], CURSOR_FOLLOW_MARGIN_PX);
         }
     }
 
@@ -641,18 +728,24 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (area == null || area.getWidth() <= 0) {
             return;
         }
-        float vx = lastCursorX * vpBaseW / guestWidth;
-        float vy = lastCursorY * vpBaseH / guestHeight;
+        float[] shown = guestToShown(lastCursorX, lastCursorY);
+        float vx = shown[0] * vpBaseW / shownWidth();
+        float vy = shown[1] * vpBaseH / shownHeight();
         float cx = area.getWidth() / 2f + vpOffsetX + (vx - vpBaseW / 2f) * vpViewScale;
         float cy = area.getHeight() / 2f + vpOffsetY + (vy - vpBaseH / 2f) * vpViewScale;
-        float pxPerGuestPx = (vpBaseW / (float) guestWidth) * vpViewScale;
+        float pxPerGuestPx = (vpBaseW / (float) shownWidth()) * vpViewScale;
+        // crosvm turns the cursor plane with the scanout, so its hotspot corner (the image's top
+        // left) moves round the overlay: top right after a quarter turn, and so on.
+        float plane = DisplayProvider.CURSOR_PLANE_PX * pxPerGuestPx;
+        boolean hotspotRight = displayQuarterTurns == 1 || displayQuarterTurns == 2;
+        boolean hotspotBottom = displayQuarterTurns == 2 || displayQuarterTurns == 3;
 
         cursorView.setPivotX(0f);
         cursorView.setPivotY(0f);
         cursorView.setScaleX(pxPerGuestPx);
         cursorView.setScaleY(pxPerGuestPx);
-        cursorView.setTranslationX(cx);
-        cursorView.setTranslationY(cy);
+        cursorView.setTranslationX(hotspotRight ? cx - plane : cx);
+        cursorView.setTranslationY(hotspotBottom ? cy - plane : cy);
         if (cursorView.getVisibility() != VISIBLE) {
             cursorView.setVisibility(VISIBLE);
         }
@@ -716,8 +809,14 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (inputMode != InputMode.TABLET) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
-            var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
-            inputForwarder.sendHover(event.getX(), event.getY(), tf.scaleX, tf.scaleY);
+            int w = v.getWidth(), h = v.getHeight();
+            int panelW = pictureSideways() ? h : w, panelH = pictureSideways() ? w : h;
+            float[] at = {event.getX(), event.getY()};
+            var unturn = unturnAbout(w / 2f, h / 2f);
+            unturn.postTranslate((panelW - w) / 2f, (panelH - h) / 2f);
+            unturn.mapPoints(at);
+            var tf = TouchScaleCalculator.compute(panelW, panelH);
+            inputForwarder.sendHover(at[0], at[1], tf.scaleX, tf.scaleY);
             return true;
         }
         return false;
@@ -833,7 +932,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     // Auto-resize Guest Display: no guest-side channel on this path yet.
                 }
             });
-        viewport.setContentSize(guestWidth, guestHeight);
+        viewport.setContentSize(shownWidth(), shownHeight());
 
         var inputPrefs = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE);
         chrome = new DisplayChromeController(
@@ -937,9 +1036,15 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.addView(buildInputModeHeader(popup));
-        header.addView(DisplayKeyboardMenuRow.build(
+        View keyboardRow = DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss));
+            popup::dismiss);
+        // The rotation row goes below: hand it the header's bottom margin, so the three rows sit
+        // as evenly apart as the first two.
+        keyboardRow.setPaddingRelative(keyboardRow.getPaddingStart(), keyboardRow.getPaddingTop(),
+            keyboardRow.getPaddingEnd(), Math.round(2 * getResources().getDisplayMetrics().density));
+        header.addView(keyboardRow);
+        header.addView(buildRotationRow(popup));
         popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
@@ -984,9 +1089,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
-        } else if (id == R.id.menu_rotate) {
-            toggleOrientation();
-            return true;
         }
         return false;
     }
@@ -1015,12 +1117,94 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    private void toggleOrientation() {
+    // Menu header row, segmented like the two above it: turn the Display left or right, rotate the
+    // Screen. The turns are actions, so their buttons are unchecked again at once; the screen
+    // button stays checked, with a lock, while the guest does the rotating.
+    private View buildRotationRow(@NonNull MaterialMenu popup) {
+        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
+            getLayoutInflater().inflate(R.layout.view_rotation_row, null);
+        MaterialButton screen = group.findViewById(R.id.rotate_screen);
+        Runnable showLock = () -> {
+            if (screenRotationLocked) group.check(R.id.rotate_screen);
+            else group.uncheck(R.id.rotate_screen);
+            screen.setIconResource(screenRotationLocked
+                ? R.drawable.ic_screen_rotation_lock : R.drawable.ic_screen_rotation);
+        };
+        showLock.run();
+        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (checkedId == R.id.rotate_display_left || checkedId == R.id.rotate_display_right) {
+                if (!isChecked) return;
+                g.uncheck(checkedId);
+                turnDisplay(checkedId == R.id.rotate_display_left ? -1 : 1);
+                showLock.run();
+            } else if (checkedId == R.id.rotate_screen && isChecked != screenRotationLocked) {
+                // A tap, not showLock: either way it rotates the screen and unlocks.
+                rotateScreen();
+                popup.dismiss();
+            }
+        });
+        return group;
+    }
+
+    /**
+     * Turn the guest's picture a quarter turn (Display orientation). From then on the guest turns
+     * its own UI, so the Screen locks where it is: Android must not rotate the activity under it.
+     */
+    private void turnDisplay(int quarterTurns) {
+        int turns = (displayQuarterTurns + quarterTurns) & 3;
+        if (displaySource == null || !displaySource.setQuarterTurns(turns)) {
+            Toast.makeText(this, R.string.display_rotation_unsupported, Toast.LENGTH_LONG).show();
+            return;
+        }
+        displayQuarterTurns = turns;
+        screenRotationLocked = true;
+        applyScreenOrientation();
+        applyDisplayTurns();
+        saveRotationState();
+    }
+
+    /**
+     * Rotate the Screen: portrait from landscape and the other way round, and hand the rotation
+     * back to Android (unlocked). The system's own rotation lock still holds -- USER_PORTRAIT and
+     * USER_LANDSCAPE only choose the shape. The Display orientation stays.
+     */
+    private void rotateScreen() {
         boolean landscape = getResources().getConfiguration().orientation
             == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        setRequestedOrientation(landscape
-            ? android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            : android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        screenOrientationRequest = landscape
+            ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
+            : ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE;
+        screenRotationLocked = false;
+        applyScreenOrientation();
+        saveRotationState();
+    }
+
+    private void applyScreenOrientation() {
+        setRequestedOrientation(screenRotationLocked
+            ? ActivityInfo.SCREEN_ORIENTATION_LOCKED : screenOrientationRequest);
+    }
+
+    // The picture's new shape: the viewport fits it, and the cursor overlay follows.
+    private void applyDisplayTurns() {
+        if (viewport != null) viewport.setContentSize(shownWidth(), shownHeight());
+        positionCursorOverlay();
+    }
+
+    private void restoreRotationState() {
+        var prefs = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE);
+        displayQuarterTurns = prefs.getInt(KEY_DISPLAY_TURNS + vmKey, 0) & 3;
+        screenRotationLocked = prefs.getBoolean(KEY_SCREEN_LOCKED + vmKey, false);
+        screenOrientationRequest = prefs.getInt(KEY_SCREEN_REQUEST + vmKey,
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        applyScreenOrientation();
+    }
+
+    private void saveRotationState() {
+        getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
+            .putInt(KEY_DISPLAY_TURNS + vmKey, displayQuarterTurns)
+            .putBoolean(KEY_SCREEN_LOCKED + vmKey, screenRotationLocked)
+            .putInt(KEY_SCREEN_REQUEST + vmKey, screenOrientationRequest)
+            .apply();
     }
 
     /**

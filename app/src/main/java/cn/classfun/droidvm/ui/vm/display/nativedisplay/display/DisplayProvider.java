@@ -18,6 +18,7 @@ import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -84,6 +85,11 @@ final class DisplayProvider {
     private CursorPositionStream.Listener cursorListener;
     private SurfaceView cursorView;
     private boolean cursorSurfaceSent = false;
+    // Quarter turns clockwise the guest's picture is shown at (setQuarterTurns), and whether this
+    // crosvm can turn it at all (an older display backend has no setSurfaceTransform).
+    private int quarterTurns = 0;
+    private boolean transformSupported = true;
+    private Consumer<Integer> onQuarterTurnsRejected;
 
     private final IBinder.DeathRecipient deathRecipient;
 
@@ -172,7 +178,7 @@ final class DisplayProvider {
 
         var surface = mainView.getHolder().getSurface();
         if (surface != null && surface.isValid()) {
-            mainView.getHolder().setFixedSize(width, height);
+            applyFixedSize(mainView.getHolder());
             needsSend = true;
         }
         fetchBinder();
@@ -250,7 +256,7 @@ final class DisplayProvider {
             if (config != null && config.width > 0 && config.height > 0) {
                 width = config.width;
                 height = config.height;
-                mainView.getHolder().setFixedSize(width, height);
+                applyFixedSize(mainView.getHolder());
                 onDisplayConfig.accept(config);
             }
         } catch (Exception e) {
@@ -259,6 +265,7 @@ final class DisplayProvider {
         // Attach the cursor position pipe, if anybody wants it. crosvm has always written guest
         // cursor moves to this fd; nothing ever read it, so the backend dropped them all.
         attachCursorStream();
+        sendTransform(displayService);
         if (cursorView != null) {
             trySendCursorSurface(cursorView.getHolder());
         }
@@ -301,8 +308,68 @@ final class DisplayProvider {
         height = config.height;
         // Keep the app-side buffer size in step with crosvm's setBuffersGeometry; guarded by
         // needsSend, so the layout-driven surfaceChanged this triggers won't re-send the surface.
-        mainView.getHolder().setFixedSize(width, height);
+        applyFixedSize(mainView.getHolder());
         onDisplayConfig.accept(config);
+    }
+
+    /**
+     * Show the guest's picture turned this many quarter turns clockwise (0-3). crosvm keeps queueing
+     * buffers of the guest's size and SurfaceFlinger turns them (setSurfaceTransform), so the guest
+     * sees nothing of it. A quarter or three-quarter turn makes the picture as wide as the guest is
+     * tall, and the Surface's requested size follows: BLASTBufferQueue drops a buffer whose turned
+     * size differs from it. Main thread. A crosvm without the call gets 0 back, and the listener set
+     * with {@link #setOnQuarterTurnsRejected} hears of it.
+     */
+    public void setQuarterTurns(int turns) {
+        int normalized = turns & 3;
+        if (normalized == quarterTurns) return;
+        if (!transformSupported) {
+            if (onQuarterTurnsRejected != null) onQuarterTurnsRejected.accept(normalized);
+            return;
+        }
+        quarterTurns = normalized;
+        applyFixedSize(mainView.getHolder());
+        if (displayService != null) sendTransform(displayService);
+    }
+
+    public int getQuarterTurns() {
+        return quarterTurns;
+    }
+
+    public void setOnQuarterTurnsRejected(@Nullable Consumer<Integer> listener) {
+        onQuarterTurnsRejected = listener;
+    }
+
+    // The requested buffer size of the main Surface: the guest's, turned with the picture.
+    private void applyFixedSize(@NonNull SurfaceHolder holder) {
+        boolean sideways = (quarterTurns & 1) != 0;
+        holder.setFixedSize(sideways ? height : width, sideways ? width : height);
+    }
+
+    // ANativeWindow's transform for a number of clockwise quarter turns.
+    private static int transformFor(int turns) {
+        switch (turns & 3) {
+            case 1: return 4;  // ANATIVEWINDOW_TRANSFORM_ROTATE_90
+            case 2: return 3;  // ANATIVEWINDOW_TRANSFORM_ROTATE_180
+            case 3: return 7;  // ANATIVEWINDOW_TRANSFORM_ROTATE_270
+            default: return 0; // ANATIVEWINDOW_TRANSFORM_IDENTITY
+        }
+    }
+
+    private void sendTransform(@NonNull ICrosvmAndroidDisplayService svc) {
+        int transform = transformFor(quarterTurns);
+        try {
+            svc.setSurfaceTransform(transform, false);
+            svc.setSurfaceTransform(transform, true);
+        } catch (Exception e) {
+            // An older crosvm: its binder has no such transaction ("Method ... is unimplemented").
+            Log.w(TAG, "setSurfaceTransform unavailable; the picture stays unturned", e);
+            transformSupported = false;
+            int rejected = quarterTurns;
+            quarterTurns = 0;
+            applyFixedSize(mainView.getHolder());
+            if (onQuarterTurnsRejected != null && rejected != 0) onQuarterTurnsRejected.accept(rejected);
+        }
     }
 
     private void applyPendingSurface() {
@@ -351,7 +418,7 @@ final class DisplayProvider {
     private final class Callback implements SurfaceHolder.Callback {
         @Override
         public void surfaceCreated(@NonNull SurfaceHolder holder) {
-            holder.setFixedSize(width, height);
+            applyFixedSize(holder);
             needsSend = true; // fresh surface - send on next surfaceChanged
         }
 

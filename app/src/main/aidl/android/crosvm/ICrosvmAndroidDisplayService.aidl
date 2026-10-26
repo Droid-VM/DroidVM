@@ -41,4 +41,12 @@ interface ICrosvmAndroidDisplayService {
      * default resolution.
      */
     DisplayConfig getDisplayConfig();
+
+    /**
+     * Turn or flip the pictures queued to a surface: an ANATIVEWINDOW_TRANSFORM_* value (0 none,
+     * 4 a quarter turn clockwise, 3 a half turn, 7 three quarters). The guest's buffers keep their
+     * size; with a quarter turn the picture is as wide as they are tall, and the Surface's requested
+     * size must follow. Holds across setSurface. A crosvm built before it fails the call.
+     */
+    void setSurfaceTransform(int transform, boolean forCursor);
 }

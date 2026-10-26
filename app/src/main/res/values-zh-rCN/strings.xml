@@ -1106,6 +1106,10 @@
     <string name="usb_input_no_device">未找到USB键盘或鼠标</string>
     <string name="usb_input_status">USB输入：%1$d个键盘，%2$d个鼠标</string>
     <string name="vnc_menu_rotate">旋转屏幕</string>
+    <string name="display_rotate_left">画面左转（之后由 guest 自己旋转）</string>
+    <string name="display_rotate_right">画面右转（之后由 guest 自己旋转）</string>
+    <string name="screen_rotate">旋转屏幕（由 Android 旋转）</string>
+    <string name="display_rotation_unsupported">此 VM 的 crosvm 不支持旋转画面，请更新</string>
 
     <string name="vnc_op_mouse_move">鼠标移动</string>
     <string name="vnc_op_left_click">左键单击</string>
