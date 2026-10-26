@@ -29,7 +29,8 @@ import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
  * the UI arrives via {@link #writeNativeInput(String, int, byte[])} - called either on the daemon's
  * native-display broker binder thread (touch hot path) or from the vm_input IPC handler - and is
  * written straight to the matching crosvm peer. {@link CrosvmBackendInstance} drives the lifecycle:
- * {@link #startListening(String, List, List)} from start() and {@link #release()} from cleanup().
+ * {@link #startListening(String, List, List, boolean)} from start() and {@link #release()} from
+ * cleanup().
  *
  * <p>The socket set is not one per channel: the relative pointer is VM-wide, while multi-touch,
  * the absolute pointer and the keyboard exist once per screen that has them, so a slot is a
@@ -153,7 +154,7 @@ final class NativeDisplayInputBridge {
     }
 
     boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
-                           @NonNull List<String> nativeScreens) {
+                           @NonNull List<String> nativeScreens, boolean motionSensors) {
         if (!UnixHelper.isLoaded()) {
             Log.w(TAG, "UnixHelper not loaded; cannot pre-bind native-display input sockets");
             return false;
@@ -163,7 +164,7 @@ final class NativeDisplayInputBridge {
         var built = new LinkedHashMap<String, Slot>();
         boolean allListening;
         try {
-            allListening = bindAll(vmId, touchScreens, nativeScreens, built);
+            allListening = bindAll(vmId, touchScreens, nativeScreens, motionSensors, built);
         } catch (RuntimeException e) {
             closeSlots(built.values());
             throw e;
@@ -182,11 +183,11 @@ final class NativeDisplayInputBridge {
      * {@link #startListening}, which is where what is already in [built] is disposed of.</p>
      */
     private boolean bindAll(@NonNull String vmId, @NonNull List<String> touchScreens,
-                            @NonNull List<String> nativeScreens,
+                            @NonNull List<String> nativeScreens, boolean motionSensors,
                             @NonNull Map<String, Slot> built) {
         boolean allListening = true;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
-            for (var screenId : screensFor(ch, touchScreens, nativeScreens)) {
+            for (var screenId : screensFor(ch, touchScreens, nativeScreens, motionSensors)) {
                 // Before the syscall, not after: a path bind(2) cannot hold is truncated in
                 // silence and every check downstream then passes against the wrong inode.
                 var path = NativeDisplay.requireBindablePath(
@@ -210,7 +211,8 @@ final class NativeDisplayInputBridge {
 
     /**
      * The screens [channel] needs a socket for: its own list for the three per-screen channels, or
-     * just the VM itself for the relative pointer, which has no output binding.
+     * just the VM itself for the relative pointer, which has no output binding, and for the motion
+     * sensors when the VM has them.
      *
      * <p>Switched on the channel rather than on {@link NativeDisplay#isPerScreen} alone, because
      * "is this per screen" and "which screens" stopped having one answer when the VNC bindings
@@ -220,13 +222,16 @@ final class NativeDisplayInputBridge {
      */
     @NonNull
     private static List<String> screensFor(int channel, @NonNull List<String> touchScreens,
-                                           @NonNull List<String> nativeScreens) {
+                                           @NonNull List<String> nativeScreens,
+                                           boolean motionSensors) {
         switch (channel) {
             case NativeDisplay.MULTITOUCH:
                 return touchScreens;
             case NativeDisplay.TABLET:
             case NativeDisplay.KEYBOARD:
                 return nativeScreens;
+            case NativeDisplay.SENSOR:
+                return motionSensors ? List.of("") : List.of();
             default:
                 return List.of("");
         }

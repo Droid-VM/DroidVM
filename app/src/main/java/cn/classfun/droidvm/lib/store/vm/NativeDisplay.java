@@ -63,7 +63,14 @@ public final class NativeDisplay {
     public static final int KEYBOARD = 1;
     public static final int MOUSE = 2;
     public static final int TABLET = 3;
-    public static final int CHANNEL_COUNT = 4;
+    /**
+     * The VM's motion sensors (crosvm {@code --input motion}). Not an input mode the console
+     * switches to: what a console writes here overrides the phone's own sensors, which crosvm reads
+     * itself whenever nobody does (see {@link MotionSensorMode}). VM-wide, and bound only when the
+     * VM has the device.
+     */
+    public static final int SENSOR = 4;
+    public static final int CHANNEL_COUNT = 5;
 
     /**
      * Broadcast the daemon (running as root) sends to hand its INativeDisplayRootService binder to
@@ -83,7 +90,7 @@ public final class NativeDisplay {
     // crosvm device kinds they pair with are "mouse" (relative) and "absolute-mouse". Short
     // because the whole path has to fit sun_path (see the class note); still self-describing,
     // because the next person reading `ls run/` deserves to know which inode is the touchscreen.
-    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab"};
+    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen"};
 
     /**
      * Socket filename tag per screen, positionally paired with {@link VMScreenConfig#IDS}. A
@@ -315,6 +322,9 @@ public final class NativeDisplay {
     public static String keyboardDeviceName(@NonNull String screenId) {
         return fmt("DroidVM Keyboard (%s)", screenId);
     }
+
+    /** The evdev name of the VM's motion sensors; one per VM, so nothing to tell apart. */
+    public static final String MOTION_DEVICE_NAME = "DroidVM Motion Sensors";
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */
     @NonNull

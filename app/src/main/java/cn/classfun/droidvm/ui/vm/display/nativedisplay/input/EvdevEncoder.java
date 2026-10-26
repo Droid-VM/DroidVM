@@ -59,6 +59,20 @@ public final class EvdevEncoder {
     private static final short REL_Y = 0x01;
     private static final short REL_WHEEL = 0x08;
     private static final short REL_HWHEEL = 0x06;
+    // Motion sensors (crosvm --input motion): EV_MSC timestamps, and the first angular-velocity
+    // axis (ABS_RX; RY and RZ follow it as Y and Z follow ABS_X).
+    private static final short EV_MSC = 0x04;
+    private static final short MSC_TIMESTAMP = 0x05;
+    private static final short ABS_RX = 0x03;
+    /**
+     * The motion sensors' units and bounds: per g of acceleration and per degree per second of
+     * angular velocity. MUST equal crosvm's MOTION_ACCEL_PER_G, MOTION_ACCEL_MAX,
+     * MOTION_GYRO_PER_DEG_S and MOTION_GYRO_MAX (devices/src/virtio/input/defaults.rs).
+     */
+    public static final int MOTION_ACCEL_PER_G = 256;
+    public static final int MOTION_ACCEL_MAX = 16 * MOTION_ACCEL_PER_G;
+    public static final int MOTION_GYRO_PER_DEG_S = 16;
+    public static final int MOTION_GYRO_MAX = 32767;
     public static final short BTN_LEFT = 0x110;
     public static final short BTN_RIGHT = 0x111;
     public static final short BTN_MIDDLE = 0x112;
@@ -93,6 +107,23 @@ public final class EvdevEncoder {
             buf.putInt(e.value);
         }
         return buf.array();
+    }
+
+    /**
+     * One motion-sensor frame: three axes (acceleration on ABS_X/Y/Z, or with [angularVelocity] on
+     * ABS_RX/RY/RZ) in the device's units, the timestamp, SYN.
+     */
+    @NonNull
+    public static byte[] encodeMotion(boolean angularVelocity, int x, int y, int z,
+                                      long timestampNs) {
+        short first = angularVelocity ? ABS_RX : ABS_X;
+        return encode(List.of(
+            new Event(EV_ABS, first, x),
+            new Event(EV_ABS, (short) (first + 1), y),
+            new Event(EV_ABS, (short) (first + 2), z),
+            // Microseconds, wrapping, as crosvm's own feed and hid-playstation send it.
+            new Event(EV_MSC, MSC_TIMESTAMP, (int) (timestampNs / 1000)),
+            new Event(EV_SYN, SYN_REPORT, 0)));
     }
 
     /**

@@ -26,6 +26,7 @@ import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,6 +57,7 @@ import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
+import cn.classfun.droidvm.lib.store.vm.MotionSensorMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SerialBackend;
@@ -67,6 +69,7 @@ import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.SharedDirType;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
+import cn.classfun.droidvm.lib.store.vm.VirtioTransport;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
@@ -168,7 +171,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     config.getId().toString(), screenId, records));
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
-                    touchscreenScreens(), nativeInputScreens())) {
+                    touchscreenScreens(), nativeInputScreens(),
+                    MotionSensorMode.fromItem(config.item) != MotionSensorMode.OFF)) {
                     Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
                 }
             } catch (IllegalArgumentException e) {
@@ -501,6 +505,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         if (isInputBridgeNeeded()) {
             buildInputDevicesCommand(args);
         }
+        buildMotionSensorCommand(args);
+        buildVirtioTransportCommand(args);
         buildPeripheralCommand(args);
         buildSerialCommand(args);
         item.opt("extra_options", DataItem.newArray())
@@ -633,10 +639,51 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case VIRTIO:
                     arg.append(",lock=false");
                     if (readonly) arg.append(",ro=true");
-                    args.add("--block");
+                    // A disk is the one virtio device crosvm moves to MMIO one at a time.
+                    args.add(VirtioTransport.fromItem(config.item) == VirtioTransport.MMIO
+                        ? "--virtio-mmio-block" : "--block");
                     args.add(arg.toString());
                     break;
             }
+        }
+    }
+
+    /**
+     * The VM's motion sensors: crosvm reads the phone's own (host-sensors) unless the mode keeps
+     * them out, and a console overrides them through the SENSOR socket, which exists whenever the
+     * input bridge does. Without a bridge nothing can override, so the device gets no path.
+     *
+     * <p>Emitted after the other input devices: on an MMIO VM the input windows follow the command
+     * line order, so the screens' devices keep their addresses whether or not this one is there
+     * (the network card and the GPU, which crosvm places after every input device, do not).</p>
+     */
+    private void buildMotionSensorCommand(@NonNull List<String> args) {
+        var mode = MotionSensorMode.fromItem(config.item);
+        if (mode == MotionSensorMode.OFF) return;
+        var spec = new StringBuilder("motion[");
+        if (isInputBridgeNeeded()) {
+            spec.append("path=").append(NativeDisplay.inputSocketPath(
+                config.getId().toString(), "", NativeDisplay.SENSOR)).append(',');
+        }
+        spec.append("host-sensors=").append(mode.hostSensors());
+        spec.append(",name=").append(NativeDisplay.MOTION_DEVICE_NAME).append(']');
+        args.add("--input");
+        args.add(spec.toString());
+    }
+
+    /**
+     * On an MMIO VM, crosvm's switches that move the input devices, the network cards and the GPU
+     * to virtio-mmio (the disks moved one by one in buildDiskCommand). A switch already among the
+     * extra options -- how such a VM was configured before the setting existed -- is not repeated.
+     */
+    private void buildVirtioTransportCommand(@NonNull List<String> args) {
+        if (VirtioTransport.fromItem(config.item) != VirtioTransport.MMIO) return;
+        var extra = new HashSet<String>();
+        config.item.opt("extra_options", DataItem.newArray())
+            .forEach(arg -> extra.add(arg.getValue().asString()));
+        for (var flag : new String[]{
+            "--virtio-mmio-input", "--virtio-mmio-net", "--virtio-mmio-gpu"}) {
+            if (!extra.contains(flag)) args.add(flag);
         }
     }
 

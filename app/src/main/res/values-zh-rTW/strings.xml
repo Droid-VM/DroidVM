@@ -1573,6 +1573,16 @@
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">序列埠</string>
+    <string name="create_vm_category_virtio">Virtio 裝置</string>
+    <string name="create_vm_virtio_transport">Virtio 傳輸</string>
+    <string name="create_vm_virtio_transport_pci">PCI（一般 guest）</string>
+    <string name="create_vm_virtio_transport_mmio">MMIO（沒有 PCI 的 guest，例如 iPadOS）</string>
+    <string name="create_vm_motion_sensor">動作感測器（陀螺儀）</string>
+    <string name="create_vm_motion_sensor_off">關閉</string>
+    <string name="create_vm_motion_sensor_physical">物理（本機感測器）</string>
+    <string name="create_vm_motion_sensor_virtual">虛擬（依螢幕方向）</string>
+    <string name="create_vm_motion_sensor_auto">自動（guest 旋轉時用物理，螢幕旋轉時用虛擬）</string>
+    <string name="edit_vm_virtio_crosvm_only">Virtio MMIO 和動作感測器需要 crosvm 後端</string>
     <string name="edit_vm_serial_empty">沒有序列埠</string>
     <string name="edit_vm_serial_add">新增序列埠</string>
     <string name="edit_vm_serial_add_title">序列埠硬體</string>

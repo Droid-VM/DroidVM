@@ -12,6 +12,7 @@ import org.junit.Test;
 
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 
 public final class VMCreationDefaultsTest {
@@ -86,6 +87,13 @@ public final class VMCreationDefaultsTest {
         // ports differ because both can be exported at once and two servers may not share one.
         assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST, gpu.getVncHost());
         assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_PORT_GPU0, gpu.getVncPort());
+
+        // The peripherals tab's Virtio rows: a new VM is a PCI VM without motion sensors, which is
+        // also what a config from before these keys reads as.
+        assertEquals(VirtioTransport.PCI, VirtioTransport.fromItem(item));
+        assertEquals(MotionSensorMode.OFF, MotionSensorMode.fromItem(item));
+        assertEquals(VirtioTransport.PCI, VirtioTransport.fromItem(DataItem.newObject()));
+        assertEquals(MotionSensorMode.OFF, MotionSensorMode.fromItem(DataItem.newObject()));
 
         var fb = VMScreenConfig.find(item, VMScreenConfig.ID_SIMPLEFB);
         assertNotNull(fb);

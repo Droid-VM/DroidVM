@@ -45,12 +45,13 @@ public final class NativeDisplaySocketPathTest {
         for (var screenId : VMScreenConfig.IDS)
             for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
                 seen.add(NativeDisplay.inputSocketPath(VM_ID, screenId, ch));
-        // The VM-wide channel collapses onto one name whatever screen is passed, so the count is
-        // one per screen per per-screen channel, plus that single shared one.
+        // A VM-wide channel collapses onto one name whatever screen is passed, so the count is one
+        // per screen per per-screen channel, plus one per VM-wide channel.
         int perScreen = 0;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
             if (NativeDisplay.isPerScreen(ch)) perScreen++;
-        assertEquals(VMScreenConfig.IDS.length * perScreen + 1, seen.size());
+        int vmWide = NativeDisplay.CHANNEL_COUNT - perScreen;
+        assertEquals(VMScreenConfig.IDS.length * perScreen + vmWide, seen.size());
     }
 
     @Test

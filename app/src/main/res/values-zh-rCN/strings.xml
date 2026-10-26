@@ -1573,6 +1573,16 @@
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">串口</string>
+    <string name="create_vm_category_virtio">Virtio 设备</string>
+    <string name="create_vm_virtio_transport">Virtio 传输</string>
+    <string name="create_vm_virtio_transport_pci">PCI（一般 guest）</string>
+    <string name="create_vm_virtio_transport_mmio">MMIO（没有 PCI 的 guest，例如 iPadOS）</string>
+    <string name="create_vm_motion_sensor">动作传感器（陀螺仪）</string>
+    <string name="create_vm_motion_sensor_off">关闭</string>
+    <string name="create_vm_motion_sensor_physical">物理（本机传感器）</string>
+    <string name="create_vm_motion_sensor_virtual">虚拟（依屏幕方向）</string>
+    <string name="create_vm_motion_sensor_auto">自动（guest 旋转时用物理，屏幕旋转时用虚拟）</string>
+    <string name="edit_vm_virtio_crosvm_only">Virtio MMIO 和动作传感器需要 crosvm 后端</string>
     <string name="edit_vm_serial_empty">没有串口</string>
     <string name="edit_vm_serial_add">添加串口</string>
     <string name="edit_vm_serial_add_title">串口硬件</string>

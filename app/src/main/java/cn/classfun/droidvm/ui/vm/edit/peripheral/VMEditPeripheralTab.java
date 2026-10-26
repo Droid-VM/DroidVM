@@ -29,6 +29,7 @@ import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
+import cn.classfun.droidvm.lib.store.vm.MotionSensorMode;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SerialBackend;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -37,6 +38,7 @@ import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMSerialConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
+import cn.classfun.droidvm.lib.store.vm.VirtioTransport;
 import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
 import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
@@ -45,6 +47,7 @@ import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
 import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
+import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 
 /**
  * Peripherals attached to the VM: the audio devices the crosvm backend turns into virtio-snd
@@ -66,6 +69,8 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
     private final List<UsbHostDeviceInfo> hostDevices = new ArrayList<>();
     private CardItemListView listPeripherals;
     private CardItemListView listSerialPorts;
+    private ChooseRowWidget chooseVirtioTransport;
+    private ChooseRowWidget chooseMotionSensor;
     private VMPeripheralEditAdapter adapter;
     /**
      * The VM's controller-id counter, carried across the edit.
@@ -92,10 +97,14 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
     public void initView() {
         listPeripherals = view.findViewById(R.id.list_peripherals);
         listSerialPorts = view.findViewById(R.id.list_serial_ports);
+        chooseVirtioTransport = view.findViewById(R.id.choose_virtio_transport);
+        chooseMotionSensor = view.findViewById(R.id.choose_motion_sensor);
     }
 
     @Override
     public void initValue() {
+        chooseVirtioTransport.configure(VirtioTransport.class, VirtioTransport.DEFAULT);
+        chooseMotionSensor.configure(MotionSensorMode.class, MotionSensorMode.DEFAULT);
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
@@ -149,6 +158,8 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         // before "serial_ports"; ensureDefaults here only covers configs built by hand.
         VMSerialConfig.ensureDefaults(config.item);
         listSerialPorts.setItems(config.item.opt(VMSerialConfig.KEY, DataItem.newArray()));
+        chooseVirtioTransport.setSelectedItem(VirtioTransport.fromItem(config.item));
+        chooseMotionSensor.setSelectedItem(MotionSensorMode.fromItem(config.item));
         // A VM that does not exist yet owns no rules: its id is minted by the save itself, so
         // everything the user adds here is an addition when that id finally exists.
         loadUsbRules(parent.editMode ? config.getId().toString() : null);
@@ -156,6 +167,11 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
 
     @Override
     public boolean validateInput(@NonNull VMStore store) {
+        // Both are crosvm's: QEMU's devices are PCI, and it has no motion-sensor device.
+        if (backend() != VMBackend.CROSVM
+            && (chooseVirtioTransport.<VirtioTransport>getSelectedItem() != VirtioTransport.PCI
+            || chooseMotionSensor.<MotionSensorMode>getSelectedItem() != MotionSensorMode.OFF))
+            return showValidateFailed(R.string.edit_vm_virtio_crosvm_only);
         // Two endpoints pointed at one host device in the same direction would open two AAudio
         // streams onto it: allowed by the platform, but never what someone meant to configure.
         // The direction is part of the identity, so a microphone and a speaker cannot collide.
@@ -202,6 +218,10 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         config.item.set(VMXhciConfig.KEY_PERIPHERALS,
             requireNonNull(listPeripherals.getItems()));
         config.item.set(VMSerialConfig.KEY, requireNonNull(listSerialPorts.getItems()));
+        VirtioTransport transport = chooseVirtioTransport.getSelectedItem();
+        config.item.set(VirtioTransport.KEY, transport);
+        MotionSensorMode motion = chooseMotionSensor.getSelectedItem();
+        config.item.set(MotionSensorMode.KEY, motion);
         // Never below what the config already handed out: an id is only safe to mint once.
         config.item.set(VMXhciConfig.KEY_NEXT,
             Math.max(xhciNext, config.item.optLong(VMXhciConfig.KEY_NEXT, 0)));

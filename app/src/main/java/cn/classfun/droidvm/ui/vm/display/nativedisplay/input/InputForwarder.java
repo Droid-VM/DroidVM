@@ -6,6 +6,7 @@ package cn.classfun.droidvm.ui.vm.display.nativedisplay.input;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.KEYBOARD;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MOUSE;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MULTITOUCH;
+import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.SENSOR;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.TABLET;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
@@ -159,6 +160,14 @@ public final class InputForwarder {
     }
 
     /** Host scroll wheel (vertical, horizontal notches) routed to the active pointer device. */
+    /**
+     * A motion-sensor frame (EvdevEncoder.encodeMotion) for the VM's SENSOR channel, where it
+     * overrides the phone's sensors crosvm feeds the guest itself.
+     */
+    public void sendMotion(@NonNull byte[] frame) {
+        submit("motion", () -> sink.write(SENSOR, frame));
+    }
+
     public void sendScroll(int vNotches, int hNotches) {
         submit("scroll", () -> {
             byte[] data = EvdevEncoder.encodeMouseWheel(vNotches, hNotches);

@@ -15,6 +15,7 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
+import android.hardware.SensorManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -55,8 +56,11 @@ import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.DroidVMApp;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
+import cn.classfun.droidvm.lib.store.vm.MotionSensorMode;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
+import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
@@ -73,6 +77,7 @@ import cn.classfun.droidvm.ui.vm.display.base.InputMode;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.HostMotionSensor;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.KeyCodeMapper;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
@@ -111,6 +116,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
      * why touch is doing nothing; where the events go is the daemon's answer, not this one.
      */
     public static final String EXTRA_INPUT_ENABLED = "input_enabled";
+    /** The VM's MotionSensorMode name; without it the console reads the VM store. */
+    public static final String EXTRA_MOTION_SENSOR = "motion_sensor";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
 
@@ -141,6 +148,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // screenOrientationRequest asks (USER_PORTRAIT/USER_LANDSCAPE, so the system's rotation lock
     // still holds) and the guest stays upright in it. Both are kept per screen of a VM.
     private boolean screenRotationLocked = false;
+    // The VM's motion-sensor mode, and what this console sends its motion sensors while it is in
+    // front (null until the root service is attached, and for a VM without them).
+    private MotionSensorMode motionSensorMode = MotionSensorMode.OFF;
+    private HostMotionSensor motionSensor;
+    private boolean resumed = false;
     private int screenOrientationRequest = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
 
     // True while a finger is on the container in relative-pointer mode. This is the gate for
@@ -308,6 +320,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         guestHeight = (int) intent.getLongExtra(EXTRA_HEIGHT, 720);
         vmKey = NativeDisplay.serviceNameFromId(vmId, screenId);
         restoreRotationState();
+        resolveMotionSensorMode(intent.getStringExtra(EXTRA_MOTION_SENSOR));
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
@@ -354,6 +367,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // A forwarder is built fresh on every attach and starts in TOUCH, so it has to be told
         // the mode this session is actually in (restored in setupViews, or since changed).
         inputForwarder.setInputMode(inputMode);
+        setupMotionSensor();
 
         // Start the VM now that listeners are up (no-op if already running).
         DaemonConnection.getInstance().buildRequest("vm_start")
@@ -1182,12 +1196,73 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void applyScreenOrientation() {
         setRequestedOrientation(screenRotationLocked
             ? ActivityInfo.SCREEN_ORIENTATION_LOCKED : screenOrientationRequest);
+        updateMotionPicture();
+    }
+
+    // The motion sensors turn the phone's motion by the picture's turn, and in AUTO choose
+    // physical or virtual by who rotates.
+    private void updateMotionPicture() {
+        if (motionSensor != null)
+            motionSensor.setPicture(displayQuarterTurns, screenRotationLocked);
+    }
+
+    // The launching intent says the VM's mode; a console opened another way (am start) asks the
+    // VM store, off the main thread, and sets the sensors up when the answer comes back.
+    private void resolveMotionSensorMode(@Nullable String extra) {
+        if (extra != null) {
+            motionSensorMode = parseMotionSensorMode(extra);
+            return;
+        }
+        var id = vmId;
+        new Thread(() -> {
+            var store = new VMStore();
+            store.load(this);
+            VMConfig config;
+            try {
+                config = store.findById(UUID.fromString(id));
+            } catch (IllegalArgumentException e) {
+                config = null;
+            }
+            var mode = config == null ? MotionSensorMode.OFF : MotionSensorMode.fromItem(config.item);
+            mainHandler.post(() -> {
+                motionSensorMode = mode;
+                setupMotionSensor();
+            });
+        }, "MotionSensorMode").start();
+    }
+
+    @NonNull
+    private static MotionSensorMode parseMotionSensorMode(@NonNull String name) {
+        try {
+            return MotionSensorMode.valueOf(name.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return MotionSensorMode.OFF;
+        }
+    }
+
+    // (Re)built with every forwarder: a re-attach makes a new one, and the old sensor feed dies
+    // with the old forwarder.
+    private void setupMotionSensor() {
+        if (motionSensor != null) {
+            motionSensor.stop();
+            motionSensor = null;
+        }
+        if (motionSensorMode == MotionSensorMode.OFF || inputForwarder == null) return;
+        var sensors = getSystemService(SensorManager.class);
+        if (sensors == null) return;
+        motionSensor = new HostMotionSensor(motionSensorMode, sensors, inputForwarder, () -> {
+            var display = getDisplay();
+            return display == null ? 0 : display.getRotation();
+        });
+        motionSensor.setPicture(displayQuarterTurns, screenRotationLocked);
+        if (resumed) motionSensor.start();
     }
 
     // The picture's new shape: the viewport fits it, and the cursor overlay follows.
     private void applyDisplayTurns() {
         if (viewport != null) viewport.setContentSize(shownWidth(), shownHeight());
         positionCursorOverlay();
+        updateMotionPicture();
     }
 
     private void restoreRotationState() {
@@ -1308,6 +1383,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
+        resumed = true;
+        if (motionSensor != null) motionSensor.start();
     }
 
     @Override
@@ -1316,6 +1393,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
+        resumed = false;
+        // crosvm goes back to the phone's own sensors about a second later.
+        if (motionSensor != null) motionSensor.stop();
     }
 
     @Override
