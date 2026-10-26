@@ -1146,8 +1146,6 @@
     <string name="vnc_menu_rotate">Rotate Screen</string>
     <string name="display_rotate_left">Turn the display left</string>
     <string name="display_rotate_right">Turn the display right</string>
-    <string name="display_turn_degrees">%1$d°</string>
-    <string name="display_turn_reset">The display\'s turn (tap to set it back to 0°)</string>
     <string name="screen_force_landscape">Force landscape</string>
     <string name="screen_force_portrait">Force portrait</string>
     <string name="screen_follow_system">Follow the system (turns with the device unless the system\'s rotation lock is on)</string>

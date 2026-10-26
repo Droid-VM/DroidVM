@@ -1108,8 +1108,6 @@
     <string name="vnc_menu_rotate">旋转屏幕</string>
     <string name="display_rotate_left">画面左转</string>
     <string name="display_rotate_right">画面右转</string>
-    <string name="display_turn_degrees">%1$d°</string>
-    <string name="display_turn_reset">画面当前的转角（点一下回到 0°）</string>
     <string name="screen_force_landscape">强制水平</string>
     <string name="screen_force_portrait">强制垂直</string>
     <string name="screen_follow_system">跟随系统（随设备旋转；系统锁定旋转时不转）</string>

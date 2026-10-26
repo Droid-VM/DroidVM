@@ -41,6 +41,13 @@ public class ScreenModeTest {
     }
 
     @Test
+    public void theButtonGoesLandscapePortraitSystem() {
+        assertEquals(ScreenMode.PORTRAIT, ScreenMode.LANDSCAPE.next());
+        assertEquals(ScreenMode.FOLLOW_SYSTEM, ScreenMode.PORTRAIT.next());
+        assertEquals(ScreenMode.LANDSCAPE, ScreenMode.FOLLOW_SYSTEM.next());
+    }
+
+    @Test
     public void unknownOrdinalFollowsTheSystem() {
         assertEquals(ScreenMode.FOLLOW_SYSTEM, ScreenMode.fromOrdinal(7));
         assertEquals(ScreenMode.PORTRAIT, ScreenMode.fromOrdinal(2));

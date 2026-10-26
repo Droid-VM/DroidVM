@@ -1071,7 +1071,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             keyboardRow.getPaddingEnd(), Math.round(2 * getResources().getDisplayMetrics().density));
         header.addView(keyboardRow);
         header.addView(buildRotationRow());
-        header.addView(buildScreenModeRow());
         popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
@@ -1144,37 +1143,53 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    // Menu header row, segmented like the two above it: turn the Display left or right, its turn
-    // between (a tap sets it back to 0). All three are actions, unchecked again at once.
+    // Menu header row, segmented like the two above it: turn the Display left, the Screen
+    // orientation in turn (forced landscape, forced portrait, the system's; the icon says which),
+    // turn the Display right. All three are actions, unchecked again at once.
     private View buildRotationRow() {
         var group = (com.google.android.material.button.MaterialButtonToggleGroup)
             getLayoutInflater().inflate(R.layout.view_rotation_row, null);
-        MaterialButton turn = group.findViewById(R.id.display_turn);
-        Runnable showTurn = () -> turn.setText(getString(R.string.display_turn_degrees,
-            displayQuarterTurns * 90));
-        showTurn.run();
+        MaterialButton screen = group.findViewById(R.id.screen_mode);
+        Runnable showMode = () -> {
+            screen.setIconResource(screenModeIcon(screenMode));
+            var label = getString(screenModeLabel(screenMode));
+            screen.setContentDescription(label);
+            screen.setTooltipText(label);
+        };
+        showMode.run();
         group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
             if (!isChecked) return;
             g.uncheck(checkedId);
-            if (checkedId == R.id.display_turn) turnDisplay(-displayQuarterTurns);
-            else turnDisplay(checkedId == R.id.rotate_display_left ? -1 : 1);
-            showTurn.run();
+            if (checkedId == R.id.screen_mode) {
+                setScreenMode(screenMode.next());
+                showMode.run();
+            } else {
+                turnDisplay(checkedId == R.id.rotate_display_left ? -1 : 1);
+            }
         });
         return group;
     }
 
-    // The Screen row: force landscape, force portrait, or follow the system; one always checked.
-    private View buildScreenModeRow() {
-        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
-            getLayoutInflater().inflate(R.layout.view_screen_mode_row, null);
-        int[] ids = {R.id.screen_follow, R.id.screen_landscape, R.id.screen_portrait};
-        group.check(ids[screenMode.ordinal()]);
-        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
-            if (!isChecked) return;
-            for (var mode : ScreenMode.values())
-                if (ids[mode.ordinal()] == checkedId && mode != screenMode) setScreenMode(mode);
-        });
-        return group;
+    private static int screenModeIcon(@NonNull ScreenMode mode) {
+        switch (mode) {
+            case LANDSCAPE:
+                return R.drawable.ic_screen_landscape;
+            case PORTRAIT:
+                return R.drawable.ic_screen_portrait;
+            default:
+                return R.drawable.ic_screen_rotation;
+        }
+    }
+
+    private static int screenModeLabel(@NonNull ScreenMode mode) {
+        switch (mode) {
+            case LANDSCAPE:
+                return R.string.screen_force_landscape;
+            case PORTRAIT:
+                return R.string.screen_force_portrait;
+            default:
+                return R.string.screen_follow_system;
+        }
     }
 
     /**

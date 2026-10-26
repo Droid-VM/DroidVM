@@ -26,6 +26,19 @@ public enum ScreenMode {
         this.request = request;
     }
 
+    /** The one the Screen button turns to: landscape, portrait, the system's, and round again. */
+    @NonNull
+    public ScreenMode next() {
+        switch (this) {
+            case LANDSCAPE:
+                return PORTRAIT;
+            case PORTRAIT:
+                return FOLLOW_SYSTEM;
+            default:
+                return LANDSCAPE;
+        }
+    }
+
     @NonNull
     public static ScreenMode fromOrdinal(int ordinal) {
         var modes = values();
