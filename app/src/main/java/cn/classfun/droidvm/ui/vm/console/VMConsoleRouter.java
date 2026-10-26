@@ -16,7 +16,7 @@ import java.util.UUID;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
-import cn.classfun.droidvm.lib.store.vm.MotionSensorMode;
+import cn.classfun.droidvm.lib.store.vm.MotionSensors;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
@@ -108,8 +108,7 @@ public final class VMConsoleRouter {
         intent.putExtra(VMNativeDisplayActivity.EXTRA_VM_NAME, config.getName());
         intent.putExtra(VMNativeDisplayActivity.EXTRA_SCREEN, screenId);
         intent.putExtra(VMNativeDisplayActivity.EXTRA_INPUT_ENABLED, inputEnabled(item, screenId));
-        intent.putExtra(VMNativeDisplayActivity.EXTRA_MOTION_SENSOR,
-            MotionSensorMode.fromItem(item).name());
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_MOTION_CORRECT, MotionSensors.corrected(item));
         // The screen's own size, not the VM's: the two screens have different geometry now, and
         // the console is showing exactly one of them.
         var screen = VMScreenConfig.find(item, screenId);

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Screen row of the display fab-menu header: force landscape, force portrait, or follow the system
+     (Android turns the console with the device unless the system's rotation lock is on). One is
+     always checked. -->
+<com.google.android.material.button.MaterialButtonToggleGroup
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/screen_mode_group"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="10dp"
+    app:selectionRequired="true"
+    app:singleSelection="true">
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/screen_landscape"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:contentDescription="@string/screen_force_landscape"
+        app:icon="@drawable/ic_screen_landscape"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/screen_portrait"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:contentDescription="@string/screen_force_portrait"
+        app:icon="@drawable/ic_screen_portrait"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/screen_follow"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:contentDescription="@string/screen_follow_system"
+        app:icon="@drawable/ic_screen_rotation"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp" />
+
+</com.google.android.material.button.MaterialButtonToggleGroup>

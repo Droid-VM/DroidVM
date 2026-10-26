@@ -1106,9 +1106,15 @@
     <string name="usb_input_no_device">未找到USB键盘或鼠标</string>
     <string name="usb_input_status">USB输入：%1$d个键盘，%2$d个鼠标</string>
     <string name="vnc_menu_rotate">旋转屏幕</string>
-    <string name="display_rotate_left">画面左转（之后由 guest 自己旋转）</string>
-    <string name="display_rotate_right">画面右转（之后由 guest 自己旋转）</string>
-    <string name="screen_rotate">旋转屏幕（由 Android 旋转）</string>
+    <string name="display_rotate_left">画面左转</string>
+    <string name="display_rotate_right">画面右转</string>
+    <string name="display_turn_degrees">%1$d°</string>
+    <string name="display_turn_reset">画面当前的转角（点一下回到 0°）</string>
+    <string name="screen_force_landscape">强制水平</string>
+    <string name="screen_force_portrait">强制垂直</string>
+    <string name="screen_follow_system">跟随系统（随设备旋转；系统锁定旋转时不转）</string>
+    <string name="screen_letterboxed">系统没有旋转屏幕，改以该形状的窗口显示控制台（两侧留白）</string>
+    <string name="screen_request_ignored">系统忽略了方向请求（大屏幕只随设备旋转）；要转 guest 请改用画面旋转</string>
     <string name="display_rotation_unsupported">此 VM 的 crosvm 不支持旋转画面，请更新</string>
 
     <string name="vnc_op_mouse_move">鼠标移动</string>
@@ -1578,10 +1584,7 @@
     <string name="create_vm_virtio_transport_pci">PCI（一般 guest）</string>
     <string name="create_vm_virtio_transport_mmio">MMIO（没有 PCI 的 guest，例如 iPadOS）</string>
     <string name="create_vm_motion_sensor">动作传感器（陀螺仪）</string>
-    <string name="create_vm_motion_sensor_off">关闭</string>
-    <string name="create_vm_motion_sensor_physical">物理（本机传感器）</string>
-    <string name="create_vm_motion_sensor_virtual">虚拟（依屏幕方向）</string>
-    <string name="create_vm_motion_sensor_auto">自动（guest 旋转时用物理，屏幕旋转时用虚拟）</string>
+    <string name="create_vm_motion_correct">依画面自动校正（控制台依画面方向换算传感器）</string>
     <string name="edit_vm_virtio_crosvm_only">Virtio MMIO 和动作传感器需要 crosvm 后端</string>
     <string name="edit_vm_serial_empty">没有串口</string>
     <string name="edit_vm_serial_add">添加串口</string>

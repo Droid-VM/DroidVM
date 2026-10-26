@@ -57,7 +57,7 @@ import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
 import cn.classfun.droidvm.lib.store.vm.LendMthpMode;
-import cn.classfun.droidvm.lib.store.vm.MotionSensorMode;
+import cn.classfun.droidvm.lib.store.vm.MotionSensors;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SerialBackend;
@@ -172,7 +172,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
                     touchscreenScreens(), nativeInputScreens(),
-                    MotionSensorMode.fromItem(config.item) != MotionSensorMode.OFF)) {
+                    MotionSensors.enabled(config.item))) {
                     Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
                 }
             } catch (IllegalArgumentException e) {
@@ -649,23 +649,22 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     /**
-     * The VM's motion sensors: crosvm reads the phone's own (host-sensors) unless the mode keeps
-     * them out, and a console overrides them through the SENSOR socket, which exists whenever the
-     * input bridge does. Without a bridge nothing can override, so the device gets no path.
+     * The VM's motion sensors: crosvm reads the phone's own (host-sensors), and a console that
+     * corrects them overrides them through the SENSOR socket, which exists whenever the input bridge
+     * does. Without a bridge nothing can override, so the device gets no path.
      *
      * <p>Emitted after the other input devices: on an MMIO VM the input windows follow the command
      * line order, so the screens' devices keep their addresses whether or not this one is there
      * (the network card and the GPU, which crosvm places after every input device, do not).</p>
      */
     private void buildMotionSensorCommand(@NonNull List<String> args) {
-        var mode = MotionSensorMode.fromItem(config.item);
-        if (mode == MotionSensorMode.OFF) return;
+        if (!MotionSensors.enabled(config.item)) return;
         var spec = new StringBuilder("motion[");
         if (isInputBridgeNeeded()) {
             spec.append("path=").append(NativeDisplay.inputSocketPath(
                 config.getId().toString(), "", NativeDisplay.SENSOR)).append(',');
         }
-        spec.append("host-sensors=").append(mode.hostSensors());
+        spec.append("host-sensors=true");
         spec.append(",name=").append(NativeDisplay.MOTION_DEVICE_NAME).append(']');
         args.add("--input");
         args.add(spec.toString());

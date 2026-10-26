@@ -5,6 +5,7 @@ package cn.classfun.droidvm.ui.vm.display.nativedisplay.input;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -14,24 +15,58 @@ import java.nio.ByteOrder;
 public class HostMotionSensorTest {
     private static final int G = EvdevEncoder.MOTION_ACCEL_PER_G;
 
+    private static final float EPSILON = 1e-4f;
+    private static final float[] DOWN = {0, -1, 0};
+
     @Test
     public void aQuarterTurnTakesXyToMinusYx() {
-        // Gravity straight down a frame, (0, -g), seen from a frame turned a quarter clockwise
-        // from it: that frame's X axis now points down, so the same vector reads (g, 0).
-        assertArrayEquals(new int[]{G, 0}, HostMotionSensor.turn(0, -G, 1));
-        assertArrayEquals(new int[]{0, G}, HostMotionSensor.turn(0, -G, 2));
-        assertArrayEquals(new int[]{-G, 0}, HostMotionSensor.turn(0, -G, 3));
-        // Four quarter turns, and turns past four, come back round.
-        assertArrayEquals(new int[]{3, 5}, HostMotionSensor.turn(3, 5, 4));
-        assertArrayEquals(HostMotionSensor.turn(3, 5, 1), HostMotionSensor.turn(3, 5, 5));
+        // Gravity straight down a frame, (0, -1), seen from a frame turned a quarter clockwise
+        // from it: that frame's X axis now points down, so the same vector reads (1, 0).
+        assertArrayEquals(new float[]{1, 0, 0}, HostMotionSensor.turn(DOWN, 1), EPSILON);
+        assertArrayEquals(new float[]{0, 1, 0}, HostMotionSensor.turn(DOWN, 2), EPSILON);
+        assertArrayEquals(new float[]{-1, 0, 0}, HostMotionSensor.turn(DOWN, 3), EPSILON);
+        // Four quarter turns, and turns past four, come back round; Z stays.
+        float[] v = {3, 5, 7};
+        assertArrayEquals(v, HostMotionSensor.turn(v, 4), EPSILON);
+        assertArrayEquals(HostMotionSensor.turn(v, 1), HostMotionSensor.turn(v, 5), EPSILON);
     }
 
     @Test
-    public void androidRotation90IsAQuarterTurn() {
-        // Display.getRotation() == ROTATION_90: the phone turned a quarter anticlockwise, so its
-        // natural right edge is up. Gravity, along -X in the phone's frame, is straight down the
-        // console's screen once turned by R = 1: (-g, 0) -> (0, -g).
-        assertArrayEquals(new int[]{0, -G}, HostMotionSensor.turn(-G, 0, 1));
+    public void correctionMatchesTheExamples() {
+        // The guest's panel keeps its size; gravity reaches it turned by R, then by D.
+        // Tablet upright, console portrait (R = 0, D = 0): gravity down the guest's panel.
+        assertArrayEquals(DOWN, HostMotionSensor.turn(HostMotionSensor.turn(DOWN, 0), 0), EPSILON);
+        // Tablet on its side, console landscape (Display.getRotation() == ROTATION_90: the
+        // natural right edge up, gravity along the phone's -X): still down the guest's panel.
+        float[] sideways = {-1, 0, 0};
+        float[] window = HostMotionSensor.turn(sideways, 1);
+        assertArrayEquals(DOWN, window, EPSILON);
+        // The same, with the picture turned a quarter (D = 1): gravity across the panel, +X.
+        assertArrayEquals(new float[]{1, 0, 0}, HostMotionSensor.turn(window, 1), EPSILON);
+    }
+
+    @Test
+    public void followingTheWindowKeepsGravityDownIt() {
+        // Within the limit: as it is.
+        double in = Math.toRadians(HostMotionSensor.FOLLOWING_LIMIT_DEGREES - 5);
+        float[] slight = {(float) Math.sin(in), (float) -Math.cos(in), 0.3f};
+        assertArrayEquals(slight, HostMotionSensor.keepDown(slight), EPSILON);
+        // A quarter over, either way: back at the limit, the length in the plane and Z kept.
+        double limit = Math.toRadians(HostMotionSensor.FOLLOWING_LIMIT_DEGREES);
+        assertArrayEquals(new float[]{(float) (2 * Math.sin(limit)), (float) (-2 * Math.cos(limit)), 0.5f},
+            HostMotionSensor.keepDown(new float[]{2, 0, 0.5f}), EPSILON);
+        // Upside down, leaning a little towards -X: to the limit on that side.
+        assertArrayEquals(new float[]{(float) -Math.sin(limit), (float) -Math.cos(limit), 0},
+            HostMotionSensor.keepDown(new float[]{-0.001f, 1, 0}), 1e-3f);
+        // Flat on its back: nothing in the plane to keep down.
+        float[] flat = {0, 0, -1};
+        assertArrayEquals(flat, HostMotionSensor.keepDown(flat), EPSILON);
+        // Never past the guest's 35 degrees.
+        for (int degrees = -180; degrees <= 180; degrees += 5) {
+            double a = Math.toRadians(degrees);
+            float[] kept = HostMotionSensor.keepDown(new float[]{(float) Math.sin(a), (float) -Math.cos(a), 0});
+            assertTrue(100 * kept[0] * kept[0] <= 49 * kept[1] * kept[1] + EPSILON);
+        }
     }
 
     @Test

@@ -66,8 +66,8 @@ public final class NativeDisplay {
     /**
      * The VM's motion sensors (crosvm {@code --input motion}). Not an input mode the console
      * switches to: what a console writes here overrides the phone's own sensors, which crosvm reads
-     * itself whenever nobody does (see {@link MotionSensorMode}). VM-wide, and bound only when the
-     * VM has the device.
+     * itself whenever nobody does (see {@link MotionSensors}). VM-wide, and bound only when the VM
+     * has the device.
      */
     public static final int SENSOR = 4;
     public static final int CHANNEL_COUNT = 5;

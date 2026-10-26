@@ -1144,9 +1144,15 @@
     <string name="usb_input_no_device">No USB keyboard or mouse found</string>
     <string name="usb_input_status">USB input: %1$d keyboard(s), %2$d mouse(es)</string>
     <string name="vnc_menu_rotate">Rotate Screen</string>
-    <string name="display_rotate_left">Turn the display left (the guest then rotates itself)</string>
-    <string name="display_rotate_right">Turn the display right (the guest then rotates itself)</string>
-    <string name="screen_rotate">Rotate the screen (Android rotates it)</string>
+    <string name="display_rotate_left">Turn the display left</string>
+    <string name="display_rotate_right">Turn the display right</string>
+    <string name="display_turn_degrees">%1$d°</string>
+    <string name="display_turn_reset">The display\'s turn (tap to set it back to 0°)</string>
+    <string name="screen_force_landscape">Force landscape</string>
+    <string name="screen_force_portrait">Force portrait</string>
+    <string name="screen_follow_system">Follow the system (turns with the device unless the system\'s rotation lock is on)</string>
+    <string name="screen_letterboxed">The system kept the screen as it is and shows the console in a window of that shape, with bars beside it</string>
+    <string name="screen_request_ignored">The system ignored the orientation (large screens turn with the device only); turn the display to turn the guest instead</string>
     <string name="display_rotation_unsupported">This VM\'s crosvm cannot turn the display; update it</string>
 
     <string name="vnc_op_mouse_move">Mouse Move</string>
@@ -1619,10 +1625,7 @@
     <string name="create_vm_virtio_transport_pci">PCI (most guests)</string>
     <string name="create_vm_virtio_transport_mmio">MMIO (guests without PCI, e.g. iPadOS)</string>
     <string name="create_vm_motion_sensor">Motion sensors (gyroscope)</string>
-    <string name="create_vm_motion_sensor_off">Off</string>
-    <string name="create_vm_motion_sensor_physical">Physical (this device\'s sensors)</string>
-    <string name="create_vm_motion_sensor_virtual">Virtual (follows the screen orientation)</string>
-    <string name="create_vm_motion_sensor_auto">Automatic (physical while the guest rotates, virtual while the screen does)</string>
+    <string name="create_vm_motion_correct">Correct for the display (the console turns the sensors with the picture)</string>
     <string name="edit_vm_virtio_crosvm_only">Virtio over MMIO and motion sensors need the crosvm backend</string>
     <string name="edit_vm_serial_empty">No serial ports</string>
     <string name="edit_vm_serial_add">Add serial port</string>

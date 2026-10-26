@@ -75,7 +75,8 @@ public class VMConfig extends DataConfig {
         item.set("sandbox", false);
         item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
         item.set(VirtioTransport.KEY, VirtioTransport.DEFAULT);
-        item.set(MotionSensorMode.KEY, MotionSensorMode.DEFAULT);
+        item.set(MotionSensors.KEY, MotionSensors.DEFAULT);
+        item.set(MotionSensors.KEY_CORRECT, MotionSensors.DEFAULT_CORRECT);
         item.set("strace", false);
         item.set("gpu_vram_folio_threshold_kb", 1024L);
         item.set(LendMthpMode.KEY, LendMthpMode.defaultForDevice(context));

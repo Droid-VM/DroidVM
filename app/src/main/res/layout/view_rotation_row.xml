@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Rotation row of the display fab-menu header, styled like the input-mode and keyboard rows:
-     turn the guest's picture left or right (Display orientation; the guest then turns its own UI,
-     so Screen locks), and rotate the screen (Screen orientation; Android turns the activity,
-     unlocked). The two turns are actions, unchecked again at once; the screen button is checked,
-     with a lock, while the rotation is the guest's. -->
+<!-- Display row of the display fab-menu header, styled like the input-mode and keyboard rows: turn
+     the guest's picture left or right (Display orientation), with its turn between them (a tap sets it
+     back to 0). The buttons are actions, unchecked again at once. The Screen row
+     (view_screen_mode_row) is separate: the two orientations do not move each other. -->
 <com.google.android.material.button.MaterialButtonToggleGroup
     xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
@@ -13,7 +12,7 @@
     android:paddingStart="12dp"
     android:paddingEnd="12dp"
     android:paddingTop="2dp"
-    android:paddingBottom="10dp"
+    android:paddingBottom="2dp"
     app:selectionRequired="false"
     app:singleSelection="false">
 
@@ -31,6 +30,17 @@
         app:iconPadding="0dp" />
 
     <com.google.android.material.button.MaterialButton
+        android:id="@+id/display_turn"
+        style="?attr/materialButtonOutlinedStyle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:minWidth="60dp"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:contentDescription="@string/display_turn_reset"
+        android:textAppearance="?attr/textAppearanceLabelLarge" />
+
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/rotate_display_right"
         style="?attr/materialButtonOutlinedStyle"
         android:layout_width="wrap_content"
@@ -40,19 +50,6 @@
         android:paddingEnd="16dp"
         android:contentDescription="@string/display_rotate_right"
         app:icon="@drawable/ic_display_rotate_right"
-        app:iconGravity="textStart"
-        app:iconPadding="0dp" />
-
-    <com.google.android.material.button.MaterialButton
-        android:id="@+id/rotate_screen"
-        style="?attr/materialButtonOutlinedStyle"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:minWidth="60dp"
-        android:paddingStart="16dp"
-        android:paddingEnd="16dp"
-        android:contentDescription="@string/screen_rotate"
-        app:icon="@drawable/ic_screen_rotation"
         app:iconGravity="textStart"
         app:iconPadding="0dp" />
 
