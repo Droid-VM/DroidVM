@@ -1516,7 +1516,7 @@
     <string name="create_vm_vpu_enabled">掛載硬體視訊編碼器與解碼器</string>
     <string name="create_vm_vpu_host_pool_mb">主機緩衝池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客戶機緩衝池大小 (MB)</string>
-    <string name="create_vm_vpu_note">功能待實現：這些設定會隨 VM 一起儲存，但在功能完成前不會掛載任何視訊裝置。</string>
+    <string name="create_vm_vpu_note">下次啟動 VM 時生效：客體中會出現解碼器、編碼器兩個 virtio-media 裝置，主機緩衝池在啟動時從主機記憶體中預留。</string>
     <string name="edit_vm_peripheral_camera_missing">這台手機沒有這個相機，該裝置不會啟動。</string>
     <string name="edit_vm_peripheral_host_camera">主機相機</string>
     <string name="peripheral_fgs_title">外設使用中</string>
@@ -1723,4 +1723,8 @@
     <string name="hugepage_operation_reconcile">重新核對佔用統計</string>
     <string name="hugepage_operation_migrate">遷移舊版設定</string>
     <string name="hugepage_operation_failed">操作失敗：%1$s</string>
+    <string name="hugepage_operation_force_clear">強制清除未決標記</string>
+    <string name="hugepage_operation_force_clear_message">此操作只清除本地的「未決」標記，不會重試、復原或確認原操作；模組保持目前狀態。僅在原請求已無法查詢時使用。目前模組狀態：</string>
+    <string name="hugepage_operation_force_cleared">未決標記已清除。修改大頁設定前請先核對模組狀態。</string>
+    <string name="hugepage_operation_reconciled">上一筆請求已依實際狀態判定：%1$s</string>
 </resources>

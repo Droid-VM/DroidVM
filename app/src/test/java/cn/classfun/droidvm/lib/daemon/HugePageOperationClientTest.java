@@ -12,15 +12,21 @@ import static org.junit.Assert.*;
 public class HugePageOperationClientTest {
     private static final class MemoryJournal implements HugePageOperationClient.PendingStore {
         String value;
+        String intent;
         public String load() { return value; }
         public boolean save(String value) { this.value = value; return true; }
         public boolean clear() { value = null; return true; }
+        public String loadIntent() { return intent; }
+        public boolean saveIntent(String value) { this.intent = value; return true; }
+        public boolean clearIntent() { intent = null; return true; }
     }
     private interface Reply { JSONObject get(JSONObject request) throws Exception; }
     private static final class Fixture {
         final MemoryJournal journal = new MemoryJournal();
         final List<JSONObject> requests = new ArrayList<>();
         String fingerprint = "baseline-1";
+        /** Extra hugepage_snapshot members (controls/settings/stats) for reconcile tests. */
+        final JSONObject state = new JSONObject();
         Reply reply = request -> terminal(request, false, false, false);
         final VmConfigClient.Rpc rpc = request -> {
             // Transport assigns a different UUID every time and may mutate its envelope.
@@ -30,9 +36,17 @@ public class HugePageOperationClientTest {
                 switch (request.getString("command")) {
                     case "capabilities": return new JSONObject().put("success", true)
                         .put("hugepages", HugePageOperationClient.CAPABILITY);
-                    case "hugepage_snapshot": return new JSONObject().put("success", true)
-                        .put("snapshot", new JSONObject().put("capability", HugePageOperationClient.CAPABILITY)
-                            .put("fingerprint", fingerprint));
+                    case "hugepage_snapshot": {
+                        var body = new JSONObject().put("capability", HugePageOperationClient.CAPABILITY)
+                            .put("fingerprint", fingerprint);
+                        // keys()/names() only: the unit-test classpath uses android.jar's org.json.
+                        var extras = state.names();
+                        for (int i = 0; extras != null && i < extras.length(); i++) {
+                            var key = extras.getString(i);
+                            body.put(key, state.get(key));
+                        }
+                        return new JSONObject().put("success", true).put("snapshot", body);
+                    }
                     default: return reply.get(request);
                 }
             } catch (IOException | org.json.JSONException e) { throw e; }
@@ -179,5 +193,121 @@ public class HugePageOperationClientTest {
             f.reply = request -> terminal(request, false, true, false);
             assertTrue(f.client.execute(operation()).succeeded);
         }
+    }
+
+    /* ---- reconciliation against the module's own state ------------------ */
+
+    private static JSONObject notRetained() throws Exception {
+        return new JSONObject().put("success", false)
+            .put("error", new JSONObject().put("code", "TASK_NOT_FOUND"));
+    }
+
+    private static JSONObject controls(long want) throws Exception {
+        return new JSONObject().put("pool_want", want).put("pool_want_with_cma", 0);
+    }
+
+    private static JSONObject stats(long avail, long want, long active) throws Exception {
+        return new JSONObject().put("acquire_active", active).put("pool_avail", avail).put("pool_want", want);
+    }
+
+    /** A daemon that forgot the task must not block the screen forever. */
+    @Test public void lostTaskRecordSettlesAsDoneFromModuleStateAndAllowsANewOperation() throws Exception {
+        Fixture f = new Fixture();
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(operation()));
+        assertNotNull(f.journal.value);
+        assertNotNull(f.journal.intent);
+        HugePageOperationClient restarted = new HugePageOperationClient(f.rpc, f.journal);
+        assertThrows(HugePageOperationClient.Blocked.class, () -> restarted.execute(operation()));
+
+        // The module is not loaded, which is exactly what runtime/enabled=false asked for.
+        f.state.put("loaded", false);
+        f.reply = request -> notRetained();
+        var reconciled = restarted.reconcilePending();
+        assertNotNull(reconciled);
+        assertEquals(HugePageOperationClient.Resolution.DONE, reconciled.resolution);
+        assertNull(f.journal.value);
+        assertNull(f.journal.intent);
+        assertEquals(1, f.count("hugepage_operation_start"));
+
+        f.reply = request -> terminal(request, false, true, false);
+        assertTrue(restarted.execute(operation()).succeeded);
+    }
+
+    /** Intent not applied, module idle: settle as resumed instead of staying blocked. */
+    @Test public void unappliedIntentOnAnIdleModuleResolvesAsResumed() throws Exception {
+        Fixture f = new Fixture();
+        var targets = HugePageOperationClient.operation(
+            "targets", "poolPages", 4505L, "cmaPages", null, "persist", true);
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(targets));
+        f.reply = request -> notRetained();
+        // Far from the request: the resize genuinely did not happen.
+        f.state.put("controls", controls(4400));
+        f.state.put("settings", new JSONObject().put("pool_want", "4400"));
+        f.state.put("stats", stats(4400, 4400, 0));
+        var reconciled = f.client.reconcilePending();
+        assertEquals(HugePageOperationClient.Resolution.RESUMED, reconciled.resolution);
+        assertNull(f.journal.value);
+    }
+
+    /** The module's pageblock rounding (4505 asked, 4504 built) is a completed resize. */
+    @Test public void pageblockRoundingCountsAsDone() throws Exception {
+        Fixture f = new Fixture();
+        var targets = HugePageOperationClient.operation(
+            "targets", "poolPages", 4505L, "cmaPages", null, "persist", true);
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(targets));
+        f.reply = request -> notRetained();
+        f.state.put("controls", controls(4504));
+        f.state.put("settings", new JSONObject().put("pool_want", "4505"));
+        f.state.put("stats", stats(4504, 4504, 0));
+        var reconciled = f.client.reconcilePending();
+        assertEquals(HugePageOperationClient.Resolution.DONE, reconciled.resolution);
+        assertNull(f.journal.value);
+    }
+
+    /** A busy module can still change on its own: never claim an outcome there. */
+    @Test public void busyModuleKeepsTheRequestPending() throws Exception {
+        Fixture f = new Fixture();
+        var acquire = HugePageOperationClient.operation("acquire", "mode", 1);
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(acquire));
+        f.reply = request -> notRetained();
+        f.state.put("stats", stats(0, 4504, 1));
+        var reconciled = f.client.reconcilePending();
+        assertFalse(reconciled.settled());
+        assertNotNull(f.journal.value);
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(operation()));
+    }
+
+    /** The explicit escape hatch always lifts the block, and never resubmits. */
+    @Test public void forceClearLiftsTheBlockWithoutResubmitting() throws Exception {
+        Fixture f = new Fixture();
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(operation()));
+        f.reply = request -> notRetained();
+        f.client.forceClearPending();
+        assertNull(f.journal.value);
+        assertNull(f.journal.intent);
+        assertFalse(f.client.hasPending());
+        assertEquals(1, f.count("hugepage_operation_start"));
+        f.reply = request -> terminal(request, false, true, false);
+        assertTrue(f.client.execute(operation()).succeeded);
+    }
+
+    /** A running daemon task is not a settlement condition either. */
+    @Test public void runningTaskStaysPending() throws Exception {
+        Fixture f = new Fixture();
+        f.reply = request -> { throw new IOException("reply lost"); };
+        assertThrows(HugePageOperationClient.Blocked.class, () -> f.client.execute(operation()));
+        f.reply = request -> {
+            var task = terminal(request, false, false, false).getJSONObject("task").put("state", "running");
+            return new JSONObject().put("success", true).put("epoch", "daemon-1")
+                .put("task_id", "task-1").put("task", task);
+        };
+        assertFalse(f.client.reconcilePending().settled());
+        assertNotNull(f.journal.value);
+        assertEquals(1, f.count("hugepage_operation_start"));
     }
 }

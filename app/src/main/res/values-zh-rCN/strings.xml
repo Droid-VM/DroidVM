@@ -1518,7 +1518,7 @@
     <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
-    <string name="create_vm_vpu_note">功能待实现：这些设置会随 VM 一起保存，但在功能完成前不会挂载任何视频设备。</string>
+    <string name="create_vm_vpu_note">下次启动 VM 时生效：客户机里会出现解码器、编码器两个 virtio-media 设备，主机缓冲池在启动时从主机内存中预留。</string>
     <string name="edit_vm_peripheral_camera_missing">这台手机没有这个摄像头，该设备不会启动。</string>
     <string name="edit_vm_peripheral_host_camera">主机摄像头</string>
     <string name="peripheral_fgs_title">外设使用中</string>
@@ -1728,4 +1728,8 @@
     <string name="hugepage_operation_reconcile">重新核对占用统计</string>
     <string name="hugepage_operation_migrate">迁移旧版设置</string>
     <string name="hugepage_operation_failed">操作失败：%1$s</string>
+    <string name="hugepage_operation_force_clear">强制清除未决标记</string>
+    <string name="hugepage_operation_force_clear_message">此操作只清除本地的“未决”标记，不会重试、撤销或确认原操作；模块保持当前状态。仅在原请求已无法查询时使用。当前模块状态：</string>
+    <string name="hugepage_operation_force_cleared">未决标记已清除。修改大页设置前请先核对模块状态。</string>
+    <string name="hugepage_operation_reconciled">上一条请求已按实际状态判定：%1$s</string>
 </resources>

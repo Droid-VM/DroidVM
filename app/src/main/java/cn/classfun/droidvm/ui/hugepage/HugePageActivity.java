@@ -85,6 +85,8 @@ public final class HugePageActivity extends AppCompatActivity {
     }
 
     private boolean resumed = false;
+    // One automatic reconciliation per screen instance; see reconcilePendingOnEnter.
+    private boolean reconcileAttempted = false;
     private MaterialToolbar toolbar;
     private MaterialCardView cardCrashWarning;
     private MaterialCardView cardNotLoaded;
@@ -185,8 +187,9 @@ public final class HugePageActivity extends AppCompatActivity {
         toolbar.setNavigationOnClickListener(v -> finish());
         setupToolbarMenu(toolbar, R.menu.menu_hugepage, this::onMenuItemClicked, menu -> {
             menu.findItem(R.id.action_hugepage_migrate).setVisible(hasLegacySettings);
-            menu.findItem(R.id.action_hugepage_query).setVisible(
-                cn.classfun.droidvm.lib.daemon.HugePageOperationClient.getInstance().hasPending());
+            var pending = cn.classfun.droidvm.lib.daemon.HugePageOperationClient.getInstance().hasPending();
+            menu.findItem(R.id.action_hugepage_query).setVisible(pending);
+            menu.findItem(R.id.action_hugepage_forget).setVisible(pending);
         });
         btnSavePoolSize.setOnClickListener(v -> {
             if (moduleAcquiring) interruptAcquire();
@@ -423,8 +426,37 @@ public final class HugePageActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        reconcilePendingOnEnter();
         refreshStatus();
         scheduleRefresh();
+    }
+
+    /**
+     * Entering the page is the automatic reconciliation point: a pending request from
+     * an earlier session (or an earlier daemon) is compared with the module's real
+     * state before the user is asked to do anything. Unresolved stays pending and is
+     * silent here; the blocked dialog and the toolbar escape hatch cover that case.
+     */
+    private void reconcilePendingOnEnter() {
+        if (reconcileAttempted) return;
+        var client = cn.classfun.droidvm.lib.daemon.HugePageOperationClient.getInstance();
+        if (!client.hasPending()) return;
+        reconcileAttempted = true;
+        cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool(() -> {
+            final cn.classfun.droidvm.lib.daemon.HugePageOperationClient.Reconcile reconciled;
+            try {
+                reconciled = client.reconcilePending();
+            } catch (RuntimeException ignored) {
+                return;   // journal/transport trouble: the dialog path reports it on demand
+            }
+            if (reconciled == null || !reconciled.settled()) return;
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                Toast.makeText(this, getString(R.string.hugepage_operation_reconciled, reconciled.toString()),
+                    Toast.LENGTH_LONG).show();
+                refreshStatus();
+            });
+        });
     }
 
     @Override
@@ -1188,6 +1220,11 @@ public final class HugePageActivity extends AppCompatActivity {
                     refreshStatus();
                 });
             });
+            return true;
+        }
+        if (item.getItemId() == R.id.action_hugepage_forget) {
+            // Escape hatch, also reachable when the blocked dialog is already gone.
+            HugePageOperationUi.confirmForceClear(this, this::refreshStatus);
             return true;
         }
         if (item.getItemId() == R.id.action_unload_module) {

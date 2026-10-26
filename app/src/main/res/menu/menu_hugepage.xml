@@ -16,4 +16,9 @@
     <item android:id="@+id/action_hugepage_query"
         android:visible="false"
         android:title="@string/hugepage_operation_query" app:showAsAction="never" />
+    <!-- Escape hatch: always available while a request is pending, so a daemon that
+         lost the task record can never lock this screen again. -->
+    <item android:id="@+id/action_hugepage_forget"
+        android:visible="false"
+        android:title="@string/hugepage_operation_force_clear" app:showAsAction="never" />
 </menu>
