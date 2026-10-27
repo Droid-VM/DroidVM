@@ -25,20 +25,6 @@ public class ScreenModeTest {
         assertEquals(ScreenMode.Outcome.IGNORED, ScreenMode.PORTRAIT.outcome(W, H, W, H));
     }
 
-    @Test
-    public void whoRotates() {
-        // Following the system: Android turns the window (or, rotation lock on, nothing does).
-        assertTrue(ScreenMode.FOLLOW_SYSTEM.windowFollowsDevice(ScreenMode.Outcome.FOLLOWING, true, false));
-        // A forced orientation the display keeps: the window is still, the guest rotates.
-        assertFalse(ScreenMode.PORTRAIT.windowFollowsDevice(ScreenMode.Outcome.ROTATED, true, true));
-        // Letterboxed or ignored: the display turns with the device while auto-rotate is on...
-        assertTrue(ScreenMode.PORTRAIT.windowFollowsDevice(ScreenMode.Outcome.LETTERBOXED, true, true));
-        assertTrue(ScreenMode.LANDSCAPE.windowFollowsDevice(ScreenMode.Outcome.IGNORED, true, true));
-        // ...and so it does when the asked shape is only how the device is held.
-        assertTrue(ScreenMode.LANDSCAPE.windowFollowsDevice(ScreenMode.Outcome.ROTATED, false, true));
-        // With the system's rotation lock on, a forced orientation's window stays still.
-        assertFalse(ScreenMode.LANDSCAPE.windowFollowsDevice(ScreenMode.Outcome.IGNORED, true, false));
-    }
 
     @Test
     public void theButtonGoesLandscapePortraitSystem() {

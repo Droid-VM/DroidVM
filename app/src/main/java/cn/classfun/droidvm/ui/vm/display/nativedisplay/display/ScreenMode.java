@@ -75,19 +75,4 @@ public enum ScreenMode {
         return Outcome.IGNORED;
     }
 
-    /**
-     * Whether Android turns the console's window when the device turns, so that the guest must not:
-     * when it follows the system (and, with the system's rotation lock on, neither turns), and when a
-     * forced orientation does not hold the display still but the system turns it with the device.
-     *
-     * @param displayKeepsRequests false once this display was seen not turning for a forced
-     *                             orientation: a forced orientation that matches it is then
-     *                             only the device held that way
-     */
-    public boolean windowFollowsDevice(@NonNull Outcome outcome, boolean displayKeepsRequests,
-                                       boolean systemAutoRotate) {
-        if (this == FOLLOW_SYSTEM) return true;
-        boolean heldStill = outcome == Outcome.ROTATED && displayKeepsRequests;
-        return !heldStill && systemAutoRotate;
-    }
 }

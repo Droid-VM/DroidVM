@@ -45,29 +45,6 @@ public class HostMotionSensorTest {
         assertArrayEquals(new float[]{1, 0, 0}, HostMotionSensor.turn(window, 1), EPSILON);
     }
 
-    @Test
-    public void followingTheWindowKeepsGravityDownIt() {
-        // Within the limit: as it is.
-        double in = Math.toRadians(HostMotionSensor.FOLLOWING_LIMIT_DEGREES - 5);
-        float[] slight = {(float) Math.sin(in), (float) -Math.cos(in), 0.3f};
-        assertArrayEquals(slight, HostMotionSensor.keepDown(slight), EPSILON);
-        // A quarter over, either way: back at the limit, the length in the plane and Z kept.
-        double limit = Math.toRadians(HostMotionSensor.FOLLOWING_LIMIT_DEGREES);
-        assertArrayEquals(new float[]{(float) (2 * Math.sin(limit)), (float) (-2 * Math.cos(limit)), 0.5f},
-            HostMotionSensor.keepDown(new float[]{2, 0, 0.5f}), EPSILON);
-        // Upside down, leaning a little towards -X: to the limit on that side.
-        assertArrayEquals(new float[]{(float) -Math.sin(limit), (float) -Math.cos(limit), 0},
-            HostMotionSensor.keepDown(new float[]{-0.001f, 1, 0}), 1e-3f);
-        // Flat on its back: nothing in the plane to keep down.
-        float[] flat = {0, 0, -1};
-        assertArrayEquals(flat, HostMotionSensor.keepDown(flat), EPSILON);
-        // Never past the guest's 35 degrees.
-        for (int degrees = -180; degrees <= 180; degrees += 5) {
-            double a = Math.toRadians(degrees);
-            float[] kept = HostMotionSensor.keepDown(new float[]{(float) Math.sin(a), (float) -Math.cos(a), 0});
-            assertTrue(100 * kept[0] * kept[0] <= 49 * kept[1] * kept[1] + EPSILON);
-        }
-    }
 
     @Test
     public void unitsMatchCrosvm() {

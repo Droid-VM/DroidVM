@@ -12,7 +12,6 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
-import android.database.ContentObserver;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
@@ -147,19 +146,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // knows nothing of it: crosvm's buffers keep the guest's size and SurfaceFlinger turns them, and
     // touches are turned back here before they go to the guest.
     private int displayQuarterTurns = 0;
-    // The Screen orientation: forced landscape or portrait, or following the system. With corrected
-    // motion sensors it also says who rotates: Android, while it turns the window with the device;
-    // the guest otherwise (ScreenMode.windowFollowsDevice, HostMotionSensor). How the system
+    // The Screen orientation: forced landscape or portrait, or following the system. How the system
     // answered a forced one is screenOutcome. Both orientations are kept per screen of a VM.
     private ScreenMode screenMode = ScreenMode.FOLLOW_SYSTEM;
     private ScreenMode.Outcome screenOutcome = ScreenMode.Outcome.FOLLOWING;
-    // The system's auto-rotate setting (its rotation lock off), watched while in front.
-    private final ContentObserver autoRotateObserver = new ContentObserver(mainHandler) {
-        @Override
-        public void onChange(boolean selfChange) {
-            updateMotionPicture();
-        }
-    };
     // Whether the VM's motion sensors are corrected here, and what corrects them while this console
     // is in front (null until the root service is attached, and without correction).
     private boolean motionCorrect = false;
@@ -206,7 +196,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private static final String KEY_DISPLAY_TURNS = "display_quarter_turns_";
     private static final String KEY_SCREEN_MODE = "screen_mode_";
     // Device-wide: this display was seen keeping its shape for a forced orientation.
-    private static final String KEY_DISPLAY_IGNORES_REQUESTS = "display_ignores_orientation_requests";
     // Chrome memory, shared with the VNC path: extra-keys on/off per typing surface + whether
     // the physical keyboard is up.
     private static final String KEY_KEYBOARD_MODE = "display_keyboard_mode";
@@ -1242,10 +1231,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var window = wm.getCurrentWindowMetrics().getBounds();
         screenOutcome = screenMode.outcome(display.width(), display.height(), window.width(),
             window.height());
-        if (screenOutcome == ScreenMode.Outcome.LETTERBOXED
-            || screenOutcome == ScreenMode.Outcome.IGNORED)
-            getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
-                .putBoolean(KEY_DISPLAY_IGNORES_REQUESTS, true).apply();
         if (tell && screenOutcome == ScreenMode.Outcome.LETTERBOXED)
             Toast.makeText(this, R.string.screen_letterboxed, Toast.LENGTH_LONG).show();
         else if (tell && screenOutcome == ScreenMode.Outcome.IGNORED)
@@ -1253,16 +1238,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         updateMotionPicture();
     }
 
-    // Corrected motion sensors turn the phone's motion by the picture's turn, and keep gravity
-    // down the window while Android does the rotating.
+    // Corrected motion sensors turn the phone's motion by the window's turn and the picture's.
     private void updateMotionPicture() {
-        if (motionSensor == null) return;
-        boolean ignores = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE)
-            .getBoolean(KEY_DISPLAY_IGNORES_REQUESTS, false);
-        boolean autoRotate = android.provider.Settings.System.getInt(getContentResolver(),
-            android.provider.Settings.System.ACCELEROMETER_ROTATION, 0) == 1;
-        motionSensor.setPicture(displayQuarterTurns,
-            screenMode.windowFollowsDevice(screenOutcome, !ignores, autoRotate));
+        if (motionSensor != null) motionSensor.setPicture(displayQuarterTurns);
     }
 
     // The launching intent says whether to correct; a console opened another way (am start) asks
@@ -1431,8 +1409,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
         resumed = true;
-        getContentResolver().registerContentObserver(android.provider.Settings.System.getUriFor(
-            android.provider.Settings.System.ACCELEROMETER_ROTATION), false, autoRotateObserver);
         updateMotionPicture();
         if (motionSensor != null) motionSensor.start();
     }
@@ -1444,7 +1420,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
         resumed = false;
-        getContentResolver().unregisterContentObserver(autoRotateObserver);
         // crosvm goes back to the phone's own sensors about a second later.
         if (motionSensor != null) motionSensor.stop();
     }
