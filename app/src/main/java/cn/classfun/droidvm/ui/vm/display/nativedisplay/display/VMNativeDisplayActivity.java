@@ -22,6 +22,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 import android.view.KeyCharacterMap;
+import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MenuItem;
 import android.view.MotionEvent;
@@ -509,6 +510,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // is gesture surface; the translator pins coordinate ops to the rendered surface rect.
         // In TOUCH mode this listener declines and raw multi-touch stays on the surface view.
         displayContainer.setOnTouchListener(this::onContainerTouch);
+        // Touches as the digitizer reports them, not merged once a frame: Android runs a "normal" app's window at 60 Hz on a
+        // 120 Hz panel (a frame rate override), and the batched input gave the guest 60 position updates a second, so a drag
+        // could not move the guest's picture faster than 60 fps whatever its display ran at.
+        surfaceView.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER);
+        displayContainer.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_POINTER);
         // Host mouse/stylus: scroll wheel + right/middle buttons come as generic-motion events,
         // hover comes as hover events; both feed the pointer device so right-click/scroll/hover
         // pass through to the guest (tablet mode gives absolute hover).
