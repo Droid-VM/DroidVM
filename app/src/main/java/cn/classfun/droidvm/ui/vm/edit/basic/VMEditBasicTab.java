@@ -40,6 +40,7 @@ import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
+import cn.classfun.droidvm.lib.store.vm.VirtioTransport;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.notes.VMNotesActivity;
@@ -67,6 +68,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseProtectedVm;
     private ChooseRowWidget chooseBackend;
     private ChooseRowWidget chooseHypervisor;
+    private ChooseRowWidget chooseVirtioTransport;
     private TextView tvNotesSummary;
     private MaterialButton btnEditNotes;
     private ActivityResultLauncher<Intent> notesLauncher;
@@ -112,6 +114,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
         chooseBackend = view.findViewById(R.id.choose_backend);
         chooseHypervisor = view.findViewById(R.id.choose_hypervisor);
+        chooseVirtioTransport = view.findViewById(R.id.choose_virtio_transport);
         etExtraOptions = view.findViewById(R.id.et_extra_options);
         etEnvironmentVariables = view.findViewById(R.id.et_environment_variables);
     }
@@ -141,6 +144,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseProtectedVm.configure(
             ProtectedVM.class, VMConfig.NEW_VM_DEFAULT_PROTECTED_VM);
         chooseBackend.configure(VMBackend.class, VMBackend.DEFAULT);
+        chooseVirtioTransport.configure(VirtioTransport.class, VirtioTransport.DEFAULT);
         chooseHypervisor.configure(
             VMHypervisor.class, VMHypervisor.defaultForNewVm(VMBackend.DEFAULT));
         choosePrepareLendMthp.configure(
@@ -196,6 +200,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swDebug.setChecked(item.optBoolean("strace", false));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
+        chooseVirtioTransport.setSelectedItem(VirtioTransport.fromItem(item));
         var backend = optEnum(item, "backend", VMBackend.DEFAULT);
         var configuredHypervisor = optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
         var hypervisor = VMHypervisor.resolveConfigured(backend, configuredHypervisor);
@@ -426,6 +431,10 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         if (!validateInputMemory(store)) return false;
         if (!validateInputCpu(store)) return false;
         if (!validateHypervisor(store)) return false;
+        // virtio-mmio is crosvm's: QEMU's devices are PCI.
+        if (chooseBackend.<VMBackend>getSelectedItem() != VMBackend.CROSVM
+            && chooseVirtioTransport.<VirtioTransport>getSelectedItem() != VirtioTransport.PCI)
+            return showValidateFailed(R.string.edit_vm_virtio_crosvm_only);
         if (!validateEnvironmentVariables()) return false;
         if (!validateCpuTopology()) return false;
         return true;
@@ -497,6 +506,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("smt", swSmt.isChecked());
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
+        VirtioTransport transport = chooseVirtioTransport.getSelectedItem();
+        item.set(VirtioTransport.KEY, transport);
         item.set("strace", swDebug.isChecked());
         LendMthpMode lendMthpMode = choosePrepareLendMthp.getSelectedItem();
         item.set(LendMthpMode.KEY, lendMthpMode);

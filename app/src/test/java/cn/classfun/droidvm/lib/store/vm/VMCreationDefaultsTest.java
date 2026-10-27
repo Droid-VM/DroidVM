@@ -88,18 +88,13 @@ public final class VMCreationDefaultsTest {
         assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_HOST, gpu.getVncHost());
         assertEquals(VMScreenConfig.NEW_VM_DEFAULT_VNC_PORT_GPU0, gpu.getVncPort());
 
-        // The peripherals tab's Virtio rows: a new VM is a PCI VM without motion sensors, which is
-        // also what a config without these keys reads as; turned on, they are corrected.
+        // A new VM is a PCI VM (the basic tab's transport) without a VirtIO GyroScope row, which is
+        // also what a config without these keys reads as (MotionSensorsTest has the rest).
         assertEquals(VirtioTransport.PCI, VirtioTransport.fromItem(item));
         assertFalse(MotionSensors.enabled(item));
         assertFalse(MotionSensors.corrected(item));
         assertEquals(VirtioTransport.PCI, VirtioTransport.fromItem(DataItem.newObject()));
         assertFalse(MotionSensors.enabled(DataItem.newObject()));
-        var on = DataItem.newObject();
-        on.set(MotionSensors.KEY, true);
-        assertTrue(MotionSensors.corrected(on));
-        on.set(MotionSensors.KEY_CORRECT, false);
-        assertFalse(MotionSensors.corrected(on));
 
         var fb = VMScreenConfig.find(item, VMScreenConfig.ID_SIMPLEFB);
         assertNotNull(fb);

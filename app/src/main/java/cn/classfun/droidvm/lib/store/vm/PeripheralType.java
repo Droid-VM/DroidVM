@@ -65,7 +65,17 @@ public enum PeripheralType implements StringEnum {
      * peripheral is added, and storage is by {@code name()}, so appending is the only position
      * that leaves every stored config reading as what it says.</p>
      */
-    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    /**
+     * crosvm's virtio-input motion device: an accelerometer and a gyroscope fed from the phone's
+     * own sensors. One per VM -- crosvm has one such device -- with a switch for whether a console
+     * turns the readings into the frame of the picture it shows ({@link MotionSensors}).
+     *
+     * <p>Emitted by the backend's motion-sensor command rather than the peripheral loop, because
+     * on a virtio-mmio VM its place among the input devices fixes the guest addresses. Appended
+     * last, for the ordinal reason {@link #XHCI_USB} gives.</p>
+     */
+    VIRTIO_GYROSCOPE(R.string.edit_vm_peripheral_type_virtio_gyroscope, R.drawable.ic_screen_rotation, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;

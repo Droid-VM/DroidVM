@@ -13,6 +13,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
@@ -53,6 +54,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final View groupIntelHda;
     final View groupVirtioCamera;
     final MaterialButton btnCameraDevice;
+    final View groupVirtioGyroscope;
+    final MaterialSwitch swGyroscopeCorrect;
     final MaterialButton btnHdaOut;
     final MaterialButton btnHdaIn;
 
@@ -88,6 +91,8 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         groupIntelHda = itemView.findViewById(R.id.group_intel_hda);
         groupVirtioCamera = itemView.findViewById(R.id.group_virtio_camera);
         btnCameraDevice = itemView.findViewById(R.id.btn_camera_device);
+        groupVirtioGyroscope = itemView.findViewById(R.id.group_virtio_gyroscope);
+        swGyroscopeCorrect = itemView.findViewById(R.id.sw_gyroscope_correct);
         btnHdaOut = itemView.findViewById(R.id.btn_hda_out);
         btnHdaIn = itemView.findViewById(R.id.btn_hda_in);
     }

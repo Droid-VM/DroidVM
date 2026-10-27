@@ -1606,6 +1606,10 @@
     <string name="edit_vm_peripheral_host_output">Output</string>
     <string name="edit_vm_peripheral_host_input">Input</string>
     <string name="edit_vm_peripheral_type_xhci">xHCI USB controller</string>
+    <string name="edit_vm_peripheral_type_virtio_gyroscope">VirtIO GyroScope</string>
+    <string name="edit_vm_peripheral_gyroscope_correct">Correct for the display (the console turns the sensors with the picture)</string>
+    <string name="edit_vm_peripheral_gyroscope_once">A VM has one VirtIO GyroScope</string>
+    <string name="edit_vm_peripheral_gyroscope_crosvm_only">VirtIO GyroScope needs the crosvm backend</string>
     <string name="edit_vm_xhci_rules_note">Bindings live in the app-wide USB passthrough rules.</string>
     <string name="edit_vm_xhci_passthrough_off">USB passthrough is off: the VM ignores USB devices when it starts. Turn it on under Settings -&gt; USB passthrough rules.</string>
     <string name="edit_vm_xhci_device_add">Add device</string>
@@ -1625,13 +1629,10 @@
     <string name="vm_info_console_stdout_short">stdout</string>
     <string name="vm_info_console_stderr_short">stderr</string>
     <string name="create_vm_category_serial">Serial ports</string>
-    <string name="create_vm_category_virtio">Virtio devices</string>
     <string name="create_vm_virtio_transport">Virtio transport</string>
     <string name="create_vm_virtio_transport_pci">PCI (most guests)</string>
     <string name="create_vm_virtio_transport_mmio">MMIO (guests without PCI, e.g. iPadOS)</string>
-    <string name="create_vm_motion_sensor">Motion sensors (gyroscope)</string>
-    <string name="create_vm_motion_correct">Correct for the display (the console turns the sensors with the picture)</string>
-    <string name="edit_vm_virtio_crosvm_only">Virtio over MMIO and motion sensors need the crosvm backend</string>
+    <string name="edit_vm_virtio_crosvm_only">Virtio over MMIO needs the crosvm backend</string>
     <string name="edit_vm_serial_empty">No serial ports</string>
     <string name="edit_vm_serial_add">Add serial port</string>
     <string name="edit_vm_serial_add_title">Serial port hardware</string>

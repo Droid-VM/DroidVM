@@ -186,7 +186,7 @@ public final class VMXhciConfig {
      * the trap {@link VMPeripheralConfig#addEndpoint} documents.</p>
      */
     @NonNull
-    private static DataItem peripherals(@NonNull DataItem vmItem) {
+    static DataItem peripherals(@NonNull DataItem vmItem) {
         var arr = vmItem.opt(KEY_PERIPHERALS, (DataItem) null);
         if (arr == null || !arr.is(DataItem.Type.ARRAY)) {
             vmItem.set(KEY_PERIPHERALS, DataItem.newArray());

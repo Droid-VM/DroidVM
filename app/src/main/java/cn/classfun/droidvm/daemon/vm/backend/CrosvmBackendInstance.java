@@ -1557,6 +1557,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     args.add(buildCameraConfig(peripheral, appUid));
                     break;
                 }
+                case VIRTIO_GYROSCOPE:
+                    // Emitted by buildMotionSensorCommand, after the other input devices.
+                    continue;
                 default:
                     Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
                     continue;

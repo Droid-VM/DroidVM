@@ -230,6 +230,25 @@
 
         </LinearLayout>
 
+        <!-- ===== VirtIO GyroScope: the one setting it has beyond being there ===== -->
+        <LinearLayout
+            android:id="@+id/group_virtio_gyroscope"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_gyroscope_correct"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_vm_peripheral_gyroscope_correct"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
         <!-- ===== xHCI USB controller: the ports it offers, and what the rules bind to it ===== -->
         <LinearLayout
             android:id="@+id/group_xhci"

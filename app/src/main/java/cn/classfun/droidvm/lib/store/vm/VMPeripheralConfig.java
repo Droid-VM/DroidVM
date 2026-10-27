@@ -80,6 +80,24 @@ public final class VMPeripheralConfig {
      * attach rule names it, and has to keep naming the same controller across an edit that moves
      * the row. See {@link VMXhciConfig}.</p>
      */
+    /** A VirtIO GyroScope row, correcting for the console like a VM with no setting does. */
+    @NonNull
+    public static VMPeripheralConfig createDefaultGyroscope() {
+        var config = new VMPeripheralConfig(DataItem.newObject());
+        config.setType(PeripheralType.VIRTIO_GYROSCOPE);
+        config.setCorrect(MotionSensors.DEFAULT_CORRECT);
+        return config;
+    }
+
+    /** A VirtIO GyroScope row's correction switch (MotionSensors has what it does). */
+    public boolean getCorrect() {
+        return item.optBoolean(MotionSensors.KEY_CORRECT, MotionSensors.DEFAULT_CORRECT);
+    }
+
+    public void setCorrect(boolean correct) {
+        item.set(MotionSensors.KEY_CORRECT, correct);
+    }
+
     @NonNull
     public String getControllerId() {
         return str(VMXhciConfig.KEY_ID);

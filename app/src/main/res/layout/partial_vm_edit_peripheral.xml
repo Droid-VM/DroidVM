@@ -22,35 +22,6 @@
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:title="@string/create_vm_category_virtio">
-
-        <cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget
-            android:id="@+id/choose_virtio_transport"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:icon="@drawable/ic_cpu"
-            android:text="@string/create_vm_virtio_transport" />
-
-        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-            android:id="@+id/sw_motion_sensor"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:icon="@drawable/ic_screen_rotation"
-            android:text="@string/create_vm_motion_sensor" />
-
-        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
-            android:id="@+id/sw_motion_correct"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:checked="true"
-            android:icon="@drawable/ic_screen_rotation_lock"
-            android:text="@string/create_vm_motion_correct" />
-
-    </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
-
-    <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
         android:title="@string/create_vm_category_serial">
 
         <cn.classfun.droidvm.ui.widgets.container.CardItemListView
