@@ -1502,7 +1502,7 @@
     <string name="audio_device_usb">USB 音频</string>
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">线路输出</string>
-    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media 摄像头</string>
+    <string name="edit_vm_peripheral_type_virtio_camera">USB 摄像头（UVC）</string>
     <string name="camera_permission_title">允许使用摄像头？</string>
     <string name="camera_permission_message">摄像头外设会把这台手机的其中一个摄像头交给客户机。Android 只在本应用持有权限时才允许开启摄像头，没有权限时这个设备虽然会列出，却永远无法启动。</string>
     <string name="camera_permission_allow">允许</string>

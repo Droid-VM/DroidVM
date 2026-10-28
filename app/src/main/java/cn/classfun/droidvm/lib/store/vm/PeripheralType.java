@@ -32,17 +32,19 @@ public enum PeripheralType implements StringEnum {
      */
     INTEL_HDA(R.string.edit_vm_peripheral_type_intel_hda, R.drawable.ic_microphone, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
-     * virtio-media capture device: one host camera, seen by the guest as one {@code /dev/videoX}.
+     * USB camera: one host camera, seen by the guest as one USB video device.
      *
-     * <p>One entry is one camera, unlike the sound card above. That is the driver's shape rather
-     * than a UI choice: a virtio-media device registers exactly one {@code video_device} whose
-     * capabilities come from a single config word, so a second camera is a second device. A VM
-     * that wants front and back carries two of these.</p>
+     * <p>One entry is one camera, unlike the sound card above. That is the device's shape rather
+     * than a UI choice: an emulated camera is a USB device with one video function, so a second
+     * camera is a second device. A VM that wants front and back carries two of these.</p>
      *
-     * <p>Unavailable until crosvm carries the device; the host half (Camera2 NDK through
-     * {@code android_camera}) exists, the virtio-media capture device on top of it does not.</p>
+     * <p>The guest sees an emulated USB camera (UVC 1.1, MJPEG): the one class Windows, Linux
+     * and macOS all carry a driver for, so nothing has to be installed in the guest. crosvm
+     * attaches it to its xHCI controller and streams the host camera named by the row's
+     * {@code host_device} -- the platform camera id, or empty for "the one at this row's
+     * position". Two of these are two USB devices.</p>
      */
-    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
+    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
     /**
      * xHCI USB controller: the root the guest's USB devices hang off.
      *

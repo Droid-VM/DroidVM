@@ -1500,7 +1500,7 @@
     <string name="audio_device_usb">USB 音訊</string>
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">線路輸出</string>
-    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media 相機</string>
+    <string name="edit_vm_peripheral_type_virtio_camera">USB 攝影機（UVC）</string>
     <string name="camera_permission_title">允許使用相機？</string>
     <string name="camera_permission_message">相機外設會把這台手機的其中一個相機交給客體。Android 只在本應用程式持有權限時才允許開啟相機，沒有權限時這個裝置雖然會列出，卻永遠無法啟動。</string>
     <string name="camera_permission_allow">允許</string>

@@ -1542,7 +1542,7 @@
     <string name="audio_device_hdmi">HDMI</string>
     <string name="audio_device_line">Line out</string>
     <!-- Camera peripheral -->
-    <string name="edit_vm_peripheral_type_virtio_camera">virtio-media camera</string>
+    <string name="edit_vm_peripheral_type_virtio_camera">USB camera (UVC)</string>
     <string name="camera_permission_title">Allow camera access?</string>
     <string name="camera_permission_message">A camera peripheral hands one of this phone\'s cameras to the guest. Android only lets the camera open while this app holds the permission, so without it the device would be listed but could never start.</string>
     <string name="camera_permission_allow">Allow</string>
