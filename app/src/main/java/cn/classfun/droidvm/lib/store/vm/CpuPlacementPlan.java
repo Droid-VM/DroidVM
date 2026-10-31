@@ -35,6 +35,17 @@ import cn.classfun.droidvm.lib.utils.CpuUtils;
  * follow from the first plus host topology, which is why {@link #KEY_AUTO}
  * (default on) derives them and the manual fields only exist as an override.
  *
+ * <p>A fourth follows from the same decision: {@code --virt-cpufreq-upstream}
+ * gives each vCPU a window of crosvm's virtual cpufreq device (the interface of
+ * Linux's virtual-cpufreq driver), through which the guest asks for the
+ * performance its own scheduler knows a vCPU needs; crosvm turns a request into
+ * that vCPU thread's utilization clamp, so the host's governor runs its core as
+ * fast as the guest's work wants rather than as busy as the vCPU looks. crosvm
+ * needs every vCPU pinned and each one's host set inside one frequency domain
+ * (it panics otherwise), so {@link #KEY_PERF_REQUESTS} (default on) adds it only
+ * then: every vCPU of {@code cpu_count} bound, each to cores of one frequency
+ * tier ({@link CpuUtils.CpuCore#tier}, the cores sharing a max frequency).
+ *
  * <p>Syntax matters here: crosvm's per-vCPU affinity form separates assignments
  * with {@code ':'} and uses {@code ','} only inside one assignment's host set,
  * i.e. {@code 0=4,5:1=6} means vCPU0 floats over host cores 4 and 5 while vCPU1
@@ -45,6 +56,7 @@ public final class CpuPlacementPlan {
     public static final String KEY_AUTO = "cpu_topology_auto";
     public static final String KEY_CAPACITY = "cpu_capacity";
     public static final String KEY_CLUSTERS = "cpu_clusters";
+    public static final String KEY_PERF_REQUESTS = "cpu_perf_requests";
     public static final String KEY_GPU_CGROUP = "gpu_cgroup_enabled";
     public static final String KEY_GPU_CGROUP_PATH = "gpu_cgroup_path";
     public static final String KEY_GPU_CGROUP_CPUS = "gpu_cgroup_cpus";
@@ -62,15 +74,19 @@ public final class CpuPlacementPlan {
     /** Guest cluster membership, each entry a set of vCPU indices. */
     @NonNull
     public final List<List<Integer>> clusters;
+    /** Whether the guest gets per-vCPU performance requests (crosvm's virtual cpufreq). */
+    public final boolean perfRequests;
 
     private CpuPlacementPlan(
         @NonNull Map<Integer, List<Integer>> affinity,
         @NonNull Map<Integer, Long> capacity,
-        @NonNull List<List<Integer>> clusters
+        @NonNull List<List<Integer>> clusters,
+        boolean perfRequests
     ) {
         this.affinity = affinity;
         this.capacity = capacity;
         this.clusters = clusters;
+        this.perfRequests = perfRequests;
     }
 
     /**
@@ -83,16 +99,23 @@ public final class CpuPlacementPlan {
     public static CpuPlacementPlan of(@NonNull DataItem item) {
         var affinity = parseAffinity(item.optString(KEY_AFFINITY, ""));
         if (affinity.isEmpty())
-            return new CpuPlacementPlan(affinity, new TreeMap<>(), new ArrayList<>());
+            return new CpuPlacementPlan(affinity, new TreeMap<>(), new ArrayList<>(), false);
+        var cores = CpuUtils.getCores();
+        int vcpuCount = (int) Math.max(item.optLong("cpu_count", 1), 1);
+        var tiers = new TreeMap<Integer, Integer>();
+        for (var core : cores)
+            if (core.maxFreqKHz > 0) tiers.put(core.index, core.tier);
+        boolean perf = item.optBoolean(KEY_PERF_REQUESTS, true)
+            && perfRequestsFit(affinity, vcpuCount, tiers);
         if (item.optBoolean(KEY_AUTO, true)) {
-            var cap = deriveCapacity(affinity, CpuUtils.getCores());
-            int vcpuCount = (int) Math.max(item.optLong("cpu_count", 1), 1);
-            return new CpuPlacementPlan(affinity, cap, deriveClusters(cap, vcpuCount));
+            var cap = deriveCapacity(affinity, cores);
+            return new CpuPlacementPlan(affinity, cap, deriveClusters(cap, vcpuCount), perf);
         }
         return new CpuPlacementPlan(
             affinity,
             parseCapacity(item.optString(KEY_CAPACITY, "")),
-            parseClusters(item.optString(KEY_CLUSTERS, ""))
+            parseClusters(item.optString(KEY_CLUSTERS, "")),
+            perf
         );
     }
 
@@ -114,6 +137,30 @@ public final class CpuPlacementPlan {
                 args.add(CpuUtils.compactRanges(joinCsv(cluster)));
             }
         }
+        if (perfRequests) args.add("--virt-cpufreq-upstream");
+    }
+
+    /**
+     * Whether crosvm can give this placement per-vCPU performance requests:
+     * every vCPU below {@code vcpuCount} bound, and each one's host cores of a
+     * single frequency tier (crosvm reads each core's frequency table and
+     * panics when a vCPU's cores differ, or when a vCPU has none).
+     * {@code tiers} maps each host core whose frequency is known to its tier.
+     */
+    static boolean perfRequestsFit(
+        @NonNull Map<Integer, List<Integer>> affinity, int vcpuCount, @NonNull Map<Integer, Integer> tiers
+    ) {
+        for (int vcpu = 0; vcpu < vcpuCount; vcpu++) {
+            var bound = affinity.get(vcpu);
+            if (bound == null || bound.isEmpty()) return false;
+            Integer tier = null;
+            for (var host : bound) {
+                var hostTier = tiers.get(host);
+                if (hostTier == null || (tier != null && !tier.equals(hostTier))) return false;
+                tier = hostTier;
+            }
+        }
+        return true;
     }
 
     /**

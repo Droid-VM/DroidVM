@@ -281,4 +281,40 @@ public class CpuPlacementPlanTest {
         var out = CpuPlacementPlan.orderedCopy(in);
         assertEquals(List.of(0, 3), List.copyOf(out.keySet()));
     }
+
+    /** Host cores 0-5 of tier 0 and 6-7 of tier 1, as an 8 Elite Gen 5. */
+    private static Map<Integer, Integer> twoTiers() {
+        var tiers = new TreeMap<Integer, Integer>();
+        for (int core = 0; core < 8; core++) tiers.put(core, core < 6 ? 0 : 1);
+        return tiers;
+    }
+
+    @Test
+    public void perfRequestsFitOneCoreEachVcpu() {
+        var affinity = CpuPlacementPlan.parseAffinity("0=2:1=3:2=4:3=5:4=6:5=7");
+        assertTrue(CpuPlacementPlan.perfRequestsFit(affinity, 6, twoTiers()));
+    }
+
+    /** crosvm panics when a vCPU's cores lie in two frequency domains. */
+    @Test
+    public void perfRequestsRefuseAVcpuAcrossTiers() {
+        var affinity = CpuPlacementPlan.parseAffinity("0=4,5:1=5,6");
+        assertFalse(CpuPlacementPlan.perfRequestsFit(affinity, 2, twoTiers()));
+        assertTrue(CpuPlacementPlan.perfRequestsFit(CpuPlacementPlan.parseAffinity("0=4,5:1=6,7"), 2, twoTiers()));
+    }
+
+    /** crosvm needs every vCPU pinned: an unbound one has no frequency domain. */
+    @Test
+    public void perfRequestsRefuseAnUnboundVcpu() {
+        var affinity = CpuPlacementPlan.parseAffinity("0=2:1=3");
+        assertFalse(CpuPlacementPlan.perfRequestsFit(affinity, 3, twoTiers()));
+    }
+
+    /** A core of unknown frequency (no cpufreq) has no table for crosvm to read. */
+    @Test
+    public void perfRequestsRefuseACoreOfUnknownFrequency() {
+        var tiers = twoTiers();
+        tiers.remove(7);
+        assertFalse(CpuPlacementPlan.perfRequestsFit(CpuPlacementPlan.parseAffinity("0=6:1=7"), 2, tiers));
+    }
 }
