@@ -505,10 +505,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             int cw = r - l, ch = b - t;
             v.post(() -> viewport.setArea(cw, ch));
         });
-        surfaceView.setOnTouchListener(this::onSurfaceTouch);
-        // MOUSE/TABLET gestures live on the container: the whole display area (letterbox included)
-        // is gesture surface; the translator pins coordinate ops to the rendered surface rect.
-        // In TOUCH mode this listener declines and raw multi-touch stays on the surface view.
+        // Every touch lands on the container, the whole display area (letterbox included). TOUCH
+        // mode maps it onto the surface and lets a finger come in off the letterbox (it touches
+        // down where it crosses the picture's edge, as off a bezel); MOUSE/TABLET gestures pin
+        // their coordinates to the rendered surface rect. The surface view itself takes none, so a
+        // gesture that begins on it still belongs to the container.
         displayContainer.setOnTouchListener(this::onContainerTouch);
         // Touches as the digitizer reports them, not merged once a frame: Android runs a "normal" app's window at 60 Hz on a
         // 120 Hz panel (a frame rate override), and the batched input gave the guest 60 position updates a second, so a drag
@@ -586,23 +587,34 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         nativeExtraKeys.applyModifiers(false);
     }
 
-    // TOUCH mode only: raw multi-touch stays on the surface view, which is sized to the guest
-    // aspect ratio, so offsets are zero and view coords normalize straight to the multi-touch
-    // device's fixed ABS range. (Touch coords stay in view-local space even when the three-finger
-    // zoom transform is applied - Android inverse-maps them.) MOUSE/TABLET decline here so the
-    // event bubbles up to the container.
-    private boolean onSurfaceTouch(View v, MotionEvent event) {
-        if (inputMode != InputMode.TOUCH) return false;
-        if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+    // TOUCH mode: raw multi-touch from the whole display area. A container touch is taken into the
+    // surface view's own space (the inverse of its zoom/pan transform), where the picture is the
+    // view's bounds; the surface is sized to the guest aspect ratio, so view coords normalize
+    // straight to the multi-touch device's fixed ABS range. Off the bounds they go on past it, and
+    // EvdevEncoder decides what a finger off the panel means.
+    private boolean onDisplayTouch(@NonNull MotionEvent event) {
+        int w = surfaceView.getWidth(), h = surfaceView.getHeight();
+        if (inputForwarder == null || w <= 0 || h <= 0) return false;
         if (isMouseButtonTouch(event)) return true;
+        var toSurface = new Matrix();
+        surfaceView.getMatrix().invert(toSurface);
+        toSurface.preTranslate(-surfaceView.getLeft(), -surfaceView.getTop());
+        var local = MotionEvent.obtain(event);
+        local.transform(toSurface);
+        forwardSurfaceTouch(local, w, h);
+        local.recycle();
+        return true;
+    }
+
+    // A touch in the surface view's space (w x h) to the guest's digitizer.
+    private void forwardSurfaceTouch(@NonNull MotionEvent event, int w, int h) {
         if (displayQuarterTurns == 0) {
-            var tf = TouchScaleCalculator.compute(v.getWidth(), v.getHeight());
+            var tf = TouchScaleCalculator.compute(w, h);
             inputForwarder.sendTouchEvent(event, tf.scaleX, tf.scaleY);
-            return true;
+            return;
         }
         // The view shows the picture turned; the guest's digitizer is the unturned panel. Turn the
         // touch back about the view's centre into a rect of the panel's shape, then scale as usual.
-        int w = v.getWidth(), h = v.getHeight();
         int panelW = pictureSideways() ? h : w, panelH = pictureSideways() ? w : h;
         var unturn = unturnAbout(w / 2f, h / 2f);
         unturn.postTranslate((panelW - w) / 2f, (panelH - h) / 2f);
@@ -611,7 +623,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         var tf = TouchScaleCalculator.compute(panelW, panelH);
         inputForwarder.sendTouchEvent(unturned, tf.scaleX, tf.scaleY);
         unturned.recycle();
-        return true;
     }
 
     // The guest's picture as shown: a quarter (or three-quarter) turn makes it as wide as the guest
@@ -649,10 +660,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    // MOUSE/TABLET gesture surface: the whole container is active; the translator pins gestures
-    // that carry guest coordinates to the rendered surface rect.
+    // The whole container is the touch surface. TOUCH goes to the guest's digitizer as raw
+    // multi-touch; MOUSE/TABLET to the gesture translator, which pins gestures that carry guest
+    // coordinates to the rendered surface rect.
     private boolean onContainerTouch(View v, MotionEvent event) {
-        if (inputMode == InputMode.TOUCH) return false;
+        if (inputMode == InputMode.TOUCH) return onDisplayTouch(event);
         if (inputForwarder == null || gestureTranslator == null) return false;
         if (isMouseButtonTouch(event)) return true;
         // TABLET absolute coords go to the normalized-range evdev absolute-mouse device; MOUSE

@@ -81,6 +81,13 @@ public final class EvdevEncoder {
     private final Map<Integer, Integer> pointerSlots = new HashMap<>();
     /** Last guest-space position sent per live pointer id, for the keepalive re-send. */
     private final Map<Integer, int[]> pointerPos = new HashMap<>();
+    /**
+     * Pointers that went down off the panel (the letterbox around the picture) and have not
+     * reached it yet, with their last position. Such a finger touches the guest only once it
+     * slides onto the panel: a touchdown where its path crossed the edge, as a real finger coming
+     * off the bezel would. A tap or a drag that never reaches the panel sends nothing.
+     */
+    private final Map<Integer, float[]> outsidePos = new HashMap<>();
 
     public EvdevEncoder() {
     }
@@ -239,13 +246,28 @@ public final class EvdevEncoder {
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_MOVE: {
                 int count = event.getPointerCount();
+                var downs = new ArrayList<Event>();
                 var events = new ArrayList<Event>(count * 4 + 1);
                 for (int i = 0; i < count; i++) {
                     int id = event.getPointerId(i);
+                    float fx = event.getX(i) * scaleX, fy = event.getY(i) * scaleY;
                     Integer slot = pointerSlots.get(id);
-                    if (slot == null) continue; // no DOWN seen for this pointer; ignore
-                    int x = (int) (event.getX(i) * scaleX);
-                    int y = (int) (event.getY(i) * scaleY);
+                    if (slot == null) {
+                        float[] from = outsidePos.get(id);
+                        if (from == null) continue; // no DOWN seen for this pointer; ignore
+                        if (!onPanel(fx, fy)) {
+                            from[0] = fx;
+                            from[1] = fy;
+                            continue;
+                        }
+                        outsidePos.remove(id);
+                        int[] edge = edgeCrossing(from[0], from[1], fx, fy);
+                        touchDown(downs, id, edge[0], edge[1]);
+                        continue; // its next move carries it on from the edge
+                    }
+                    // A contact that leaves the panel stays on it, held at the edge it crossed.
+                    int x = clampAbs(fx);
+                    int y = clampAbs(fy);
                     pointerPos.put(id, new int[]{x, y});
                     events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
                     events.add(new Event(EV_ABS, ABS_MT_POSITION_X, x));
@@ -255,36 +277,28 @@ public final class EvdevEncoder {
                         events.add(new Event(EV_ABS, ABS_Y, y));
                     }
                 }
-                if (events.isEmpty()) return null;
-                events.add(new Event(EV_SYN, SYN_REPORT, 0));
-                return encode(events);
+                if (!events.isEmpty()) events.add(new Event(EV_SYN, SYN_REPORT, 0));
+                downs.addAll(events);
+                return downs.isEmpty() ? null : encode(downs);
             }
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN: {
                 int idx = event.getActionIndex();
                 int id = event.getPointerId(idx);
-                int slot = allocSlot(id);
-                int x = (int) (event.getX(idx) * scaleX);
-                int y = (int) (event.getY(idx) * scaleY);
-                pointerPos.put(id, new int[]{x, y});
-                var events = new ArrayList<Event>(8);
-                // Only the first contact toggles BTN_TOUCH; further fingers must not re-assert it.
-                if (pointerSlots.size() == 1)
-                    events.add(new Event(EV_KEY, BTN_TOUCH, 1));
-                events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
-                events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, id));
-                events.add(new Event(EV_ABS, ABS_MT_POSITION_X, x));
-                events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, y));
-                if (slot == 0) {
-                    events.add(new Event(EV_ABS, ABS_X, x));
-                    events.add(new Event(EV_ABS, ABS_Y, y));
+                float fx = event.getX(idx) * scaleX, fy = event.getY(idx) * scaleY;
+                if (event.getActionMasked() == MotionEvent.ACTION_DOWN) outsidePos.clear();
+                if (!onPanel(fx, fy)) {
+                    outsidePos.put(id, new float[]{fx, fy});
+                    return null;
                 }
-                events.add(new Event(EV_SYN, SYN_REPORT, 0));
+                var events = new ArrayList<Event>(9);
+                touchDown(events, id, (int) fx, (int) fy);
                 return encode(events);
             }
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_POINTER_UP: {
                 int id = event.getPointerId(event.getActionIndex());
+                if (outsidePos.remove(id) != null) return null; // never reached the panel
                 Integer slot = pointerSlots.remove(id);
                 if (slot == null) return null;
                 pointerPos.remove(id);
@@ -299,6 +313,7 @@ public final class EvdevEncoder {
                 return encode(events);
             }
             case MotionEvent.ACTION_CANCEL: {
+                outsidePos.clear();
                 if (pointerSlots.isEmpty()) return null;
                 var events = new ArrayList<Event>(pointerSlots.size() * 2 + 2);
                 for (int slot : pointerSlots.values()) {
@@ -314,6 +329,55 @@ public final class EvdevEncoder {
             default:
                 return null;
         }
+    }
+
+    /**
+     * A new contact at (x, y) on the panel, as one report: its slot and tracking id, BTN_TOUCH when
+     * it is the first contact, and the primary pointer mirrored onto the single-touch axes.
+     */
+    private void touchDown(@NonNull ArrayList<Event> events, int id, int x, int y) {
+        int slot = allocSlot(id);
+        pointerPos.put(id, new int[]{x, y});
+        // Only the first contact toggles BTN_TOUCH; further fingers must not re-assert it.
+        if (pointerSlots.size() == 1)
+            events.add(new Event(EV_KEY, BTN_TOUCH, 1));
+        events.add(new Event(EV_ABS, ABS_MT_SLOT, slot));
+        events.add(new Event(EV_ABS, ABS_MT_TRACKING_ID, id));
+        events.add(new Event(EV_ABS, ABS_MT_POSITION_X, x));
+        events.add(new Event(EV_ABS, ABS_MT_POSITION_Y, y));
+        if (slot == 0) {
+            events.add(new Event(EV_ABS, ABS_X, x));
+            events.add(new Event(EV_ABS, ABS_Y, y));
+        }
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+    }
+
+    /** Whether a position in the normalized ABS range lies on the panel. */
+    private static boolean onPanel(float x, float y) {
+        return x >= 0 && y >= 0 && x <= NORMALIZED_ABS_MAX && y <= NORMALIZED_ABS_MAX;
+    }
+
+    private static int clampAbs(float v) {
+        return (int) Math.max(0f, Math.min(NORMALIZED_ABS_MAX, v));
+    }
+
+    /**
+     * Where the path from (x0, y0), off the panel, to (x1, y1), on it, crosses the panel's edge:
+     * the latest of the two axes' entry points along the segment (Liang-Barsky), clamped so
+     * rounding cannot leave it a hair outside.
+     */
+    @NonNull
+    static int[] edgeCrossing(float x0, float y0, float x1, float y1) {
+        float t = Math.max(entry(x0, x1), entry(y0, y1));
+        return new int[]{clampAbs(x0 + (x1 - x0) * t), clampAbs(y0 + (y1 - y0) * t)};
+    }
+
+    // The fraction of the way from a to b (b on the panel's range) where the coordinate enters
+    // [0, NORMALIZED_ABS_MAX]; 0 when a is already inside it.
+    private static float entry(float a, float b) {
+        if (a < 0) return a / (a - b);
+        if (a > NORMALIZED_ABS_MAX) return (a - NORMALIZED_ABS_MAX) / (a - b);
+        return 0f;
     }
 
     /** Whether any touch contact is currently down (keepalive needed while true). */
