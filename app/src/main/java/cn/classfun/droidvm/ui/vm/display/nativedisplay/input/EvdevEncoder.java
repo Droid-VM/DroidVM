@@ -76,6 +76,22 @@ public final class EvdevEncoder {
     public static final short BTN_LEFT = 0x110;
     public static final short BTN_RIGHT = 0x111;
     public static final short BTN_MIDDLE = 0x112;
+    // Pen (crosvm --input stylus).
+    private static final short ABS_PRESSURE = 0x18;
+    private static final short ABS_DISTANCE = 0x19;
+    private static final short ABS_TILT_X = 0x1a;
+    private static final short ABS_TILT_Y = 0x1b;
+    private static final short BTN_TOOL_PEN = 0x140;
+    private static final short BTN_TOOL_RUBBER = 0x141;
+    private static final short BTN_STYLUS = 0x14b;
+    private static final short BTN_STYLUS2 = 0x14c;
+    /**
+     * The pen's pressure and distance ranges and its tilt bound in degrees. MUST equal crosvm's
+     * STYLUS_PRESSURE_MAX, STYLUS_DISTANCE_MAX and STYLUS_TILT_MAX (devices/src/virtio/input/defaults.rs).
+     */
+    public static final int PEN_PRESSURE_MAX = 4095;
+    public static final int PEN_DISTANCE_MAX = 255;
+    public static final int PEN_TILT_MAX = 90;
 
     /** Live Android pointer id -> evdev MT slot. Touched only on the worker thread. */
     private final Map<Integer, Integer> pointerSlots = new HashMap<>();
@@ -88,6 +104,12 @@ public final class EvdevEncoder {
      * off the bezel would. A tap or a drag that never reaches the panel sends nothing.
      */
     private final Map<Integer, float[]> outsidePos = new HashMap<>();
+
+    // The pen as last sent: the tool in range (0 when none, else BTN_TOOL_PEN or BTN_TOOL_RUBBER),
+    // whether it touches, and its barrel buttons.
+    private short penTool;
+    private boolean penTouch;
+    private boolean penPrimary, penSecondary;
 
     public EvdevEncoder() {
     }
@@ -411,6 +433,145 @@ public final class EvdevEncoder {
         if (events.isEmpty()) return null;
         events.add(new Event(EV_SYN, SYN_REPORT, 0));
         return encode(events);
+    }
+
+    /** The index of [event]'s stylus (a pen tip or its eraser end), or -1 when it has none. */
+    public static int penPointer(@NonNull MotionEvent event) {
+        for (int i = 0; i < event.getPointerCount(); i++) {
+            int tool = event.getToolType(i);
+            if (tool == MotionEvent.TOOL_TYPE_STYLUS || tool == MotionEvent.TOOL_TYPE_ERASER) return i;
+        }
+        return -1;
+    }
+
+    /**
+     * One report of the pen device from a stylus {@link MotionEvent} (touch, hover or button
+     * change), or null when the event has no stylus. The tool (tip or eraser) goes in range on its
+     * first event; it leaves only by {@link #encodePenLeave}, because Android's HOVER_EXIT and UP
+     * are each followed by the pen's next state when it is still there. Positions are scaled into
+     * the normalized range as the touch device's; pressure and distance into the device's ranges
+     * ([distanceMax] is the stylus' AXIS_DISTANCE maximum, 0 when it reports none); tilt as
+     * {@link #tiltDegrees} gives it.
+     */
+    @Nullable
+    public byte[] encodePen(@NonNull MotionEvent event, float scaleX, float scaleY,
+                            float distanceMax) {
+        int i = penPointer(event);
+        if (i < 0) return null;
+        boolean touch;
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_MOVE:
+                touch = true;
+                break;
+            case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_POINTER_UP:
+                touch = event.getActionIndex() != i || event.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN;
+                break;
+            case MotionEvent.ACTION_BUTTON_PRESS:
+            case MotionEvent.ACTION_BUTTON_RELEASE:
+                touch = penTouch;
+                break;
+            default: // UP, the hovers
+                touch = false;
+                break;
+        }
+        short tool = event.getToolType(i) == MotionEvent.TOOL_TYPE_ERASER ? BTN_TOOL_RUBBER : BTN_TOOL_PEN;
+        var events = new ArrayList<Event>(16);
+        if (penTool != tool) {
+            if (penTool != 0) {
+                penRelease(events);
+                events.add(new Event(EV_SYN, SYN_REPORT, 0));
+            }
+            events.add(new Event(EV_KEY, tool, 1));
+            penTool = tool;
+        }
+        events.add(new Event(EV_ABS, ABS_X, clampAbs(event.getX(i) * scaleX)));
+        events.add(new Event(EV_ABS, ABS_Y, clampAbs(event.getY(i) * scaleY)));
+        float pressure = Math.max(0f, Math.min(1f, event.getPressure(i)));
+        events.add(new Event(EV_ABS, ABS_PRESSURE,
+            touch ? Math.max(1, Math.round(pressure * PEN_PRESSURE_MAX)) : 0));
+        events.add(new Event(EV_ABS, ABS_DISTANCE,
+            touch ? 0 : hoverDistance(event.getAxisValue(MotionEvent.AXIS_DISTANCE, i), distanceMax)));
+        int[] tilt = tiltDegrees(event.getAxisValue(MotionEvent.AXIS_TILT, i), event.getOrientation(i));
+        events.add(new Event(EV_ABS, ABS_TILT_X, tilt[0]));
+        events.add(new Event(EV_ABS, ABS_TILT_Y, tilt[1]));
+        if (touch != penTouch) {
+            events.add(new Event(EV_KEY, BTN_TOUCH, touch ? 1 : 0));
+            penTouch = touch;
+        }
+        // Android names the barrel buttons STYLUS_PRIMARY/SECONDARY, or SECONDARY/TERTIARY when the
+        // stylus reports them as a mouse's.
+        int buttons = event.getButtonState();
+        boolean primary = (buttons & (MotionEvent.BUTTON_STYLUS_PRIMARY | MotionEvent.BUTTON_SECONDARY)) != 0;
+        boolean secondary = (buttons & (MotionEvent.BUTTON_STYLUS_SECONDARY | MotionEvent.BUTTON_TERTIARY)) != 0;
+        if (primary != penPrimary) {
+            events.add(new Event(EV_KEY, BTN_STYLUS, primary ? 1 : 0));
+            penPrimary = primary;
+        }
+        if (secondary != penSecondary) {
+            events.add(new Event(EV_KEY, BTN_STYLUS2, secondary ? 1 : 0));
+            penSecondary = secondary;
+        }
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    /** The pen leaving range (lifted, buttons up, the tool released), or null when none is in range. */
+    @Nullable
+    public byte[] encodePenLeave() {
+        if (penTool == 0) return null;
+        var events = new ArrayList<Event>(6);
+        penRelease(events);
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    private void penRelease(@NonNull List<Event> events) {
+        if (penTouch) {
+            events.add(new Event(EV_KEY, BTN_TOUCH, 0));
+            events.add(new Event(EV_ABS, ABS_PRESSURE, 0));
+            penTouch = false;
+        }
+        if (penPrimary) events.add(new Event(EV_KEY, BTN_STYLUS, 0));
+        if (penSecondary) events.add(new Event(EV_KEY, BTN_STYLUS2, 0));
+        penPrimary = penSecondary = false;
+        events.add(new Event(EV_KEY, penTool, 0));
+        penTool = 0;
+    }
+
+    // A hovering pen's distance in the device's range: AXIS_DISTANCE against its maximum (or as
+    // it is when the stylus states none), never 0, which is contact.
+    private static int hoverDistance(float distance, float distanceMax) {
+        float v = distanceMax > 0 ? distance / distanceMax * PEN_DISTANCE_MAX : distance;
+        return Math.max(1, Math.min(PEN_DISTANCE_MAX, Math.round(v)));
+    }
+
+    /**
+     * The pen's tilt as evdev's ABS_TILT_X/Y (degrees from the normal in the X-Z and Y-Z planes,
+     * positive towards +X and +Y) from Android's AXIS_TILT (radians from the normal) and
+     * AXIS_ORIENTATION (radians, 0 pointing up, -pi/2 left). The exact inverse of the conversion
+     * Android's input reader makes from a digitizer's tilt (TouchInputMapper: orientation =
+     * atan2(-sin tx, sin ty), tilt = acos(cos tx * cos ty)), so a pen tablet's tilt reaches the
+     * guest as the phone's digitizer reported it.
+     */
+    @NonNull
+    static int[] tiltDegrees(float tilt, float orientation) {
+        double t = Math.max(0, Math.min(Math.PI / 2, tilt));
+        double s = Math.sin(orientation), c = Math.cos(orientation);
+        double k = s * s * c * c;
+        double sin2t = Math.sin(t) * Math.sin(t);
+        // r = |(sin tx, sin ty)| (up to sqrt 2); cos tx * cos ty = cos t gives
+        // k r^4 - r^2 + sin^2 t = 0, whose root that is sin^2 t at k = 0 is the one.
+        double r2 = k < 1e-9 ? sin2t : (1 - Math.sqrt(Math.max(0, 1 - 4 * k * sin2t))) / (2 * k);
+        double r = Math.sqrt(Math.max(0, Math.min(2, r2)));
+        double tx = Math.asin(Math.max(-1, Math.min(1, -r * s)));
+        double ty = Math.asin(Math.max(-1, Math.min(1, r * c)));
+        return new int[]{clampTilt(Math.toDegrees(tx)), clampTilt(Math.toDegrees(ty))};
+    }
+
+    private static int clampTilt(double degrees) {
+        return (int) Math.max(-PEN_TILT_MAX, Math.min(PEN_TILT_MAX, Math.round(degrees)));
     }
 
     /** Maps a pointer id to a stable slot, allocating the lowest free slot index if new. */

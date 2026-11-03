@@ -584,6 +584,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             buildInputDevicesCommand(args);
         }
         buildMotionSensorCommand(args);
+        if (isInputBridgeNeeded()) {
+            buildPenDevicesCommand(args);
+        }
         buildVirtioTransportCommand(args);
         buildPeripheralCommand(args);
         // After the peripheral rows, not before: those rows are the user's own list and the guest
@@ -752,6 +755,27 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         spec.append(",name=").append(NativeDisplay.MOTION_DEVICE_NAME).append(']');
         args.add("--input");
         args.add(spec.toString());
+    }
+
+    /**
+     * Each natively exported screen's pen: crosvm's stylus device (pen digitizer: tip and eraser,
+     * pressure, hover distance, tilt, barrel buttons), in the normalized range like the screen's
+     * touch device, which the console fills from the phone's stylus.
+     *
+     * <p>Emitted after every other input device, the motion sensors included, for the reason
+     * {@link #buildMotionSensorCommand} gives: on an MMIO VM the input windows follow the command
+     * line order, so the devices a guest already knows keep their addresses.</p>
+     */
+    private void buildPenDevicesCommand(@NonNull List<String> args) {
+        var vmId = config.getId().toString();
+        for (var screenId : nativeInputScreens()) {
+            args.add("--input");
+            args.add(fmt(
+                "stylus[path=%s,name=%s]",
+                NativeDisplay.inputSocketPath(vmId, screenId, NativeDisplay.PEN),
+                NativeDisplay.penDeviceName(screenId)
+            ));
+        }
     }
 
     /**

@@ -625,6 +625,40 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         unturned.recycle();
     }
 
+    // A stylus event from [from] (the container, the surface view's parent, or the surface view) to
+    // the screen's pen, in any input mode: into the surface view's space as onDisplayTouch takes a
+    // touch, then unturned and scaled as forwardSurfaceTouch does. The transforms turn the event's
+    // orientation with its coordinates, so the pen's tilt arrives in the guest panel's frame.
+    private boolean onPenEvent(@NonNull View from, @NonNull MotionEvent event) {
+        int w = surfaceView.getWidth(), h = surfaceView.getHeight();
+        if (inputForwarder == null || w <= 0 || h <= 0) return false;
+        var local = MotionEvent.obtain(event);
+        if (from != surfaceView) {
+            var toSurface = new Matrix();
+            surfaceView.getMatrix().invert(toSurface);
+            toSurface.preTranslate(-surfaceView.getLeft(), -surfaceView.getTop());
+            local.transform(toSurface);
+        }
+        int panelW = pictureSideways() ? h : w, panelH = pictureSideways() ? w : h;
+        if (displayQuarterTurns != 0) {
+            var unturn = unturnAbout(w / 2f, h / 2f);
+            unturn.postTranslate((panelW - w) / 2f, (panelH - h) / 2f);
+            local.transform(unturn);
+        }
+        var tf = TouchScaleCalculator.compute(panelW, panelH);
+        inputForwarder.sendPenEvent(local, tf.scaleX, tf.scaleY, penDistanceMax(event));
+        local.recycle();
+        return true;
+    }
+
+    // The stylus' AXIS_DISTANCE maximum, or 0 when its device states no range for it.
+    private static float penDistanceMax(@NonNull MotionEvent event) {
+        var device = event.getDevice();
+        if (device == null) return 0f;
+        var range = device.getMotionRange(MotionEvent.AXIS_DISTANCE, event.getSource());
+        return range == null ? 0f : range.getMax();
+    }
+
     // The guest's picture as shown: a quarter (or three-quarter) turn makes it as wide as the guest
     // is tall.
     private boolean pictureSideways() {
@@ -664,6 +698,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // multi-touch; MOUSE/TABLET to the gesture translator, which pins gestures that carry guest
     // coordinates to the rendered surface rect.
     private boolean onContainerTouch(View v, MotionEvent event) {
+        if (EvdevEncoder.penPointer(event) >= 0) return onPenEvent(v, event);
         if (inputMode == InputMode.TOUCH) return onDisplayTouch(event);
         if (inputForwarder == null || gestureTranslator == null) return false;
         if (isMouseButtonTouch(event)) return true;
@@ -812,6 +847,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Button presses are ALWAYS consumed - an unhandled BUTTON_SECONDARY press is what makes the
     // framework synthesize a BACK key, which must never fire inside the VM display.
     private boolean onSurfaceGenericMotion(View v, MotionEvent event) {
+        // A stylus' barrel buttons are the pen's, not a mouse's right and middle buttons.
+        int genericAction = event.getActionMasked();
+        if ((genericAction == MotionEvent.ACTION_BUTTON_PRESS
+            || genericAction == MotionEvent.ACTION_BUTTON_RELEASE)
+            && EvdevEncoder.penPointer(event) >= 0) {
+            return onPenEvent(v, event);
+        }
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_SCROLL:
                 if (inputForwarder != null) {
@@ -835,10 +877,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    // Host pointer hover (no button): TABLET mode only - absolute hover on the guest tablet.
-    // MOUSE/TOUCH modes deliberately ignore Android-side hover.
+    // Host pointer hover (no button): a stylus goes to the pen in any mode; a mouse is absolute
+    // hover on the guest tablet in TABLET mode only - MOUSE/TOUCH modes deliberately ignore it.
     private boolean onSurfaceHover(View v, MotionEvent event) {
         if (inputForwarder == null || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
+        // A hovering stylus is the pen in range, in every mode.
+        if (EvdevEncoder.penPointer(event) >= 0) return onPenEvent(v, event);
         if (inputMode != InputMode.TABLET) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {

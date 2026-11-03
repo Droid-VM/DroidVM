@@ -70,7 +70,14 @@ public final class NativeDisplay {
      * has the device.
      */
     public static final int SENSOR = 4;
-    public static final int CHANNEL_COUNT = 5;
+    /**
+     * A screen's pen (crosvm {@code --input stylus}): the phone's stylus as a pen digitizer, with
+     * its pressure, hover distance, tilt and barrel buttons. Not an input mode either: a stylus on
+     * the console always goes here, whatever the fingers drive. Per screen, as the tablet: its
+     * coordinates belong to one output.
+     */
+    public static final int PEN = 5;
+    public static final int CHANNEL_COUNT = 6;
 
     /**
      * Broadcast the daemon (running as root) sends to hand its INativeDisplayRootService binder to
@@ -90,7 +97,7 @@ public final class NativeDisplay {
     // crosvm device kinds they pair with are "mouse" (relative) and "absolute-mouse". Short
     // because the whole path has to fit sun_path (see the class note); still self-describing,
     // because the next person reading `ls run/` deserves to know which inode is the touchscreen.
-    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen"};
+    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen", "pen"};
 
     /**
      * Socket filename tag per screen, positionally paired with {@link VMScreenConfig#IDS}. A
@@ -192,7 +199,7 @@ public final class NativeDisplay {
      * every channel, so a channel moving across this line needs no change on that side.</p>
      */
     public static boolean isPerScreen(int channel) {
-        return channel == MULTITOUCH || channel == TABLET || channel == KEYBOARD;
+        return channel == MULTITOUCH || channel == TABLET || channel == KEYBOARD || channel == PEN;
     }
 
     /**
@@ -321,6 +328,15 @@ public final class NativeDisplay {
     @NonNull
     public static String keyboardDeviceName(@NonNull String screenId) {
         return fmt("DroidVM Keyboard (%s)", screenId);
+    }
+
+    /**
+     * The evdev name [screenId]'s pen carries, for the same reason the tablet's is fixed: a pen's
+     * coordinates belong to one output, and the name is how a guest is told which.
+     */
+    @NonNull
+    public static String penDeviceName(@NonNull String screenId) {
+        return fmt("DroidVM Pen (%s)", screenId);
     }
 
     /** The evdev name of the VM's motion sensors; one per VM, so nothing to tell apart. */

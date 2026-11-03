@@ -229,6 +229,7 @@ final class NativeDisplayInputBridge {
                 return touchScreens;
             case NativeDisplay.TABLET:
             case NativeDisplay.KEYBOARD:
+            case NativeDisplay.PEN:
                 return nativeScreens;
             case NativeDisplay.SENSOR:
                 return motionSensors ? List.of("") : List.of();
