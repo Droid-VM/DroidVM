@@ -269,6 +269,14 @@ void ConsoleCommand::console_attach(
                         warned = true;
                     }
                 } else {
+                    // The tty line discipline still has ICRNL set (we only touch
+                    // c_lflag above), so the Enter key arrives here as LF. Windows
+                    // SAC accepts LF, but the CMD channel's console only treats CR
+                    // as Enter, so map LF back to CR before it reaches the guest.
+                    // Linux getty is unaffected: its ICRNL turns CR back into NL.
+                    // Same fix as cloud-hypervisor#1770 / PR #1771.
+                    for (ssize_t i = 0; i < n; i++)
+                        if (buf[i] == '\n') buf[i] = '\r';
                     Json::Value write_req;
                     write_req["command"] = "vm_console_write";
                     write_req["vm_id"] = filter_vm;
