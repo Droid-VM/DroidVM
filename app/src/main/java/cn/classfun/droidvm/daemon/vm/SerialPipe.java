@@ -4,6 +4,7 @@
 package cn.classfun.droidvm.daemon.vm;
 
 import java.io.Closeable;
+import java.util.Objects;
 
 import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.lib.natives.UnixHelper;
@@ -11,93 +12,67 @@ import cn.classfun.droidvm.lib.natives.UnixHelper;
 public final class SerialPipe implements Closeable {
     private final String name;
     private FDPipeConsoleStream stream;
-    private int[] pipe_in;
-    private int[] pipe_out;
+    private final SerialPipeFds fds = new SerialPipeFds();
 
     public SerialPipe(
         FDPipeConsoleStream stream,
         String name
     ) {
         this.name = name;
-        this.pipe_out = UnixHelper.nativePipe();
-        this.pipe_in = UnixHelper.nativePipe();
-        this.stream = stream;
-        if (
-            pipe_in == null || pipe_in.length != 2 ||
-            pipe_out == null || pipe_out.length != 2
-        ) {
-            close();
-            throw new RuntimeException("Failed to create pipes");
+        Objects.requireNonNull(stream, "stream");
+        boolean ready = false;
+        try {
+            fds.setOutputPipe(UnixHelper.nativePipe());
+            fds.setInputPipe(UnixHelper.nativePipe());
+            fds.requireReady();
+            fds.transferOutputLocal(stream::setReadFd, stream::getPosixReadFd);
+            fds.transferInputLocal(stream::setWriteFd, stream::getPosixWriteFd);
+            this.stream = stream;
+            ready = true;
+        } finally {
+            // Do not close the caller's stream or its adopted ends on partial failure.
+            if (!ready) fds.close(() -> {}, UnixHelper::nativeCloseFd);
         }
-        stream.setReadFd(getOutputLocalFd());
-        stream.setWriteFd(getInputLocalFd());
     }
 
     @SuppressWarnings("unused")
-    public FDPipeConsoleStream getStream() {
+    public synchronized FDPipeConsoleStream getStream() {
         return stream;
     }
 
-    public boolean isReady() {
+    public synchronized boolean isReady() {
         return stream != null && stream.isReady();
     }
 
-    public int getOutputLocalFd() {
-        if (pipe_out == null || pipe_out[0] == -1)
-            throw new IllegalStateException("output local fd invalid");
-        return pipe_out[0];
+    /** Borrowed local fd; the stream's PFD is its sole owner after construction. */
+    public synchronized int getOutputLocalFd() {
+        return fds.outputLocalFd();
     }
 
-    public int getOutputRemoteFd() {
-        if (pipe_out == null || pipe_out[1] == -1)
-            throw new IllegalStateException("output remote fd invalid");
-        return pipe_out[1];
+    public synchronized int getOutputRemoteFd() {
+        return fds.outputRemoteFd();
     }
 
-    public int getInputLocalFd() {
-        if (pipe_in == null || pipe_in[1] == -1)
-            throw new IllegalStateException("input local fd invalid");
-        return pipe_in[1];
+    /** Borrowed local fd; the stream's PFD is its sole owner after construction. */
+    public synchronized int getInputLocalFd() {
+        return fds.inputLocalFd();
     }
 
-    public int getInputRemoteFd() {
-        if (pipe_in == null || pipe_in[0] == -1)
-            throw new IllegalStateException("input remote fd invalid");
-        return pipe_in[0];
+    public synchronized int getInputRemoteFd() {
+        return fds.inputRemoteFd();
     }
 
-    public void closeRemoteFd() {
-        if (pipe_out != null) {
-            closeFd(pipe_in[0]);
-            pipe_in[0] = -1;
-        }
-        if (pipe_out != null) {
-            closeFd(pipe_out[1]);
-            pipe_out[1] = -1;
-        }
+    public synchronized void closeRemoteFd() {
+        fds.closeRemoteFd(UnixHelper::nativeCloseFd);
     }
 
     @Override
-    public void close() {
-        if (stream != null) {
-            stream.close();
-            stream = null;
-        }
-        if (pipe_in != null) {
-            closeFd(pipe_in[0]);
-            closeFd(pipe_in[1]);
-            pipe_in = null;
-        }
-        if (pipe_out != null) {
-            closeFd(pipe_out[0]);
-            closeFd(pipe_out[1]);
-            pipe_out = null;
-        }
-    }
-
-    private static void closeFd(int fd) {
-        if (fd >= 0)
-            UnixHelper.nativeCloseFd(fd);
+    public synchronized void close() {
+        FDPipeConsoleStream ownedStream = stream;
+        stream = null;
+        fds.close(() -> {
+            if (ownedStream != null) ownedStream.close();
+        }, UnixHelper::nativeCloseFd);
     }
 
     @SuppressWarnings("unused")
