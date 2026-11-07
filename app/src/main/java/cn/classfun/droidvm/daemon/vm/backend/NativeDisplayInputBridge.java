@@ -6,6 +6,10 @@ package cn.classfun.droidvm.daemon.vm.backend;
 import static cn.classfun.droidvm.lib.utils.FileUtils.deleteFile;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
+import android.os.ParcelFileDescriptor;
+import android.system.ErrnoException;
+import android.system.Os;
+import android.system.OsConstants;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -61,7 +65,7 @@ final class NativeDisplayInputBridge {
     private static final class Slot {
         final String key;
         final String path;
-        final int serverFd;
+        final NativeInputSocketOwner owner;
         /** Kept apart from {@link #key} because a status record has to say which screen it is. */
         final String screenId;
         final int channel;
@@ -69,11 +73,11 @@ final class NativeDisplayInputBridge {
         /** Volatile: accept threads, write threads and release() all touch it without one lock. */
         volatile FDSocket peer;
 
-        Slot(@NonNull String key, @NonNull String path, int serverFd,
+        Slot(@NonNull String key, @NonNull String path, NativeInputSocketOwner owner,
              @NonNull String screenId, int channel) {
             this.key = key;
             this.path = path;
-            this.serverFd = serverFd;
+            this.owner = owner;
             this.screenId = screenId;
             this.channel = channel;
         }
@@ -95,7 +99,6 @@ final class NativeDisplayInputBridge {
      * reader either sees the whole set or none of it. Null until the first start.
      */
     private volatile Map<String, Slot> slots = null;
-    private volatile boolean inputClosed = false;
     /** Set before the sockets are bound; null means nobody wants what the guest says. */
     @Nullable
     private volatile StatusListener statusListener = null;
@@ -141,8 +144,8 @@ final class NativeDisplayInputBridge {
      * <p>Whatever it bound before that throw is closed on the way out, because the set is not
      * published until the loop finishes and {@link #release()} can only free what it can see. The
      * screen that trips the length check is by definition not the first one, so there is always
-     * something bound behind it: listening fds, inodes under run/, and an accept thread each --
-     * parked in accept(2) forever, since only closing the fd it waits on ends one.</p>
+     * something bound behind it: listening fds, inodes under run/, and an accept worker each.
+     * Rollback signals each worker's wake pipe; workers close their own descriptors.</p>
      */
     /**
      * Who hears the guest's status events. Set before {@link #startListening}, because the reader
@@ -152,19 +155,20 @@ final class NativeDisplayInputBridge {
         this.statusListener = listener;
     }
 
-    boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
+    synchronized boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
                            @NonNull List<String> nativeScreens) {
         if (!UnixHelper.isLoaded()) {
             Log.w(TAG, "UnixHelper not loaded; cannot pre-bind native-display input sockets");
             return false;
         }
-        inputClosed = false;
+        // Serialize detach/unlink against rebind; old workers never unlink a newer inode.
+        release();
         this.vmId = vmId;
         var built = new LinkedHashMap<String, Slot>();
         boolean allListening;
         try {
             allListening = bindAll(vmId, touchScreens, nativeScreens, built);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
             closeSlots(built.values());
             throw e;
         }
@@ -191,6 +195,7 @@ final class NativeDisplayInputBridge {
                 // silence and every check downstream then passes against the wrong inode.
                 var path = NativeDisplay.requireBindablePath(
                     NativeDisplay.inputSocketPath(vmId, screenId, ch));
+                if (built.containsKey(slotKey(screenId, ch))) continue;
                 var fd = UnixHelper.nativeUnixListen(path);
                 if (fd < 0) {
                     Log.w(TAG, fmt("Failed to pre-listen on input socket: %s", path));
@@ -198,11 +203,36 @@ final class NativeDisplayInputBridge {
                     continue;
                 }
                 Log.i(TAG, fmt("Pre-listening on input socket: %s (fd=%d)", path, fd));
-                var slot = new Slot(slotKey(screenId, ch), path, fd, screenId, ch);
+                NativeInputSocketOwner owner;
+                int[] wake = null;
+                try {
+                    // dup shares the open-file-description flags, but never adopts the raw fd.
+                    try (var duplicate = ParcelFileDescriptor.fromFd(fd)) {
+                        var descriptor = duplicate.getFileDescriptor();
+                        int flags = Os.fcntlInt(descriptor, OsConstants.F_GETFL, 0);
+                        Os.fcntlInt(descriptor, OsConstants.F_SETFL, flags | OsConstants.O_NONBLOCK);
+                    }
+                    wake = UnixHelper.nativePipe();
+                    if (wake == null || wake.length != 2 || wake[0] < 0 || wake[1] < 0)
+                        throw new IOException("Cannot create input accept wake pipe");
+                    owner = new NativeInputSocketOwner(fd, wake[0], wake[1]);
+                } catch (IOException | ErrnoException e) {
+                    if (wake != null)
+                        for (int wakeFd : wake) UnixHelper.nativeCloseFd(wakeFd);
+                    UnixHelper.nativeCloseFd(fd);
+                    deleteFile(path);
+                    Log.w(TAG, fmt("Cannot prepare stoppable input listener: %s", path), e);
+                    allListening = false;
+                    continue;
+                }
+                var slot = new Slot(slotKey(screenId, ch), path, owner, screenId, ch);
                 built.put(slot.key, slot);
-                // Accept crosvm's connection in the background. crosvm is the client and connects
-                // at its own startup, so a peer may not arrive until after start() execs it.
-                startInputAcceptThread(slot);
+                try {
+                    startInputAcceptThread(slot);
+                } catch (RuntimeException | Error e) {
+                    owner.finish(UnixHelper::nativeCloseFd); // No worker owns it yet.
+                    throw e;
+                }
             }
         }
         return allListening;
@@ -232,36 +262,41 @@ final class NativeDisplayInputBridge {
         }
     }
 
-    /**
-     * Accepts crosvm's connection on one slot and keeps the live peer on it. Loops so a crosvm
-     * restart (new connection on the same socket) replaces the dead peer; ends when
-     * {@link #release()} closes the server fd.
-     */
+    /** Poll is woken by pipe HUP. Only this worker closes the listener after its last syscall. */
     private void startInputAcceptThread(@NonNull Slot slot) {
         var t = new Thread(() -> {
-            while (!inputClosed) {
-                int peerFd = UnixHelper.nativeUnixAccept(slot.serverFd);
-                if (peerFd < 0) {
-                    if (inputClosed) break;
-                    try {
-                        Thread.sleep(200);
-                    } catch (InterruptedException e) {
-                        break;
+            try {
+                while (!slot.owner.isStopped()) {
+                    int ready = UnixHelper.nativePollIn2(
+                        slot.owner.serverFd(), slot.owner.wakeReadFd(), -1);
+                    if (slot.owner.isStopped() || ready < 0 || (ready & 2) != 0) break;
+                    if ((ready & 1) == 0) continue;
+                    // NONBLOCK is required: readability can disappear before accept (e.g. abort).
+                    int peerFd = UnixHelper.nativeUnixAccept(slot.owner.serverFd());
+                    if (peerFd < 0) continue;
+                    var peer = new FDSocket(peerFd);
+                    synchronized (slot.lock) {
+                        if (slot.owner.isStopped()) {
+                            peer.close();
+                            break;
+                        }
+                        var old = slot.peer;
+                        slot.peer = peer;
+                        if (old != null) old.close();
                     }
-                    continue;
+                    Log.i(TAG, fmt("crosvm input connected: %s", slot.path));
+                    startStatusReadThread(slot, peer);
                 }
-                var peer = new FDSocket(peerFd);
+            } finally {
                 synchronized (slot.lock) {
-                    if (inputClosed) {
-                        peer.close();
-                        break;
+                    slot.owner.stop(UnixHelper::nativeCloseFd);
+                    if (slot.peer != null) {
+                        slot.peer.close();
+                        slot.peer = null;
                     }
-                    var old = slot.peer;
-                    slot.peer = peer;
-                    if (old != null) old.close();
                 }
-                Log.i(TAG, fmt("crosvm input connected: %s", slot.path));
-                startStatusReadThread(slot, peer);
+                slot.owner.finish(UnixHelper::nativeCloseFd);
+                // Never unlink here: a later start may already own this path.
             }
         }, fmt("CrosvmInputAccept-%s", slot.key));
         t.setDaemon(true);
@@ -285,12 +320,17 @@ final class NativeDisplayInputBridge {
             // decoded as a whole one.
             int held = 0;
             try {
-                var in = peer.getInputStream();
-                while (!inputClosed && peer.isOpen()) {
+                java.io.InputStream in;
+                synchronized (slot.lock) {
+                    if (slot.owner.isStopped() || slot.peer != peer) return;
+                    in = peer.getInputStream();
+                }
+                while (!slot.owner.isStopped() && peer.isOpen()) {
                     int n = in.read(buffer, held, buffer.length - held);
                     if (n < 0) break;
                     int total = held + n;
                     int whole = total - (total % STATUS_RECORD_BYTES);
+                    if (slot.owner.isStopped() || slot.peer != peer) break;
                     if (whole > 0)
                         listener.onGuestStatus(slot.screenId, slot.channel,
                             java.util.Arrays.copyOf(buffer, whole));
@@ -299,7 +339,7 @@ final class NativeDisplayInputBridge {
                 }
             } catch (IOException e) {
                 // The peer going away is how this ends most of the time; nothing to report.
-                if (!inputClosed)
+                if (!slot.owner.isStopped())
                     Log.d(TAG, fmt("status reader for %s ended: %s", slot.path, e.getMessage()));
             }
         }, fmt("CrosvmInputStatus-%s", slot.key));
@@ -321,7 +361,7 @@ final class NativeDisplayInputBridge {
         if (slot == null) return false;
         synchronized (slot.lock) {
             var peer = slot.peer;
-            if (peer == null || !peer.isOpen()) return false;
+            if (slot.owner.isStopped() || peer == null || !peer.isOpen()) return false;
             try {
                 var os = peer.getOutputStream();
                 os.write(data);
@@ -343,34 +383,23 @@ final class NativeDisplayInputBridge {
         return live == null ? null : live.get(slotKey(screenId, channel));
     }
 
-    /** Closes the input server fds we opened and unlinks the inodes we own. */
-    void release() {
+    /** Atomically detaches this generation, signals its workers, and unlinks its inodes. */
+    synchronized void release() {
         var live = slots;
-        slots = null;
-        // Called unconditionally rather than under a null check, because latching inputClosed is
-        // half of what it does and a release with nothing published still has to do that half.
+        slots = null; // Atomic detach with respect to start and all other releases.
         closeSlots(live == null ? List.of() : live.values());
     }
 
-    /**
-     * Gives back everything [live] holds: the accepted peer, the listening fd, and the inode.
-     *
-     * <p>Latching {@code inputClosed} first is not tidiness but the order the accept loop needs.
-     * Closing a server fd is what unblocks the thread parked in accept(2) on it, and that thread
-     * then reads the flag to decide whether the failure means "we are shutting down" or "retry in
-     * 200 ms". Closing first would leave it retrying accept on a closed fd for the life of the
-     * daemon.</p>
-     */
+    /** Stop each old generation permanently; its worker owns listener/read-end disposal. */
     private void closeSlots(@NonNull Collection<Slot> live) {
-        inputClosed = true;
         for (var slot : live) {
             synchronized (slot.lock) {
+                slot.owner.stop(UnixHelper::nativeCloseFd);
                 if (slot.peer != null) {
                     slot.peer.close();
                     slot.peer = null;
                 }
             }
-            UnixHelper.nativeCloseFd(slot.serverFd);
             deleteFile(slot.path);
         }
     }
