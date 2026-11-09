@@ -60,6 +60,7 @@ import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
+import cn.classfun.droidvm.ui.vm.display.base.StandardPointerCapture;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
@@ -271,6 +272,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Asks the daemon to take the host's physical keyboard for this console while it is in
     // front and no IME wants it; see PhysicalKeyboardGrab for the whole of the rule.
     private PhysicalKeyboardGrab keyboardGrab;
+    private StandardPointerCapture pointerGrab;
     // Bits of the lamp masks the daemon sends, which are the Linux LED_* codes: NUML 0, CAPSL 1,
     // SCROLLL 2.
     private static final int LED_MASK_NUM = 1;
@@ -295,8 +297,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Before the views: applyInitial() runs while they are being built and tells this
         // the keyboard mode it starts in.
         keyboardGrab = new PhysicalKeyboardGrab(vmId, () -> screenId, screenInputEnabled);
-
         bindViews();
+        pointerGrab = new StandardPointerCapture(findViewById(R.id.main));
         toolbar.setTitle(vmName.isEmpty() ? getString(R.string.native_display_title) : vmName);
         toolbar.setNavigationOnClickListener(v -> finish());
         setupViews();
@@ -323,6 +325,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     // The grab has no such fallback: the daemon is the only process that can hold
                     // it, and it has already dropped it with the token.
                     keyboardGrab.setService(null);
+                    pointerGrab.setSink(null);
                 }
             });
         displayAttach.start();
@@ -333,6 +336,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
         directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
+        pointerGrab.setSink(directSink);
         inputForwarder = new InputForwarder(directSink);
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
         // A forwarder is built fresh on every attach and starts in TOUCH, so it has to be told
@@ -686,6 +690,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Button presses are ALWAYS consumed - an unhandled BUTTON_SECONDARY press is what makes the
     // framework synthesize a BACK key, which must never fire inside the VM display.
     private boolean onSurfaceGenericMotion(View v, MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS)
+            pointerGrab.requestAfterClick(event);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_SCROLL:
                 if (inputForwarder != null) {
@@ -755,6 +761,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     @Override
     public boolean dispatchKeyEvent(@NonNull KeyEvent event) {
+        if (pointerGrab != null && pointerGrab.isEnabled()
+                && event.getKeyCode() == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN) pointerGrab.setEnabled(false);
+            return true;
+        }
         int keyCode = event.getKeyCode();
         // A hardware-mouse right-click the framework (or OEM ROM) failed to see consumed gets
         // synthesized as a BACK key - sometimes mouse-sourced, sometimes (OEM injection) claiming
@@ -934,6 +945,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void showFabMenu() {
         var popup = new MaterialMenu(this, fabMenu);
         popup.inflate(R.menu.menu_native_display_menu);
+        popup.getMenu().findItem(R.id.menu_pointer_grab).setChecked(pointerGrab.isEnabled());
+        popup.getMenu().findItem(R.id.menu_pointer_natural_scroll).setChecked(pointerGrab.isNaturalScroll());
         var header = new LinearLayout(this);
         header.setOrientation(LinearLayout.VERTICAL);
         header.addView(buildInputModeHeader(popup));
@@ -981,7 +994,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
 
     private boolean onMenuItemClicked(@NonNull MenuItem item) {
         int id = item.getItemId();
-        if (id == R.id.menu_fullscreen) {
+        if (id == R.id.menu_pointer_grab) {
+            pointerGrab.setEnabled(!pointerGrab.isEnabled());
+            return true;
+        } else if (id == R.id.menu_pointer_natural_scroll) {
+            pointerGrab.setNaturalScroll(!pointerGrab.isNaturalScroll());
+            return true;
+        } else if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
         } else if (id == R.id.menu_rotate) {
@@ -1115,6 +1134,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (pointerGrab != null) pointerGrab.setFocused(hasFocus);
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         // A VM display is on screen and rendering: tell the platform this is sustained heavy
@@ -1124,6 +1149,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // from eating multi-finger input meant for the guest (see SystemGestureGuard).
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
+        pointerGrab.setResumed(true);
     }
 
     @Override
@@ -1132,12 +1158,19 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         GamePerfHint.exitGameplay(this);
         SystemGestureGuard.exitDisplay();
         keyboardGrab.setResumed(false);
+        pointerGrab.setResumed(false);
     }
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         if (keyboardGrab != null) keyboardGrab.close();
+        // Keep the old sink alive until the capture worker has sent its final releases.
+        // Waiting on the UI thread would block lifecycle callbacks on a slow transport.
+        var retiringSink = directSink;
+        directSink = null;
+        if (pointerGrab != null) pointerGrab.close(retiringSink == null ? null : retiringSink::close);
+        else if (retiringSink != null) retiringSink.close();
         if (displaySource != null) {
             displaySource.shutdown();
             displaySource = null;
@@ -1145,10 +1178,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (inputForwarder != null) {
             inputForwarder.close();
             inputForwarder = null;
-        }
-        if (directSink != null) {
-            directSink.close();
-            directSink = null;
         }
         if (displayAttach != null) {
             displayAttach.stop();
