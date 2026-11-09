@@ -586,6 +586,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         buildMotionSensorCommand(args);
         if (isInputBridgeNeeded()) {
             buildPenDevicesCommand(args);
+            buildTrackpadCommand(args);
         }
         buildVirtioTransportCommand(args);
         buildPeripheralCommand(args);
@@ -762,8 +763,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * pressure, hover distance, tilt, barrel buttons), in the normalized range like the screen's
      * touch device, which the console fills from the phone's stylus.
      *
-     * <p>Emitted after every other input device, the motion sensors included, for the reason
-     * {@link #buildMotionSensorCommand} gives: on an MMIO VM the input windows follow the command
+     * <p>Emitted after the other input devices but the trackpad, the motion sensors included, for
+     * the reason {@link #buildMotionSensorCommand} gives: on an MMIO VM the input windows follow the command
      * line order, so the devices a guest already knows keep their addresses.</p>
      */
     private void buildPenDevicesCommand(@NonNull List<String> args) {
@@ -776,6 +777,26 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 NativeDisplay.penDeviceName(screenId)
             ));
         }
+    }
+
+    /**
+     * The VM's trackpad, which the console's TRACKPAD mode drives: crosvm's trackpad with
+     * {@code contacts}, a multi-finger trackpad with no buttons (the guest's taps click; a phone's
+     * screen cannot be pressed). A square as wide as the phone's screen is long, in units of a
+     * twentieth of a millimetre, so guests get its real size; contact size only when the phone's
+     * panel reports it. One per VM, as the relative mouse.
+     *
+     * <p>Emitted last of the input devices, for the reason {@link #buildMotionSensorCommand} gives.</p>
+     */
+    private void buildTrackpadCommand(@NonNull List<String> args) {
+        int side = PhoneTouchPanel.trackpadSideUnits();
+        args.add("--input");
+        args.add(fmt(
+            "trackpad[path=%s,width=%d,height=%d,res=%d,contacts=%d,touch-size=%b,name=%s]",
+            NativeDisplay.inputSocketPath(config.getId().toString(), "", NativeDisplay.TRACKPAD),
+            side, side, NativeDisplay.TRACKPAD_UNITS_PER_MM, NativeDisplay.TRACKPAD_CONTACTS,
+            PhoneTouchPanel.reportsContactSize(), NativeDisplay.TRACKPAD_DEVICE_NAME
+        ));
     }
 
     /**

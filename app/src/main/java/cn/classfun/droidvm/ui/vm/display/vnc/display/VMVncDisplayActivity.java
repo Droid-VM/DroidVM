@@ -60,10 +60,12 @@ import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
+import cn.classfun.droidvm.ui.vm.display.base.InputModeToggle;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TrackpadEncoder;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 
 public final class VMVncDisplayActivity extends BaseVncActivity {
@@ -315,7 +317,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         inputForwarder = new InputForwarder((channel, data) -> {
             var sink = directSink;
             return sink != null ? sink.write(channel, data) : sendInputToDaemon(channel, data);
-        });
+        }, TrackpadEncoder.sideUnits(this));
         gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
         // Hardware mouse/stylus: hover is TABLET-only (RFB absolute move); wheel and right/middle
         // buttons route per mode (tablet -> RFB mask, mouse -> crosvm mouse device).
@@ -579,6 +581,17 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             return true;
         }
         switch (inputMode) {
+            case TRACKPAD:
+                // The VM's trackpad, as on the native console: fingers in millimetres on the
+                // whole container. A hardware mouse stays the relative pointer.
+                if ((event.getSource() & android.view.InputDevice.SOURCE_TOUCHSCREEN)
+                    == android.view.InputDevice.SOURCE_TOUCHSCREEN) {
+                    if (inputForwarder == null) return false;
+                    float units = TrackpadEncoder.unitsPerPx(this);
+                    inputForwarder.sendTouchEvent(event, units, units);
+                    return true;
+                }
+                // fall through
             case TABLET:
             case MOUSE:
                 // TABLET rides RFB, whose pointer coordinates are framebuffer px (crosvm's VNC
@@ -617,10 +630,10 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private void applyInputMode() {
         ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (operationLabel != null) operationLabel.setVisibility(GONE);
-        if (inputMode == InputMode.MOUSE || inputMode == InputMode.TABLET) {
-            // Whole-container gesture surface: MOUSE is a borderless touchpad; TABLET pins the
-            // coordinate-carrying gestures to the rendered image inside the translator, so
-            // multi-finger gestures still work from the letterbox.
+        if (inputMode != InputMode.TOUCH) {
+            // Whole-container gesture surface: MOUSE is a borderless touchpad and TRACKPAD the
+            // VM's own; TABLET pins the coordinate-carrying gestures to the rendered image inside
+            // the translator, so multi-finger gestures still work from the letterbox.
             ivDisplay.setClickable(false);
             ivDisplay.setOnTouchListener(null);
             displayContainer.setClickable(true);
@@ -653,9 +666,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         // keyboard behind it -- crosvm drops the RFB pointer and key events rather than injecting
         // them. So RFB is no longer a way around this screen's switch, which it was while those
         // devices belonged to the VM instead of to the binding. MOUSE is: the relative pointer has
-        // no output binding and is not a screen's to switch off. Say why once, here, rather than
-        // leaving the user tapping at nothing.
-        if (!screenInputEnabled && mode != InputMode.MOUSE)
+        // no output binding and is not a screen's to switch off, nor is the trackpad. Say why once,
+        // here, rather than leaving the user tapping at nothing.
+        if (!screenInputEnabled && !mode.isVmPointer())
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
@@ -695,19 +708,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         popup.show();
     }
 
-    // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
+    // Menu header: one row of three icon buttons (touch / tablet / mouse, the last also the
+    // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
-        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
-            getLayoutInflater().inflate(R.layout.view_input_mode_toggle, null);
-        group.check(inputMode == InputMode.MOUSE ? R.id.mode_mouse
-            : inputMode == InputMode.TABLET ? R.id.mode_tablet : R.id.mode_touch);
-        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
-            if (!isChecked) return;
-            setInputMode(checkedId == R.id.mode_mouse ? InputMode.MOUSE
-                : checkedId == R.id.mode_tablet ? InputMode.TABLET : InputMode.TOUCH);
-            popup.dismiss();
-        });
-        return group;
+        return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputMode,
+            popup::dismiss);
     }
 
     // Selecting the system keyboard summons the IME; anything else puts it away, so the mode

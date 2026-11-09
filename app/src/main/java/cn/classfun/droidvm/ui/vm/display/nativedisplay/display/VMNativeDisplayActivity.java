@@ -75,11 +75,13 @@ import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
+import cn.classfun.droidvm.ui.vm.display.base.InputModeToggle;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.HostMotionSensor;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
+import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TrackpadEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.KeyCodeMapper;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.perf.SystemGestureGuard;
@@ -364,7 +366,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // Try a direct unix-socket sink to the daemon (one write per evdev frame, no IPC
         // round-trip); on any failure it falls back to the vm_input JSON-RPC path below.
         directSink = new DirectInputSink(vmId, () -> screenId, service, this::sendInputToDaemon);
-        inputForwarder = new InputForwarder(directSink);
+        inputForwarder = new InputForwarder(directSink, TrackpadEncoder.sideUnits(this));
         if (nativeExtraKeys != null) nativeExtraKeys.setForwarder(inputForwarder);
         // A forwarder is built fresh on every attach and starts in TOUCH, so it has to be told
         // the mode this session is actually in (restored in setupViews, or since changed).
@@ -695,11 +697,13 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     // The whole container is the touch surface. TOUCH goes to the guest's digitizer as raw
-    // multi-touch; MOUSE/TABLET to the gesture translator, which pins gestures that carry guest
-    // coordinates to the rendered surface rect.
+    // multi-touch; TRACKPAD's fingers to the VM's trackpad; MOUSE/TABLET (and a hardware mouse in
+    // TRACKPAD) to the gesture translator, which pins gestures that carry guest coordinates to the
+    // rendered surface rect.
     private boolean onContainerTouch(View v, MotionEvent event) {
         if (EvdevEncoder.penPointer(event) >= 0) return onPenEvent(v, event);
         if (inputMode == InputMode.TOUCH) return onDisplayTouch(event);
+        if (inputMode == InputMode.TRACKPAD && isFingerTouch(event)) return onTrackpadTouch(event);
         if (inputForwarder == null || gestureTranslator == null) return false;
         if (isMouseButtonTouch(event)) return true;
         // TABLET absolute coords go to the normalized-range evdev absolute-mouse device; MOUSE
@@ -736,6 +740,32 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         return handled;
     }
 
+    // TRACKPAD mode: the whole container is the trackpad, its fingers where they are on it in
+    // millimetres (no picture to map to: the guest moves its own pointer). Drives the pointer, as
+    // MOUSE does, for the zoomed view's cursor following.
+    private boolean onTrackpadTouch(@NonNull MotionEvent event) {
+        if (inputForwarder == null) return false;
+        switch (event.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                pointerDriveActive = true;
+                break;
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_CANCEL:
+                pointerDriveActive = false;
+                break;
+            default:
+                break;
+        }
+        float units = TrackpadEncoder.unitsPerPx(this);
+        inputForwarder.sendTouchEvent(event, units, units);
+        return true;
+    }
+
+    // Fingers on the phone's screen, not a hardware mouse driving the touch stream.
+    private static boolean isFingerTouch(@NonNull MotionEvent event) {
+        return (event.getSource() & InputDevice.SOURCE_TOUCHSCREEN) == InputDevice.SOURCE_TOUCHSCREEN;
+    }
+
     /**
      * The guest moved its hardware cursor. Places the overlay and, only while the user is actually
      * driving the pointer with a finger in relative mode, pans a zoomed view to keep it visible.
@@ -759,7 +789,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         lastCursorX = gx;
         lastCursorY = gy;
         positionCursorOverlay();
-        if (pointerDriveActive && inputMode == InputMode.MOUSE && viewport != null) {
+        if (pointerDriveActive && inputMode.isVmPointer() && viewport != null) {
             float[] shown = guestToShown(gx, gy);
             viewport.panToShowContentPoint(shown[0], shown[1], CURSOR_FOLLOW_MARGIN_PX);
         }
@@ -1127,19 +1157,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         popup.show();
     }
 
-    // Menu header: one row of three icon buttons (touch / tablet / mouse), active mode checked.
+    // Menu header: one row of three icon buttons (touch / tablet / mouse, the last also the
+    // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
-        var group = (com.google.android.material.button.MaterialButtonToggleGroup)
-            getLayoutInflater().inflate(R.layout.view_input_mode_toggle, null);
-        group.check(inputMode == InputMode.MOUSE ? R.id.mode_mouse
-            : inputMode == InputMode.TABLET ? R.id.mode_tablet : R.id.mode_touch);
-        group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
-            if (!isChecked) return;
-            setInputModeTo(checkedId == R.id.mode_mouse ? InputMode.MOUSE
-                : checkedId == R.id.mode_tablet ? InputMode.TABLET : InputMode.TOUCH);
-            popup.dismiss();
-        });
-        return group;
+        return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputModeTo,
+            popup::dismiss);
     }
 
     // Selecting the system keyboard summons the IME; anything else puts it away, so the mode
@@ -1170,8 +1192,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         return false;
     }
 
-    // Select TOUCH/MOUSE/TABLET: persist (shared with VNC) and route the InputForwarder + gesture
-    // translator to the matching virtio-input device. The segmented header shows the active mode.
+    // Select TOUCH/MOUSE/TABLET/TRACKPAD: persist (shared with VNC) and route the InputForwarder +
+    // gesture translator to the matching virtio-input device. The segmented header shows the
+    // active mode.
     private void setInputModeTo(@NonNull InputMode mode) {
         if (inputMode == mode) return;
         // Both absolute modes ride this screen's own devices, so with them switched off the mode
@@ -1180,9 +1203,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // started again, not a setting that would take effect if they waited.
         //
         // The switch reaches typing too now, since the keyboard became this screen's rather than
-        // the VM's. The hint names no device, so it stays true of all three; MOUSE is still the
-        // one thing the switch does not touch, the relative pointer being the VM's.
-        if (!screenInputEnabled && mode != InputMode.MOUSE)
+        // the VM's. The hint names no device, so it stays true of all three; MOUSE and TRACKPAD
+        // are still the things the switch does not touch, both pointers being the VM's.
+        if (!screenInputEnabled && !mode.isVmPointer())
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()

@@ -1147,6 +1147,7 @@
     <string name="vnc_menu_input_mode_touch">وضع اللمس</string>
     <string name="vnc_menu_input_mode_mouse">وضع الفأرة</string>
     <string name="vnc_menu_input_mode_tablet">وضع الجهاز اللوحي (Tablet Mode)</string>
+    <string name="vnc_menu_input_mode_trackpad">وضع لوحة اللمس</string>
     <string name="display_input_disabled_hint">أجهزة الإدخال معطلة لهذه الشاشة. فعّلها من إعدادات الرسوميات، ثم أعد تشغيل الجهاز الافتراضي.</string>
     <string name="usb_input_no_device">لم يتم العثور على لوحة مفاتيح أو فأرة USB</string>
     <string name="usb_input_status">إدخال USB: %1$d لوحة مفاتيح، %2$d فأرة</string>
