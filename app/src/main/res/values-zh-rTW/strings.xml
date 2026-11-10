@@ -1582,6 +1582,10 @@
     <string name="edit_vm_gnss_note_location">guest 會收到手機的位置（Wi-Fi、基地台或 GNSS，看手機當時用什麼），搭配一組固定的模擬 GPS 衛星。</string>
     <string name="edit_vm_gnss_note_no_receiver">這支手機沒有 GNSS 接收器：guest 會收到手機的位置，搭配一組固定的模擬 GPS 衛星。</string>
     <string name="edit_vm_gnss_mark_simulated">把定位標成模擬（部分 guest 程式會忽略）</string>
+    <string name="edit_vm_peripheral_type_virtio_vibrator">VirtIO Vibrator</string>
+    <string name="edit_vm_peripheral_vibrator_once">一台 VM 只能有一個 VirtIO Vibrator</string>
+    <string name="edit_vm_vibrator_note">guest 的震動（force feedback）會在手機的震動馬達上播放。需要有輸出的畫面（主控台或 VNC）。</string>
+    <string name="edit_vm_vibrator_note_none">這支手機沒有震動馬達：guest 會有一個不會動的震動裝置。</string>
     <string name="location_permission_title">允許存取位置？</string>
     <string name="location_permission_message">GNSS 周邊會在 VM 執行期間把這支手機的位置提供給 guest。沒有這個權限，它會出現在清單上但永遠沒有定位。</string>
     <string name="location_permission_allow">允許</string>

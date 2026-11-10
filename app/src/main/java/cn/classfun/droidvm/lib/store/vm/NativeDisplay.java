@@ -85,7 +85,13 @@ public final class NativeDisplay {
      * relative mouse is: a trackpad's positions are on its own surface, not on any output.
      */
     public static final int TRACKPAD = 6;
-    public static final int CHANNEL_COUNT = 7;
+    /**
+     * The VM's vibrator (crosvm {@code --input vibrator}): nothing is written to it; what the guest
+     * sends back on it, the rumble it wants, is the daemon's to play on the phone's motor
+     * ({@code HostVibrator}). The VM's, one per VM, bound only when the VM has the device.
+     */
+    public static final int VIBRATOR = 7;
+    public static final int CHANNEL_COUNT = 8;
 
     /**
      * Broadcast the daemon (running as root) sends to hand its INativeDisplayRootService binder to
@@ -105,7 +111,7 @@ public final class NativeDisplay {
     // crosvm device kinds they pair with are "mouse" (relative) and "absolute-mouse". Short
     // because the whole path has to fit sun_path (see the class note); still self-describing,
     // because the next person reading `ls run/` deserves to know which inode is the touchscreen.
-    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen", "pen", "tp"};
+    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen", "pen", "tp", "vib"};
 
     /**
      * Socket filename tag per screen, positionally paired with {@link VMScreenConfig#IDS}. A
@@ -352,6 +358,9 @@ public final class NativeDisplay {
 
     /** The evdev name of the VM's trackpad; one per VM. */
     public static final String TRACKPAD_DEVICE_NAME = "DroidVM Trackpad";
+
+    /** The evdev name of the VM's vibrator; one per VM. */
+    public static final String VIBRATOR_DEVICE_NAME = "DroidVM Vibrator";
 
     /**
      * The trackpad's fingers and units. MUST equal what the daemon passes as {@code contacts=} and

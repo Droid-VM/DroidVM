@@ -39,6 +39,7 @@ import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
 import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
 import cn.classfun.droidvm.daemon.gnss.GnssHub;
 import cn.classfun.droidvm.daemon.gnss.GnssPort;
+import cn.classfun.droidvm.daemon.input.HostVibrator;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
@@ -177,13 +178,18 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             // grab manager: it is what lights the lamp on the physical keyboard and what a
             // console shows. Set before the sockets are bound, because the reader that carries it
             // starts with crosvm's first connection.
-            inputBridge.setStatusListener((screenId, channel, records) ->
-                context.getKeyboard().onGuestStatus(
-                    config.getId().toString(), screenId, records));
+            // The vibrator's say is the rumble it wants, which the phone's motor plays.
+            inputBridge.setStatusListener((screenId, channel, records) -> {
+                if (channel == NativeDisplay.VIBRATOR)
+                    HostVibrator.get().onGuestStatus(config.getId().toString(), records);
+                else
+                    context.getKeyboard().onGuestStatus(
+                        config.getId().toString(), screenId, records);
+            });
             try {
                 if (!inputBridge.startListening(config.getId().toString(),
                     touchscreenScreens(), nativeInputScreens(),
-                    MotionSensors.enabled(config.item))) {
+                    MotionSensors.enabled(config.item), hasVibrator())) {
                     Log.e(TAG, "Display input sockets unavailable; crosvm will likely fail");
                 }
             } catch (IllegalArgumentException e) {
@@ -631,6 +637,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             buildInputDevicesCommand(args);
         }
         buildMotionSensorCommand(args);
+        buildVibratorCommand(args);
         if (isInputBridgeNeeded()) {
             buildPenDevicesCommand(args);
             buildTrackpadCommand(args);
@@ -792,6 +799,31 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * line order, so the screens' devices keep their addresses whether or not this one is there
      * (the network card and the GPU, which crosvm places after every input device, do not).</p>
      */
+    /** Whether the VM carries a VirtIO Vibrator row this backend can serve. */
+    private boolean hasVibrator() {
+        for (var peripheral : VMPeripheralConfig.listOf(config.item))
+            if (peripheral.getType() == PeripheralType.VIRTIO_VIBRATOR) return true;
+        return false;
+    }
+
+    /**
+     * The vibrator: a virtio-input device that only listens, whose socket is the daemon's like the
+     * console's devices, so it rides the same bridge. A VM with no screen exported has no bridge
+     * and so no vibrator; the row is then skipped, and says so.
+     */
+    private void buildVibratorCommand(@NonNull List<String> args) {
+        if (!hasVibrator()) return;
+        if (!isInputBridgeNeeded()) {
+            Log.w(TAG, "peripheral virtio_vibrator skipped: the VM exports no screen, so there is "
+                + "no input bridge for its socket");
+            return;
+        }
+        args.add("--input");
+        args.add(fmt("vibrator[path=%s,name=%s]", NativeDisplay.inputSocketPath(
+            config.getId().toString(), "", NativeDisplay.VIBRATOR),
+            NativeDisplay.VIBRATOR_DEVICE_NAME));
+    }
+
     private void buildMotionSensorCommand(@NonNull List<String> args) {
         if (!MotionSensors.enabled(config.item)) return;
         var spec = new StringBuilder("motion[");
@@ -1656,6 +1688,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case VIRTIO_GNSS:
                     // A serial port: emitted by buildSerialCommand with the others.
                     continue;
+                case VIRTIO_VIBRATOR:
+                    // An input device: emitted by buildVibratorCommand after the motion sensors.
+                    continue;
                 default:
                     Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
                     continue;
@@ -2173,5 +2208,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         }
         inputBridge.release();
         closeSerialPorts();
+        // A VM that stops mid-rumble must not leave the motor running.
+        HostVibrator.get().release(config.getId().toString());
     }
 }

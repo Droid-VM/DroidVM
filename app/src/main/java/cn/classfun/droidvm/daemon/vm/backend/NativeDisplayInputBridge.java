@@ -154,7 +154,8 @@ final class NativeDisplayInputBridge {
     }
 
     boolean startListening(@NonNull String vmId, @NonNull List<String> touchScreens,
-                           @NonNull List<String> nativeScreens, boolean motionSensors) {
+                           @NonNull List<String> nativeScreens, boolean motionSensors,
+                           boolean vibrator) {
         if (!UnixHelper.isLoaded()) {
             Log.w(TAG, "UnixHelper not loaded; cannot pre-bind native-display input sockets");
             return false;
@@ -164,7 +165,8 @@ final class NativeDisplayInputBridge {
         var built = new LinkedHashMap<String, Slot>();
         boolean allListening;
         try {
-            allListening = bindAll(vmId, touchScreens, nativeScreens, motionSensors, built);
+            allListening = bindAll(vmId, touchScreens, nativeScreens, motionSensors, vibrator,
+                built);
         } catch (RuntimeException e) {
             closeSlots(built.values());
             throw e;
@@ -184,10 +186,11 @@ final class NativeDisplayInputBridge {
      */
     private boolean bindAll(@NonNull String vmId, @NonNull List<String> touchScreens,
                             @NonNull List<String> nativeScreens, boolean motionSensors,
-                            @NonNull Map<String, Slot> built) {
+                            boolean vibrator, @NonNull Map<String, Slot> built) {
         boolean allListening = true;
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++) {
-            for (var screenId : screensFor(ch, touchScreens, nativeScreens, motionSensors)) {
+            for (var screenId : screensFor(ch, touchScreens, nativeScreens, motionSensors,
+                vibrator)) {
                 // Before the syscall, not after: a path bind(2) cannot hold is truncated in
                 // silence and every check downstream then passes against the wrong inode.
                 var path = NativeDisplay.requireBindablePath(
@@ -223,7 +226,7 @@ final class NativeDisplayInputBridge {
     @NonNull
     private static List<String> screensFor(int channel, @NonNull List<String> touchScreens,
                                            @NonNull List<String> nativeScreens,
-                                           boolean motionSensors) {
+                                           boolean motionSensors, boolean vibrator) {
         switch (channel) {
             case NativeDisplay.MULTITOUCH:
                 return touchScreens;
@@ -233,6 +236,8 @@ final class NativeDisplayInputBridge {
                 return nativeScreens;
             case NativeDisplay.SENSOR:
                 return motionSensors ? List.of("") : List.of();
+            case NativeDisplay.VIBRATOR:
+                return vibrator ? List.of("") : List.of();
             default:
                 return List.of("");
         }
@@ -278,13 +283,15 @@ final class NativeDisplayInputBridge {
      * Reads what the guest says back on one keyboard connection: 8-byte records, the same shape we
      * write, carrying EV_LED (the caps/num/scroll lamps) and the guest's auto-repeat settings.
      *
-     * <p>Only the keyboard channel has anything to say, and only while somebody is listening, so
-     * no thread is started otherwise. It ends when the connection does -- crosvm restarting
+     * <p>Only the keyboard and the vibrator have anything to say (the vibrator nothing else: the
+     * rumble the guest wants), and only while somebody is listening, so no thread is started
+     * otherwise. It ends when the connection does -- crosvm restarting
      * replaces the peer and the accept loop starts a new reader with it.</p>
      */
     private void startStatusReadThread(@NonNull Slot slot, @NonNull FDSocket peer) {
         var listener = statusListener;
-        if (listener == null || slot.channel != NativeDisplay.KEYBOARD) return;
+        if (listener == null) return;
+        if (slot.channel != NativeDisplay.KEYBOARD && slot.channel != NativeDisplay.VIBRATOR) return;
         var t = new Thread(() -> {
             var buffer = new byte[STATUS_READ_BYTES];
             // A read can split a record; what is left over waits for the rest rather than being
