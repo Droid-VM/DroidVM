@@ -104,7 +104,11 @@ public class StandardCaptureProbe {
    int touchpad=-1;
    for(int id:InputDevice.getDeviceIds()){InputDevice d=InputDevice.getDevice(id);if(d!=null&&d.supportsSource(InputDevice.SOURCE_TOUCHPAD)){touchpad=id;break;}}
    if(touchpad<0)throw new AssertionError("physical touchpad missing");
-   set("natural",false);relative(touchpad,0,0,0,1);
+   relative(touchpad,0,0,0,16);
+   expect("half a touchpad notch stays buffered");
+   relative(touchpad,0,0,0,16);
+   expect("two half touchpad notches accumulate","2:8:1");
+   set("natural",false);relative(touchpad,0,0,0,32);
    expect("relative touchpad direction preference","2:8:-1");
    relative(905,0,0,0,1);expect("mouse wheel unaffected by touchpad preference","2:8:1");
   } finally {capture.close();}

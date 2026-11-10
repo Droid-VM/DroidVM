@@ -20,6 +20,8 @@ import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
 /** Android capture -> per-device translation -> ordered evdev frames -> existing VM sink. */
 public final class StandardPointerCapture implements CapturedPointerLayout.Handler, InputManager.InputDeviceListener {
     private static final String TAG = "StandardPointerCapture";
+    // Calibrate continuous relative touchpad deltas before emitting discrete guest wheel steps.
+    private static final float TOUCHPAD_SCROLL_UNITS_PER_NOTCH = 32f;
     private final CapturedPointerLayout view;
     private final InputManager inputManager;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -223,12 +225,13 @@ public final class StandardPointerCapture implements CapturedPointerLayout.Handl
             // A normal mouse wheel must never inherit the touchpad preference.
             float sign = !touchpad ? 1 : raw ? (natural ? -1 : 1)
                 : natural == systemNatural ? 1 : -1;
+            float scale = touchpad && !raw ? sign / TOUCHPAD_SCROLL_UNITS_PER_NOTCH : sign;
             for (int h = 0; h <= event.getHistorySize(); h++) {
                 boolean current = h == event.getHistorySize();
                 wheelV += (current ? event.getAxisValue(MotionEvent.AXIS_VSCROLL)
-                    : event.getHistoricalAxisValue(MotionEvent.AXIS_VSCROLL, h)) * sign;
+                    : event.getHistoricalAxisValue(MotionEvent.AXIS_VSCROLL, h)) * scale;
                 wheelH += (current ? event.getAxisValue(MotionEvent.AXIS_HSCROLL)
-                    : event.getHistoricalAxisValue(MotionEvent.AXIS_HSCROLL, h)) * sign;
+                    : event.getHistoricalAxisValue(MotionEvent.AXIS_HSCROLL, h)) * scale;
             }
             int v = (int) wheelV, h = (int) wheelH;
             wheelV -= v; wheelH -= h;
