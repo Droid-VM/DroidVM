@@ -75,7 +75,16 @@ public enum PeripheralType implements StringEnum {
      * on a virtio-mmio VM its place among the input devices fixes the guest addresses. Appended
      * last, for the ordinal reason {@link #XHCI_USB} gives.</p>
      */
-    VIRTIO_GYROSCOPE(R.string.edit_vm_peripheral_type_virtio_gyroscope, R.drawable.ic_screen_rotation, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+    VIRTIO_GYROSCOPE(R.string.edit_vm_peripheral_type_virtio_gyroscope, R.drawable.ic_screen_rotation, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    /**
+     * A GNSS receiver: a named virtio-console port streaming NMEA ({@link Gnss}), fed with the
+     * phone's GNSS receiver or its location ({@link GnssSource}). One per VM.
+     *
+     * <p>Typed {@code location}: the phone's location reaches the app's uid only while it holds
+     * location as a foreground capability, which the running VM's foreground service supplies.
+     * Appended last, for the ordinal reason {@link #XHCI_USB} gives.</p>
+     */
+    VIRTIO_GNSS(R.string.edit_vm_peripheral_type_virtio_gnss, R.drawable.ic_location, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;

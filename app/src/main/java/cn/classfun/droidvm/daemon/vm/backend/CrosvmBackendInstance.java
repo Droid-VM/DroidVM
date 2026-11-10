@@ -37,6 +37,8 @@ import cn.classfun.droidvm.daemon.console.FDPipeConsoleStream;
 import cn.classfun.droidvm.daemon.console.InputConsoleStream;
 import cn.classfun.droidvm.daemon.console.SimpleConsoleStream;
 import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
+import cn.classfun.droidvm.daemon.gnss.GnssHub;
+import cn.classfun.droidvm.daemon.gnss.GnssPort;
 import cn.classfun.droidvm.daemon.server.ServerContext;
 import cn.classfun.droidvm.daemon.vm.BootPlan;
 import cn.classfun.droidvm.daemon.vm.SerialPipe;
@@ -52,6 +54,7 @@ import cn.classfun.droidvm.lib.store.disk.DiskBus;
 import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.DisplayTransportCap;
+import cn.classfun.droidvm.lib.store.vm.Gnss;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuMode;
 import cn.classfun.droidvm.lib.store.vm.GuestPoolSizing;
@@ -108,6 +111,11 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     }
 
     private final List<ResolvedSerial> resolvedSerials = new ArrayList<>();
+    /**
+     * The VM's GNSS receiver for this run, or null: one more virtio-console port beside the
+     * configured ones, named so the guest can tell it apart (Gnss). Opened and closed with them.
+     */
+    private GnssPort gnssPort;
     /** Console streams for APP_CONSOLE ports, keyed by stream name; registered once. */
     private final Map<String, FDPipeConsoleStream> serialStreams = new LinkedHashMap<>();
 
@@ -209,9 +217,14 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                     builder.preserveFd(rs.pipe.getInputRemoteFd());
                 }
             }
+            if (gnssPort != null) builder.preserveFd(gnssPort.getReadFd());
             var process = builder.start();
             for (var rs : resolvedSerials)
                 if (rs.pipe != null) rs.pipe.closeRemoteFd();
+            if (gnssPort != null) {
+                gnssPort.closeReadFd();
+                GnssHub.get().register(gnssPort);
+            }
             result.setProcess(process);
             stdoutStream.setInputStream(process.getInputStream());
             stderrStream.setInputStream(process.getErrorStream());
@@ -232,6 +245,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      */
     private void resolveSerialPorts() throws IOException {
         closeSerialPorts();
+        openGnssPort();
         for (var port : VMSerialConfig.listOf(config.item)) {
             var rs = new ResolvedSerial(port);
             var backend = port.getBackend();
@@ -283,6 +297,39 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             if (rs.acmDevPath != null) UsbAcmPool.release(acmOwnerToken(rs.port));
         }
         resolvedSerials.clear();
+        if (gnssPort != null) {
+            GnssHub.get().unregister(gnssPort);
+            gnssPort.close();
+            gnssPort = null;
+        }
+    }
+
+    /**
+     * Opens the GNSS port when the VM has a VirtIO GNSS row. AUTO is resolved here, against this
+     * phone, so a VM moved to a phone without a receiver reports its location instead. A port
+     * that cannot be opened leaves the VM without a receiver rather than failing the start: the
+     * guest sees no port, which is what a VM without the row sees too.
+     */
+    private void openGnssPort() {
+        var row = Gnss.rowOf(config.item);
+        if (row == null || !PeripheralType.VIRTIO_GNSS.isAttachedTo(config.item)) return;
+        var source = row.getGnssSource().resolve(
+            Gnss.hostHasReceiver(DaemonSystemContext.get()));
+        try {
+            gnssPort = new GnssPort(config.getName(), source, row.getGnssMarkSimulated());
+            Log.i(TAG, fmt("GNSS receiver from the phone's %s", source));
+        } catch (IOException e) {
+            Log.w(TAG, "GNSS port could not be opened; the VM starts without it", e);
+        }
+    }
+
+    /** A virtio-console number no configured port uses (crosvm keys serials by type and number). */
+    private int freeVirtioConsoleNum() {
+        int max = 0;
+        for (var rs : resolvedSerials)
+            if (rs.port.getHardware() == SerialHardware.VIRTIO_CONSOLE)
+                max = Math.max(max, rs.port.getNum());
+        return max + 1;
     }
 
     /**
@@ -1605,6 +1652,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case VIRTIO_GYROSCOPE:
                     // Emitted by buildMotionSensorCommand, after the other input devices.
                     continue;
+                case VIRTIO_GNSS:
+                    // A serial port: emitted by buildSerialCommand with the others.
+                    continue;
                 default:
                     Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
                     continue;
@@ -2034,6 +2084,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             }
             args.add("--serial");
             args.add(serial.toString());
+        }
+        if (gnssPort != null) {
+            args.add("--serial");
+            args.add(gnssPort.serialArg(freeVirtioConsoleNum()));
         }
     }
 

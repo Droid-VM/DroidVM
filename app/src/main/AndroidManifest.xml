@@ -28,6 +28,14 @@
          is off. Protection level normal, so there is nothing for the user to grant. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+    <!-- A GNSS peripheral: the phone's location, precise for its GNSS receiver or approximate
+         for its location alone, used only while a VM carrying one runs, through a service
+         typed "location", for the same reason the camera needs its type. While-in-use only:
+         the service is what makes the use while-in-use, so background location is never asked. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
@@ -295,7 +303,7 @@
         <service
             android:name=".lib.peripheral.PeripheralForegroundService"
             android:exported="false"
-            android:foregroundServiceType="camera" />
+            android:foregroundServiceType="camera|location" />
 
     </application>
 </manifest>

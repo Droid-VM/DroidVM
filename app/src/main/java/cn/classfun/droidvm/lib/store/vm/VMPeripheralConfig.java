@@ -89,6 +89,35 @@ public final class VMPeripheralConfig {
         return config;
     }
 
+    /** A VirtIO GNSS row: the receiver when the phone has one, and the fix not marked. */
+    @NonNull
+    public static VMPeripheralConfig createDefaultGnss() {
+        var config = new VMPeripheralConfig(DataItem.newObject());
+        config.setType(PeripheralType.VIRTIO_GNSS);
+        config.setGnssSource(GnssSource.AUTO);
+        config.setGnssMarkSimulated(false);
+        return config;
+    }
+
+    /** A VirtIO GNSS row's source (GnssSource has what each means). */
+    @NonNull
+    public GnssSource getGnssSource() {
+        return Enums.optEnum(item, Gnss.KEY_SOURCE, GnssSource.AUTO);
+    }
+
+    public void setGnssSource(@NonNull GnssSource source) {
+        item.set(Gnss.KEY_SOURCE, source);
+    }
+
+    /** Whether a VirtIO GNSS row marks its fixes simulated. */
+    public boolean getGnssMarkSimulated() {
+        return item.optBoolean(Gnss.KEY_MARK_SIMULATED, false);
+    }
+
+    public void setGnssMarkSimulated(boolean marked) {
+        item.set(Gnss.KEY_MARK_SIMULATED, marked);
+    }
+
     /** A VirtIO GyroScope row's correction switch (MotionSensors has what it does). */
     public boolean getCorrect() {
         return item.optBoolean(MotionSensors.KEY_CORRECT, MotionSensors.DEFAULT_CORRECT);

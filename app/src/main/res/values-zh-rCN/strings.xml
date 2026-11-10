@@ -1570,6 +1570,23 @@
     <string name="edit_vm_peripheral_gyroscope_correct">依画面自动校正（控制台依画面方向换算传感器）</string>
     <string name="edit_vm_peripheral_gyroscope_once">一台虚拟机只能有一个 VirtIO GyroScope</string>
     <string name="edit_vm_peripheral_gyroscope_crosvm_only">VirtIO GyroScope 需要 crosvm 后端</string>
+    <!-- VirtIO GNSS peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_gnss">VirtIO GNSS</string>
+    <string name="edit_vm_peripheral_gnss_once">一台虚拟机只能有一个 VirtIO GNSS 接收器</string>
+    <string name="edit_vm_gnss_source">来源</string>
+    <string name="edit_vm_gnss_source_auto">自动</string>
+    <string name="edit_vm_gnss_source_receiver">手机的 GNSS 接收器</string>
+    <string name="edit_vm_gnss_source_location">仅手机的位置</string>
+    <string name="edit_vm_gnss_note_receiver">客户机会收到手机 GNSS 的定位，以及它跟踪的每一颗卫星（GPS、GLONASS、Galileo、北斗、QZSS，视手机支持而定）。虚拟机运行期间手机的接收器会一直开着。</string>
+    <string name="edit_vm_gnss_note_location">客户机会收到手机的位置（Wi-Fi、基站或 GNSS，看手机当时用什么），搭配一组固定的模拟 GPS 卫星。</string>
+    <string name="edit_vm_gnss_note_no_receiver">这部手机没有 GNSS 接收器：客户机会收到手机的位置，搭配一组固定的模拟 GPS 卫星。</string>
+    <string name="edit_vm_gnss_mark_simulated">把定位标为模拟（部分客户机程序会忽略）</string>
+    <string name="location_permission_title">允许访问位置？</string>
+    <string name="location_permission_message">GNSS 外设会在虚拟机运行期间把这部手机的位置提供给客户机。没有这个权限，它会出现在列表里但永远没有定位。</string>
+    <string name="location_permission_allow">允许</string>
+    <string name="location_permission_cancel">取消</string>
+    <string name="location_permission_declined">未授予位置权限，因此没有添加 GNSS 接收器。</string>
+    <string name="location_permission_approximate">只允许了大致位置：手机的 GNSS 接收器需要精确位置，使用它的接收器会一直没有定位。</string>
     <string name="edit_vm_xhci_rules_note">绑定存放在 app 的「USB直通规则」。</string>
     <string name="edit_vm_xhci_passthrough_off">USB 直通未启用，VM 启动时会忽略 USB 设备，请至「设置 → USB直通规则」启用 USB 直通。</string>
     <string name="edit_vm_xhci_device_add">新增设备</string>

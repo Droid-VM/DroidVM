@@ -249,6 +249,43 @@
 
         </LinearLayout>
 
+        <!-- ===== VirtIO GNSS: where its fixes come from, and whether they say so ===== -->
+        <LinearLayout
+            android:id="@+id/group_virtio_gnss"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="vertical"
+            android:visibility="gone"
+            tools:visibility="visible">
+
+            <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                android:id="@+id/btn_gnss_source"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:title="@string/edit_vm_gnss_source"
+                app:pb_mode="dialog" />
+
+            <!-- What the source comes to on this phone: the sky, or a position with made-up
+                 satellites, and why when AUTO had no receiver to pick. -->
+            <TextView
+                android:id="@+id/tv_gnss_note"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp"
+                tools:text="@string/edit_vm_gnss_note_receiver" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_gnss_simulated"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_vm_gnss_mark_simulated"
+                android:textSize="12sp" />
+
+        </LinearLayout>
+
         <!-- ===== xHCI USB controller: the ports it offers, and what the rules bind to it ===== -->
         <LinearLayout
             android:id="@+id/group_xhci"

@@ -13,6 +13,8 @@ import androidx.annotation.NonNull;
 import cn.classfun.droidvm.daemon.display.DaemonSystemContext;
 import cn.classfun.droidvm.lib.peripheral.PeripheralForegroundService;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.vm.Gnss;
+import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMState;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
@@ -65,7 +67,7 @@ import cn.classfun.droidvm.lib.store.vm.VpuConfig;
  * blocked on the app process would be a VM that does not boot when the app is not installed
  * properly.</p>
  */
-final class PeripheralForegroundControl {
+public final class PeripheralForegroundControl {
     private static final String TAG = "PeripheralFgsControl";
 
     /** Last mask handed to the service, so an unchanged state is not re-applied on every event. */
@@ -73,6 +75,12 @@ final class PeripheralForegroundControl {
 
     /** The same for the display hold, which the service carries beside the mask. */
     private static boolean appliedKeepScreenOn = false;
+
+    /** And for the GNSS sources (Gnss.SOURCE_* bits), likewise carried beside it. */
+    private static int appliedGnssSources = 0;
+
+    /** The store the last refresh walked, for {@link #reraise}. */
+    private static VMInstanceStore lastStore;
 
     private PeripheralForegroundControl() {
     }
@@ -129,42 +137,77 @@ final class PeripheralForegroundControl {
             && VpuConfig.isCameraKeepScreenOn(item);
     }
 
+    /**
+     * The phone sources one VM in {@code state} needs for its GNSS receiver
+     * ({@code Gnss.SOURCE_*}), or 0: the same live-state and attached-row rule as
+     * {@link #typesFor}, with AUTO resolved against this phone the way the backend resolves it.
+     */
+    static int gnssSourcesFor(@NonNull VMState state, @NonNull DataItem item,
+                              boolean hostHasReceiver) {
+        if (state == VMState.STOPPED) return 0;
+        if (!PeripheralType.VIRTIO_GNSS.isAttachedTo(item)) return 0;
+        return Gnss.sourceBitsOf(item, hostHasReceiver);
+    }
+
     /** Recomputes from every instance in {@code store} and starts, re-types or stops the service. */
     static synchronized void refresh(@NonNull VMInstanceStore store) {
+        lastStore = store;
         int wanted = 0;
         boolean wantedKeepScreenOn = false;
+        int wantedGnss = 0;
+        var context = DaemonSystemContext.get();
+        boolean hostHasReceiver = Gnss.hostHasReceiver(context);
         try {
             var mask = new int[1];
             var keep = new boolean[1];
+            var gnss = new int[1];
             store.forEach((id, instance) -> {
                 mask[0] |= typesFor(instance.getState(), instance.item);
                 // A union like the mask, and for the same reason: one VM that asked for the
                 // display is enough, and the hold drops only when the last of them has stopped.
                 keep[0] |= keepsScreenOn(instance.getState(), instance.item);
+                gnss[0] |= gnssSourcesFor(instance.getState(), instance.item, hostHasReceiver);
             });
             wanted = mask[0];
             wantedKeepScreenOn = keep[0];
+            wantedGnss = gnss[0];
         } catch (Exception e) {
             Log.w(TAG, "could not work out which peripherals are running", e);
             return;
         }
-        if (wanted == applied && wantedKeepScreenOn == appliedKeepScreenOn) return;
-        var context = DaemonSystemContext.get();
+        if (wanted == applied && wantedKeepScreenOn == appliedKeepScreenOn
+            && wantedGnss == appliedGnssSources) return;
         if (context == null) {
             // Without a Context there is no way to reach the service. Leave `applied` alone so a
             // later call retries rather than believing it has already done this.
             Log.w(TAG, "no system context; peripheral foreground service not updated");
             return;
         }
-        Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s, screen held %s -> %s",
+        Log.i(TAG, fmt("peripheral foreground service types 0x%s -> 0x%s, screen held %s -> %s, "
+                + "GNSS sources %d -> %d",
             Integer.toHexString(applied), Integer.toHexString(wanted),
-            appliedKeepScreenOn, wantedKeepScreenOn));
-        boolean ok = PeripheralForegroundService.apply(context, wanted, wantedKeepScreenOn);
+            appliedKeepScreenOn, wantedKeepScreenOn, appliedGnssSources, wantedGnss));
+        boolean ok = PeripheralForegroundService.apply(context, wanted, wantedKeepScreenOn,
+            wantedGnss);
         if (!ok)
             Log.w(TAG, fmt("peripheral foreground service types 0x%s refused; will retry on the "
                 + "next change", Integer.toHexString(wanted)));
         applied = appliedAfter(wanted, ok);
         appliedKeepScreenOn = keepScreenOnAfter(wantedKeepScreenOn, ok);
+        appliedGnssSources = appliedAfter(wantedGnss, ok);
+    }
+
+    /**
+     * Raises the service again although nothing about the VMs changed: what it ran is known to
+     * be gone (the GNSS feeder went silent -- its process was killed or the app was updated).
+     * The applied state is forgotten, so the refresh hands the whole of it to a new service.
+     */
+    public static synchronized void reraise() {
+        if (lastStore == null) return;
+        applied = 0;
+        appliedKeepScreenOn = false;
+        appliedGnssSources = 0;
+        refresh(lastStore);
     }
 
     /**

@@ -1570,6 +1570,23 @@
     <string name="edit_vm_peripheral_gyroscope_correct">依畫面自動矯正（主控台依畫面方向換算感測器）</string>
     <string name="edit_vm_peripheral_gyroscope_once">一台 VM 只能有一個 VirtIO GyroScope</string>
     <string name="edit_vm_peripheral_gyroscope_crosvm_only">VirtIO GyroScope 需要 crosvm 後端</string>
+    <!-- VirtIO GNSS peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_gnss">VirtIO GNSS</string>
+    <string name="edit_vm_peripheral_gnss_once">一台 VM 只能有一個 VirtIO GNSS 接收器</string>
+    <string name="edit_vm_gnss_source">來源</string>
+    <string name="edit_vm_gnss_source_auto">自動</string>
+    <string name="edit_vm_gnss_source_receiver">手機的 GNSS 接收器</string>
+    <string name="edit_vm_gnss_source_location">僅手機的位置</string>
+    <string name="edit_vm_gnss_note_receiver">guest 會收到手機 GNSS 的定位，以及它追蹤的每一顆衛星（GPS、GLONASS、Galileo、北斗、QZSS，依手機支援而定）。VM 執行期間手機的接收器會一直開著。</string>
+    <string name="edit_vm_gnss_note_location">guest 會收到手機的位置（Wi-Fi、基地台或 GNSS，看手機當時用什麼），搭配一組固定的模擬 GPS 衛星。</string>
+    <string name="edit_vm_gnss_note_no_receiver">這支手機沒有 GNSS 接收器：guest 會收到手機的位置，搭配一組固定的模擬 GPS 衛星。</string>
+    <string name="edit_vm_gnss_mark_simulated">把定位標成模擬（部分 guest 程式會忽略）</string>
+    <string name="location_permission_title">允許存取位置？</string>
+    <string name="location_permission_message">GNSS 周邊會在 VM 執行期間把這支手機的位置提供給 guest。沒有這個權限，它會出現在清單上但永遠沒有定位。</string>
+    <string name="location_permission_allow">允許</string>
+    <string name="location_permission_cancel">取消</string>
+    <string name="location_permission_declined">未授予位置權限，因此沒有新增 GNSS 接收器。</string>
+    <string name="location_permission_approximate">只允許了大概位置：手機的 GNSS 接收器需要精確位置，使用它的接收器會一直沒有定位。</string>
     <string name="edit_vm_xhci_rules_note">綁定存放在 app 的「USB直通規則」。</string>
     <string name="edit_vm_xhci_passthrough_off">USB 直通未啟用，VM 啟動時會忽略 USB 裝置，請至「設定 → USB直通規則」啟用 USB 直通。</string>
     <string name="edit_vm_xhci_device_add">新增設備</string>

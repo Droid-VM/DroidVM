@@ -101,6 +101,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
+        adapter.setLocationPermissionGate(parent.getLocationPermission()::requireThen);
         adapter.setXhciHost(this);
         adapter.setOnVpuPeripheralAdded(this::enableVpuForNewPeripheral);
         listSerialPorts.setAdapter(VMSerialEditAdapter.class);

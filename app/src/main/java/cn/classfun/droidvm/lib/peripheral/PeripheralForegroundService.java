@@ -12,6 +12,7 @@ import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -21,6 +22,7 @@ import androidx.core.app.NotificationCompat;
 
 import cn.classfun.droidvm.BuildConfig;
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.ui.LocationPermission;
 import cn.classfun.droidvm.ui.main.MainActivity;
 
 /**
@@ -64,6 +66,13 @@ public final class PeripheralForegroundService extends Service {
      * and stopped by that mask.
      */
     private static final String EXTRA_KEEP_SCREEN_ON = "keep_screen_on";
+
+    /**
+     * Which of the phone's location sources the running VMs' GNSS receivers want
+     * ({@code Gnss.SOURCE_*} bits), for the {@link GnssFeeder} this service runs while it carries
+     * the location type. Beside the mask for the same reason as the display hold.
+     */
+    private static final String EXTRA_GNSS_SOURCES = "gnss_sources";
 
     /** {@code UserHandle.PER_USER_RANGE}, to get a user id out of a uid without a hidden API. */
     private static final int PER_USER_RANGE = 100_000;
@@ -138,11 +147,13 @@ public final class PeripheralForegroundService extends Service {
      * {@link #onStartCommand} stopping itself, which the caller finds out about the next time it
      * asks for a different mask.</p>
      */
-    public static boolean apply(@NonNull Context context, int typeMask, boolean keepScreenOn) {
+    public static boolean apply(@NonNull Context context, int typeMask, boolean keepScreenOn,
+                                int gnssSources) {
         var intent = new Intent().setComponent(componentIn(SERVICE_PACKAGE));
         if (typeMask != 0) {
             intent.putExtra(EXTRA_TYPES, typeMask);
             intent.putExtra(EXTRA_KEEP_SCREEN_ON, keepScreenOn);
+            intent.putExtra(EXTRA_GNSS_SOURCES, gnssSources);
         }
         int userId = userIdOf(context);
         var direct = applyThroughActivityManager(intent, typeMask, userId);
@@ -247,6 +258,10 @@ public final class PeripheralForegroundService extends Service {
     @Nullable
     private ScreenWakeLock screenLock;
 
+    /** The phone's receiver and location for the VMs' GNSS ports, while the type is carried. */
+    @Nullable
+    private GnssFeeder gnssFeeder;
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
@@ -268,13 +283,24 @@ public final class PeripheralForegroundService extends Service {
     @Override
     public void onDestroy() {
         if (screenLock != null) screenLock.set(false);
+        setGnssSources(0);
         super.onDestroy();
     }
 
     @Override
     public int onStartCommand(@Nullable Intent intent, int flags, int startId) {
         int typeMask = intent == null ? 0 : intent.getIntExtra(EXTRA_TYPES, 0);
+        // Location is the one type a user can have refused while the VM still runs fine without
+        // it -- its receiver just never gets a fix. Asking for it anyway would make
+        // startForeground throw and take the camera's capability down with it, so it is dropped
+        // here and the rest is raised.
+        if ((typeMask & ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) != 0
+            && !LocationPermission.isGranted(this)) {
+            Log.w(TAG, "location permission not granted: VM GNSS receivers stay without a fix");
+            typeMask &= ~ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        }
         if (typeMask == 0) {
+            setGnssSources(0);
             if (screenLock != null) screenLock.set(false);
             stopSelf();
             return START_NOT_STICKY;
@@ -289,9 +315,14 @@ public final class PeripheralForegroundService extends Service {
             // no capability, and leaving it up would show a notification that promises otherwise.
             Log.w(TAG, fmt("startForeground rejected for types 0x%s",
                 Integer.toHexString(typeMask)), e);
+            setGnssSources(0);
             stopSelf();
             return START_NOT_STICKY;
         }
+        // The feeder only once the service carries the location type: before that the app's uid
+        // is not let near the phone's location.
+        setGnssSources((typeMask & ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) != 0
+            && intent != null ? intent.getIntExtra(EXTRA_GNSS_SOURCES, 0) : 0);
         // Only after the service is really foreground. A wake lock taken by a service that then
         // failed to carry its type would hold the display on for a camera the guest will never
         // get -- and the stopSelf above already routes that case through onDestroy.
@@ -300,6 +331,17 @@ public final class PeripheralForegroundService extends Service {
         // Not sticky: the policy re-applies from the live VM states, so a restart by the system
         // with no VM running would raise a service nothing asked for.
         return START_NOT_STICKY;
+    }
+
+    /** Starts, re-points or stops the GNSS feeder; 0 stops it. */
+    private void setGnssSources(int sources) {
+        if (sources == 0) {
+            if (gnssFeeder != null) gnssFeeder.close();
+            gnssFeeder = null;
+            return;
+        }
+        if (gnssFeeder == null) gnssFeeder = new GnssFeeder(this);
+        gnssFeeder.apply(sources);
     }
 
     @NonNull

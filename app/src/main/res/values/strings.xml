@@ -1611,6 +1611,23 @@
     <string name="edit_vm_peripheral_gyroscope_correct">Correct for the display (the console turns the sensors with the picture)</string>
     <string name="edit_vm_peripheral_gyroscope_once">A VM has one VirtIO GyroScope</string>
     <string name="edit_vm_peripheral_gyroscope_crosvm_only">VirtIO GyroScope needs the crosvm backend</string>
+    <!-- VirtIO GNSS peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_gnss">VirtIO GNSS</string>
+    <string name="edit_vm_peripheral_gnss_once">A VM has one VirtIO GNSS receiver</string>
+    <string name="edit_vm_gnss_source">Source</string>
+    <string name="edit_vm_gnss_source_auto">Automatic</string>
+    <string name="edit_vm_gnss_source_receiver">Phone\'s GNSS receiver</string>
+    <string name="edit_vm_gnss_source_location">Phone\'s location only</string>
+    <string name="edit_vm_gnss_note_receiver">The guest gets the phone\'s GNSS fixes and every satellite it tracks (GPS, GLONASS, Galileo, BeiDou, QZSS, as the phone has them). The phone\'s receiver stays on while the VM runs.</string>
+    <string name="edit_vm_gnss_note_location">The guest gets the phone\'s location (Wi-Fi, cells or GNSS, whatever the phone used) with a fixed set of made-up GPS satellites.</string>
+    <string name="edit_vm_gnss_note_no_receiver">This phone has no GNSS receiver: the guest gets the phone\'s location with a fixed set of made-up GPS satellites.</string>
+    <string name="edit_vm_gnss_mark_simulated">Mark fixes as simulated (some guest programs ignore them)</string>
+    <string name="location_permission_title">Allow location access?</string>
+    <string name="location_permission_message">A GNSS peripheral reports this phone\'s location to the guest, only while the VM runs. Without the permission it would be listed but never have a fix.</string>
+    <string name="location_permission_allow">Allow</string>
+    <string name="location_permission_cancel">Cancel</string>
+    <string name="location_permission_declined">Location not allowed, so no GNSS receiver was added.</string>
+    <string name="location_permission_approximate">Only approximate location is allowed: the phone\'s GNSS receiver needs precise location, so a receiver using it stays without a fix.</string>
     <string name="edit_vm_xhci_rules_note">Bindings live in the app-wide USB passthrough rules.</string>
     <string name="edit_vm_xhci_passthrough_off">USB passthrough is off: the VM ignores USB devices when it starts. Turn it on under Settings -&gt; USB passthrough rules.</string>
     <string name="edit_vm_xhci_device_add">Add device</string>
