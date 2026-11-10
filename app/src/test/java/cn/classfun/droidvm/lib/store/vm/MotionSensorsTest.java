@@ -87,4 +87,17 @@ public class MotionSensorsTest {
         assertEquals(1, rows(both));
         assertTrue(MotionSensors.corrected(both));
     }
+
+    @Test
+    public void aNewRowCarriesTheMagnetometer() {
+        assertTrue(VMPeripheralConfig.createDefaultGyroscope().getMagnetometer());
+        assertTrue(MotionSensors.magnetometer(withRow(true)));
+        var item = withRow(true);
+        MotionSensors.rowOf(item).setMagnetometer(false);
+        assertFalse(MotionSensors.magnetometer(item));
+        // Only a row can carry it: the VM-level switch from before the peripheral never did.
+        var legacy = DataItem.newObject();
+        legacy.set(MotionSensors.LEGACY_KEY, true);
+        assertFalse(MotionSensors.magnetometer(legacy));
+    }
 }

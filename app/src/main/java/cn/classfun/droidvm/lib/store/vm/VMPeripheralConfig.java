@@ -86,7 +86,17 @@ public final class VMPeripheralConfig {
         var config = new VMPeripheralConfig(DataItem.newObject());
         config.setType(PeripheralType.VIRTIO_GYROSCOPE);
         config.setCorrect(MotionSensors.DEFAULT_CORRECT);
+        config.setMagnetometer(MotionSensors.DEFAULT_MAGNETOMETER);
         return config;
+    }
+
+    /** A VirtIO GyroScope row's magnetometer switch (MotionSensors has what it does). */
+    public boolean getMagnetometer() {
+        return item.optBoolean(MotionSensors.KEY_MAGNETOMETER, MotionSensors.DEFAULT_MAGNETOMETER);
+    }
+
+    public void setMagnetometer(boolean magnetometer) {
+        item.set(MotionSensors.KEY_MAGNETOMETER, magnetometer);
     }
 
     /** A VirtIO GNSS row: the receiver when the phone has one, and the fix not marked. */

@@ -32,6 +32,13 @@ public final class MotionSensors {
     /** The row's correction switch. */
     public static final String KEY_CORRECT = "correct";
     public static final boolean DEFAULT_CORRECT = true;
+    /**
+     * The row's magnetometer switch: the device also carries the phone's magnetic field and the
+     * heading it gives (crosvm {@code motion[magnetometer=true]}), turned with the rest when the
+     * console corrects. On for a new row; a row from before the switch reads as on too.
+     */
+    public static final String KEY_MAGNETOMETER = "magnetometer";
+    public static final boolean DEFAULT_MAGNETOMETER = true;
 
     private MotionSensors() {
     }
@@ -46,6 +53,12 @@ public final class MotionSensors {
 
     public static boolean enabled(@NonNull DataItem item) {
         return rowOf(item) != null || item.optBoolean(LEGACY_KEY, false);
+    }
+
+    /** Whether the motion sensors carry the magnetometer (only a row can say so). */
+    public static boolean magnetometer(@NonNull DataItem item) {
+        var row = rowOf(item);
+        return row != null && row.getMagnetometer();
     }
 
     /** Whether a console showing the guest corrects its motion sensors (they on, and correction on). */

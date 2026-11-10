@@ -493,6 +493,13 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             if (pos == RecyclerView.NO_POSITION) return;
             new VMPeripheralConfig(items.get(pos)).setCorrect(checked);
         });
+        holder.swGyroscopeMagnetometer.setOnCheckedChangeListener(null);
+        holder.swGyroscopeMagnetometer.setChecked(peripheral.getMagnetometer());
+        holder.swGyroscopeMagnetometer.setOnCheckedChangeListener((button, checked) -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            new VMPeripheralConfig(items.get(pos)).setMagnetometer(checked);
+        });
     }
 
     private boolean hasGyroscope() {

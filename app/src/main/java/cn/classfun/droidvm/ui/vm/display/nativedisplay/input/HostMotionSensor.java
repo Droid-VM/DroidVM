@@ -29,22 +29,32 @@ import java.util.function.IntSupplier;
  * <p>The values follow crosvm's device: acceleration as the gravity vector (upright, Y is -1 g;
  * Android reports the reaction, +9.81, so it is negated), angular velocity counter-clockwise
  * positive, both in EvdevEncoder's units. Main thread.</p>
+ *
+ * <p>With the magnetometer on (MotionSensors.magnetometer), the magnetic field goes through the same
+ * turns, and its heading is worked out again from the turned field and acceleration: an override
+ * holds back all of crosvm's own frames, so a field left to crosvm would freeze, and the heading of
+ * the guest's panel is not the phone's once the picture is turned.</p>
  */
 public final class HostMotionSensor implements SensorEventListener {
     private final SensorManager sensors;
     private final InputForwarder forwarder;
     private final IntSupplier displayRotation;
+    private final boolean magnetometer;
     private boolean listening = false;
     private int pictureQuarterTurns = 0;
+    // The latest acceleration as measured (the reaction), turned, for the heading; null until one.
+    private float[] reaction;
 
     /**
      * @param displayRotation this console's display rotation in quarter turns (Display.getRotation)
+     * @param magnetometer     whether the VM's motion device carries the magnetometer
      */
     public HostMotionSensor(@NonNull SensorManager sensors, @NonNull InputForwarder forwarder,
-                            @NonNull IntSupplier displayRotation) {
+                            @NonNull IntSupplier displayRotation, boolean magnetometer) {
         this.sensors = sensors;
         this.forwarder = forwarder;
         this.displayRotation = displayRotation;
+        this.magnetometer = magnetometer;
     }
 
     /** The Display orientation. */
@@ -54,7 +64,10 @@ public final class HostMotionSensor implements SensorEventListener {
 
     public void start() {
         if (listening) return;
-        for (int type : new int[]{Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_GYROSCOPE}) {
+        var types = magnetometer
+            ? new int[]{Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_GYROSCOPE, Sensor.TYPE_MAGNETIC_FIELD}
+            : new int[]{Sensor.TYPE_ACCELEROMETER, Sensor.TYPE_GYROSCOPE};
+        for (int type : types) {
             var sensor = sensors.getDefaultSensor(type);
             if (sensor != null)
                 sensors.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME);
@@ -72,11 +85,23 @@ public final class HostMotionSensor implements SensorEventListener {
     @Override
     public void onSensorChanged(@NonNull SensorEvent event) {
         int type = event.sensor.getType();
+        int turns = displayRotation.getAsInt();
+        if (type == Sensor.TYPE_MAGNETIC_FIELD) {
+            var field = turn(turn(new float[]{event.values[0], event.values[1], event.values[2]},
+                turns), pictureQuarterTurns);
+            forwarder.sendMotion(EvdevEncoder.encodeMagnetic(magnUnits(field[0]),
+                magnUnits(field[1]), magnUnits(field[2]), headingUnits(reaction, field),
+                event.timestamp));
+            return;
+        }
+        if (type == Sensor.TYPE_ACCELEROMETER)
+            reaction = turn(turn(new float[]{event.values[0], event.values[1], event.values[2]},
+                turns), pictureQuarterTurns);
         boolean angular = type == Sensor.TYPE_GYROSCOPE;
         if (!angular && type != Sensor.TYPE_ACCELEROMETER) return;
         float sign = angular ? 1 : -1;
         float[] v = {sign * event.values[0], sign * event.values[1], sign * event.values[2]};
-        v = turn(turn(v, displayRotation.getAsInt()), pictureQuarterTurns);
+        v = turn(turn(v, turns), pictureQuarterTurns);
         forwarder.sendMotion(angular
             ? EvdevEncoder.encodeMotion(true, gyroUnits(v[0]), gyroUnits(v[1]), gyroUnits(v[2]),
             event.timestamp)
@@ -109,6 +134,28 @@ public final class HostMotionSensor implements SensorEventListener {
             * EvdevEncoder.MOTION_ACCEL_PER_G);
         return (int) Math.max(-EvdevEncoder.MOTION_ACCEL_MAX,
             Math.min(EvdevEncoder.MOTION_ACCEL_MAX, units));
+    }
+
+    static int magnUnits(float microtesla) {
+        long units = Math.round(microtesla * EvdevEncoder.MOTION_MAGN_PER_UT);
+        return (int) Math.max(-EvdevEncoder.MOTION_MAGN_MAX - 1,
+            Math.min(EvdevEncoder.MOTION_MAGN_MAX, units));
+    }
+
+    /**
+     * The heading of the frame's Y axis from magnetic north, clockwise, in the device's units, or -1
+     * when there is none: Android's own getRotationMatrix and getOrientation on the turned vectors,
+     * the computation crosvm does for its frames.
+     */
+    static int headingUnits(float[] reaction, @NonNull float[] field) {
+        if (reaction == null) return -1;
+        var rotation = new float[9];
+        if (!SensorManager.getRotationMatrix(rotation, null, reaction, field)) return -1;
+        var orientation = SensorManager.getOrientation(rotation, new float[3]);
+        double degrees = Math.toDegrees(orientation[0]);
+        if (degrees < 0) degrees += 360;
+        long units = Math.round(degrees * EvdevEncoder.MOTION_HEADING_PER_DEG);
+        return units >= 360L * EvdevEncoder.MOTION_HEADING_PER_DEG ? 0 : (int) units;
     }
 
     static int gyroUnits(float radiansPerS) {

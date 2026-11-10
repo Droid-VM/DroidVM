@@ -247,6 +247,13 @@
                 android:text="@string/edit_vm_peripheral_gyroscope_correct"
                 android:textSize="12sp" />
 
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_gyroscope_magnetometer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/edit_vm_peripheral_gyroscope_magnetometer"
+                android:textSize="12sp" />
+
         </LinearLayout>
 
         <!-- ===== VirtIO GNSS: where its fixes come from, and whether they say so ===== -->

@@ -109,6 +109,8 @@ public final class VMConsoleRouter {
         intent.putExtra(VMNativeDisplayActivity.EXTRA_SCREEN, screenId);
         intent.putExtra(VMNativeDisplayActivity.EXTRA_INPUT_ENABLED, inputEnabled(item, screenId));
         intent.putExtra(VMNativeDisplayActivity.EXTRA_MOTION_CORRECT, MotionSensors.corrected(item));
+        intent.putExtra(VMNativeDisplayActivity.EXTRA_MOTION_MAGNETOMETER,
+            MotionSensors.magnetometer(item));
         // The screen's own size, not the VM's: the two screens have different geometry now, and
         // the console is showing exactly one of them.
         var screen = VMScreenConfig.find(item, screenId);

@@ -800,6 +800,7 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 config.getId().toString(), "", NativeDisplay.SENSOR)).append(',');
         }
         spec.append("host-sensors=true");
+        if (MotionSensors.magnetometer(config.item)) spec.append(",magnetometer=true");
         spec.append(",name=").append(NativeDisplay.MOTION_DEVICE_NAME).append(']');
         args.add("--input");
         args.add(spec.toString());

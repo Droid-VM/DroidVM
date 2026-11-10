@@ -124,6 +124,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
      * the console reads the VM store.
      */
     public static final String EXTRA_MOTION_CORRECT = "motion_correct";
+    /** Whether the VM's motion sensors carry the magnetometer (MotionSensors.magnetometer). */
+    public static final String EXTRA_MOTION_MAGNETOMETER = "motion_magnetometer";
     public static final String EXTRA_WIDTH = "display_width";
     public static final String EXTRA_HEIGHT = "display_height";
 
@@ -156,6 +158,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // Whether the VM's motion sensors are corrected here, and what corrects them while this console
     // is in front (null until the root service is attached, and without correction).
     private boolean motionCorrect = false;
+    private boolean motionMagnetometer = false;
     private HostMotionSensor motionSensor;
     private boolean resumed = false;
 
@@ -1333,6 +1336,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private void resolveMotionCorrect(@NonNull Intent intent) {
         if (intent.hasExtra(EXTRA_MOTION_CORRECT)) {
             motionCorrect = intent.getBooleanExtra(EXTRA_MOTION_CORRECT, false);
+            motionMagnetometer = intent.getBooleanExtra(EXTRA_MOTION_MAGNETOMETER, false);
             return;
         }
         var id = vmId;
@@ -1346,8 +1350,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                 config = null;
             }
             boolean correct = config != null && MotionSensors.corrected(config.item);
+            boolean magnetometer = config != null && MotionSensors.magnetometer(config.item);
             mainHandler.post(() -> {
                 motionCorrect = correct;
+                motionMagnetometer = magnetometer;
                 setupMotionSensor();
             });
         }, "MotionSensors").start();
@@ -1366,7 +1372,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         motionSensor = new HostMotionSensor(sensors, inputForwarder, () -> {
             var display = getDisplay();
             return display == null ? 0 : display.getRotation();
-        });
+        }, motionMagnetometer);
         updateMotionPicture();
         if (resumed) motionSensor.start();
     }

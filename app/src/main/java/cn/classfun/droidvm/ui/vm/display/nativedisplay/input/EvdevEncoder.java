@@ -73,6 +73,17 @@ public final class EvdevEncoder {
     public static final int MOTION_ACCEL_MAX = 16 * MOTION_ACCEL_PER_G;
     public static final int MOTION_GYRO_PER_DEG_S = 16;
     public static final int MOTION_GYRO_MAX = 32767;
+    /**
+     * The magnetometer's axes and units on a motion device that has one: the field on the first
+     * three hat axes per microtesla, the heading on the fourth in hundredths of a degree. MUST equal
+     * crosvm's MOTION_MAGN_FIRST_AXIS, MOTION_HEADING_AXIS, MOTION_MAGN_PER_UT, MOTION_MAGN_MAX and
+     * MOTION_HEADING_PER_DEG (devices/src/virtio/input/defaults.rs).
+     */
+    private static final short ABS_HAT0X = 0x10;
+    private static final short ABS_HAT1Y = 0x13;
+    public static final int MOTION_MAGN_PER_UT = 16;
+    public static final int MOTION_MAGN_MAX = 32767;
+    public static final int MOTION_HEADING_PER_DEG = 100;
     public static final short BTN_LEFT = 0x110;
     public static final short BTN_RIGHT = 0x111;
     public static final short BTN_MIDDLE = 0x112;
@@ -136,6 +147,22 @@ public final class EvdevEncoder {
             buf.putInt(e.value);
         }
         return buf.array();
+    }
+
+    /**
+     * One magnetometer frame for the motion device: the field (device units) and the heading, or
+     * a negative heading when there is none to give (free fall, a field along gravity).
+     */
+    @NonNull
+    public static byte[] encodeMagnetic(int x, int y, int z, int heading, long timestampNs) {
+        var events = new ArrayList<Event>(List.of(
+            new Event(EV_ABS, ABS_HAT0X, x),
+            new Event(EV_ABS, (short) (ABS_HAT0X + 1), y),
+            new Event(EV_ABS, (short) (ABS_HAT0X + 2), z)));
+        if (heading >= 0) events.add(new Event(EV_ABS, ABS_HAT1Y, heading));
+        events.add(new Event(EV_MSC, MSC_TIMESTAMP, (int) (timestampNs / 1000)));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
     }
 
     /**
