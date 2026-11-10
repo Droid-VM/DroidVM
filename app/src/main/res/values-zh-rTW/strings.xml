@@ -1671,4 +1671,6 @@
     <string name="usb_devices_action_failed_title">裝置沒有移動</string>
     <string name="usb_devices_target_claimed">被其他程式占用</string>
     <string name="usb_devices_idle_kept">%1$s 留在主機：有驅動不肯卸載，要拔掉重插才會回到 Idle</string>
+    <string name="native_pointer_grab">擷取滑鼠 / 觸控板</string>
+    <string name="native_pointer_natural_scroll">觸控板自然捲動</string>
 </resources>

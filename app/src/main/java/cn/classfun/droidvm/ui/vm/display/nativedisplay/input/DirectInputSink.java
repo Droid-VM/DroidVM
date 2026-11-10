@@ -83,7 +83,7 @@ public final class DirectInputSink implements InputForwarder.InputSink {
         return lastWriteDirect;
     }
 
-    /** Stops using the direct path; subsequent writes go through the fallback. */
+    /** Rejects further writes. Owners must drain pending input before calling this. */
     public void close() {
         closed = true;
     }
