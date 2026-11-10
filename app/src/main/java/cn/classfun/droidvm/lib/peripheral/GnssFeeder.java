@@ -49,6 +49,8 @@ import cn.classfun.droidvm.lib.store.vm.Gnss;
 final class GnssFeeder {
     private static final String TAG = "GnssFeeder";
     private static final long INTERVAL_MS = 1000;
+    /** How long the one-off current fix asked for at the start may take. */
+    private static final long CURRENT_TIMEOUT_MS = 30_000;
     /**
      * How often the daemon hears from this when nothing else is said: a receiver indoors or a
      * position that is not moving can go quiet, and the daemon takes a quiet feeder for a dead
@@ -164,9 +166,19 @@ final class GnssFeeder {
             ? LocationManager.FUSED_PROVIDER : LocationManager.NETWORK_PROVIDER;
         locationListener = this::onLocation;
         try {
-            // What the phone already knows, so a guest has a position before the first update.
-            var last = locations.getLastKnownLocation(provider);
+            // What the phone already knows, so a guest has a position before the first update,
+            // and a fresh one asked for now: with approximate location only, Android stretches
+            // the updates requested below to one every 10 minutes, which would otherwise be the
+            // guest's wait for its first fix.
+            var last = newestLastKnown(provider);
             if (last != null) onLocation(last);
+            locations.getCurrentLocation(provider,
+                new LocationRequest.Builder(0)
+                    .setQuality(LocationRequest.QUALITY_BALANCED_POWER_ACCURACY)
+                    .setDurationMillis(CURRENT_TIMEOUT_MS).build(),
+                null, executor, location -> {
+                    if (location != null) onLocation(location);
+                });
             locations.requestLocationUpdates(provider,
                 new LocationRequest.Builder(INTERVAL_MS)
                     .setQuality(LocationRequest.QUALITY_BALANCED_POWER_ACCURACY).build(),
@@ -176,6 +188,26 @@ final class GnssFeeder {
             Log.w(TAG, fmt("location from the %s provider unavailable", provider), e);
             stopLocation();
         }
+    }
+
+    /** The newest position any provider remembers, [provider]'s own first among equals. */
+    @Nullable
+    private Location newestLastKnown(@NonNull String provider) {
+        Location newest = null;
+        for (var name : new String[]{provider, LocationManager.NETWORK_PROVIDER,
+            LocationManager.PASSIVE_PROVIDER}) {
+            if (!locations.hasProvider(name)) continue;
+            Location last;
+            try {
+                last = locations.getLastKnownLocation(name);
+            } catch (SecurityException | IllegalArgumentException e) {
+                continue;
+            }
+            if (last != null && (newest == null
+                || last.getElapsedRealtimeNanos() > newest.getElapsedRealtimeNanos()))
+                newest = last;
+        }
+        return newest;
     }
 
     private void stopLocation() {

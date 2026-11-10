@@ -30,8 +30,8 @@ import cn.classfun.droidvm.lib.store.vm.GnssSource;
  * running) is filled with a no-fix epoch carrying whatever satellites are in view. The location
  * stream is reported every second as of now, from the newest location for as long as it is
  * {@link #LOCATION_HOLD_MS} old: a fused provider updates when it has something new, not on a
- * clock, and a receiver that blinked out between updates would be a worse lie than a position
- * held a few seconds.</p>
+ * clock (and to an app allowed only approximate location, every 10 minutes at most), and a
+ * receiver that blinked out between updates would be a worse lie than a position held a while.</p>
  *
  * <p>One thread for every port, created with the first and stopped with the last.</p>
  */
@@ -44,8 +44,12 @@ public final class GnssHub {
     private static final long GAP_MS = 1500;
     /** Satellites older than this are not reported: the receiver has stopped telling us. */
     private static final long SKY_STALE_MS = 3000;
-    /** The longest a location-only receiver keeps reporting the last position. */
-    private static final long LOCATION_HOLD_MS = 60_000;
+    /**
+     * The longest a location-only receiver keeps reporting the last position: past the 10 minutes
+     * Android leaves between updates to an app allowed only approximate location, so such a
+     * receiver keeps its fix rather than blinking out between them.
+     */
+    private static final long LOCATION_HOLD_MS = 15 * 60_000;
     /** ...and the longest it keeps that position's speed and course, which age much faster. */
     private static final long MOTION_HOLD_MS = 3000;
     /**
