@@ -1578,7 +1578,8 @@
     <string name="edit_vm_gnss_source_auto">自动</string>
     <string name="edit_vm_gnss_source_receiver">手机的 GNSS 接收器</string>
     <string name="edit_vm_gnss_source_location">仅手机的位置</string>
-    <string name="edit_vm_gnss_note_receiver">客户机会收到手机 GNSS 的定位，以及它跟踪的每一颗卫星（GPS、GLONASS、Galileo、北斗、QZSS，视手机支持而定）。虚拟机运行期间手机的接收器会一直开着。</string>
+    <string name="edit_vm_gnss_note_auto">客户机会收到手机 GNSS 的定位与它跟踪的每一颗卫星；接收器没有定位时（室内，或手机省电关掉了 GNSS），改收到手机的位置与一组固定的模拟 GPS 卫星，标为推算定位。</string>
+    <string name="edit_vm_gnss_note_receiver">只用手机的 GNSS 接收器：它的定位与跟踪的每一颗卫星（GPS、GLONASS、Galileo、北斗、QZSS，视手机支持而定）；接收器没有定位时客户机也没有。虚拟机运行期间接收器会一直开着。</string>
     <string name="edit_vm_gnss_note_location">客户机会收到手机的位置（Wi-Fi、基站或 GNSS，看手机当时用什么），搭配一组固定的模拟 GPS 卫星。</string>
     <string name="edit_vm_gnss_note_no_receiver">这部手机没有 GNSS 接收器：客户机会收到手机的位置，搭配一组固定的模拟 GPS 卫星。</string>
     <string name="edit_vm_gnss_mark_simulated">把定位标为模拟（部分客户机程序会忽略）</string>

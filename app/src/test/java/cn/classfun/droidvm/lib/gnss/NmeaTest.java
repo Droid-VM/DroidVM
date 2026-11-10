@@ -71,7 +71,7 @@ public class NmeaTest {
         sky.add(sat(GnssStatus.CONSTELLATION_GALILEO, 11, 20, 300, true, 1575.42));
         sky.add(sat(GnssStatus.CONSTELLATION_BEIDOU, 23, 70, 250, true, 1561.098));
         sky.add(sat(GnssStatus.CONSTELLATION_QZSS, 194, 50, 160, false, 1575.42));
-        var epoch = Nmea.epoch(fix(), sky, false, 0);
+        var epoch = Nmea.epoch(fix(), sky, Nmea.FixKind.GNSS, 0);
         assertWellFormed(epoch);
         var rmc = starting(epoch, "$GNRMC").get(0);
         assertTrue(rmc, rmc.startsWith("$GNRMC,083015.25,A,2503.12500,N,12130.00000,E,1.944,90.00,101126,,,A,V*"));
@@ -102,7 +102,7 @@ public class NmeaTest {
     public void noFixStillReportsTheSky() {
         var sky = new ArrayList<GnssSatellite>();
         sky.add(sat(GnssStatus.CONSTELLATION_GPS, 3, 0, 0, false, 1575.42));
-        var epoch = Nmea.epoch(null, sky, false, T);
+        var epoch = Nmea.epoch(null, sky, Nmea.FixKind.GNSS, T);
         assertWellFormed(epoch);
         assertTrue(starting(epoch, "$GNRMC").get(0).startsWith("$GNRMC,083015.25,V,,,,,,,101126,,,N,V*"));
         assertTrue(starting(epoch, "$GNGGA").get(0).startsWith("$GNGGA,083015.25,,,,,0,00,,"));
@@ -114,7 +114,7 @@ public class NmeaTest {
 
     @Test
     public void anEmptySkySaysSo() {
-        var epoch = Nmea.epoch(null, new ArrayList<>(), false, T);
+        var epoch = Nmea.epoch(null, new ArrayList<>(), Nmea.FixKind.GNSS, T);
         assertWellFormed(epoch);
         assertEquals("$GPGSV,1,1,00,1*64", starting(epoch, "$GPGSV").get(0));
     }
@@ -123,7 +123,7 @@ public class NmeaTest {
     public void aLocationOnlyFixIsCarriedBySyntheticSatellites() {
         var noAltitude = new GnssFix(T, 25, 121, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
             40, Double.NaN);
-        var epoch = Nmea.epoch(noAltitude, Nmea.syntheticSky(), false, 0);
+        var epoch = Nmea.epoch(noAltitude, Nmea.syntheticSky(), Nmea.FixKind.GNSS, 0);
         assertWellFormed(epoch);
         var gga = starting(epoch, "$GNGGA").get(0);
         assertTrue(gga, gga.contains(",1,08,"));
@@ -137,7 +137,7 @@ public class NmeaTest {
 
     @Test
     public void simulatedFixesSayTheyAre() {
-        var epoch = Nmea.epoch(fix(), Nmea.syntheticSky(), true, 0);
+        var epoch = Nmea.epoch(fix(), Nmea.syntheticSky(), Nmea.FixKind.SIMULATED, 0);
         assertTrue(starting(epoch, "$GNGGA").get(0).contains(",8,08,"));
         assertTrue(starting(epoch, "$GNRMC").get(0).contains(",S,V*"));
     }
@@ -149,9 +149,23 @@ public class NmeaTest {
         sky.add(sat(GnssStatus.CONSTELLATION_GLONASS, 96, 40, 40, false, 1602.0));
         sky.add(sat(GnssStatus.CONSTELLATION_SBAS, 158, 40, 40, false, 1575.42));
         sky.add(sat(GnssStatus.CONSTELLATION_SBAS, 133, 40, 40, false, 1575.42));
-        var epoch = Nmea.epoch(null, sky, false, T);
+        var epoch = Nmea.epoch(null, sky, Nmea.FixKind.GNSS, T);
         assertTrue(starting(epoch, "$GLGSV").isEmpty());
         assertTrue(starting(epoch, "$GPGSV").get(0).contains(",01,46,40,040,40,1*"));
         assertFalse(epoch.contains(",71,"));
+    }
+
+    @Test
+    public void aFixTheReceiverDidNotMakeIsEstimated() {
+        // AUTO without a receiver fix: the phone's location on the synthetic sky, marked estimated.
+        var location = new GnssFix(T, 25, 121, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+            30, Double.NaN);
+        var epoch = Nmea.epoch(location, Nmea.syntheticSky(), Nmea.FixKind.ESTIMATED, 0);
+        assertWellFormed(epoch);
+        assertTrue(starting(epoch, "$GNRMC").get(0).contains(",E,V*"));
+        var gga = starting(epoch, "$GNGGA").get(0);
+        // Eight in the solution: gpsd reads a GGA with none for no fix, whatever its quality.
+        assertTrue(gga, gga.contains(",6,08,"));
+        assertTrue(starting(epoch, "$GNGST").get(0).contains(",19.9,19.9,"));
     }
 }

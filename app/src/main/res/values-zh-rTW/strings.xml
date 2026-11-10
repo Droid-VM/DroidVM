@@ -1578,7 +1578,8 @@
     <string name="edit_vm_gnss_source_auto">自動</string>
     <string name="edit_vm_gnss_source_receiver">手機的 GNSS 接收器</string>
     <string name="edit_vm_gnss_source_location">僅手機的位置</string>
-    <string name="edit_vm_gnss_note_receiver">guest 會收到手機 GNSS 的定位，以及它追蹤的每一顆衛星（GPS、GLONASS、Galileo、北斗、QZSS，依手機支援而定）。VM 執行期間手機的接收器會一直開著。</string>
+    <string name="edit_vm_gnss_note_auto">guest 會收到手機 GNSS 的定位與它追蹤的每一顆衛星；接收器沒有定位時（室內，或手機省電關掉了 GNSS），改收到手機的位置與一組固定的模擬 GPS 衛星，標成推算定位。</string>
+    <string name="edit_vm_gnss_note_receiver">只用手機的 GNSS 接收器：它的定位與追蹤的每一顆衛星（GPS、GLONASS、Galileo、北斗、QZSS，依手機支援而定）；接收器沒有定位時 guest 也沒有。VM 執行期間接收器會一直開著。</string>
     <string name="edit_vm_gnss_note_location">guest 會收到手機的位置（Wi-Fi、基地台或 GNSS，看手機當時用什麼），搭配一組固定的模擬 GPS 衛星。</string>
     <string name="edit_vm_gnss_note_no_receiver">這支手機沒有 GNSS 接收器：guest 會收到手機的位置，搭配一組固定的模擬 GPS 衛星。</string>
     <string name="edit_vm_gnss_mark_simulated">把定位標成模擬（部分 guest 程式會忽略）</string>

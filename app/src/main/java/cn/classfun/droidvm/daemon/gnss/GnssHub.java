@@ -33,6 +33,13 @@ import cn.classfun.droidvm.lib.store.vm.GnssSource;
  * clock (and to an app allowed only approximate location, every 10 minutes at most), and a
  * receiver that blinked out between updates would be a worse lie than a position held a while.</p>
  *
+ * <p>An AUTO port takes both: the receiver's fixes while they come, and in a second without one
+ * (indoors, or the phone's own power saving has turned GNSS off) the location as a location-only
+ * receiver reports it, but marked estimated, NMEA's word for a position the receiver did not
+ * solve. With the synthetic satellites rather than the receiver's sky: gpsd takes a GGA with no
+ * satellites in the solution for no fix, whatever its quality, so a fix carried by none would
+ * flicker to "no fix" every second (measured: modes 1, 2, 2 per epoch).</p>
+ *
  * <p>One thread for every port, created with the first and stopped with the last.</p>
  */
 public final class GnssHub {
@@ -138,7 +145,7 @@ public final class GnssHub {
         var t = thread;
         if (t != null) t.execute(() -> {
             for (var port : targets)
-                if (port.source == GnssSource.RECEIVER) writeReceiverFix(port, fix);
+                if (port.source != GnssSource.LOCATION) writeReceiverFix(port, fix);
         });
     }
 
@@ -150,9 +157,11 @@ public final class GnssHub {
 
     private void writeReceiverFix(@NonNull GnssPort port, @NonNull GnssFix fix) {
         if (fix.utcMillis == port.lastFixUtc) return;
+        long now = SystemClock.elapsedRealtime();
         port.lastFixUtc = fix.utcMillis;
-        port.write(Nmea.epoch(fix, freshSky(SystemClock.elapsedRealtime()), port.markSimulated,
-            System.currentTimeMillis()), SystemClock.elapsedRealtime());
+        port.lastReceiverFixAt = now;
+        port.write(Nmea.epoch(fix, freshSky(now), gnssKind(port), System.currentTimeMillis()),
+            now);
     }
 
     private void tick() {
@@ -180,14 +189,31 @@ public final class GnssHub {
             PeripheralForegroundControl.reraise();
         }
         for (var port : targets) {
-            if (port.source == GnssSource.RECEIVER) {
-                if (now - port.lastEpochAt < GAP_MS) continue;
-                port.write(Nmea.epoch(null, freshSky(now), port.markSimulated, utc), now);
-            } else {
-                var sky = location != null ? Nmea.syntheticSky() : new ArrayList<GnssSatellite>();
-                port.write(Nmea.epoch(location, sky, port.markSimulated, utc), now);
+            switch (port.source) {
+                case RECEIVER:
+                    if (now - port.lastEpochAt < GAP_MS) continue;
+                    port.write(Nmea.epoch(null, freshSky(now), gnssKind(port), utc), now);
+                    break;
+                case AUTO:
+                    // The receiver's own epochs while it has a fix; the location only in between.
+                    if (now - port.lastReceiverFixAt < GAP_MS) continue;
+                    port.write(Nmea.epoch(location,
+                        location != null ? Nmea.syntheticSky() : freshSky(now),
+                        port.markSimulated ? Nmea.FixKind.SIMULATED : Nmea.FixKind.ESTIMATED, utc),
+                        now);
+                    break;
+                default:
+                    var sky = location != null ? Nmea.syntheticSky() : new ArrayList<GnssSatellite>();
+                    port.write(Nmea.epoch(location, sky, gnssKind(port), utc), now);
+                    break;
             }
         }
+    }
+
+    /** A fix the receiver made, or the location-only receiver's: GNSS unless marked simulated. */
+    @NonNull
+    private static Nmea.FixKind gnssKind(@NonNull GnssPort port) {
+        return port.markSimulated ? Nmea.FixKind.SIMULATED : Nmea.FixKind.GNSS;
     }
 
     @NonNull

@@ -1619,7 +1619,8 @@
     <string name="edit_vm_gnss_source_auto">Automatic</string>
     <string name="edit_vm_gnss_source_receiver">Phone\'s GNSS receiver</string>
     <string name="edit_vm_gnss_source_location">Phone\'s location only</string>
-    <string name="edit_vm_gnss_note_receiver">The guest gets the phone\'s GNSS fixes and every satellite it tracks (GPS, GLONASS, Galileo, BeiDou, QZSS, as the phone has them). The phone\'s receiver stays on while the VM runs.</string>
+    <string name="edit_vm_gnss_note_auto">The guest gets the phone\'s GNSS fixes and every satellite it tracks; while the receiver has no fix (indoors, or the phone\'s power saving has turned it off) it gets the phone\'s location instead, with a fixed set of made-up GPS satellites, marked estimated.</string>
+    <string name="edit_vm_gnss_note_receiver">Only the phone\'s GNSS receiver: its fixes and every satellite it tracks (GPS, GLONASS, Galileo, BeiDou, QZSS, as the phone has them); no fix while the receiver has none. The receiver stays on while the VM runs.</string>
     <string name="edit_vm_gnss_note_location">The guest gets the phone\'s location (Wi-Fi, cells or GNSS, whatever the phone used) with a fixed set of made-up GPS satellites.</string>
     <string name="edit_vm_gnss_note_no_receiver">This phone has no GNSS receiver: the guest gets the phone\'s location with a fixed set of made-up GPS satellites.</string>
     <string name="edit_vm_gnss_mark_simulated">Mark fixes as simulated (some guest programs ignore them)</string>

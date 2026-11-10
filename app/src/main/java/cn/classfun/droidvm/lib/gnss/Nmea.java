@@ -60,6 +60,25 @@ public final class Nmea {
 
     private static final double GPS_L1_HZ = 1575.42e6;
 
+    /**
+     * What a fix says it is, in GGA's quality and RMC's mode: an autonomous GNSS fix (1, A), a
+     * position the receiver did not solve itself (6, E: estimated, NMEA's word for dead
+     * reckoning and anything else not from the satellites), or a simulated one (8, S).
+     */
+    public enum FixKind {
+        GNSS(1, 'A'),
+        ESTIMATED(6, 'E'),
+        SIMULATED(8, 'S');
+
+        final int quality;
+        final char mode;
+
+        FixKind(int quality, char mode) {
+            this.quality = quality;
+            this.mode = mode;
+        }
+    }
+
     private Nmea() {
     }
 
@@ -69,13 +88,12 @@ public final class Nmea {
      *
      * @param fix        the position, or null for a receiver without one (it still reports its
      *                   satellites and the time, as a real one does while acquiring)
-     * @param simulated  mark the fix as simulated (GGA quality 8, RMC mode S) rather than as an
-     *                   autonomous GNSS fix
+     * @param kind       what the fix says it is ({@link FixKind}); meaningless without one
      * @param nowUtcMillis the epoch's time when there is no fix to take it from
      */
     @NonNull
     public static String epoch(@Nullable GnssFix fix, @NonNull List<GnssSatellite> satellites,
-                               boolean simulated, long nowUtcMillis) {
+                               @NonNull FixKind kind, long nowUtcMillis) {
         long time = fix != null ? fix.utcMillis : nowUtcMillis;
         var used = new ArrayList<GnssSatellite>();
         for (var s : satellites)
@@ -83,8 +101,8 @@ public final class Nmea {
         var dop = dilution(used);
         boolean threeD = fix != null && !Double.isNaN(fix.altitudeMsl);
         var out = new StringBuilder();
-        rmc(out, fix, time, simulated);
-        gga(out, fix, time, simulated, countSatellites(used), dop[1]);
+        rmc(out, fix, time, kind);
+        gga(out, fix, time, kind, countSatellites(used), dop[1]);
         gsa(out, fix, threeD, used, dop);
         gsv(out, satellites);
         if (fix != null && !Double.isNaN(fix.horizontalAccuracy)) gst(out, fix, time);
@@ -114,7 +132,7 @@ public final class Nmea {
     // ---- sentences ----
 
     private static void rmc(@NonNull StringBuilder out, @Nullable GnssFix fix, long time,
-                            boolean simulated) {
+                            @NonNull FixKind kind) {
         var f = new StringBuilder("GNRMC,").append(clock(time)).append(',');
         f.append(fix != null ? 'A' : 'V').append(',');
         position(f, fix);
@@ -125,15 +143,15 @@ public final class Nmea {
         if (fix != null && !Double.isNaN(fix.bearingDeg)) f.append(fmt("%.2f", fix.bearingDeg));
         f.append(',').append(date(time)).append(",,,");
         // Mode, then 4.10's navigational status, which receivers leave "not valid".
-        f.append(fix == null ? 'N' : simulated ? 'S' : 'A').append(",V");
+        f.append(fix == null ? 'N' : kind.mode).append(",V");
         sentence(out, f);
     }
 
     private static void gga(@NonNull StringBuilder out, @Nullable GnssFix fix, long time,
-                            boolean simulated, int satellitesUsed, double hdop) {
+                            @NonNull FixKind kind, int satellitesUsed, double hdop) {
         var f = new StringBuilder("GNGGA,").append(clock(time)).append(',');
         position(f, fix);
-        f.append(',').append(fix == null ? 0 : simulated ? 8 : 1);
+        f.append(',').append(fix == null ? 0 : kind.quality);
         f.append(',').append(fmt("%02d", Math.min(satellitesUsed, 99))).append(',');
         if (fix != null && !Double.isNaN(hdop)) f.append(fmt("%.2f", hdop));
         f.append(',');

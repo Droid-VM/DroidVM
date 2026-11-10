@@ -33,6 +33,7 @@ import java.util.function.Consumer;
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.store.base.DataItem;
+import cn.classfun.droidvm.lib.store.enums.EnumPicker.EnumPickerChanged;
 import cn.classfun.droidvm.lib.data.HostCameraDevices;
 import cn.classfun.droidvm.lib.store.vm.Gnss;
 import cn.classfun.droidvm.lib.store.vm.GnssSource;
@@ -537,23 +538,31 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
      * simulated. The source picker names what AUTO comes to on this phone, because "automatic"
      * alone does not say whether the guest gets the sky or only a position.
      */
+    /** What [source] comes to on this phone, said on the card. */
+    private int gnssNoteFor(@NonNull GnssSource source) {
+        boolean receiver = Gnss.hostHasReceiver(context);
+        var resolved = source.resolve(receiver);
+        return resolved == GnssSource.AUTO ? R.string.edit_vm_gnss_note_auto
+            : resolved == GnssSource.RECEIVER ? R.string.edit_vm_gnss_note_receiver
+            : receiver ? R.string.edit_vm_gnss_note_location
+            : R.string.edit_vm_gnss_note_no_receiver;
+    }
+
     private void bindGnss(
         @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral
     ) {
         holder.tvWarning.setVisibility(GONE);
+        // Detached first: configure() fires the listener, and on a recycled row that is the last
+        // bind's -- it would write this row's value into another and touch the list mid-layout.
+        holder.btnGnssSource.setOnValueChangedListener((EnumPickerChanged<Enum<?>>) null);
         holder.btnGnssSource.configure(GnssSource.class, peripheral.getGnssSource());
+        holder.tvGnssNote.setText(gnssNoteFor(peripheral.getGnssSource()));
         holder.btnGnssSource.setOnValueChangedListener((oldVal, newVal) -> {
             int pos = holder.getBindingAdapterPosition();
             if (pos == RecyclerView.NO_POSITION) return;
             new VMPeripheralConfig(items.get(pos)).setGnssSource((GnssSource) newVal);
-            notifyItemChanged(pos);
+            holder.tvGnssNote.setText(gnssNoteFor((GnssSource) newVal));
         });
-        boolean receiver = Gnss.hostHasReceiver(context);
-        var resolved = peripheral.getGnssSource().resolve(receiver);
-        holder.tvGnssNote.setText(resolved == GnssSource.RECEIVER
-            ? R.string.edit_vm_gnss_note_receiver
-            : receiver ? R.string.edit_vm_gnss_note_location
-            : R.string.edit_vm_gnss_note_no_receiver);
         holder.swGnssSimulated.setOnCheckedChangeListener(null);
         holder.swGnssSimulated.setChecked(peripheral.getGnssMarkSimulated());
         holder.swGnssSimulated.setOnCheckedChangeListener((button, checked) -> {

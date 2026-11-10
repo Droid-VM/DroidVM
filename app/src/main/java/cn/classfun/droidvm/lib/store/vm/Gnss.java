@@ -55,11 +55,17 @@ public final class Gnss {
         }
     }
 
-    /** The source bit {@code item}'s receiver needs on this phone, or 0 for a VM without one. */
+    /** The source bits {@code item}'s receiver needs on this phone, or 0 for a VM without one. */
     public static int sourceBitsOf(@NonNull DataItem item, boolean hostHasReceiver) {
         var row = rowOf(item);
         if (row == null) return 0;
-        return row.getGnssSource().resolve(hostHasReceiver) == GnssSource.RECEIVER
-            ? SOURCE_RECEIVER : SOURCE_LOCATION;
+        switch (row.getGnssSource().resolve(hostHasReceiver)) {
+            case RECEIVER:
+                return SOURCE_RECEIVER;
+            case AUTO:
+                return SOURCE_RECEIVER | SOURCE_LOCATION;
+            default:
+                return SOURCE_LOCATION;
+        }
     }
 }

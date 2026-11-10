@@ -44,9 +44,11 @@ public final class GnssPort implements Closeable {
     long lastEpochAt;
     /** UTC of the last receiver fix written, so one fix is not reported twice; hub thread only. */
     long lastFixUtc = Long.MIN_VALUE;
+    /** elapsedRealtime of that fix, for AUTO's choice between it and the location; hub thread. */
+    long lastReceiverFixAt = Long.MIN_VALUE / 2;
     private boolean broken;
 
-    /** {@code source} must already be resolved: RECEIVER or LOCATION. */
+    /** {@code source} must already be resolved: AUTO here means the phone has a receiver. */
     public GnssPort(@NonNull String vmName, @NonNull GnssSource source, boolean markSimulated)
         throws IOException {
         this.vmName = vmName;
