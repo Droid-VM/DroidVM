@@ -14,6 +14,7 @@
     <item
         android:id="@+id/menu_pointer_grab"
         android:checkable="true"
+        android:icon="@drawable/ic_touchpad"
         android:title="@string/native_pointer_grab" />
     <item
         android:id="@+id/menu_pointer_natural_scroll"
