@@ -1671,6 +1671,6 @@
     <string name="usb_devices_action_failed_title">设备没有移动</string>
     <string name="usb_devices_target_claimed">被其他程序占用</string>
     <string name="usb_devices_idle_kept">%1$s 留在主机：有驱动不肯卸载，要拔掉重插才会回到 Idle</string>
-    <string name="native_pointer_grab">捕获鼠标 / 触控板（实验）</string>
+    <string name="native_pointer_grab">捕获鼠标 / 触控板</string>
     <string name="native_pointer_natural_scroll">触控板自然滚动</string>
 </resources>

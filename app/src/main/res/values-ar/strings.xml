@@ -1735,6 +1735,6 @@
     <!-- U+1F512, as an entity: the base file stays ASCII (scripts/ci/check_ascii.py). -->
     <string name="usb_devices_locked_fmt" translatable="false">&#128274; %1$s</string>
     <string name="usb_devices_idle_kept">يبقى %1$s مع المضيف: تعذر على أحد برامج التشغيل تحريره، لذا لن يتحول إلى خامل إلا عند فصله</string>
-    <string name="native_pointer_grab">التقاط الفأرة أو لوحة اللمس (تجريبي)</string>
+    <string name="native_pointer_grab">التقاط الفأرة أو لوحة اللمس</string>
     <string name="native_pointer_natural_scroll">التمرير الطبيعي للوحة اللمس</string>
 </resources>
