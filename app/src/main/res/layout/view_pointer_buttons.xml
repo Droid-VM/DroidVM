@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mouse buttons under the pointer area in the relative pointer modes (mouse, trackpad), the
+     buttons of a laptop's palm rest; ConsoleWorkspace shows them when the user has asked for them
+     (a long press on the menu's mouse button). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/pointer_buttons"
+    android:layout_width="match_parent"
+    android:layout_height="56dp"
+    android:background="@color/vnc_touchpad_background"
+    android:orientation="horizontal"
+    android:visibility="gone">
+
+    <Button
+        android:id="@+id/btn_pointer_left"
+        style="@style/TouchpadButton"
+        android:layout_weight="1"
+        android:text="@string/display_mouse_left"
+        tools:ignore="VisualLintButtonSize" />
+
+    <View
+        android:layout_width="1dp"
+        android:layout_height="match_parent"
+        android:background="#40FFFFFF" />
+
+    <Button
+        android:id="@+id/btn_pointer_right"
+        style="@style/TouchpadButton"
+        android:layout_weight="1"
+        android:text="@string/display_mouse_right"
+        tools:ignore="VisualLintButtonSize" />
+
+</LinearLayout>
