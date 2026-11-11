@@ -156,6 +156,10 @@ public final class VncSession {
         if (!session.started) {
             session.started = true;
             session.fetchVncInfoAndConnect();
+        } else if (session.status == VncStatus.ERROR) {
+            // A session that gave up -- the VM's VNC server not up yet while a console opened at
+            // its start retried -- tries again for whoever joins, as a console of its own would.
+            session.reconnect();
         } else {
             session.replay(listener);
         }

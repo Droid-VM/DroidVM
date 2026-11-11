@@ -29,12 +29,6 @@ public final class InputModeToggle {
 
     @NonNull
     public static View build(@NonNull LayoutInflater inflater, @NonNull InputMode current,
-                             @NonNull Consumer<InputMode> select, @NonNull Runnable dismiss) {
-        return build(inflater, current, select, dismiss, null);
-    }
-
-    @NonNull
-    public static View build(@NonNull LayoutInflater inflater, @NonNull InputMode current,
                              @NonNull Consumer<InputMode> select, @NonNull Runnable dismiss,
                              @Nullable Runnable mouseLongPress) {
         var group = (MaterialButtonToggleGroup) inflater.inflate(
