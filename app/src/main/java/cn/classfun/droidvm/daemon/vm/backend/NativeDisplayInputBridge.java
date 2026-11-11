@@ -283,15 +283,16 @@ final class NativeDisplayInputBridge {
      * Reads what the guest says back on one keyboard connection: 8-byte records, the same shape we
      * write, carrying EV_LED (the caps/num/scroll lamps) and the guest's auto-repeat settings.
      *
-     * <p>Only the keyboard and the vibrator have anything to say (the vibrator nothing else: the
-     * rumble the guest wants), and only while somebody is listening, so no thread is started
-     * otherwise. It ends when the connection does -- crosvm restarting
+     * <p>Only the keyboard, the vibrator and the trackpad have anything to say (the vibrator the
+     * rumble the guest wants, the trackpad the haptic feedback a guest's driver sends it), and only
+     * while somebody is listening, so no thread is started otherwise. It ends when the connection does -- crosvm restarting
      * replaces the peer and the accept loop starts a new reader with it.</p>
      */
     private void startStatusReadThread(@NonNull Slot slot, @NonNull FDSocket peer) {
         var listener = statusListener;
         if (listener == null) return;
-        if (slot.channel != NativeDisplay.KEYBOARD && slot.channel != NativeDisplay.VIBRATOR) return;
+        if (slot.channel != NativeDisplay.KEYBOARD && slot.channel != NativeDisplay.VIBRATOR
+            && slot.channel != NativeDisplay.TRACKPAD) return;
         var t = new Thread(() -> {
             var buffer = new byte[STATUS_READ_BYTES];
             // A read can split a record; what is left over waits for the rest rather than being

@@ -178,10 +178,13 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             // grab manager: it is what lights the lamp on the physical keyboard and what a
             // console shows. Set before the sockets are bound, because the reader that carries it
             // starts with crosvm's first connection.
-            // The vibrator's say is the rumble it wants, which the phone's motor plays.
+            // The vibrator's say is the rumble it wants, and the trackpad's the haptic feedback a
+            // guest's driver plays on it; the phone's motor plays both.
             inputBridge.setStatusListener((screenId, channel, records) -> {
                 if (channel == NativeDisplay.VIBRATOR)
                     HostVibrator.get().onGuestStatus(config.getId().toString(), records);
+                else if (channel == NativeDisplay.TRACKPAD)
+                    HostVibrator.get().onTrackpadStatus(config.getId().toString(), records);
                 else
                     context.getKeyboard().onGuestStatus(
                         config.getId().toString(), screenId, records);
@@ -864,7 +867,9 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * {@code contacts}, a multi-finger trackpad with no buttons (the guest's taps click; a phone's
      * screen cannot be pressed). A square as wide as the phone's screen is long, in units of a
      * twentieth of a millimetre, so guests get its real size; contact size only when the phone's
-     * panel reports it. One per VM, as the relative mouse.
+     * panel reports it. One per VM, as the relative mouse. With haptics: the waveforms a guest's
+     * driver can send it back, which the phone's motor plays ({@link HostVibrator}); no guest's own
+     * driver reads them, so a guest without one sees the trackpad it always did.
      *
      * <p>Emitted last of the input devices, for the reason {@link #buildMotionSensorCommand} gives.</p>
      */
@@ -872,7 +877,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         int side = PhoneTouchPanel.trackpadSideUnits();
         args.add("--input");
         args.add(fmt(
-            "trackpad[path=%s,width=%d,height=%d,res=%d,contacts=%d,touch-size=%b,name=%s]",
+            "trackpad[path=%s,width=%d,height=%d,res=%d,contacts=%d,touch-size=%b,haptics=true,"
+                + "name=%s]",
             NativeDisplay.inputSocketPath(config.getId().toString(), "", NativeDisplay.TRACKPAD),
             side, side, NativeDisplay.TRACKPAD_UNITS_PER_MM, NativeDisplay.TRACKPAD_CONTACTS,
             PhoneTouchPanel.reportsContactSize(), NativeDisplay.TRACKPAD_DEVICE_NAME
