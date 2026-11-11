@@ -1519,6 +1519,10 @@
     <string name="external_output_title">VM 畫面在外部顯示器</string>
     <string name="external_output_text">虛擬機器的畫面正顯示在外部顯示器上。</string>
     <string name="external_output_stop">拉回本機</string>
+    <string name="external_output_show">在外部顯示器顯示</string>
+    <string name="external_output_block">畫面在 %1$s</string>
+    <string name="external_output_none">沒有連接外部顯示器。</string>
+    <string name="external_output_pick">顯示在</string>
     <string name="notif_channel_peripheral_foreground_desc">當 VM 使用相機等 Android 只允許在前景使用的裝置時顯示。</string>
     <string name="record_audio_permission_title">允許使用麥克風？</string>
     <string name="record_audio_permission_message">這台 VM 加了麥克風，執行期間會錄取手機的麥克風。允許麥克風權限，客體才聽得到。</string>

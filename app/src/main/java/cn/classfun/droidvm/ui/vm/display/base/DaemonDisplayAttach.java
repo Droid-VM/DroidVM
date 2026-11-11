@@ -22,7 +22,8 @@ import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
 
 /**
- * Acquires the daemon's broker binder ({@link INativeDisplayRootService}) for a display activity.
+ * Acquires the daemon's broker binder ({@link INativeDisplayRootService}) for a display activity,
+ * or for the service that shows a VM's picture on an external display.
  * The binder can't ride the JSON-RPC channel, so the flow is: send {@code display_attach} with a
  * per-attach random nonce, and the daemon (uid=0) broadcasts the binder back; only the broadcast
  * carrying our nonce is accepted, so another app spoofing the exported action can't slip us a
@@ -43,7 +44,7 @@ public final class DaemonDisplayAttach {
         void onLost();
     }
 
-    private final Activity activity;
+    private final Context context;
     private final Handler mainHandler;
     private final Listener listener;
     private final String nonce = UUID.randomUUID().toString();
@@ -68,9 +69,9 @@ public final class DaemonDisplayAttach {
 
     private final IBinder.DeathRecipient deathRecipient;
 
-    public DaemonDisplayAttach(@NonNull Activity activity, @NonNull Handler mainHandler,
+    public DaemonDisplayAttach(@NonNull Context context, @NonNull Handler mainHandler,
                                @NonNull Listener listener) {
-        this.activity = activity;
+        this.context = context;
         this.mainHandler = mainHandler;
         this.listener = listener;
         this.deathRecipient = () -> mainHandler.post(() -> {
@@ -82,7 +83,7 @@ public final class DaemonDisplayAttach {
 
     /** Registers the nonce-matched broadcast receiver and requests the broker binder. */
     public void start() {
-        activity.registerReceiver(receiver,
+        context.registerReceiver(receiver,
             new IntentFilter(NativeDisplay.BINDER_BROADCAST_ACTION), Context.RECEIVER_EXPORTED);
         receiverRegistered = true;
         request(MAX_ATTEMPTS);
@@ -97,7 +98,7 @@ public final class DaemonDisplayAttach {
     public void stop() {
         if (receiverRegistered) {
             try {
-                activity.unregisterReceiver(receiver);
+                context.unregisterReceiver(receiver);
             } catch (Exception ignored) {
             }
             receiverRegistered = false;
@@ -112,7 +113,7 @@ public final class DaemonDisplayAttach {
     }
 
     private void request(int attemptsLeft) {
-        if (attached || activity.isFinishing()) {
+        if (attached || (context instanceof Activity && ((Activity) context).isFinishing())) {
             return;
         }
         cn.classfun.droidvm.lib.daemon.DaemonConnection.getInstance().buildRequest("display_attach")

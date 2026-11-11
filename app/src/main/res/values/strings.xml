@@ -1559,6 +1559,10 @@
     <string name="external_output_title">VM on an external display</string>
     <string name="external_output_text">A virtual machine\'s screen is on an external display.</string>
     <string name="external_output_stop">Bring back</string>
+    <string name="external_output_show">Show on an external display</string>
+    <string name="external_output_block">On %1$s</string>
+    <string name="external_output_none">No external display is connected.</string>
+    <string name="external_output_pick">Show on</string>
     <string name="notif_channel_peripheral_foreground_desc">Shown while a VM uses a camera or another device that Android only allows in the foreground.</string>
 
     <string name="record_audio_permission_title">Allow microphone access?</string>

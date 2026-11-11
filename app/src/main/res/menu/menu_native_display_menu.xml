@@ -6,4 +6,9 @@
         android:icon="@drawable/ic_fullscreen"
         android:title="@string/vnc_menu_fullscreen" />
 
+    <item
+        android:id="@+id/menu_external_output"
+        android:icon="@drawable/ic_monitor"
+        android:title="@string/external_output_show" />
+
 </menu>
