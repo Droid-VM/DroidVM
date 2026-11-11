@@ -3,13 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.display.vnc.display;
 
-import static android.view.Gravity.BOTTOM;
 import static android.view.Gravity.CENTER;
-import static android.view.Gravity.CENTER_HORIZONTAL;
-import static android.view.Gravity.CENTER_VERTICAL;
-import static android.view.Gravity.END;
-import static android.view.Gravity.START;
-import static android.view.Gravity.TOP;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE;
@@ -33,48 +27,39 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
-import org.json.JSONObject;
-
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.display.INativeDisplayRootService;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
-import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.ConsoleInput;
+import cn.classfun.droidvm.ui.vm.display.base.ConsoleMenu;
 import cn.classfun.droidvm.ui.vm.display.base.ConsoleWorkspace;
 import cn.classfun.droidvm.ui.vm.display.external.ExternalOutputControl;
 import cn.classfun.droidvm.ui.vm.display.external.VmOutputRouter;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
-import cn.classfun.droidvm.ui.vm.display.base.DisplayKeyboardMenuRow;
 import cn.classfun.droidvm.ui.vm.display.base.KeyboardMode;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayPhysicalKeyboardView;
 import cn.classfun.droidvm.ui.vm.display.base.DisplaySource;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayViewportController;
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
-import cn.classfun.droidvm.ui.vm.display.base.InputModeToggle;
 import cn.classfun.droidvm.ui.vm.display.base.PointerGestureTranslator;
-import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.DirectInputSink;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.EvdevEncoder;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.InputForwarder;
-import cn.classfun.droidvm.ui.vm.display.nativedisplay.input.TrackpadEncoder;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 
 public final class VMVncDisplayActivity extends BaseVncActivity {
     private static final long OP_LABEL_HIDE_DELAY_MS = 2000;
     private static final String PREFS_NAME = "droidvm_prefs";
-    private static final String KEY_INPUT_MODE = "display_input_mode";
     // Chrome memory, shared with the native path: extra-keys on/off per typing surface + whether
     // the physical keyboard is up.
     private static final String KEY_KEYBOARD_MODE = "display_keyboard_mode";
@@ -98,9 +83,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private android.widget.FrameLayout externalBlock;
     private android.widget.TextView tvExternalBlock;
     private final VmOutputRouter.Listener outputListener = this::onOutputChanged;
-    // The router's key for this screen: the screen the console was opened on, as the external
-    // display's window joins the session by it.
-    private String outputKey = "";
+    // The screen the console was opened on: the external display's window joins the session by
+    // it, so it stays the router's key even when the session resolves the screen later.
+    private String outputScreenId = "";
     // The keyboard's side of the pointer area and the mouse buttons under it.
     private ConsoleWorkspace workspace;
     // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
@@ -111,8 +96,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // different from TigerVNC on the same port, and the coordinate is read against this screen's
     // geometry rather than some VM-wide pointer's. Both are absent when the screen's input switch
     // is off (view-only); see setInputMode.
-    // Seeded from the shared pref in onSetupActivity(); TOUCH only until that read.
-    private InputMode inputMode = InputMode.TOUCH;
+    // The mode is ConsoleInput's, shared with the native console.
+    private ConsoleInput input;
+    private ConsoleMenu menu;
     private SharedPreferences prefs;
 
     private InputForwarder inputForwarder;
@@ -127,16 +113,11 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // Display areas smaller than this (e.g. landscape with a tall IME) freeze the viewport
     // instead of re-laying it out; see DisplayViewportController.
     private static final int MIN_AREA_DP = 96;
-    // Last mouse right/middle-button activity: any BACK key arriving shortly after is the
-    // framework's (or OEM's) right-click fallback and must not navigate away from the VM.
-    private long lastMouseButtonMs;
-    private static final long MOUSE_BACK_SUPPRESS_MS = 800;
 
-    // Daemon broker binder plumbing (shared DaemonDisplayAttach): the direct sink turns each
-    // evdev frame into one binder call instead of the (much slower) vm_input JSON-RPC round-trip.
-    // Input works immediately on the RPC fallback and upgrades in place once the binder arrives;
-    // written on the main thread, read on the InputForwarder worker (hence volatile).
-    private volatile DirectInputSink directSink;
+    // Daemon broker binder plumbing (shared DaemonDisplayAttach): ConsoleInput's direct sink turns
+    // each evdev frame into one socket write instead of the (much slower) vm_input JSON-RPC
+    // round-trip. Input works at once on the RPC fallback and upgrades in place once the binder
+    // arrives.
     private DaemonDisplayAttach displayAttach;
     // Display-source adapter: framebuffer events flow through the shared DisplaySource interface.
     private VncBitmapSource displaySource;
@@ -168,7 +149,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
             @Override
             public void onLeftButton(boolean down, float xGuest, float yGuest) {
-                if (inputMode == InputMode.TABLET) {
+                if (input.mode() == InputMode.TABLET) {
                     rfbButton(MASK_LEFT, down, Math.round(xGuest), Math.round(yGuest));
                 } else if (inputForwarder != null) {
                     inputForwarder.sendPointerButton(EvdevEncoder.BTN_LEFT, down);
@@ -183,7 +164,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
             @Override
             public void onRightClick(float xGuest, float yGuest) {
-                if (inputMode == InputMode.TABLET) {
+                if (input.mode() == InputMode.TABLET) {
                     int x = Math.round(xGuest), y = Math.round(yGuest);
                     rfbButton(MASK_RIGHT, true, x, y);
                     rfbButton(MASK_RIGHT, false, x, y);
@@ -195,7 +176,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
             @Override
             public void onScroll(int vNotches, int hNotches) {
-                if (inputMode == InputMode.TABLET) {
+                if (input.mode() == InputMode.TABLET) {
                     rfbScroll(vNotches);
                 } else if (inputForwarder != null) {
                     inputForwarder.sendScroll(vNotches, hNotches);
@@ -236,23 +217,6 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         }
     }
 
-    // Ships evdev records for MOUSE/TOUCH modes to the daemon, which owns the crosvm --input
-    // sockets. Runs on the InputForwarder worker thread (synchronous request keeps ordering).
-    private boolean sendInputToDaemon(int channel, @NonNull byte[] data) {
-        try {
-            var req = new JSONObject();
-            req.put("command", "vm_input");
-            req.put("vm_id", vmId);
-            req.put("screen", screenId);
-            req.put("channel", channel);
-            req.put("data", android.util.Base64.encodeToString(data, android.util.Base64.NO_WRAP));
-            var resp = DaemonConnection.getInstance().request(req);
-            return resp.optBoolean("delivered", false);
-        } catch (Exception e) {
-            return false;
-        }
-    }
-
     @Override
     protected int getContentLayoutId() {
         return R.layout.activity_vm_vnc_display;
@@ -278,19 +242,19 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     @Override
     protected void onSetupActivity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        inputMode = InputMode.fromOrdinal(prefs.getInt(KEY_INPUT_MODE, 0));
+        input = new ConsoleInput(this, vmId, () -> screenId, screenInputEnabled);
         workspace = new ConsoleWorkspace(this, findViewById(R.id.main), displayContainer,
             findViewById(R.id.pointer_buttons), java.util.List.of(extraKeysPanel, phyKeyboard),
-            (button, down) -> {
-                if (inputForwarder != null) inputForwarder.sendPointerButton(button, down);
-            });
-        workspace.setInputMode(inputMode);
+            input::sendPointerButton);
+        input.setWorkspace(workspace);
+        menu = new ConsoleMenu(this, fabMenu, R.menu.menu_vnc_display_menu, input, workspace,
+            menuHost);
         // The picture may be on an external display already, or go back to the one it was last
         // shown on; set before the session is joined, which asks wantsH264View().
-        outputKey = VmOutputRouter.keyOf(vmId, screenId);
+        outputScreenId = screenId;
         VmOutputRouter.get().addListener(outputListener);
-        showOutput(VmOutputRouter.get().displayOf(outputKey));
-        var remembered = VmOutputRouter.get().rememberedDisplay(this, outputKey);
+        showOutput(VmOutputRouter.get().displayOf(outputKey()));
+        var remembered = VmOutputRouter.get().rememberedDisplay(this, outputKey());
         if (remembered != null) VmOutputRouter.get().project(this, outputScreen(), remembered);
         phyKeyboard.setKeyListener(vncExtraKeys);
         // The physical keyboard's Shift/Ctrl/Alt/Win mirror the panel's sticky-modifier state.
@@ -338,14 +302,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         setupOperationLabel();
         setupDisplayTouch();
         setupFab();
-        // Delegating sink: the direct daemon-binder path once attached, the vm_input JSON-RPC
-        // until then (and again if the binder dies). DirectInputSink falls back internally on
-        // any per-write failure, so input never drops during the upgrade.
-        inputForwarder = new InputForwarder((channel, data) -> {
-            var sink = directSink;
-            return sink != null ? sink.write(channel, data) : sendInputToDaemon(channel, data);
-        }, TrackpadEncoder.sideUnits(this));
+        // The direct daemon path once attached, the vm_input JSON-RPC until then (and again if
+        // the binder dies); the direct sink falls back on any per-write failure, so input never
+        // drops during the upgrade.
+        inputForwarder = input.newForwarder();
         gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
+        input.setTranslator(gestureTranslator);
         // Hardware mouse/stylus: hover is TABLET-only (RFB absolute move); wheel and right/middle
         // buttons route per mode (tablet -> RFB mask, mouse -> crosvm mouse device).
         ivDisplay.setOnHoverListener(this::onDisplayHover);
@@ -365,14 +327,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 new DaemonDisplayAttach.Listener() {
                     @Override
                     public void onAttached(@NonNull INativeDisplayRootService service) {
-                        directSink = new DirectInputSink(vmId, () -> screenId, service,
-                            VMVncDisplayActivity.this::sendInputToDaemon);
+                        input.attach(service);
                     }
 
                     @Override
                     public void onLost() {
                         // Drop the direct sink so writes go back to the vm_input RPC.
-                        directSink = null;
+                        input.detach();
                     }
                 });
             displayAttach.start();
@@ -380,7 +341,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     }
 
     private boolean onDisplayHover(View v, MotionEvent event) {
-        if (inputMode != InputMode.TABLET) return false;
+        if (input.mode() != InputMode.TABLET) return false;
         if (fbWidth <= 0 || v.getWidth() <= 0 || v.getHeight() <= 0) return false;
         int action = event.getActionMasked();
         if (action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_ENTER) {
@@ -398,13 +359,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             case MotionEvent.ACTION_SCROLL: {
                 int vN = Math.round(event.getAxisValue(MotionEvent.AXIS_VSCROLL));
                 int hN = Math.round(event.getAxisValue(MotionEvent.AXIS_HSCROLL));
-                if (inputMode == InputMode.TABLET) rfbScroll(vN);
+                if (input.mode() == InputMode.TABLET) rfbScroll(vN);
                 else if (inputForwarder != null) inputForwarder.sendScroll(vN, hN);
                 return true;
             }
             case MotionEvent.ACTION_BUTTON_PRESS:
             case MotionEvent.ACTION_BUTTON_RELEASE: {
-                lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
+                input.noteMouseButton();
                 boolean down = event.getActionMasked() == MotionEvent.ACTION_BUTTON_PRESS;
                 // Map view coords to fb px; events from the container carry the letterbox offset.
                 float lx = event.getX(), ly = event.getY();
@@ -418,12 +379,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 switch (event.getActionButton()) {
                     case MotionEvent.BUTTON_SECONDARY:
                     case MotionEvent.BUTTON_STYLUS_PRIMARY:
-                        if (inputMode == InputMode.TABLET) rfbButton(MASK_RIGHT, down, x, y);
+                        if (input.mode() == InputMode.TABLET) rfbButton(MASK_RIGHT, down, x, y);
                         else if (inputForwarder != null)
                             inputForwarder.sendPointerButton(EvdevEncoder.BTN_RIGHT, down);
                         break;
                     case MotionEvent.BUTTON_TERTIARY:
-                        if (inputMode == InputMode.TABLET) rfbButton(MASK_MIDDLE, down, x, y);
+                        if (input.mode() == InputMode.TABLET) rfbButton(MASK_MIDDLE, down, x, y);
                         else if (inputForwarder != null)
                             inputForwarder.sendPointerButton(EvdevEncoder.BTN_MIDDLE, down);
                         break;
@@ -441,10 +402,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     public boolean dispatchKeyEvent(@NonNull android.view.KeyEvent event) {
         // OEM-injected right-click fallback BACK may claim a keyboard/virtual source, which the
         // base class's mouse-source check misses; the timestamp catches it regardless.
-        if (event.getKeyCode() == android.view.KeyEvent.KEYCODE_BACK
-            && android.os.SystemClock.uptimeMillis() - lastMouseButtonMs
-                < MOUSE_BACK_SUPPRESS_MS)
-            return true;
+        if (input.swallowsBack(event)) return true;
         return super.dispatchKeyEvent(event);
     }
 
@@ -584,11 +542,16 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     }
 
     private boolean isOutputExternal() {
-        return ExternalOutputControl.isExternal(outputKey);
+        return ExternalOutputControl.isExternal(outputKey());
+    }
+
+    @NonNull
+    private String outputKey() {
+        return outputScreenId.isEmpty() ? "" : VmOutputRouter.keyOf(vmId, outputScreenId);
     }
 
     private void onOutputChanged(@NonNull String key, int displayId) {
-        if (key.equals(outputKey)) showOutput(displayId);
+        if (key.equals(outputKey())) showOutput(displayId);
     }
 
     // Where the picture is: here, or on [displayId] with the block standing in for it. The
@@ -608,17 +571,15 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     @NonNull
     private VmOutputRouter.Screen outputScreen() {
-        return new VmOutputRouter.Screen(vmId, screenId, vmName, fbWidth, fbHeight, true);
+        return new VmOutputRouter.Screen(vmId, outputScreenId, vmName, fbWidth, fbHeight, true);
     }
 
     @Override
     protected void onDestroyExtra() {
         VmOutputRouter.get().removeListener(outputListener);
         mainHandler.removeCallbacks(hideOperationLabel);
-        if (inputForwarder != null) inputForwarder.close();
-        var sink = directSink;
-        directSink = null;
-        if (sink != null) sink.close();
+        if (input != null) input.close();
+        inputForwarder = null;
         if (displayAttach != null) {
             displayAttach.stop();
             displayAttach = null;
@@ -633,27 +594,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (fbWidth <= 0 || fbHeight <= 0) return false;
         int ivW = ivDisplay.getWidth(), ivH = ivDisplay.getHeight();
         if (ivW <= 0 || ivH <= 0) return false;
-        // A hardware-mouse right/middle press also arrives on the touch stream (ACTION_DOWN with
-        // the button in buttonState). Those are delivered by the generic-motion handler; keep them
-        // out of the tap/gesture path (else right-click doubles as a left tap) but consume them so
-        // the framework doesn't synthesize a BACK key from an unhandled right-click.
-        if ((event.getSource() & android.view.InputDevice.SOURCE_MOUSE) != 0
-            && (event.getButtonState() & (MotionEvent.BUTTON_SECONDARY
-                | MotionEvent.BUTTON_TERTIARY | MotionEvent.BUTTON_STYLUS_PRIMARY)) != 0) {
-            lastMouseButtonMs = android.os.SystemClock.uptimeMillis();
-            return true;
-        }
-        switch (inputMode) {
+        if (input.isMouseButtonTouch(event)) return true;
+        switch (input.mode()) {
             case TRACKPAD:
                 // The VM's trackpad, as on the native console: fingers in millimetres on the
                 // whole container. A hardware mouse stays the relative pointer.
-                if ((event.getSource() & android.view.InputDevice.SOURCE_TOUCHSCREEN)
-                    == android.view.InputDevice.SOURCE_TOUCHSCREEN) {
-                    if (inputForwarder == null) return false;
-                    float units = TrackpadEncoder.unitsPerPx(this);
-                    inputForwarder.sendTouchEvent(event, units, units);
-                    return true;
-                }
+                if (ConsoleInput.isFingerTouch(event)) return input.sendTrackpadTouch(event);
                 // fall through
             case TABLET:
             case MOUSE:
@@ -693,7 +639,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private void applyInputMode() {
         ivDisplay.setScaleType(ImageView.ScaleType.FIT_CENTER);
         if (operationLabel != null) operationLabel.setVisibility(GONE);
-        if (inputMode != InputMode.TOUCH) {
+        if (input.mode() != InputMode.TOUCH) {
             // Whole-container gesture surface: MOUSE is a borderless touchpad and TRACKPAD the
             // VM's own; TABLET pins the coordinate-carrying gestures to the rendered image inside
             // the translator, so multi-finger gestures still work from the letterbox.
@@ -713,29 +659,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                     toggleSoftKeyboard();
             });
         }
-        if (gestureTranslator != null) {
-            gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
-            gestureTranslator.reset();
-        }
-        if (inputForwarder != null)
-            inputForwarder.setInputMode(inputMode);
     }
 
-    private void setInputMode(InputMode mode) {
-        if (inputMode == mode) return;
-        // Both absolute modes are inert with the switch off, the same as on the native console.
-        // TOUCH because this screen's multi-touch device is not created; TABLET because the switch
-        // is what the daemon sends as view-only=true, and a view-only binding has no tablet and no
-        // keyboard behind it -- crosvm drops the RFB pointer and key events rather than injecting
-        // them. So RFB is no longer a way around this screen's switch, which it was while those
-        // devices belonged to the VM instead of to the binding. MOUSE is: the relative pointer has
-        // no output binding and is not a screen's to switch off, nor is the trackpad. Say why once,
-        // here, rather than leaving the user tapping at nothing.
-        if (!screenInputEnabled && !mode.isVmPointer())
-            Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
-        inputMode = mode;
-        prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
-        workspace.setInputMode(mode);
+    // ConsoleInput says why an absolute mode is inert with the switch off: TOUCH because this
+    // screen's multi-touch device is not created, TABLET because the switch is what the daemon
+    // sends as view-only=true, whose binding has no tablet and no keyboard behind it.
+    private void setInputMode(@NonNull InputMode mode) {
+        if (!input.setMode(mode)) return;
         viewport.resetToFit();
         applyInputMode();
     }
@@ -754,65 +684,49 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     @SuppressLint("ClickableViewAccessibility")
     private void setupFab() {
-        var listener = new DragTouchListener(this, this::showFabMenu);
+        var listener = new DragTouchListener(this, () -> menu.show());
         fabMenu.setOnTouchListener(listener);
     }
-
-    private void showFabMenu() {
-        var popup = new MaterialMenu(this, fabMenu);
-        popup.inflate(R.menu.menu_vnc_display_menu);
-        var header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.VERTICAL);
-        header.addView(buildInputModeHeader(popup));
-        header.addView(DisplayKeyboardMenuRow.build(
-            getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss, workspace::toggleKeyboardOnTopAndSay));
-        popup.setHeaderView(header);
-        ExternalOutputControl.titleMenuItem(popup.getMenu(), R.id.menu_external_output, outputKey);
-        popup.setOnMenuItemClickListener(this::onMenuItemClicked);
-        popup.show();
-    }
-
-    // Menu header: one row of three icon buttons (touch / tablet / mouse, the last also the
-    // trackpad), active mode checked.
-    private View buildInputModeHeader(MaterialMenu popup) {
-        return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputMode,
-            popup::dismiss, workspace::togglePointerButtonsAndSay);
-    }
-
 
     // Selecting the system keyboard summons the IME; anything else puts it away, so the mode
     // and what is actually on screen agree.
     private void applyKeyboardMode(@NonNull KeyboardMode mode) {
         chrome.setKeyboardMode(mode);
         if (mode == KeyboardMode.SYSTEM) toggleSoftKeyboard();
-        else hideSoftKeyboard();
+        else ConsoleInput.hideSoftKeyboard(this, ivDisplay);
     }
 
-    // Dropping the display view's focus first matters: it is what the IME is attached to, and
-    // some ROMs re-show the keyboard for a still-focused target right after a hide request.
-    private void hideSoftKeyboard() {
-        ivDisplay.clearFocus();
-        var controller = WindowCompat.getInsetsController(getWindow(), ivDisplay);
-        controller.hide(WindowInsetsCompat.Type.ime());
-        var imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
-        if (imm != null)
-            imm.hideSoftInputFromWindow(displayContainer.getWindowToken(), 0);
-    }
-
-    @Override
-    protected boolean onMenuItemClicked(@NonNull MenuItem item) {
-        int id = item.getItemId();
-        if (id == R.id.menu_fullscreen) {
-            toggleFullscreen();
-            return true;
-        } else if (id == R.id.menu_external_output) {
-            ExternalOutputControl.toggle(this, outputKey, this::outputScreen);
-            return true;
-        } else if (id == R.id.menu_usb_passthrough) {
-            cn.classfun.droidvm.ui.usb.UsbPassthroughDialog.show(this, vmId, vmName);
-            return true;
+    private final ConsoleMenu.Host menuHost = new ConsoleMenu.Host() {
+        @Override
+        public void selectInputMode(@NonNull InputMode mode) {
+            setInputMode(mode);
         }
-        return super.onMenuItemClicked(item);
-    }
+
+        @NonNull
+        @Override
+        public KeyboardMode keyboardMode() {
+            return chrome.getKeyboardMode();
+        }
+
+        @Override
+        public void selectKeyboardMode(@NonNull KeyboardMode mode) {
+            applyKeyboardMode(mode);
+        }
+
+        @Override
+        public void toggleFullscreen() {
+            VMVncDisplayActivity.this.toggleFullscreen();
+        }
+
+        @NonNull
+        @Override
+        public VmOutputRouter.Screen outputScreen() {
+            return VMVncDisplayActivity.this.outputScreen();
+        }
+
+        @Override
+        public boolean onItem(@NonNull MenuItem item) {
+            return onMenuItemClicked(item);
+        }
+    };
 }

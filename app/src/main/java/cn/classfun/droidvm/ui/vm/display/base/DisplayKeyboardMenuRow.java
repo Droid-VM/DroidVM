@@ -24,17 +24,7 @@ public final class DisplayKeyboardMenuRow {
     private DisplayKeyboardMenuRow() {
     }
 
-    @NonNull
-    public static View build(
-        @NonNull LayoutInflater inflater,
-        @NonNull KeyboardMode current,
-        @NonNull Consumer<KeyboardMode> onPick,
-        @NonNull Runnable dismiss
-    ) {
-        return build(inflater, current, onPick, dismiss, null);
-    }
-
-    /** As above, with [longPress] for a long press on any of the row's buttons (where the keyboard sits). */
+    /** The row, [longPress] for a long press on any of its buttons (where the keyboard sits). */
     @NonNull
     public static View build(
         @NonNull LayoutInflater inflater,
