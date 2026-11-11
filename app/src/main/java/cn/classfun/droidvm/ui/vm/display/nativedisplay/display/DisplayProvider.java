@@ -122,6 +122,14 @@ final class DisplayProvider {
         owners[forCursor ? 1 : 0] = null;
         return true;
     }
+    /**
+     * Whether this console's picture is shown somewhere else -- an external display's provider
+     * holds crosvm's slots ({@code ExternalOutputService}). A held provider hands crosvm neither
+     * Surface and reads no cursor positions, and gives back what it held when it became so; its
+     * views stay laid out as the picture would be, a reference the user aims at. Main thread.
+     */
+    private boolean held;
+
     /** One binder hunt at a time: both the death path and surfaceCreated ask for one. */
     private final AtomicBoolean fetching = new AtomicBoolean();
 
@@ -373,7 +381,7 @@ final class DisplayProvider {
     }
 
     private void applyPendingSurface() {
-        if (displayService == null || !needsSend) return;
+        if (displayService == null || !needsSend || held) return;
         trySendSurface(mainView.getHolder());
     }
 
@@ -424,7 +432,7 @@ final class DisplayProvider {
 
         @Override
         public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int w, int h) {
-            if (displayService == null || !needsSend) return;
+            if (displayService == null || !needsSend || held) return;
             trySendSurface(holder);
         }
 
@@ -463,7 +471,7 @@ final class DisplayProvider {
     }
 
     private void attachCursorStream() {
-        if (cursorListener == null || displayService == null || cursorStream != null) {
+        if (cursorListener == null || displayService == null || cursorStream != null || held) {
             return;
         }
         cursorStream = CursorPositionStream.attach(displayService, cursorListener);
@@ -540,7 +548,7 @@ final class DisplayProvider {
 
     private void trySendCursorSurface(@NonNull SurfaceHolder holder) {
         var svc = displayService;
-        if (svc == null || cursorSurfaceSent) return;
+        if (svc == null || cursorSurfaceSent || held) return;
         Surface surface = holder.getSurface();
         if (surface == null || !surface.isValid()) return;
         try {
@@ -563,6 +571,50 @@ final class DisplayProvider {
                 Log.w(TAG, "drawSavedFrameForSurface(cursor) failed", e);
             }
         }
+    }
+
+    /**
+     * Show this console's picture here (false) or let another provider show it (true). Becoming
+     * held gives crosvm's slots back if this provider has them -- the scanout's frame saved first,
+     * so whoever takes the slot next starts from it -- and closes the cursor positions; ceasing to
+     * be held hands this provider's Surfaces over again, as a fresh session would.
+     */
+    void setHeld(boolean value) {
+        if (held == value) return;
+        held = value;
+        var svc = displayService;
+        if (held) {
+            if (svc != null && releaseSurface(svc, false)) {
+                try {
+                    svc.saveFrameForSurface(false);
+                    svc.removeSurface(false);
+                } catch (RemoteException e) {
+                    Log.w(TAG, "giving the scanout back failed", e);
+                }
+            }
+            if (svc != null && cursorSurfaceSent && releaseSurface(svc, true)) {
+                try {
+                    svc.removeSurface(true);
+                } catch (RemoteException e) {
+                    Log.w(TAG, "giving the cursor plane back failed", e);
+                }
+            }
+            cursorSurfaceSent = false;
+            if (cursorStream != null) {
+                cursorStream.close();
+                cursorStream = null;
+            }
+            var surface = mainView.getHolder().getSurface();
+            needsSend = surface != null && surface.isValid();
+            Log.i(TAG, "picture shown elsewhere; this console's surfaces held back");
+            return;
+        }
+        Log.i(TAG, "picture back on this console");
+        var surface = mainView.getHolder().getSurface();
+        if (surface != null && surface.isValid()) needsSend = true;
+        applyPendingSurface();
+        if (cursorView != null) trySendCursorSurface(cursorView.getHolder());
+        attachCursorStream();
     }
 
     void shutdown() {

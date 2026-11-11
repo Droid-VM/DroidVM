@@ -65,6 +65,11 @@ public final class NativeSurfaceSource implements DisplaySource {
         provider.setOnQuarterTurnsRejected(listener);
     }
 
+    /** Whether the picture is shown elsewhere (an external display); see DisplayProvider#setHeld. */
+    public void setHeld(boolean held) {
+        provider.setHeld(held);
+    }
+
     @Override
     public void start() {
     }

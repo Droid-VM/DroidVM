@@ -7,6 +7,11 @@
         android:title="@string/vnc_menu_fullscreen" />
 
     <item
+        android:id="@+id/menu_external_output"
+        android:icon="@drawable/ic_monitor"
+        android:title="@string/external_output_show" />
+
+    <item
         android:id="@+id/menu_usb_passthrough"
         android:icon="@drawable/ic_usb"
         android:title="@string/usb_pass_menu" />

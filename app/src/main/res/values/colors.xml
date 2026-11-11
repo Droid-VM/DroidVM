@@ -38,4 +38,7 @@
     <color name="status_unsupported">#FFF44336</color>
 
     <color name="vmpkg_export_disk_selected">#FF888888</color>
+    <!-- The console's stand-in for a picture shown on an external display. -->
+    <color name="external_block">#FF1C1F24</color>
+    <color name="external_block_text">#B3FFFFFF</color>
 </resources>

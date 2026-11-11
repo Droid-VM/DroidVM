@@ -22,6 +22,7 @@ import android.os.Looper;
 import android.util.Base64;
 import android.util.Log;
 import android.view.KeyCharacterMap;
+import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MenuItem;
@@ -59,6 +60,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.MotionSensors;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.ui.vm.display.external.VmOutputRouter;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
@@ -151,6 +153,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private FrameLayout displayContainer;
     private SurfaceView surfaceView;
     private SurfaceView cursorView;
+    // Stands where the picture would be while it is on an external display (VmOutputRouter).
+    private FrameLayout externalBlock;
+    private TextView tvExternalBlock;
+    private final VmOutputRouter.Listener outputListener = this::onOutputChanged;
 
     // Last viewport transform, mirrored so the cursor overlay can be placed without asking the
     // controller to recompute it. Written only by onViewportChanged, read only on the main thread.
@@ -349,6 +355,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             showOverlay(getString(R.string.native_display_failed));
             return;
         }
+        // The picture may be on an external display already, or go back to the one it was last
+        // shown on: the console then holds its own provider back and shows the block instead.
+        VmOutputRouter.get().addListener(outputListener);
+        showOutput(VmOutputRouter.get().displayOf(vmKey));
+        var remembered = VmOutputRouter.get().rememberedDisplay(this, vmKey);
+        if (remembered != null) VmOutputRouter.get().project(this, outputScreen(), remembered);
         displayAttach = new DaemonDisplayAttach(this, mainHandler,
             new DaemonDisplayAttach.Listener() {
                 @Override
@@ -422,6 +434,9 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // This must run here, on the main thread with displaySource assigned -- it used to sit
         // inside the binder-supplier lambda above, where the first invocation raced the field
         // assignment on a background thread and the cursor layer was wired only by luck.
+        // Before the binder arrives: a picture on an external display keeps crosvm's slot there.
+        ((NativeSurfaceSource) displaySource).setHeld(
+            VmOutputRouter.get().displayOf(vmKey) != Display.INVALID_DISPLAY);
         displaySource.setCursorView(cursorView);
         displaySource.setCursorListener(this::onGuestCursorMoved);
         displaySource.setOnQuarterTurnsRejected(turns -> {
@@ -462,6 +477,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         cursorView.setVisibility(VISIBLE);
         parkCursorOverlay();
         surfaceView = findViewById(R.id.surface_view);
+        externalBlock = findViewById(R.id.external_block);
+        tvExternalBlock = findViewById(R.id.tv_external_block);
         keyboardInput = findViewById(R.id.keyboard_input);
         fabMenu = findViewById(R.id.fab_menu);
         btnFullscreen = findViewById(R.id.btn_fullscreen);
@@ -1032,6 +1049,11 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
                     surfaceView.setScaleY(viewScale);
                     surfaceView.setTranslationX(offsetX);
                     surfaceView.setTranslationY(offsetY);
+                    externalBlock.setLayoutParams(new FrameLayout.LayoutParams(baseW, baseH, CENTER));
+                    externalBlock.setScaleX(viewScale);
+                    externalBlock.setScaleY(viewScale);
+                    externalBlock.setTranslationX(offsetX);
+                    externalBlock.setTranslationY(offsetY);
                     vpBaseW = baseW;
                     vpBaseH = baseH;
                     vpViewScale = viewScale;
@@ -1159,6 +1181,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         header.addView(keyboardRow);
         header.addView(buildRotationRow());
         popup.setHeaderView(header);
+        var output = popup.getMenu().findItem(R.id.menu_external_output);
+        if (output != null)
+            output.setTitle(VmOutputRouter.get().displayOf(vmKey) != Display.INVALID_DISPLAY
+                ? R.string.external_output_stop : R.string.external_output_show);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
     }
@@ -1198,7 +1224,58 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             UsbPassthroughDialog.show(this, vmId, vmName);
             return true;
         }
+        if (id == R.id.menu_external_output) {
+            toggleExternalOutput();
+            return true;
+        }
         return false;
+    }
+
+    // The picture to an external display, or back: one display goes straight there, several ask.
+    private void toggleExternalOutput() {
+        var router = VmOutputRouter.get();
+        if (router.displayOf(vmKey) != Display.INVALID_DISPLAY) {
+            router.bringBack(this, vmKey, true);
+            return;
+        }
+        var displays = VmOutputRouter.externalDisplays(this);
+        if (displays.length == 0) {
+            Toast.makeText(this, R.string.external_output_none, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (displays.length == 1) {
+            router.project(this, outputScreen(), displays[0]);
+            return;
+        }
+        var names = new String[displays.length];
+        for (int i = 0; i < displays.length; i++) names[i] = displays[i].getName();
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(R.string.external_output_pick)
+            .setItems(names, (d, which) -> router.project(this, outputScreen(), displays[which]))
+            .setNegativeButton(android.R.string.cancel, null)
+            .show();
+    }
+
+    @NonNull
+    private VmOutputRouter.Screen outputScreen() {
+        return new VmOutputRouter.Screen(vmId, screenId, vmName, guestWidth, guestHeight);
+    }
+
+    private void onOutputChanged(@NonNull String key, int displayId) {
+        if (key.equals(vmKey)) showOutput(displayId);
+    }
+
+    // Where the picture is: here, or on [displayId] with the block standing in for it.
+    private void showOutput(int displayId) {
+        boolean external = displayId != Display.INVALID_DISPLAY;
+        if (displaySource instanceof NativeSurfaceSource)
+            ((NativeSurfaceSource) displaySource).setHeld(external);
+        externalBlock.setVisibility(external ? VISIBLE : GONE);
+        if (!external) return;
+        var manager = getSystemService(android.hardware.display.DisplayManager.class);
+        var display = manager == null ? null : manager.getDisplay(displayId);
+        tvExternalBlock.setText(getString(R.string.external_output_block,
+            display == null ? String.valueOf(displayId) : display.getName()));
     }
 
     // Select TOUCH/MOUSE/TABLET/TRACKPAD: persist (shared with VNC) and route the InputForwarder +
@@ -1557,6 +1634,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        VmOutputRouter.get().removeListener(outputListener);
         if (keyboardGrab != null) keyboardGrab.close();
         if (motionSensor != null) {
             motionSensor.stop();

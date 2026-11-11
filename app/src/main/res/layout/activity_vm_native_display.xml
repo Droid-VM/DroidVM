@@ -68,6 +68,29 @@
             android:layout_height="match_parent"
             android:layout_gravity="center" />
 
+        <!-- Where the picture would be while it is on an external display: a dark block laid out
+             exactly as the scanout (the viewport writes both), for the user to aim touches at.
+             Not clickable, so touches go on to the container as over the picture. -->
+        <FrameLayout
+            android:id="@+id/external_block"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:background="@color/external_block"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_external_block"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:padding="16dp"
+                android:textColor="@color/external_block_text"
+                android:textSize="14sp" />
+
+        </FrameLayout>
+
         <!-- The guest's HARDWARE cursor, composited by Android on top of the scanout.
              virtio-gpu delivers the pointer on a separate cursor plane and crosvm hands it to us
              as a second Surface; without this view those pixels go to a sink buffer that is never
