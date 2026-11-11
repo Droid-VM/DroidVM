@@ -1723,8 +1723,8 @@
     <string name="usb_class_vendor">Vendor-specific</string>
     <string name="usb_pass_menu">USB passthrough</string>
     <string name="usb_pass_title">USB passthrough: %1$s</string>
-    <string name="usb_pass_everyone">Every device (everyone)</string>
-    <string name="usb_pass_hid">HID devices: keyboards, mice (hid)</string>
+    <string name="usb_pass_everyone">Rule: every device (everyone)</string>
+    <string name="usb_pass_hid">Rule: HID devices, keyboards and mice (hid)</string>
     <string name="usb_pass_device_fmt">%1$s · %2$s · %3$s</string>
     <string name="usb_pass_where_android">on Android now</string>
     <string name="usb_pass_where_vm">in %1$s now</string>
@@ -1732,6 +1732,8 @@
     <string name="usb_pass_rules_page">Rules</string>
     <string name="usb_pass_saved">USB rules updated; %1$d device(s) moved now.</string>
     <string name="usb_pass_disabled">Saved, but USB passthrough rules are off: turn them on in USB passthrough rules for them to apply.</string>
+    <string name="usb_pass_moved">%1$d device(s) moved until unplugged; plugged back in, a device follows the USB rules.</string>
+    <string name="usb_pass_failed_title">Not everything was done</string>
     <string name="usb_rules_add">Add rule</string>
     <string name="usb_rules_target_custom">Custom...</string>
     <string name="usb_rules_custom_target_title">Custom target</string>

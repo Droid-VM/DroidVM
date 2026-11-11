@@ -1680,8 +1680,8 @@
     <string name="usb_class_vendor">廠商自訂</string>
     <string name="usb_pass_menu">USB 直通</string>
     <string name="usb_pass_title">USB 直通：%1$s</string>
-    <string name="usb_pass_everyone">所有裝置（everyone）</string>
-    <string name="usb_pass_hid">HID 裝置：鍵盤、滑鼠（hid）</string>
+    <string name="usb_pass_everyone">規則：所有裝置（everyone）</string>
+    <string name="usb_pass_hid">規則：HID 裝置，鍵盤、滑鼠（hid）</string>
     <string name="usb_pass_device_fmt">%1$s · %2$s · %3$s</string>
     <string name="usb_pass_where_android">目前在 Android</string>
     <string name="usb_pass_where_vm">目前在 %1$s</string>
@@ -1689,6 +1689,8 @@
     <string name="usb_pass_rules_page">規則</string>
     <string name="usb_pass_saved">已更新 USB 直通規則，現在移動了 %1$d 個裝置。</string>
     <string name="usb_pass_disabled">已儲存，但 USB 直通規則目前關閉；到「USB直通規則」打開後才會生效。</string>
+    <string name="usb_pass_moved">已移動 %1$d 個裝置，到拔掉為止；重新插上後照 USB 直通規則走。</string>
+    <string name="usb_pass_failed_title">有些沒有完成</string>
     <string name="usb_rules_add">新增規則</string>
     <string name="usb_rules_target_custom">自訂…</string>
     <string name="usb_rules_custom_target_title">自訂目標</string>

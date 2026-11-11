@@ -1680,8 +1680,8 @@
     <string name="usb_class_vendor">厂商自定义</string>
     <string name="usb_pass_menu">USB 直通</string>
     <string name="usb_pass_title">USB 直通：%1$s</string>
-    <string name="usb_pass_everyone">所有设备（everyone）</string>
-    <string name="usb_pass_hid">HID 设备：键盘、鼠标（hid）</string>
+    <string name="usb_pass_everyone">规则：所有设备（everyone）</string>
+    <string name="usb_pass_hid">规则：HID 设备，键盘、鼠标（hid）</string>
     <string name="usb_pass_device_fmt">%1$s · %2$s · %3$s</string>
     <string name="usb_pass_where_android">目前在 Android</string>
     <string name="usb_pass_where_vm">目前在 %1$s</string>
@@ -1689,6 +1689,8 @@
     <string name="usb_pass_rules_page">规则</string>
     <string name="usb_pass_saved">已更新 USB 直通规则，现在移动了 %1$d 个设备。</string>
     <string name="usb_pass_disabled">已保存，但 USB 直通规则目前关闭；到「USB直通规则」打开后才会生效。</string>
+    <string name="usb_pass_moved">已移动 %1$d 个设备，到拔掉为止；重新插上后按 USB 直通规则走。</string>
+    <string name="usb_pass_failed_title">有些没有完成</string>
     <string name="usb_rules_add">新增规则</string>
     <string name="usb_rules_target_custom">自定义…</string>
     <string name="usb_rules_custom_target_title">自定义目标</string>
