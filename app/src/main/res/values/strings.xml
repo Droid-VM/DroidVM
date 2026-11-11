@@ -1563,6 +1563,11 @@
     <string name="external_output_block">On %1$s</string>
     <string name="external_output_none">No external display is connected.</string>
     <string name="external_output_pick">Show on</string>
+    <string name="console_keyboard_on_top">Keyboard above the pointer area</string>
+    <string name="console_keyboard_at_bottom">Keyboard below the pointer area</string>
+    <string name="console_pointer_buttons_on">Mouse buttons on</string>
+    <string name="console_pointer_buttons_on_relative">Mouse buttons on (shown in the mouse and trackpad modes)</string>
+    <string name="console_pointer_buttons_off">Mouse buttons off</string>
     <string name="notif_channel_peripheral_foreground_desc">Shown while a VM uses a camera or another device that Android only allows in the foreground.</string>
 
     <string name="record_audio_permission_title">Allow microphone access?</string>

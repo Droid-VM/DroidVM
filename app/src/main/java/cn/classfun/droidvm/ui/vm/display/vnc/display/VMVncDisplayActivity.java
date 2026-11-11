@@ -51,6 +51,7 @@ import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.ConsoleWorkspace;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
@@ -91,6 +92,8 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private FloatingActionButton fabMenu;
     private TextView operationLabel;
     private DisplayPhysicalKeyboardView phyKeyboard;
+    // The keyboard's side of the pointer area and the mouse buttons under it.
+    private ConsoleWorkspace workspace;
     // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
     // absolute pointer + the keyboard); the rest goes to the crosvm --input evdev devices via the
     // daemon (MOUSE = relative motion the guest renders a cursor for, TOUCH = raw multi-touch).
@@ -265,6 +268,12 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     protected void onSetupActivity() {
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
         inputMode = InputMode.fromOrdinal(prefs.getInt(KEY_INPUT_MODE, 0));
+        workspace = new ConsoleWorkspace(this, findViewById(R.id.main), displayContainer,
+            findViewById(R.id.pointer_buttons), java.util.List.of(extraKeysPanel, phyKeyboard),
+            (button, down) -> {
+                if (inputForwarder != null) inputForwarder.sendPointerButton(button, down);
+            });
+        workspace.setInputMode(inputMode);
         phyKeyboard.setKeyListener(vncExtraKeys);
         // The physical keyboard's Shift/Ctrl/Alt/Win mirror the panel's sticky-modifier state.
         extraKeysPanel.setModifierStateObserver(() -> phyKeyboard.refreshModifiers(
@@ -672,6 +681,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             Toast.makeText(this, R.string.display_input_disabled_hint, Toast.LENGTH_LONG).show();
         inputMode = mode;
         prefs.edit().putInt(KEY_INPUT_MODE, mode.ordinal()).apply();
+        workspace.setInputMode(mode);
         viewport.resetToFit();
         applyInputMode();
     }
@@ -702,7 +712,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         header.addView(buildInputModeHeader(popup));
         header.addView(DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss));
+            popup::dismiss, this::toggleKeyboardDock));
         popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
@@ -712,8 +722,24 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
         return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputMode,
-            popup::dismiss);
+            popup::dismiss, this::togglePointerButtons);
     }
+
+    // Long press on the menu's keyboard: the keyboard to the other side of the pointer area.
+    private void toggleKeyboardDock() {
+        Toast.makeText(this, workspace.toggleKeyboardOnTop()
+            ? R.string.console_keyboard_on_top : R.string.console_keyboard_at_bottom,
+            Toast.LENGTH_SHORT).show();
+    }
+
+    // Long press on the menu's mouse: the mouse buttons under the pointer area, or not.
+    private void togglePointerButtons() {
+        boolean on = workspace.togglePointerButtons();
+        Toast.makeText(this, !on ? R.string.console_pointer_buttons_off
+            : inputMode.isVmPointer() ? R.string.console_pointer_buttons_on
+            : R.string.console_pointer_buttons_on_relative, Toast.LENGTH_SHORT).show();
+    }
+
 
     // Selecting the system keyboard summons the IME; anything else puts it away, so the mode
     // and what is actually on screen agree.

@@ -180,6 +180,8 @@
 
     </FrameLayout>
 
+    <include layout="@layout/view_pointer_buttons" />
+
     <cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel
         android:id="@+id/extra_keys_panel"
         android:layout_width="match_parent"

@@ -67,6 +67,7 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.vm.display.base.ConsoleWorkspace;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.PhysicalKeyboardGrab;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
@@ -145,6 +146,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private FrameLayout displayContainer;
     private SurfaceView surfaceView;
     private SurfaceView cursorView;
+    // The keyboard's side of the pointer area and the mouse buttons under it.
+    private ConsoleWorkspace workspace;
     // Stands where the picture would be while it is on an external display (VmOutputRouter).
     private FrameLayout externalBlock;
     private TextView tvExternalBlock;
@@ -551,6 +554,12 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         // back over the stored mode.
         inputMode = InputMode.fromOrdinal(
             getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).getInt(KEY_INPUT_MODE, 0));
+        workspace = new ConsoleWorkspace(this, findViewById(R.id.main), displayContainer,
+            findViewById(R.id.pointer_buttons), java.util.List.of(extraKeysPanel, phyKeyboard),
+            (button, down) -> {
+                if (inputForwarder != null) inputForwarder.sendPointerButton(button, down);
+            });
+        workspace.setInputMode(inputMode);
         gestureTranslator = new PointerGestureTranslator(mainHandler, gestureListener);
         gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);
         // Keep the display area out of the system-gesture zones so multi-finger gestures
@@ -1170,7 +1179,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         header.addView(buildInputModeHeader(popup));
         View keyboardRow = DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss);
+            popup::dismiss, this::toggleKeyboardDock);
         // The rotation row goes below: hand it the header's bottom margin, so the three rows sit
         // as evenly apart as the first two.
         keyboardRow.setPaddingRelative(keyboardRow.getPaddingStart(), keyboardRow.getPaddingTop(),
@@ -1190,8 +1199,24 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
         return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputModeTo,
-            popup::dismiss);
+            popup::dismiss, this::togglePointerButtons);
     }
+
+    // Long press on the menu's keyboard: the keyboard to the other side of the pointer area.
+    private void toggleKeyboardDock() {
+        Toast.makeText(this, workspace.toggleKeyboardOnTop()
+            ? R.string.console_keyboard_on_top : R.string.console_keyboard_at_bottom,
+            Toast.LENGTH_SHORT).show();
+    }
+
+    // Long press on the menu's mouse: the mouse buttons under the pointer area, or not.
+    private void togglePointerButtons() {
+        boolean on = workspace.togglePointerButtons();
+        Toast.makeText(this, !on ? R.string.console_pointer_buttons_off
+            : inputMode.isVmPointer() ? R.string.console_pointer_buttons_on
+            : R.string.console_pointer_buttons_on_relative, Toast.LENGTH_SHORT).show();
+    }
+
 
     // Selecting the system keyboard summons the IME; anything else puts it away, so the mode
     // and what is actually on screen agree.
@@ -1290,6 +1315,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         inputMode = mode;
         getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
             .putInt(KEY_INPUT_MODE, inputMode.ordinal()).apply();
+        workspace.setInputMode(inputMode);
         if (inputForwarder != null) inputForwarder.setInputMode(inputMode);
         if (gestureTranslator != null) {
             gestureTranslator.setAbsolute(inputMode == InputMode.TABLET);

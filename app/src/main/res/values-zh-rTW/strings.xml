@@ -1523,6 +1523,11 @@
     <string name="external_output_block">畫面在 %1$s</string>
     <string name="external_output_none">沒有連接外部顯示器。</string>
     <string name="external_output_pick">顯示在</string>
+    <string name="console_keyboard_on_top">鍵盤移到上方</string>
+    <string name="console_keyboard_at_bottom">鍵盤移到下方</string>
+    <string name="console_pointer_buttons_on">左右鍵已開啟</string>
+    <string name="console_pointer_buttons_on_relative">左右鍵已開啟（滑鼠、觸控板模式才會顯示）</string>
+    <string name="console_pointer_buttons_off">左右鍵已關閉</string>
     <string name="notif_channel_peripheral_foreground_desc">當 VM 使用相機等 Android 只允許在前景使用的裝置時顯示。</string>
     <string name="record_audio_permission_title">允許使用麥克風？</string>
     <string name="record_audio_permission_message">這台 VM 加了麥克風，執行期間會錄取手機的麥克風。允許麥克風權限，客體才聽得到。</string>

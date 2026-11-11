@@ -7,6 +7,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.android.material.button.MaterialButtonToggleGroup;
 
@@ -30,6 +31,18 @@ public final class DisplayKeyboardMenuRow {
         @NonNull Consumer<KeyboardMode> onPick,
         @NonNull Runnable dismiss
     ) {
+        return build(inflater, current, onPick, dismiss, null);
+    }
+
+    /** As above, with [longPress] for a long press on any of the row's buttons (where the keyboard sits). */
+    @NonNull
+    public static View build(
+        @NonNull LayoutInflater inflater,
+        @NonNull KeyboardMode current,
+        @NonNull Consumer<KeyboardMode> onPick,
+        @NonNull Runnable dismiss,
+        @Nullable Runnable longPress
+    ) {
         var group = (MaterialButtonToggleGroup)
             inflater.inflate(R.layout.view_keyboard_mode_toggle, null);
         group.check(buttonFor(current));
@@ -38,6 +51,15 @@ public final class DisplayKeyboardMenuRow {
             onPick.accept(modeFor(checkedId));
             dismiss.run();
         });
+        if (longPress != null) {
+            for (int i = 0; i < group.getChildCount(); i++) {
+                group.getChildAt(i).setOnLongClickListener(v -> {
+                    longPress.run();
+                    dismiss.run();
+                    return true;
+                });
+            }
+        }
         return group;
     }
 

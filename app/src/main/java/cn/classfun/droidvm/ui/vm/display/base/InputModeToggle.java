@@ -7,6 +7,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.button.MaterialButtonToggleGroup;
@@ -20,6 +21,7 @@ import cn.classfun.droidvm.R;
  * segmented row, the active mode checked. The mouse button holds two modes, the relative
  * {@link InputMode#MOUSE} and the {@link InputMode#TRACKPAD}: from touch or tablet it selects the
  * mouse, and tapped again while either is active it switches to the other, its icon saying which.
+ * A long press on it is the console's own ({@link ConsoleWorkspace#togglePointerButtons}).
  */
 public final class InputModeToggle {
     private InputModeToggle() {
@@ -28,6 +30,13 @@ public final class InputModeToggle {
     @NonNull
     public static View build(@NonNull LayoutInflater inflater, @NonNull InputMode current,
                              @NonNull Consumer<InputMode> select, @NonNull Runnable dismiss) {
+        return build(inflater, current, select, dismiss, null);
+    }
+
+    @NonNull
+    public static View build(@NonNull LayoutInflater inflater, @NonNull InputMode current,
+                             @NonNull Consumer<InputMode> select, @NonNull Runnable dismiss,
+                             @Nullable Runnable mouseLongPress) {
         var group = (MaterialButtonToggleGroup) inflater.inflate(
             R.layout.view_input_mode_toggle, null);
         MaterialButton mouse = group.findViewById(R.id.mode_mouse);
@@ -47,6 +56,13 @@ public final class InputModeToggle {
             select.accept(current == InputMode.MOUSE ? InputMode.TRACKPAD : InputMode.MOUSE);
             dismiss.run();
         });
+        if (mouseLongPress != null) {
+            mouse.setOnLongClickListener(v -> {
+                mouseLongPress.run();
+                dismiss.run();
+                return true;
+            });
+        }
         return group;
     }
 }
