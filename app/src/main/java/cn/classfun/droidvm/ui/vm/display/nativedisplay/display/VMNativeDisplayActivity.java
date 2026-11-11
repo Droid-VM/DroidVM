@@ -60,6 +60,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.ForegroundCallback;
 import cn.classfun.droidvm.lib.store.vm.MotionSensors;
 import cn.classfun.droidvm.lib.store.vm.NativeDisplay;
+import cn.classfun.droidvm.ui.vm.display.external.ExternalOutputControl;
 import cn.classfun.droidvm.ui.vm.display.external.VmOutputRouter;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
@@ -1179,7 +1180,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         header.addView(buildInputModeHeader(popup));
         View keyboardRow = DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss, this::toggleKeyboardDock);
+            popup::dismiss, workspace::toggleKeyboardOnTopAndSay);
         // The rotation row goes below: hand it the header's bottom margin, so the three rows sit
         // as evenly apart as the first two.
         keyboardRow.setPaddingRelative(keyboardRow.getPaddingStart(), keyboardRow.getPaddingTop(),
@@ -1187,10 +1188,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         header.addView(keyboardRow);
         header.addView(buildRotationRow());
         popup.setHeaderView(header);
-        var output = popup.getMenu().findItem(R.id.menu_external_output);
-        if (output != null)
-            output.setTitle(VmOutputRouter.get().displayOf(vmKey) != Display.INVALID_DISPLAY
-                ? R.string.external_output_stop : R.string.external_output_show);
+        ExternalOutputControl.titleMenuItem(popup.getMenu(), R.id.menu_external_output, vmKey);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
     }
@@ -1199,22 +1197,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
         return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputModeTo,
-            popup::dismiss, this::togglePointerButtons);
-    }
-
-    // Long press on the menu's keyboard: the keyboard to the other side of the pointer area.
-    private void toggleKeyboardDock() {
-        Toast.makeText(this, workspace.toggleKeyboardOnTop()
-            ? R.string.console_keyboard_on_top : R.string.console_keyboard_at_bottom,
-            Toast.LENGTH_SHORT).show();
-    }
-
-    // Long press on the menu's mouse: the mouse buttons under the pointer area, or not.
-    private void togglePointerButtons() {
-        boolean on = workspace.togglePointerButtons();
-        Toast.makeText(this, !on ? R.string.console_pointer_buttons_off
-            : inputMode.isVmPointer() ? R.string.console_pointer_buttons_on
-            : R.string.console_pointer_buttons_on_relative, Toast.LENGTH_SHORT).show();
+            popup::dismiss, workspace::togglePointerButtonsAndSay);
     }
 
 
@@ -1244,7 +1227,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             return true;
         }
         if (id == R.id.menu_external_output) {
-            toggleExternalOutput();
+            ExternalOutputControl.toggle(this, vmKey, this::outputScreen);
             return true;
         }
         if (id == R.id.menu_usb_passthrough) {
@@ -1252,31 +1235,6 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             return true;
         }
         return false;
-    }
-
-    // The picture to an external display, or back: one display goes straight there, several ask.
-    private void toggleExternalOutput() {
-        var router = VmOutputRouter.get();
-        if (router.displayOf(vmKey) != Display.INVALID_DISPLAY) {
-            router.bringBack(this, vmKey, true);
-            return;
-        }
-        var displays = VmOutputRouter.externalDisplays(this);
-        if (displays.length == 0) {
-            Toast.makeText(this, R.string.external_output_none, Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (displays.length == 1) {
-            router.project(this, outputScreen(), displays[0]);
-            return;
-        }
-        var names = new String[displays.length];
-        for (int i = 0; i < displays.length; i++) names[i] = displays[i].getName();
-        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
-            .setTitle(R.string.external_output_pick)
-            .setItems(names, (d, which) -> router.project(this, outputScreen(), displays[which]))
-            .setNegativeButton(android.R.string.cancel, null)
-            .show();
     }
 
     @NonNull
@@ -1294,11 +1252,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         if (displaySource instanceof NativeSurfaceSource)
             ((NativeSurfaceSource) displaySource).setHeld(external);
         externalBlock.setVisibility(external ? VISIBLE : GONE);
-        if (!external) return;
-        var manager = getSystemService(android.hardware.display.DisplayManager.class);
-        var display = manager == null ? null : manager.getDisplay(displayId);
-        tvExternalBlock.setText(getString(R.string.external_output_block,
-            display == null ? String.valueOf(displayId) : display.getName()));
+        if (external) tvExternalBlock.setText(ExternalOutputControl.blockText(this, displayId));
     }
 
     // Select TOUCH/MOUSE/TABLET/TRACKPAD: persist (shared with VNC) and route the InputForwarder +

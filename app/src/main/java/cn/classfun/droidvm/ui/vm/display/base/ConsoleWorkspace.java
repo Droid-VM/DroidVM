@@ -10,6 +10,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 
@@ -37,6 +38,7 @@ public final class ConsoleWorkspace {
         void onPointerButton(short button, boolean down);
     }
 
+    private final Context context;
     private final SharedPreferences prefs;
     private final LinearLayout root;
     private final View container;
@@ -52,6 +54,7 @@ public final class ConsoleWorkspace {
     public ConsoleWorkspace(@NonNull Context context, @NonNull LinearLayout root,
                             @NonNull View container, @NonNull View buttons,
                             @NonNull List<View> keyboard, @NonNull ButtonSink sink) {
+        this.context = context;
         this.prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         this.root = root;
         this.container = container;
@@ -73,6 +76,21 @@ public final class ConsoleWorkspace {
         prefs.edit().putBoolean(KEY_KEYBOARD_ON_TOP, top).apply();
         applyOrder();
         return top;
+    }
+
+    /** The menu keyboard row's long press: the keyboard to the other side, and a toast saying where. */
+    public void toggleKeyboardOnTopAndSay() {
+        Toast.makeText(context, toggleKeyboardOnTop()
+            ? R.string.console_keyboard_on_top : R.string.console_keyboard_at_bottom,
+            Toast.LENGTH_SHORT).show();
+    }
+
+    /** The menu mouse's long press: the mouse buttons on or off, and a toast saying when they show. */
+    public void togglePointerButtonsAndSay() {
+        boolean on = togglePointerButtons();
+        Toast.makeText(context, !on ? R.string.console_pointer_buttons_off
+            : inputMode.isVmPointer() ? R.string.console_pointer_buttons_on
+            : R.string.console_pointer_buttons_on_relative, Toast.LENGTH_SHORT).show();
     }
 
     public boolean arePointerButtonsOn() {

@@ -1105,8 +1105,6 @@
     <string name="vnc_menu_input_mode_tablet">手写板模式</string>
     <string name="vnc_menu_input_mode_trackpad">触控板模式</string>
     <string name="display_input_disabled_hint">这个屏幕没有启用输入设备。请到 VM 的图形设置开启，然后重新启动 VM。</string>
-    <string name="usb_input_no_device">未找到USB键盘或鼠标</string>
-    <string name="usb_input_status">USB输入：%1$d个键盘，%2$d个鼠标</string>
     <string name="vnc_menu_rotate">旋转屏幕</string>
     <string name="display_rotate_left">画面左转</string>
     <string name="display_rotate_right">画面右转</string>
@@ -1128,10 +1126,7 @@
     <string name="vnc_op_scroll_down">滚轮下滚</string>
     <string name="vnc_menu_reconnect">重新连接</string>
     <string name="vnc_menu_external_app">使用外部程序连接</string>
-    <string name="vnc_menu_project_external">投射到外部显示器</string>
     <string name="vnc_menu_no_vnc_app">未找到可处理 VNC 连接的应用</string>
-    <string name="vnc_presentation_title">触控板</string>
-    <string name="vnc_presentation_title_with_name">%1$s - 触控板</string>
 
     <string name="vnc_external_title">使用外部程序连接</string>
     <string name="vnc_external_message">即将使用外部程序连接</string>
@@ -1143,21 +1138,7 @@
     <string name="vnc_external_copy_password">复制密码</string>
     <string name="text_input_item_range">范围：%1$s - %2$s</string>
 
-    <string name="display_select_display">选择显示器</string>
-    <string name="display_no_display">没有可用的外部显示器</string>
-    <string name="display_lost">外部显示器已断开</string>
-    <string name="display_not_on_title">显示器未激活</string>
-    <string name="display_not_on_message">所选的显示器「%1$s」当前状态为 %2$s，投屏可能无法正常工作。\n\n是否仍要继续？</string>
-    <string name="display_start_failed">显示器启动失败</string>
-    <string name="display_state_off">关闭</string>
-    <string name="display_state_on">启用</string>
-    <string name="display_state_doze">休眠</string>
-    <string name="display_state_doze_suspend">深度休眠</string>
-    <string name="display_state_on_suspend">挂起</string>
-    <string name="display_state_unknown">未知</string>
-    <string name="display_touchpad_hint">滑动移动光标\n点击左键单击\n双指滚动</string>
     <string name="display_mouse_left">鼠标左键</string>
-    <string name="display_mouse_middle">鼠标中键</string>
     <string name="display_mouse_right">鼠标右键</string>
 
     <string name="logs_title">日志</string>
@@ -1683,7 +1664,7 @@
     <string name="usb_rules_empty_any">尚无任意规则</string>
     <string name="usb_rules_layer_class">类别</string>
     <string name="usb_rules_empty_class">尚无类别规则</string>
-    <string name="usb_rules_match_class_fmt">所有 %1$s 设备</string>
+    <string name="usb_rules_match_class_fmt">所有 %1$s</string>
     <string name="usb_class_fmt">%1$s（%2$s）</string>
     <string name="usb_class_unnamed_fmt">类别 %1$s</string>
     <string name="usb_class_hid">HID：键盘、鼠标</string>

@@ -1149,8 +1149,6 @@
     <string name="vnc_menu_input_mode_tablet">وضع الجهاز اللوحي (Tablet Mode)</string>
     <string name="vnc_menu_input_mode_trackpad">وضع لوحة اللمس</string>
     <string name="display_input_disabled_hint">أجهزة الإدخال معطلة لهذه الشاشة. فعّلها من إعدادات الرسوميات، ثم أعد تشغيل الجهاز الافتراضي.</string>
-    <string name="usb_input_no_device">لم يتم العثور على لوحة مفاتيح أو فأرة USB</string>
-    <string name="usb_input_status">إدخال USB: %1$d لوحة مفاتيح، %2$d فأرة</string>
     <string name="vnc_menu_rotate">تدوير الشاشة</string>
 
     <string name="vnc_op_mouse_move">تحريك الفأرة</string>
@@ -1164,10 +1162,7 @@
     <string name="vnc_op_scroll_down">تمرير لأسفل</string>
     <string name="vnc_menu_reconnect">إعادة الاتصال</string>
     <string name="vnc_menu_external_app">فتح باستخدام تطبيق خارجي</string>
-    <string name="vnc_menu_project_external">عرض على شاشة خارجية</string>
     <string name="vnc_menu_no_vnc_app">لم يتم العثور على تطبيق للتعامل مع اتصالات VNC</string>
-    <string name="vnc_presentation_title">لوحة اللمس (Touchpad)</string>
-    <string name="vnc_presentation_title_with_name">%1$s - لوحة اللمس</string>
 
     <string name="vnc_external_title">فتح باستخدام تطبيق خارجي</string>
     <string name="vnc_external_message">على وشك الفتح باستخدام تطبيق خارجي</string>
@@ -1179,21 +1174,7 @@
     <string name="vnc_external_copy_password">نسخ كلمة المرور</string>
     <string name="text_input_item_range">النطاق: %1$s - %2$s</string>
 
-    <string name="display_select_display">تحديد شاشة العرض</string>
-    <string name="display_no_display">لا توجد شاشات خارجية متاحة</string>
-    <string name="display_lost">تم فصل الشاشة الخارجية</string>
-    <string name="display_not_on_title">شاشة العرض غير نشطة</string>
-    <string name="display_not_on_message">شاشة العرض المحددة \"%1$s\" في حالة %2$s حاليًا. قد لا تعمل مشاركة الشاشة (Casting) بشكل سليم.\n\nهل ترغب في المتابعة على أي حال؟</string>
-    <string name="display_start_failed">فشل بدء شاشة العرض</string>
-    <string name="display_state_off">متوقفة (OFF)</string>
-    <string name="display_state_on">تعمل (ON)</string>
-    <string name="display_state_doze">سكون خفيف (DOZE)</string>
-    <string name="display_state_doze_suspend">سكون خفيف معلق (DOZE SUSPEND)</string>
-    <string name="display_state_on_suspend">تعمل مع تعليق (ON SUSPEND)</string>
-    <string name="display_state_unknown">غير معروفة (UNKNOWN)</string>
-    <string name="display_touchpad_hint">اسحب لتحريك المؤشر\nالمس للنقر\nمرّر بإصبعين</string>
     <string name="display_mouse_left">زر الفأرة الأيسر</string>
-    <string name="display_mouse_middle">زر الفأرة الأوسط</string>
     <string name="display_mouse_right">زر الفأرة الأيمن</string>
 
     <string name="logs_title">السجلات</string>

@@ -112,13 +112,6 @@
             android:windowSoftInputMode="adjustNothing" />
 
         <activity
-            android:name=".ui.vm.display.vnc.display.VMVncPresentationActivity"
-            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
-            android:exported="false"
-            android:theme="@style/Theme.DroidVM.NoActionBar.Dark"
-            android:windowSoftInputMode="adjustNothing" />
-
-        <activity
             android:name=".ui.vm.display.nativedisplay.display.VMNativeDisplayActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
             android:exported="false"

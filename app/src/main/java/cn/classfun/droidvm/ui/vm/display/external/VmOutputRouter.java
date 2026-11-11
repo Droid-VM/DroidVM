@@ -50,14 +50,22 @@ public final class VmOutputRouter {
         public final String vmName;
         public final int width;
         public final int height;
+        /** A VNC-exported screen (its picture comes over VNC) rather than the native display. */
+        public final boolean vnc;
 
         public Screen(@NonNull String vmId, @NonNull String screenId, @NonNull String vmName,
                       int width, int height) {
+            this(vmId, screenId, vmName, width, height, false);
+        }
+
+        public Screen(@NonNull String vmId, @NonNull String screenId, @NonNull String vmName,
+                      int width, int height, boolean vnc) {
             this.vmId = vmId;
             this.screenId = screenId;
             this.vmName = vmName;
             this.width = width;
             this.height = height;
+            this.vnc = vnc;
         }
 
         @NonNull
@@ -110,6 +118,7 @@ public final class VmOutputRouter {
             .putExtra(ExternalOutputService.EXTRA_VM_NAME, screen.vmName)
             .putExtra(ExternalOutputService.EXTRA_WIDTH, screen.width)
             .putExtra(ExternalOutputService.EXTRA_HEIGHT, screen.height)
+            .putExtra(ExternalOutputService.EXTRA_VNC, screen.vnc)
             .putExtra(ExternalOutputService.EXTRA_DISPLAY_ID, display.getDisplayId()));
     }
 

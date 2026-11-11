@@ -9,8 +9,6 @@ import static android.view.KeyEvent.*;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static org.yaml.snakeyaml.util.UriEncoder.encode;
-import static java.util.concurrent.Executors.newSingleThreadExecutor;
-import static java.util.concurrent.TimeUnit.SECONDS;
 import static cn.classfun.droidvm.lib.utils.NetUtils.resolveAddress;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.ui.vm.display.base.X11Keymap.*;
@@ -26,7 +24,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.SystemClock;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MenuItem;
@@ -39,7 +36,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.annotation.MainThread;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -48,18 +44,12 @@ import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import com.google.android.material.textfield.TextInputLayout;
 
-import java.util.concurrent.ExecutorService;
 
 import cn.classfun.droidvm.R;
-import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.perf.GamePerfHint;
 import cn.classfun.droidvm.lib.ui.CopyableField;
 import cn.classfun.droidvm.lib.ui.ImeInsetsExempt;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
-import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ConsolePipeline;
-import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264ProbePolicy;
-import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264RectProtocol;
-import cn.classfun.droidvm.ui.vm.display.vnc.h264.H264SyncFrameCache;
 import cn.classfun.droidvm.ui.vm.display.vnc.input.VncExtraKeysPanel;
 
 public abstract class BaseVncActivity extends AppCompatActivity implements ImeInsetsExempt {
@@ -77,19 +67,15 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
      * one. Modes that ride RFB (the tablet pointer, the keyboard) are unaffected either way.
      */
     public static final String EXTRA_INPUT_ENABLED = "input_enabled";
-    protected static final int DEFAULT_PORT = 5900;
-    private static final int MAX_RECONNECT_ATTEMPTS = 5;
-    private static final long RECONNECT_DELAY_MS = 2000;
-    /**
-     * How often the H.264 policy's two silence clocks are read.
-     *
-     * <p>Both of them are measured in seconds, so a second of granularity costs nothing and this is
-     * the only timer the console needs for the whole H.264 path: everything else about it is driven
-     * by rects arriving.</p>
-     */
-    private static final long H264_TICK_MS = 1000;
+    protected static final int DEFAULT_PORT = VncSession.DEFAULT_PORT;
     protected final Handler mainHandler = new Handler(Looper.getMainLooper());
-    protected final ExecutorService executor = newSingleThreadExecutor(this::msgLoopThread);
+    /**
+     * The connection to the screen, shared with the external display's window while the picture
+     * is there (VncSession.acquire): this console keeps its input either way.
+     */
+    @Nullable
+    protected VncSession session;
+    private final VncSession.Listener sessionListener = new SessionListener();
     protected VncClient vncClient;
     protected MaterialToolbar toolbar;
     protected View statusIndicator;
@@ -112,37 +98,14 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected String vncRemoteHost = "";
     protected int vncPort = DEFAULT_PORT;
     protected String vncPassword = null;
-    protected volatile boolean running = false;
-    protected volatile boolean needsRefresh = false;
     /**
-     * The decoder view, when this console has one; null leaves it RFB-only.
-     *
-     * <p>Null does not stop the stream arriving: the encodings are asked for by the RFB client
-     * itself, before any of this exists. What it means is that the rects have nowhere to go, which
-     * is only ever true of a presentation console that has not been given a display yet -- and that
-     * console shows nothing on the phone either, so there is no picture to freeze.</p>
+     * The decoder view this console has, when it has one; null leaves it RFB-only. The session
+     * draws into it while the picture is here.
      */
     protected TextureView h264View;
-    /** Read on the message-loop thread, written on the main one; see {@link #setH264View}. */
-    @Nullable
-    private volatile H264ConsolePipeline h264;
-    /** What this console is doing about H.264 and why. See {@link H264ProbePolicy}. */
-    private final H264ProbePolicy h264Probe = new H264ProbePolicy();
-    /**
-     * The rect a decoder can start on, held for the connection rather than for the pipeline.
-     *
-     * <p>Here rather than inside {@link H264ConsolePipeline} because it has to survive one: this
-     * console's pipeline is built when there is a view to draw into, which on the presentation
-     * console is after a display has been chosen and again after every window rebuild, while the
-     * stream -- and the one reset-flagged rect that carries its parameter sets -- rides a
-     * connection that started earlier and does not stop for any of it.</p>
-     */
-    private final H264SyncFrameCache syncFrames = new H264SyncFrameCache();
-    private final Runnable h264Tick = this::tickH264;
     /** What {@link #setStatus} last put in the status line, and the note appended to it. */
     private String statusText = "";
     private String statusNote = "";
-    private int reconnectAttempt = 0;
     protected int fbWidth, fbHeight;
     protected Bitmap displayBitmap;
     protected final Object bitmapLock = new Object();
@@ -153,12 +116,6 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
 
     public interface LedStateListener {
         void onLedStateChanged(boolean caps, boolean num);
-    }
-
-    protected enum VncStatus {
-        CONNECTING,
-        CONNECTED,
-        ERROR
     }
 
     @SuppressWarnings("unused")
@@ -217,6 +174,89 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         fetchVncInfoAndConnect();
     }
 
+    /** Joins the screen's session -- the external display's window may have it already. */
+    protected void fetchVncInfoAndConnect() {
+        if (session != null) return;
+        if (vmId.isEmpty()) {
+            Log.e(TAG, "No VM ID provided");
+            setStatus(getString(R.string.vnc_display_connect_failed), VncStatus.ERROR);
+            showConnectingOverlay(getString(R.string.vnc_display_connect_failed));
+            return;
+        }
+        session = VncSession.acquire(this, vmId, screenId, sessionListener);
+        if (h264View != null && wantsH264View()) session.setH264View(h264View);
+    }
+
+    /**
+     * Whether this console's decoder view should have the stream: true unless the picture is
+     * somewhere else (the external display's window has the view then).
+     */
+    protected boolean wantsH264View() {
+        return true;
+    }
+
+    /** What the session says, as this console says it. */
+    private final class SessionListener implements VncSession.Listener {
+        @Override
+        public void onStatus(@NonNull String text, @NonNull VncStatus status) {
+            setStatus(text, status);
+            if (status == VncStatus.CONNECTED) hideConnectingOverlay();
+            else showConnectingOverlay(text);
+        }
+
+        @Override
+        public void onStatusNote(@Nullable String note) {
+            setStatusNote(note);
+        }
+
+        @Override
+        public void onClientCreated(@NonNull VncClient client) {
+            vncClient = client;
+            vncExtraKeys.setVncClient(client);
+            var s = session;
+            if (s != null) {
+                vncHost = s.host();
+                vncRemoteHost = s.remoteHost();
+                vncPort = s.port();
+                vncPassword = s.password();
+            }
+            onVncClientCreated();
+        }
+
+        @Override
+        public void onScreenResolved(@NonNull String resolved) {
+            // Input has to agree with the screen the daemon answered with: the absolute devices
+            // are per screen.
+            screenId = resolved;
+        }
+
+        @Override
+        public void onFramebufferReady(int width, int height) {
+            fbWidth = width;
+            fbHeight = height;
+            BaseVncActivity.this.onFramebufferReady(width, height);
+        }
+
+        @Override
+        public void onBitmapUpdated(@NonNull Bitmap bitmap) {
+            displayBitmap = bitmap;
+            BaseVncActivity.this.onBitmapUpdated(bitmap);
+        }
+
+        @Override
+        public void onClearDisplay() {
+            fbWidth = 0;
+            fbHeight = 0;
+            displayBitmap = null;
+            BaseVncActivity.this.onClearDisplay();
+        }
+
+        @Override
+        public void onH264StreamChanged(boolean live, int width, int height) {
+            BaseVncActivity.this.onH264StreamChanged(live, width, height);
+        }
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -239,31 +279,14 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     protected void onDestroy() {
         super.onDestroy();
         onDestroyExtra();
-        // First: it holds a codec, and the loop below waits for the message-loop thread that may
-        // be parked inside a submit to it.
-        mainHandler.removeCallbacks(h264Tick);
-        stopH264();
-        running = false;
-        if (vncClient != null) vncClient.requestStop();
-        executor.shutdown();
-        try {
-            if (!executor.awaitTermination(1, SECONDS))
-                executor.shutdownNow();
-        } catch (InterruptedException e) {
-            executor.shutdownNow();
-            Thread.currentThread().interrupt();
+        var s = session;
+        session = null;
+        if (s != null) {
+            s.releaseH264View(h264View);
+            s.release(sessionListener);
         }
-        if (vncClient != null) {
-            vncClient.disconnect();
-            vncClient = null;
-        }
+        vncClient = null;
         onClearDisplay();
-        synchronized (bitmapLock) {
-            if (displayBitmap != null) {
-                displayBitmap.recycle();
-                displayBitmap = null;
-            }
-        }
     }
 
     private void bindViews() {
@@ -276,7 +299,7 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         // Null for a layout that has no decoder view of its own, which is both how a console opts
         // out of the H.264 path entirely and how the presentation defers the question until it
         // knows which display it is putting the picture on.
-        setH264View(findViewById(R.id.texture_h264));
+        h264View = findViewById(R.id.texture_h264);
         extraKeysPanel = findViewById(R.id.extra_keys_panel);
         onBindExtraViews();
     }
@@ -286,405 +309,21 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
         toolbar.setNavigationOnClickListener(v -> finish());
     }
 
-    @NonNull
-    private Thread msgLoopThread(Runnable r) {
-        var t = new Thread(r, fmt("%s-loop", TAG));
-        t.setDaemon(true);
-        return t;
-    }
-
-    protected void fetchVncInfoAndConnect() {
-        setStatus(getString(R.string.vnc_display_connecting), VncStatus.CONNECTING);
-        showConnectingOverlay(getString(R.string.vnc_display_connecting));
-        if (vmId.isEmpty()) {
-            Log.e(TAG, "No VM ID provided");
-            setStatus(getString(R.string.vnc_display_connect_failed), VncStatus.ERROR);
-            showConnectingOverlay(getString(R.string.vnc_display_connect_failed));
-            return;
-        }
-        DaemonConnection.OnError err = e -> {
-            Log.e(TAG, "Failed to query VNC info", e);
-            mainHandler.post(() -> {
-                setStatus(getString(R.string.vnc_display_connect_failed), VncStatus.ERROR);
-                showConnectingOverlay(getString(R.string.vnc_display_connect_failed));
-            });
-        };
-        DaemonConnection.OnUnsuccessful f = resp -> {
-            var msg = resp.optString("message", "Failed to get VNC info");
-            Log.e(TAG, msg);
-            mainHandler.post(() -> {
-                setStatus(msg, VncStatus.ERROR);
-                showConnectingOverlay(msg);
-            });
-        };
-        DaemonConnection.OnResponse res = resp -> {
-            // Adopt the screen the daemon resolved. Asking for "the VM's VNC" is answered with a
-            // particular screen's server, and input has to agree with that answer: the absolute
-            // devices are per screen, so a console still holding "" would have nowhere to send a
-            // touch even though it is showing a screen that has one.
-            var resolved = resp.optString("screen", "");
-            if (!resolved.isEmpty()) screenId = resolved;
-            vncHost = resp.optString("host", "127.0.0.1");
-            vncRemoteHost = resp.optString("remote_host", "");
-            vncPort = resp.optInt("port", DEFAULT_PORT);
-            // Nothing here about H.264 any more. There is no second port to be told about, and the
-            // binding's transport ceiling is not the answer either -- it says what the host is
-            // permitted to build, and what the console needs is whether it built one. That is
-            // answered on the connection itself, by the capabilities rect.
-            vncPassword = resp.optString("password", "");
-            if (vncPassword.isEmpty()) vncPassword = null;
-            mainHandler.post(this::startVnc);
-        };
-        DaemonConnection.getInstance().buildRequest("vm_vnc_info")
-            .put("vm_id", vmId)
-            .put("screen", screenId)
-            .onResponse(res)
-            .onUnsuccessful(f)
-            .onError(err)
-            .invoke();
-    }
-
-    private class VncNativeCallback implements VncClient.NativeCallback {
-        @Override
-        public void onFramebufferResized(int width, int height) {
-            Log.i(TAG, fmt("FB resized %dx%d", width, height));
-            fbWidth = width;
-            fbHeight = height;
-            Bitmap oldBitmap;
-            synchronized (bitmapLock) {
-                oldBitmap = displayBitmap;
-                displayBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-            }
-            mainHandler.post(() -> {
-                if (oldBitmap != null) {
-                    onClearDisplay();
-                    if (!oldBitmap.isRecycled()) oldBitmap.recycle();
-                }
-                setStatus(getString(R.string.vnc_display_connected, width, height), VncStatus.CONNECTED);
-                hideConnectingOverlay();
-                onFramebufferReady(width, height);
-                // Nothing to restart for the decoder: a guest resize reaches it as an
-                // encoding-50 rect at the new coded size with the reset flags set, which is a new
-                // decoder generation and a sync frame to start it on, arriving in that order
-                // because the server sends the DesktopSize rect first.
-            });
-        }
-
-        @Override
-        public void onFramebufferUpdated(int x, int y, int w, int h) {
-            needsRefresh = true;
-        }
-
-        @Override
-        public void onH264Rect(@NonNull byte[] rect, int width, int height) {
-            // On the message-loop thread. Both of these are told the time by the caller rather
-            // than reading a clock of their own, which is what lets the schedule be tested.
-            h264Probe.onStreamRect(SystemClock.elapsedRealtime());
-            var pipeline = h264;
-            if (pipeline != null) {
-                pipeline.submitStreamRect(rect, width, height);
-                return;
-            }
-            // No pipeline yet, which for the presentation console is the ordinary state until a
-            // display has been chosen -- the connection does not wait for that choice, and the rect
-            // that starts the stream is sent once, on joining. Dropping it outright is what left
-            // that console showing nothing: the bare IDRs that follow carry no parameter sets, and
-            // nothing on the wire asks for another. Kept here instead, and the first pipeline built
-            // afterwards primes its decoder with it.
-            syncFrames.rememberIfSync(rect, width, height);
-        }
-
-        @Override
-        public void onDvhRect(@NonNull byte[] payload) {
-            var dvh = H264RectProtocol.parseDvhRect(payload);
-            // A rect this build cannot read is ignored rather than reported: that is what the
-            // version byte is for, and dropping the connection over a newer host's vocabulary
-            // would turn a gap into an outage.
-            if (dvh == null) return;
-            var now = SystemClock.elapsedRealtime();
-            if (dvh.isHeartbeat()) {
-                h264Probe.onHeartbeat(now);
-                return;
-            }
-            if (!dvh.isCapabilities()) return;
-            Log.i(TAG, fmt("H.264 capabilities rect: value %d", dvh.value));
-            h264Probe.onCapsRect(dvh.value, now);
-            mainHandler.post(BaseVncActivity.this::applyH264Mode);
-        }
-    }
-
-    private void startVnc() {
-        if (executor.isShutdown()) {
-            Log.w(TAG, "Executor already shut down, skipping startVnc");
-            return;
-        }
-        setStatus(getString(R.string.vnc_display_connecting), VncStatus.CONNECTING);
-        showConnectingOverlay(getString(R.string.vnc_display_connecting));
-        executor.submit(() -> {
-            try {
-                vncClient = new VncClient();
-                vncExtraKeys.setVncClient(vncClient);
-                mainHandler.post(this::onVncClientCreated);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to create VncClient", e);
-                mainHandler.post(this::scheduleAutoReconnect);
-                return;
-            }
-            var callback = new VncNativeCallback();
-            boolean ok = vncClient.connect(vncHost, vncPort, vncPassword, callback);
-            if (!ok) {
-                Log.e(TAG, "VNC connect failed");
-                mainHandler.post(this::scheduleAutoReconnect);
-                return;
-            }
-            running = true;
-            reconnectAttempt = 0;
-            // The five-second capabilities clock starts at the connection, not at the first
-            // picture: the server answers the client's first request with the capabilities rect,
-            // so a server that is going to say anything has said it by then.
-            h264Probe.onConnected(SystemClock.elapsedRealtime());
-            mainHandler.post(this::startH264Ticks);
-            mainHandler.post(() -> {
-                int w = vncClient.getWidth();
-                int h = vncClient.getHeight();
-                if (w > 0 && h > 0) {
-                    setStatus(getString(R.string.vnc_display_connected, w, h), VncStatus.CONNECTED);
-                    hideConnectingOverlay();
-                }
-            });
-            messageLoop();
-        });
-    }
-
-    /**
-     * Reads whatever the server has to say, for as long as this console is up.
-     *
-     * <p>It no longer stops reading while a decoder is painting the screen, and it cannot: the
-     * H.264 stream arrives on this connection, as rects, so a loop that stopped handling messages
-     * would stop the picture it was trying to make room for. Suppressing the pixel work is the
-     * server's job now -- it empties an enrolled client's modified region rather than encoding it
-     * -- and the framebuffer copy on this side stops on its own, because the rect handlers say the
-     * framebuffer did not move.</p>
-     */
-    private void messageLoop() {
-        var client = vncClient;
-        while (running && client != null && client.isConnected()) {
-            if (client.processMessages() < 0) break;
-            if (needsRefresh) {
-                needsRefresh = false;
-                refreshDisplay();
-            }
-        }
-        boolean wasRunning = running;
-        running = false;
-        h264Probe.onDisconnected();
-        // The sync frame belonged to this connection's stream. The next connection joins the stream
-        // again and is sent its own; keeping this one would prime a decoder with the parameter sets
-        // of a stream nobody is sending any more. Cleared from this thread because this is the
-        // thread that writes it -- the loop above is the only other place it is touched.
-        syncFrames.clear();
-        Log.i(TAG, "message loop ended");
-        if (wasRunning) {
-            mainHandler.post(this::scheduleAutoReconnect);
-        }
-    }
-
-    private void scheduleAutoReconnect() {
-        if (executor.isShutdown()) {
-            Log.w(TAG, "Executor already shut down, skipping reconnect");
-            return;
-        }
-        // The decoder belongs to the RFB session that just ended -- the stream rode it -- so it
-        // goes with it. The reconnected session enrols itself and starts a new one.
-        stopH264();
-        reconnectAttempt++;
-        if (reconnectAttempt > MAX_RECONNECT_ATTEMPTS) {
-            var msg = getString(R.string.vnc_display_reconnect_failed,
-                MAX_RECONNECT_ATTEMPTS);
-            setStatus(msg, VncStatus.ERROR);
-            showConnectingOverlay(msg);
-            return;
-        }
-        Log.i(TAG, fmt("Scheduling auto-reconnect attempt %d/%d",
-            reconnectAttempt, MAX_RECONNECT_ATTEMPTS));
-        var msg = getString(R.string.vnc_display_reconnecting,
-            reconnectAttempt, MAX_RECONNECT_ATTEMPTS);
-        setStatus(msg, VncStatus.CONNECTING);
-        showConnectingOverlay(msg);
-        onClearDisplay();
-        synchronized (bitmapLock) {
-            if (displayBitmap != null) {
-                displayBitmap.recycle();
-                displayBitmap = null;
-            }
-        }
-        fbWidth = 0;
-        fbHeight = 0;
-        executor.submit(() -> {
-            if (vncClient != null) {
-                vncClient.disconnect();
-                vncClient = null;
-            }
-            try {
-                Thread.sleep(RECONNECT_DELAY_MS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-            mainHandler.post(this::fetchVncInfoAndConnect);
-        });
-    }
-
-    private void refreshDisplay() {
-        var client = vncClient;
-        synchronized (bitmapLock) {
-            if (displayBitmap == null || client == null) return;
-            client.copyPixels(displayBitmap);
-        }
-        mainHandler.post(() -> {
-            synchronized (bitmapLock) {
-                if (displayBitmap != null && !displayBitmap.isRecycled()) {
-                    onBitmapUpdated(displayBitmap);
-                }
-            }
-        });
-    }
-
-    /**
-     * Binds the view the decoder draws into, or unbinds it with null.
-     *
-     * <p>Here rather than only in {@link #bindViews} because one console's decoder surface is not
-     * in its own layout: the presentation puts the guest's picture on another display entirely, in
-     * a window that does not exist until a display has been chosen and can be dismissed and rebuilt
-     * while the console stays open. Rebinding is a whole new pipeline, since the view a pipeline
-     * draws into is the one thing about it that cannot change underneath.</p>
-     *
-     * <p>Binding does not ask for anything. Nothing has to be asked for any more: the encodings go
-     * out with the connection, and a pipeline bound halfway through a stream starts decoding at the
-     * next rect that reaches it.</p>
-     */
+    /** Binds this console's decoder view to the session, or takes it back (null). */
     protected void setH264View(@Nullable TextureView view) {
-        if (h264View == view) return;
-        stopH264();
-        h264View = view;
-        h264 = view == null ? null
-            : new H264ConsolePipeline(view, mainHandler, new H264Listener(), syncFrames);
-    }
-
-    /**
-     * Takes the H.264 path down.
-     *
-     * <p>Deliberately does not stop the policy's tick. One of the callers is
-     * {@link #setH264View}, which runs while the connection is perfectly alive -- the presentation
-     * console rebinds its decoder view when a display is chosen -- and a tick cancelled there would
-     * never be posted again, leaving the console with no clock for the rest of its life. The tick
-     * stops on its own when the message loop does, because that is the thing it is about.</p>
-     */
-    private void stopH264() {
-        var pipeline = h264;
-        if (pipeline != null) pipeline.stop();
-    }
-
-    /** Starts the once-a-second read of the policy's two silence clocks. Idempotent. */
-    @MainThread
-    private void startH264Ticks() {
-        mainHandler.removeCallbacks(h264Tick);
-        mainHandler.postDelayed(h264Tick, H264_TICK_MS);
-    }
-
-    /**
-     * One read of the policy's clocks, and whatever it asks for as a result.
-     *
-     * <p>This is the whole of the timing half of {@code H264_SINGLE_PORT.md} section 1: five
-     * seconds of no capabilities rect means the server is not one that knows about them, and ten
-     * seconds of neither frame nor heartbeat while decoding means the stream is dead however alive
-     * the socket looks. Everything else on the H.264 path is driven by rects arriving.</p>
-     */
-    @MainThread
-    private void tickH264() {
-        if (isFinishing() || isDestroyed()) return;
-        var order = h264Probe.tick(SystemClock.elapsedRealtime());
-        applyH264Mode();
-        if (order == H264ProbePolicy.Order.RECONNECT) {
-            // The stream is dead and the connection is where enrolment happens, so the only way to
-            // ask for a new one is a new connection. Nothing else here reconnects on its own: the
-            // message loop only does so when the socket itself failed, and this failure is a
-            // socket that is fine and a picture that stopped.
-            Log.w(TAG, "the H.264 stream went silent; reconnecting");
-            reconnect();
+        var s = session;
+        if (view == null) {
+            if (s != null) s.releaseH264View(h264View);
             return;
         }
-        if (running) mainHandler.postDelayed(h264Tick, H264_TICK_MS);
+        h264View = view;
+        if (s != null) s.setH264View(view);
     }
 
-    /**
-     * Makes the console show what the policy says it should be showing.
-     *
-     * <p>Only ever takes the decoder down, never puts it up: a pipeline is started by a rect
-     * arriving, not by a decision here. What this settles is the two things a decision can settle
-     * on its own -- whether a pipeline that is up should stay up, and what the status line says.</p>
-     */
-    @MainThread
-    private void applyH264Mode() {
-        var pipeline = h264;
-        if (h264Probe.mode() != H264ProbePolicy.Mode.DECODING && pipeline != null) {
-            if (h264Probe.isPermanent()) pipeline.disable();
-            else pipeline.stop();
-        }
-        // Said only for the host that answered "no encoder", which is the one case where this
-        // console can never do better and the user might otherwise wonder why. Silence is not that
-        // case: an ordinary VNC server never offered a stream, and telling its user that H.264 is
-        // unavailable would be noise on every screen that was never going to have one.
-        if (h264Probe.saidNoEncoder())
-            setStatusNote(getString(R.string.vnc_display_h264_unavailable));
-    }
-
-    /** Whether the H.264 decoder is what is currently painting this console. */
+    /** Whether the H.264 decoder is what is painting the picture. */
     protected boolean isH264Live() {
-        var pipeline = h264;
-        return pipeline != null && pipeline.isLive();
-    }
-
-    /** The console's own view of the H.264 path, on the main thread. */
-    private final class H264Listener implements H264ConsolePipeline.Listener {
-        @Override
-        public void onStreamLive(int width, int height) {
-            setStatusNote(getString(R.string.vnc_display_h264_active));
-            onH264StreamChanged(true, width, height);
-        }
-
-        @Override
-        public void onStreamGone(boolean wasLive, @Nullable Exception cause) {
-            onH264StreamChanged(false, 0, 0);
-            if (cause == null) {
-                // Nothing went wrong: the console is closing, or its window went away, and the
-                // rects are still arriving on a connection that is still up.
-                setStatusNote(null);
-                return;
-            }
-            if (cause instanceof H264ConsolePipeline.NoDecoderException) {
-                // The one failure the console has to act on rather than merely report. A client
-                // that asked for encoding 50 is served no pixels, so a console that cannot decode
-                // has to stop asking before it can have a picture at all -- and since the ask is
-                // made by the RFB client at connect time, that means withdrawing the encodings and
-                // opening a new connection.
-                Log.w(TAG, "this device has no H.264 decoder; falling back to the pixel path");
-                h264Probe.onDecoderUnsupported();
-                VncClient.setH264Advertised(false);
-                // Latched here rather than left to the next tick: the connection being torn down
-                // can still deliver a rect on its way out, and one that reached a pipeline still
-                // willing to try would fail the same way and ask for another reconnect.
-                var pipeline = h264;
-                if (pipeline != null) pipeline.disable();
-                setStatusNote(getString(R.string.vnc_display_h264_fallback));
-                reconnect();
-                return;
-            }
-            Log.w(TAG, "the console's H.264 stream ended", cause);
-            // A downgrade the user watched happen is the only one worth naming as one. Anything
-            // that failed before there was ever a picture is noise about a thing nobody saw.
-            setStatusNote(wasLive ? getString(R.string.vnc_display_h264_fallback) : null);
-        }
+        var s = session;
+        return s != null && s.isH264Live();
     }
 
     /**
@@ -1040,32 +679,8 @@ public abstract class BaseVncActivity extends AppCompatActivity implements ImeIn
     }
 
     protected void reconnect() {
-        if (executor.isShutdown()) {
-            Log.w(TAG, "Executor already shut down, skipping reconnect");
-            return;
-        }
-        stopH264();
-        running = false;
-        reconnectAttempt = 0;
-        if (vncClient != null) vncClient.requestStop();
-        onClearDisplay();
-        synchronized (bitmapLock) {
-            if (displayBitmap != null) {
-                displayBitmap.recycle();
-                displayBitmap = null;
-            }
-        }
-        fbWidth = 0;
-        fbHeight = 0;
-        setStatus(getString(R.string.vnc_display_connecting), VncStatus.CONNECTING);
-        showConnectingOverlay(getString(R.string.vnc_display_connecting));
-        executor.submit(() -> {
-            if (vncClient != null) {
-                vncClient.disconnect();
-                vncClient = null;
-            }
-            mainHandler.post(this::fetchVncInfoAndConnect);
-        });
+        var s = session;
+        if (s != null) s.reconnect();
     }
 
     protected boolean onMenuItemClicked(@NonNull MenuItem item) {

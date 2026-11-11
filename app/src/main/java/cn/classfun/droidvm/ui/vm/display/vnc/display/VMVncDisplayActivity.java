@@ -52,6 +52,8 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
 import cn.classfun.droidvm.ui.vm.display.base.ConsoleWorkspace;
+import cn.classfun.droidvm.ui.vm.display.external.ExternalOutputControl;
+import cn.classfun.droidvm.ui.vm.display.external.VmOutputRouter;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
@@ -92,6 +94,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     private FloatingActionButton fabMenu;
     private TextView operationLabel;
     private DisplayPhysicalKeyboardView phyKeyboard;
+    // Stands where the picture would be while it is on an external display (VmOutputRouter).
+    private android.widget.FrameLayout externalBlock;
+    private android.widget.TextView tvExternalBlock;
+    private final VmOutputRouter.Listener outputListener = this::onOutputChanged;
+    // The router's key for this screen: the screen the console was opened on, as the external
+    // display's window joins the session by it.
+    private String outputKey = "";
     // The keyboard's side of the pointer area and the mouse buttons under it.
     private ConsoleWorkspace workspace;
     // Per-mode input routing: whatever the VNC channel natively has goes over RFB (TABLET's
@@ -262,6 +271,8 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         fabMenu = findViewById(R.id.fab_menu);
         operationLabel = findViewById(R.id.tv_operation);
         phyKeyboard = findViewById(R.id.phy_keyboard);
+        externalBlock = findViewById(R.id.external_block);
+        tvExternalBlock = findViewById(R.id.tv_external_block);
     }
 
     @Override
@@ -274,6 +285,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 if (inputForwarder != null) inputForwarder.sendPointerButton(button, down);
             });
         workspace.setInputMode(inputMode);
+        // The picture may be on an external display already, or go back to the one it was last
+        // shown on; set before the session is joined, which asks wantsH264View().
+        outputKey = VmOutputRouter.keyOf(vmId, screenId);
+        VmOutputRouter.get().addListener(outputListener);
+        showOutput(VmOutputRouter.get().displayOf(outputKey));
+        var remembered = VmOutputRouter.get().rememberedDisplay(this, outputKey);
+        if (remembered != null) VmOutputRouter.get().project(this, outputScreen(), remembered);
         phyKeyboard.setKeyListener(vncExtraKeys);
         // The physical keyboard's Shift/Ctrl/Alt/Win mirror the panel's sticky-modifier state.
         extraKeysPanel.setModifierStateObserver(() -> phyKeyboard.refreshModifiers(
@@ -449,6 +467,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
                 public void onViewportChanged(int baseW, int baseH, float viewScale,
                                               float offsetX, float offsetY) {
                     place(ivDisplay, baseW, baseH, viewScale, offsetX, offsetY);
+                    place(externalBlock, baseW, baseH, viewScale, offsetX, offsetY);
                     // The decoder view is the same rectangle, because it is showing the same
                     // screen. Applied here rather than mirrored later so that the two cannot drift
                     // apart across a rotation or an IME: there is one viewport and it writes both.
@@ -555,11 +574,46 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
 
     @Override
     protected void onBitmapUpdated(@NonNull Bitmap bitmap) {
-        ivDisplay.setImageBitmap(bitmap);
+        // Not drawn while the picture is on an external display: the block is over it.
+        if (!isOutputExternal()) ivDisplay.setImageBitmap(bitmap);
+    }
+
+    @Override
+    protected boolean wantsH264View() {
+        return !isOutputExternal();
+    }
+
+    private boolean isOutputExternal() {
+        return ExternalOutputControl.isExternal(outputKey);
+    }
+
+    private void onOutputChanged(@NonNull String key, int displayId) {
+        if (key.equals(outputKey)) showOutput(displayId);
+    }
+
+    // Where the picture is: here, or on [displayId] with the block standing in for it. The
+    // decoder view goes with the picture.
+    private void showOutput(int displayId) {
+        boolean external = displayId != android.view.Display.INVALID_DISPLAY;
+        externalBlock.setVisibility(external ? VISIBLE : GONE);
+        if (external) {
+            setH264View(null);
+            ivDisplay.setImageBitmap(null);
+            tvExternalBlock.setText(ExternalOutputControl.blockText(this, displayId));
+        } else if (h264View != null && session != null) {
+            setH264View(h264View);
+            if (displayBitmap != null) ivDisplay.setImageBitmap(displayBitmap);
+        }
+    }
+
+    @NonNull
+    private VmOutputRouter.Screen outputScreen() {
+        return new VmOutputRouter.Screen(vmId, screenId, vmName, fbWidth, fbHeight, true);
     }
 
     @Override
     protected void onDestroyExtra() {
+        VmOutputRouter.get().removeListener(outputListener);
         mainHandler.removeCallbacks(hideOperationLabel);
         if (inputForwarder != null) inputForwarder.close();
         var sink = directSink;
@@ -712,8 +766,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         header.addView(buildInputModeHeader(popup));
         header.addView(DisplayKeyboardMenuRow.build(
             getLayoutInflater(), chrome.getKeyboardMode(), this::applyKeyboardMode,
-            popup::dismiss, this::toggleKeyboardDock));
+            popup::dismiss, workspace::toggleKeyboardOnTopAndSay));
         popup.setHeaderView(header);
+        ExternalOutputControl.titleMenuItem(popup.getMenu(), R.id.menu_external_output, outputKey);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
     }
@@ -722,22 +777,7 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
     // trackpad), active mode checked.
     private View buildInputModeHeader(MaterialMenu popup) {
         return InputModeToggle.build(getLayoutInflater(), inputMode, this::setInputMode,
-            popup::dismiss, this::togglePointerButtons);
-    }
-
-    // Long press on the menu's keyboard: the keyboard to the other side of the pointer area.
-    private void toggleKeyboardDock() {
-        Toast.makeText(this, workspace.toggleKeyboardOnTop()
-            ? R.string.console_keyboard_on_top : R.string.console_keyboard_at_bottom,
-            Toast.LENGTH_SHORT).show();
-    }
-
-    // Long press on the menu's mouse: the mouse buttons under the pointer area, or not.
-    private void togglePointerButtons() {
-        boolean on = workspace.togglePointerButtons();
-        Toast.makeText(this, !on ? R.string.console_pointer_buttons_off
-            : inputMode.isVmPointer() ? R.string.console_pointer_buttons_on
-            : R.string.console_pointer_buttons_on_relative, Toast.LENGTH_SHORT).show();
+            popup::dismiss, workspace::togglePointerButtonsAndSay);
     }
 
 
@@ -766,26 +806,13 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         if (id == R.id.menu_fullscreen) {
             toggleFullscreen();
             return true;
-        } else if (id == R.id.menu_project_external) {
-            projectToExternalDisplay();
+        } else if (id == R.id.menu_external_output) {
+            ExternalOutputControl.toggle(this, outputKey, this::outputScreen);
             return true;
         } else if (id == R.id.menu_usb_passthrough) {
             cn.classfun.droidvm.ui.usb.UsbPassthroughDialog.show(this, vmId, vmName);
             return true;
         }
         return super.onMenuItemClicked(item);
-    }
-
-    // Projecting this screen onto an external display is the presentation console, reached from
-    // in here rather than from the VM's console chooser: it is an action on the screen already
-    // open, not a separate console to pick. The presentation activity puts up the display picker
-    // itself and shows nothing until one is chosen, so "pick a display, then land on it" is its
-    // own flow -- this only hands it the same vm/screen this console is already bound to.
-    private void projectToExternalDisplay() {
-        var intent = new android.content.Intent(this, VMVncPresentationActivity.class);
-        intent.putExtra(EXTRA_VM_ID, vmId);
-        intent.putExtra(EXTRA_VM_NAME, vmName);
-        intent.putExtra(EXTRA_SCREEN, screenId);
-        startActivity(intent);
     }
 }

@@ -10,8 +10,8 @@ import cn.classfun.droidvm.R;
 
 /**
  * Pointer input mode shared by both display backends (VNC and native). The control bar exposes a
- * selector; each {@link DisplayInputBackend} interprets the current mode when it turns on-screen
- * touches into guest input:
+ * selector; each console interprets the current mode when it turns on-screen touches into guest
+ * input (both through the InputForwarder, the VNC console's tablet through RFB too):
  *
  * <ul>
  *   <li>{@link #TOUCH} -- absolute multi-touch: fingers map straight to guest coordinates, multiple
