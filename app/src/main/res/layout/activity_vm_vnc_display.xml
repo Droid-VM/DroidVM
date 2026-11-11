@@ -88,6 +88,28 @@
             android:importantForAccessibility="no"
             android:visibility="gone" />
 
+        <!-- Where the picture would be while it is on an external display: a dark block placed by
+             the same viewport as the picture, for the user to aim touches at. Not clickable. -->
+        <FrameLayout
+            android:id="@+id/external_block"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:background="@color/external_block"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_external_block"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:padding="16dp"
+                android:textColor="@color/external_block_text"
+                android:textSize="14sp" />
+
+        </FrameLayout>
+
         <LinearLayout
             android:id="@+id/overlay_connecting"
             android:layout_width="wrap_content"

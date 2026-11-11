@@ -17,9 +17,9 @@
         android:title="@string/vnc_menu_reconnect" />
 
     <item
-        android:id="@+id/menu_project_external"
+        android:id="@+id/menu_external_output"
         android:icon="@drawable/ic_monitor"
-        android:title="@string/vnc_menu_project_external" />
+        android:title="@string/external_output_show" />
 
     <item
         android:id="@+id/menu_external"

@@ -34,7 +34,9 @@ import java.util.Map;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.ui.main.MainActivity;
+import cn.classfun.droidvm.ui.vm.display.base.DisplayPresentation;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.NativeExternalOutput;
+import cn.classfun.droidvm.ui.vm.display.vnc.display.VncExternalOutput;
 
 /**
  * Holds VM screens' pictures on external displays, apart from any activity: a picture stays there
@@ -61,6 +63,7 @@ public final class ExternalOutputService extends Service {
     public static final String EXTRA_VM_NAME = "vm_name";
     public static final String EXTRA_WIDTH = "width";
     public static final String EXTRA_HEIGHT = "height";
+    public static final String EXTRA_VNC = "vnc";
     public static final String EXTRA_DISPLAY_ID = "display_id";
     public static final String EXTRA_KEY = "key";
     /** Takes one screen's window ({@link #EXTRA_KEY}) down. */
@@ -69,8 +72,37 @@ public final class ExternalOutputService extends Service {
     public static final String ACTION_BRING_BACK =
         "cn.classfun.droidvm.action.EXTERNAL_OUTPUT_BRING_BACK";
 
-    /** One screen's window on an external display, and the picture in it. */
-    private static final class Window extends Presentation {
+    /** One screen's picture on an external display. */
+    private interface Output {
+        int displayId();
+
+        void close();
+    }
+
+    /** A VNC screen's: its session drawn into a DisplayPresentation. */
+    private static final class VncWindow implements Output {
+        final DisplayPresentation window;
+        final VncExternalOutput picture;
+
+        VncWindow(@NonNull DisplayPresentation window, @NonNull VncExternalOutput picture) {
+            this.window = window;
+            this.picture = picture;
+        }
+
+        @Override
+        public int displayId() {
+            return window.getDisplay().getDisplayId();
+        }
+
+        @Override
+        public void close() {
+            picture.stop();
+            window.dismiss();
+        }
+    }
+
+    /** A native display screen's: crosvm's scanout SurfaceView in a presentation of its own. */
+    private static final class Window extends Presentation implements Output {
         final String vmId;
         final String screenId;
         final int width;
@@ -102,7 +134,13 @@ public final class ExternalOutputService extends Service {
             picture.start();
         }
 
-        void close() {
+        @Override
+        public int displayId() {
+            return getDisplay().getDisplayId();
+        }
+
+        @Override
+        public void close() {
             if (picture != null) {
                 picture.stop();
                 picture = null;
@@ -112,7 +150,7 @@ public final class ExternalOutputService extends Service {
     }
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Map<String, Window> windows = new HashMap<>();
+    private final Map<String, Output> windows = new HashMap<>();
     private final DisplayManager.DisplayListener displayListener =
         new DisplayManager.DisplayListener() {
             @Override
@@ -123,7 +161,7 @@ public final class ExternalOutputService extends Service {
             public void onDisplayRemoved(int displayId) {
                 for (var key : new ArrayList<>(windows.keySet())) {
                     var window = windows.get(key);
-                    if (window == null || window.getDisplay().getDisplayId() != displayId) continue;
+                    if (window == null || window.displayId() != displayId) continue;
                     Log.i(TAG, fmt("display %d went away with %s", displayId, key));
                     remove(key);
                     VmOutputRouter.get().onWindowGone(key);
@@ -190,28 +228,40 @@ public final class ExternalOutputService extends Service {
             return START_NOT_STICKY;
         }
         show(key, vmId, screenId, intent.getIntExtra(EXTRA_WIDTH, 1280),
-            intent.getIntExtra(EXTRA_HEIGHT, 720), display);
+            intent.getIntExtra(EXTRA_HEIGHT, 720), intent.getBooleanExtra(EXTRA_VNC, false),
+            display);
         return START_NOT_STICKY;
     }
 
     /** [key]'s window on [display], replacing one it had. */
     private void show(@NonNull String key, @NonNull String vmId, @NonNull String screenId,
-                      int width, int height, @NonNull Display display) {
+                      int width, int height, boolean vnc, @NonNull Display display) {
         remove(key);
         Context windowContext = createDisplayContext(display)
             .createWindowContext(TYPE_PRESENTATION, null);
-        var window = new Window(windowContext, display, vmId, screenId, width, height);
+        Output output;
         try {
-            window.show();
+            if (vnc) {
+                var window = new DisplayPresentation(windowContext, display);
+                window.show();
+                var w = window.getWindow();
+                if (w != null) w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                var picture = new VncExternalOutput(window);
+                picture.start(this, vmId, screenId);
+                output = new VncWindow(window, picture);
+            } else {
+                var window = new Window(windowContext, display, vmId, screenId, width, height);
+                window.show();
+                output = window;
+            }
         } catch (RuntimeException e) {
             Log.w(TAG, fmt("cannot show %s on display %d (%s)", key, display.getDisplayId(),
                 display.getName()), e);
-            window.close();
             VmOutputRouter.get().onWindowGone(key);
             stopIfEmpty();
             return;
         }
-        windows.put(key, window);
+        windows.put(key, output);
         Log.i(TAG, fmt("%s on display %d (%s)", key, display.getDisplayId(), display.getName()));
     }
 
