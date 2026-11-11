@@ -48,6 +48,7 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 import cn.classfun.droidvm.ui.usb.UsbHostDeviceInfo;
 import cn.classfun.droidvm.ui.usb.UsbRuleLayer;
+import cn.classfun.droidvm.ui.usb.UsbClasses;
 import cn.classfun.droidvm.ui.usb.UsbRuleEditDialog;
 import cn.classfun.droidvm.ui.usb.UsbRuleZoneDialog;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
@@ -644,8 +645,9 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             // afterwards: a rule bound to this card has exactly one place to send a device, and
             // it is the controller the card is.
             UsbRuleZoneDialog.show(context, xhciHost.hostDevices(),
-                (layer, deviceId, port) -> {
-                    store.add(id, layer, new Row(deviceId, port, null, id));
+                (layer, deviceId, port, cls) -> {
+                    store.add(id, layer, cls != null ? Row.ofClass(cls, null, id)
+                        : new Row(deviceId, port, null, id));
                     notifyItemChangedSafe(holder.getBindingAdapterPosition());
                 });
         });
@@ -682,7 +684,13 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             value.setText(rowLabel(layer, row));
             // Every row, the catch-all one included: it matches everything and so has nothing
             // to pick, but the dialog is still where deleting a rule lives.
-            value.setOnClickListener(v -> UsbRuleEditDialog.edit(context, layer,
+            if (layer.hasClass) {
+                // The class is the whole rule; the row's own button deletes it.
+                value.setOnClickListener(v -> UsbClasses.pick(context, row.cls, cls -> {
+                    store.replace(controllerId, layer, index, row.withClass(cls));
+                    notifyItemChangedSafe(holder.getBindingAdapterPosition());
+                }));
+            } else value.setOnClickListener(v -> UsbRuleEditDialog.edit(context, layer,
                 xhciHost.hostDevices(), row.id, row.port, new UsbRuleEditDialog.Listener() {
                     @Override
                     public void onConfirm(@Nullable String id, @Nullable String port) {
@@ -722,6 +730,9 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
             case DEVICE:
                 return context.getString(R.string.usb_rules_row_device_fmt,
                     deviceName(id), id);
+            case CLASS:
+                return context.getString(R.string.usb_rules_match_class_fmt,
+                    UsbClasses.label(context, row.cls));
             default:
                 return context.getString(R.string.usb_rules_any_device);
         }

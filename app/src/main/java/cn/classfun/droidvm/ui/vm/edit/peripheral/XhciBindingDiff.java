@@ -61,6 +61,9 @@ public final class XhciBindingDiff {
         /** What the rule does with what it matches: {@code host}, {@code vm} or {@code sink}. */
         @NonNull
         public final String target;
+        /** The USB class of a class rule; null in every other layer. */
+        @Nullable
+        public final String cls;
         /**
          * What makes this row the same rule as the one it was edited from.
          *
@@ -78,22 +81,34 @@ public final class XhciBindingDiff {
          */
         public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
                    @Nullable String controller) {
-            this(id, port, vm, controller, TARGET_VM, new Object());
+            this(id, port, vm, controller, TARGET_VM, null, new Object());
+        }
+
+        /** A row this page made in the class layer: every device of [cls] to its controller. */
+        public static Row ofClass(@NonNull String cls, @Nullable String vm,
+                                  @Nullable String controller) {
+            return new Row(null, null, vm, controller, TARGET_VM, cls, new Object());
         }
 
         public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
                    @Nullable String controller, @NonNull String target) {
-            this(id, port, vm, controller, target, new Object());
+            this(id, port, vm, controller, target, null, new Object());
+        }
+
+        public Row(@Nullable String id, @Nullable String port, @Nullable String vm,
+                   @Nullable String controller, @NonNull String target, @Nullable String cls) {
+            this(id, port, vm, controller, target, cls, new Object());
         }
 
         private Row(@Nullable String id, @Nullable String port, @Nullable String vm,
-                    @Nullable String controller, @NonNull String target,
+                    @Nullable String controller, @NonNull String target, @Nullable String cls,
                     @NonNull Object identity) {
             this.id = id;
             this.port = port;
             this.vm = vm;
             this.controller = controller;
             this.target = target;
+            this.cls = cls;
             this.identity = identity;
         }
 
@@ -105,7 +120,7 @@ public final class XhciBindingDiff {
          */
         @NonNull
         public Row withVm(@NonNull String vmId) {
-            return vm != null ? this : new Row(id, port, vmId, controller, target, identity);
+            return vm != null ? this : new Row(id, port, vmId, controller, target, cls, identity);
         }
 
         /**
@@ -119,7 +134,13 @@ public final class XhciBindingDiff {
         @NonNull
         public Row edited(@Nullable String newId, @Nullable String newPort,
                           @Nullable String newController) {
-            return new Row(newId, newPort, vm, newController, target, identity);
+            return new Row(newId, newPort, vm, newController, target, cls, identity);
+        }
+
+        /** The same class rule naming another class, its place kept. */
+        @NonNull
+        public Row withClass(@NonNull String newClass) {
+            return new Row(id, port, vm, controller, target, newClass, identity);
         }
 
         /** Whether [other] is this same row before it was edited; see {@link #identity}. */
@@ -134,7 +155,8 @@ public final class XhciBindingDiff {
                 && Objects.equals(port, other.port)
                 && Objects.equals(vm, other.vm)
                 && Objects.equals(controller, other.controller)
-                && target.equals(other.target);
+                && target.equals(other.target)
+                && Objects.equals(cls, other.cls);
         }
     }
 

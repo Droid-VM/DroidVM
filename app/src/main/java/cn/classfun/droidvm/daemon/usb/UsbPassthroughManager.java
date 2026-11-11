@@ -472,10 +472,11 @@ public final class UsbPassthroughManager {
             // The rules are in force regardless; only the copy for the next daemon start is missing.
             Log.w(TAG, fmt("Failed to write %s", rulesFile), e);
         }
-        Log.i(TAG, fmt("USB rules set: enabled=%s exact=%d port=%d device=%d any=%d",
+        Log.i(TAG, fmt("USB rules set: enabled=%s exact=%d port=%d device=%d class=%d any=%d",
             rules.isEnabled(),
             rules.layer(UsbRules.Layer.EXACT).size(), rules.layer(UsbRules.Layer.PORT).size(),
-            rules.layer(UsbRules.Layer.DEVICE).size(), rules.layer(UsbRules.Layer.ANY).size()));
+            rules.layer(UsbRules.Layer.DEVICE).size(), rules.layer(UsbRules.Layer.CLASS).size(),
+            rules.layer(UsbRules.Layer.ANY).size()));
         // On this thread and before either edge runs, so that a device plugged in while the pass
         // or the release is still working lands on the side of the gate the save asked for.
         // Written on every save and not only on an edge: the flag is global, so a save is also
@@ -553,7 +554,7 @@ public final class UsbPassthroughManager {
     private static JSONObject ruleJson(@NonNull UsbRuleEngine.Decision decision)
         throws JSONException {
         var obj = new JSONObject();
-        // Null for the fifth zone's own rule, which is in no file and at no index: a reader that
+        // Null for the default zone's own rule, which is in no file and at no index: a reader that
         // was given "any[0]" for it would go looking for a row the user cannot see or edit.
         obj.put("layer", decision.layer == null ? JSONObject.NULL : decision.layer.key);
         obj.put("index", decision.index);
@@ -1452,7 +1453,7 @@ public final class UsbPassthroughManager {
      * old as the last plug event on that bus. The candidate filter is that state.</p>
      *
      * <p>Two kinds of device never reach a rule. A hub is the tree rather than a device -- it is
-     * refused everywhere a device is lent out -- but it does need the fifth zone's answer, and
+     * refused everywhere a device is lent out -- but it does need the default zone's answer, and
      * urgently: a hub the gate left driverless takes its whole subtree with it, and nothing
      * below it will ever enumerate to raise a trigger. The root hubs are swept for the same
      * reason and are not in the scan at all ({@link #driverlessRootHubs}). And with the master
@@ -1590,7 +1591,7 @@ public final class UsbPassthroughManager {
             data.put("sysfs", decision.device.sysfs);
             data.put("id", decision.device.id);
             data.put("port", decision.device.port);
-            // Null for the fifth zone's rule, as everywhere a decision goes on the wire; only
+            // Null for the default zone's rule, as everywhere a decision goes on the wire; only
             // an attach broadcasts today, and those name a rule from the file.
             data.put("layer", decision.layer == null ? JSONObject.NULL : decision.layer.key);
             data.put("index", decision.index);

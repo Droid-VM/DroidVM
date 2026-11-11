@@ -21,7 +21,8 @@ public final class UsbRuleLayerTest {
         assertEquals(1, UsbRuleLayer.EXACT.number());
         assertEquals(2, UsbRuleLayer.PORT.number());
         assertEquals(3, UsbRuleLayer.DEVICE.number());
-        assertEquals(4, UsbRuleLayer.ANY.number());
+        assertEquals(4, UsbRuleLayer.CLASS.number());
+        assertEquals(5, UsbRuleLayer.ANY.number());
     }
 
     @Test
@@ -38,22 +39,26 @@ public final class UsbRuleLayerTest {
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue("PORT"));
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue(2));
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue("2"));
-        assertEquals(UsbRuleLayer.ANY, UsbRuleLayer.fromValue(4L));
+        assertEquals(UsbRuleLayer.CLASS, UsbRuleLayer.fromValue(4L));
+        assertEquals(UsbRuleLayer.CLASS, UsbRuleLayer.fromValue("class"));
+        assertEquals(UsbRuleLayer.ANY, UsbRuleLayer.fromValue(5L));
         assertNull(UsbRuleLayer.fromValue(0));
-        assertNull(UsbRuleLayer.fromValue(5));
+        assertNull(UsbRuleLayer.fromValue(6));
         assertNull(UsbRuleLayer.fromValue("five"));
         assertNull(UsbRuleLayer.fromValue(null));
     }
 
     /**
      * Only the catch-all layer needs no subject picked before a target: it matches everything,
-     * so there is nothing to ask about. Every layer takes every target, that one included.
+     * so there is nothing to ask about. Every layer takes every target, that one included. The
+     * class layer's subject is a class.
      */
     @Test
     public void onlyTheCatchAllLayerNeedsNoSubject() {
         assertTrue(UsbRuleLayer.EXACT.needsSubject());
         assertTrue(UsbRuleLayer.PORT.needsSubject());
         assertTrue(UsbRuleLayer.DEVICE.needsSubject());
+        assertTrue(UsbRuleLayer.CLASS.needsSubject());
         assertFalse(UsbRuleLayer.ANY.needsSubject());
     }
 
@@ -65,6 +70,10 @@ public final class UsbRuleLayerTest {
         assertTrue(UsbRuleLayer.PORT.hasPort);
         assertTrue(UsbRuleLayer.DEVICE.hasId);
         assertFalse(UsbRuleLayer.DEVICE.hasPort);
+        assertTrue(UsbRuleLayer.CLASS.hasClass);
+        assertFalse(UsbRuleLayer.CLASS.hasId);
+        assertFalse(UsbRuleLayer.CLASS.hasPort);
+        assertFalse(UsbRuleLayer.DEVICE.hasClass);
         assertFalse(UsbRuleLayer.ANY.needsSubject());
     }
 

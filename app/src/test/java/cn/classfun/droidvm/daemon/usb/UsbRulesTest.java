@@ -285,4 +285,31 @@ public final class UsbRulesTest {
         // rule for a controller deleted since is kept rather than dropped behind the user's back.
         assertEquals(XHCI1, UsbRules.build(map, null).layer(Layer.ANY).get(0).controller);
     }
+
+    @Test
+    public void aClassRuleNamesAClassAndNothingElse() {
+        var rule = build(Layer.CLASS, new Rule(null, null, VM, null, Target.VM, "03"))
+            .layer(Layer.CLASS).get(0);
+        assertEquals("03", rule.cls);
+        // Lowercased on the way in, as the device side gives a class.
+        assertEquals("ff", build(Layer.CLASS, new Rule(null, null, VM, null, Target.VM, "FF"))
+            .layer(Layer.CLASS).get(0).cls);
+        assertTrue(refused(Layer.CLASS, new Rule(null, null, VM, null)).contains("class[0]: missing class"));
+        assertTrue(refused(Layer.CLASS, new Rule("090c:1000", null, VM, null, Target.VM, "03")).contains("takes no id"));
+        assertTrue(refused(Layer.CLASS, new Rule(null, "1.2", VM, null, Target.VM, "03")).contains("takes no port"));
+        assertTrue(refused(Layer.DEVICE, new Rule("090c:1000", null, VM, null, Target.VM, "03")).contains("takes no class"));
+        assertTrue(refused(Layer.ANY, new Rule(null, null, VM, null, Target.VM, "03")).contains("takes no class"));
+        assertTrue(refused(Layer.CLASS, new Rule(null, null, VM, null, Target.VM, "3")).contains("bad class 3"));
+    }
+
+    @Test
+    public void aClassRuleMatchesADeviceOfItsClassOrWithAnInterfaceOfIt() {
+        var hid = new Rule(null, null, VM, null, Target.VM, "03");
+        assertTrue(hid.matches("046d:c52b", "1.2", List.of("00", "03")));
+        assertFalse(hid.matches("0781:5581", "1.3", List.of("08")));
+        // A caller that knows no classes never meets a class rule.
+        assertFalse(hid.matches("046d:c52b", "1.2"));
+        // And the other layers' rules care nothing for classes.
+        assertTrue(new Rule("046d:c52b", null, VM, null).matches("046d:c52b", "1.2", List.of("08")));
+    }
 }

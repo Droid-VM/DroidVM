@@ -1247,6 +1247,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             toggleExternalOutput();
             return true;
         }
+        if (id == R.id.menu_usb_passthrough) {
+            cn.classfun.droidvm.ui.usb.UsbPassthroughDialog.show(this, vmId, vmName);
+            return true;
+        }
         return false;
     }
 

@@ -161,7 +161,7 @@ public final class UsbRuleEngineTest {
         assertNull(decision.controller);
     }
 
-    /** The fifth zone's own rule: host, and in no layer of the file at any index. */
+    /** The default zone's own rule: host, and in no layer of the file at any index. */
     private static void assertDefaultHost(Decision decision, Device device) {
         assertNotNull(decision);
         assertEquals(device.sysfs, decision.device.sysfs);
@@ -175,7 +175,7 @@ public final class UsbRuleEngineTest {
     }
 
     @Test
-    public void withNoRulesAtAllTheFifthZoneStillGivesEveryDeviceToTheHost() {
+    public void withNoRulesAtAllTheDefaultZoneStillGivesEveryDeviceToTheHost() {
         // The keyboard case: with the gate shut a device nothing matched would sit driverless,
         // so "no rule matched" has to mean the host keeps it rather than nobody does.
         var engine = engine(UsbRules.empty());
@@ -187,7 +187,7 @@ public final class UsbRuleEngineTest {
     }
 
     @Test
-    public void theFifthZoneRunsAfterTheFourTheFileCarries() {
+    public void theDefaultZoneRunsAfterTheFourTheFileCarries() {
         // Four layers full of rules about other devices, and then the zone the file cannot hold.
         var engine = engine(rules(
             Layer.EXACT, List.of(rule(MOUSE.id, MOUSE.port, VM_A)),
@@ -255,7 +255,7 @@ public final class UsbRuleEngineTest {
         // A VM the store does not know cannot be running.
         states = states(VM_B, VMState.RUNNING);
         assertDecision(engine.decide(STICK, states, anyController()), STICK, Layer.PORT, 1, VM_B);
-        // And with nobody up, the fifth zone has it: the device belongs to the host until one of
+        // And with nobody up, the default zone has it: the device belongs to the host until one of
         // those VMs comes up and the trigger of that edge decides it again.
         assertDefaultHost(engine.decide(STICK, states(VM_A, VMState.STOPPED, VM_B,
             VMState.STOPPED), anyController()), STICK);
@@ -373,7 +373,7 @@ public final class UsbRuleEngineTest {
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 1, VM_B);
         // The failure is the stick's alone.
         assertDecision(engine.decide(MOUSE, allRunning(), anyController()), MOUSE, Layer.ANY, 0, VM_A);
-        // Failing for the only VM drops through to the fifth zone, so the device is the host's
+        // Failing for the only VM drops through to the default zone, so the device is the host's
         // rather than nobody's while that VM is out of the running.
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_A))));
         assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
@@ -396,7 +396,7 @@ public final class UsbRuleEngineTest {
 
         engine.forgetFailuresFor(VM_A);
         assertDecision(engine.decide(STICK, allRunning(), anyController()), STICK, Layer.ANY, 0, VM_A);
-        // Only A's failures went; the mouse still remembers B and drops to the fifth zone.
+        // Only A's failures went; the mouse still remembers B and drops to the default zone.
         engine.setRules(rules(Layer.ANY, List.of(rule(null, null, VM_B))));
         assertDefaultHost(engine.decide(MOUSE, allRunning(), anyController()), MOUSE);
         // A lock is the user's and outlives any VM start.
@@ -563,7 +563,7 @@ public final class UsbRuleEngineTest {
 
     @Test
     public void aPlugTakesNothingWhileTheSwitchIsOff() {
-        // Not even the fifth zone's own rule: with the switch off the host has the device
+        // Not even the default zone's own rule: with the switch off the host has the device
         // already -- the gate is open, so the kernel bound its drivers as it enumerated -- and
         // there is nothing for a pass to decide or to write.
         var engine = engine(disabled(Layer.ANY, List.of(sink(null, null))));
@@ -638,7 +638,7 @@ public final class UsbRuleEngineTest {
     @Test
     public void onlyTheDaemonStartPassHandsDevicesBackWhileTheSwitchIsOff() {
         // The gate is what leaves a device idle, and a pass is what hands one back. With the
-        // rules running every pass may: the fifth zone answers for everything nothing else
+        // rules running every pass may: the default zone answers for everything nothing else
         // matched. With them off no trigger acts at all -- an interface somebody unbound by
         // hand stays unbound, whatever is plugged in afterwards -- except the daemon's own
         // start, which is the only pass that runs to repair rather than to decide.
@@ -666,5 +666,23 @@ public final class UsbRuleEngineTest {
         assertEquals(2, plan.size());
         assertDecision(plan.get(0), STICK, Layer.ANY, 0, VM_A);
         assertDefaultHost(plan.get(1), MOUSE);
+    }
+
+    @Test
+    public void aClassRuleTakesEveryDeviceOfItsClassAfterTheRulesThatNameOne() {
+        var keyboard = new Device("1-1.4", "046d:c31c", UsbHostDevice.derivePort("1-1.4"), DEVNUM,
+            State.IDLE, java.util.Set.of("00", "03"));
+        var hid = new Rule(null, null, VM_A, null, Target.VM, "03");
+        var engine = engine(rules(Layer.CLASS, List.of(hid)));
+        assertDecision(engine.decide(keyboard, allRunning(), anyController()), keyboard,
+            Layer.CLASS, 0, VM_A);
+        // A device of no such class goes on to the default zone.
+        assertDefaultHost(engine.decide(STICK, allRunning(), anyController()), STICK);
+        // A rule naming the device itself comes first.
+        engine.setRules(rules(
+            Layer.DEVICE, List.of(rule("046d:c31c", null, VM_B)),
+            Layer.CLASS, List.of(hid)));
+        assertDecision(engine.decide(keyboard, allRunning(), anyController()), keyboard,
+            Layer.DEVICE, 0, VM_B);
     }
 }

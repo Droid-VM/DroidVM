@@ -9,16 +9,20 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
 
 import cn.classfun.droidvm.lib.store.vm.VMState;
 
 /**
- * Decides what happens to each plugged device: layers in order, then the fifth zone. Pure -- it
+ * Decides what happens to each plugged device: layers in order, then the default zone. Pure -- it
  * holds the rules and the per-device flags and turns a list of devices into a list of decisions
  * -- while acting on one, broadcasting and persisting are the manager's, which also owns the
  * lock every call here is made under.
@@ -51,19 +55,33 @@ public final class UsbRuleEngine {
         public final int devnum;
         /** Read from the bound drivers by whoever scanned the device; never stored anywhere. */
         public final UsbHostDevice.State state;
+        /** Its own class and its interfaces', two lowercase hex digits each: what a class rule reads. */
+        public final Set<String> classes;
 
         public Device(@NonNull String sysfs, @NonNull String id, @NonNull String port, int devnum,
                       @NonNull UsbHostDevice.State state) {
+            this(sysfs, id, port, devnum, state, Collections.emptySet());
+        }
+
+        public Device(@NonNull String sysfs, @NonNull String id, @NonNull String port, int devnum,
+                      @NonNull UsbHostDevice.State state, @NonNull Set<String> classes) {
             this.sysfs = sysfs;
             this.id = id;
             this.port = port;
             this.devnum = devnum;
             this.state = state;
+            this.classes = classes;
         }
 
         @NonNull
         public static Device of(@NonNull UsbHostDevice device) {
-            return new Device(device.sysfs, device.id, device.port, device.devnum, device.state());
+            var classes = new HashSet<String>();
+            if (!device.deviceClass.isEmpty())
+                classes.add(device.deviceClass.toLowerCase(Locale.ROOT));
+            for (var iface : device.interfaces)
+                if (!iface.cls.isEmpty()) classes.add(iface.cls.toLowerCase(Locale.ROOT));
+            return new Device(device.sysfs, device.id, device.port, device.devnum, device.state(),
+                Collections.unmodifiableSet(classes));
         }
     }
 
@@ -73,10 +91,10 @@ public final class UsbRuleEngine {
      */
     public static final class Decision {
         public final Device device;
-        /** Null for the fifth zone's rule, which is not in the file; see {@link #where()}. */
+        /** Null for the default zone's rule, which is not in the file; see {@link #where()}. */
         @Nullable
         public final UsbRules.Layer layer;
-        /** Its index in that layer, or -1 for the fifth zone's one rule. */
+        /** Its index in that layer, or -1 for the default zone's one rule. */
         public final int index;
         /** Carried rather than inferred from {@link #vm}, so every reader says the same thing. */
         public final UsbRules.Target target;
@@ -101,7 +119,7 @@ public final class UsbRuleEngine {
             this.controller = controller;
         }
 
-        /** Which rule this was, for a log line: {@code device[0]}, or the fifth zone by name. */
+        /** Which rule this was, for a log line: {@code device[0]}, or the default zone by name. */
         @NonNull
         public String where() {
             return layer == null ? "the default rule" : fmt("%s[%d]", layer.key, index);
@@ -146,7 +164,7 @@ public final class UsbRuleEngine {
     /**
      * Whether a pass may offer an idle device nobody speaks for to the host drivers.
      *
-     * <p>With the rules running, always: that is the fifth zone's answer for everything the gate
+     * <p>With the rules running, always: that is the default zone's answer for everything the gate
      * has left idle. With the switch off, no trigger acts at all -- that is the whole of what
      * the switch means, and a pass that handed devices back anyway would rebind an interface
      * somebody had unbound by hand the next time anything was plugged in. The exception is
@@ -255,7 +273,7 @@ public final class UsbRuleEngine {
     /**
      * What a trigger would do: one decision per candidate ({@link #isCandidate}), and none at
      * all while the switch is off. A device appears at most once. Every candidate gets a
-     * decision, the fifth zone seeing to that, so the answer is as long as the candidate list.
+     * decision, the default zone seeing to that, so the answer is as long as the candidate list.
      *
      * @param stateOf  the state of a VM by id, null when there is no such VM.
      * @param hasController whether a VM still has the controller a rule names; a null controller
@@ -285,7 +303,7 @@ public final class UsbRuleEngine {
      * and not the host's; a rule whose VM is not running, whose VM no longer has the controller
      * it names, or that already failed for this device, is passed over and the search goes on.
      *
-     * <p>The fifth zone is one rule, {@code any -> host}, that the user never sees and cannot
+     * <p>The default zone is one rule, {@code any -> host}, that the user never sees and cannot
      * edit: it is a constant here rather than a row in the file, so it cannot be deleted, cannot
      * be reordered, and every rules file ever written has it. What it buys is that "no rule
      * matched" cannot happen while the switch is on -- and with the autoprobe gate shut, a
@@ -305,7 +323,7 @@ public final class UsbRuleEngine {
     public Decision decide(@NonNull Device device, @NonNull Function<String, VMState> stateOf,
                            @NonNull BiPredicate<String, String> hasController) {
         // The master switch, at the one place every trigger passes through: with it off no rule
-        // takes anything, not even the fifth zone's. The dry run reads the same answer, and says
+        // takes anything, not even the default zone's. The dry run reads the same answer, and says
         // nothing would happen -- which is the truth.
         if (!rules.isEnabled()) return null;
         var f = flags.get(device.sysfs);
@@ -314,7 +332,7 @@ public final class UsbRuleEngine {
             var list = rules.layer(layer);
             for (var index = 0; index < list.size(); index++) {
                 var rule = list.get(index);
-                if (!rule.matches(device.id, device.port)) continue;
+                if (!rule.matches(device.id, device.port, device.classes)) continue;
                 if (rule.target != UsbRules.Target.VM)
                     return new Decision(device, layer, index, rule.target, null, null);
                 if (stateOf.apply(rule.vm) != VMState.RUNNING) continue;

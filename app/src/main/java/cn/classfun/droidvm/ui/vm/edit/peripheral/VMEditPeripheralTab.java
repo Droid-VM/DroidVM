@@ -492,7 +492,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
                 // An entry that is not an object is one the daemon would refuse anyway; keeping
                 // it would only put the refusal on this page's save.
                 if (obj != null) rows.add(new Row(text(obj, "id"), text(obj, "port"),
-                    text(obj, "vm"), text(obj, "controller"), targetOf(obj)));
+                    text(obj, "vm"), text(obj, "controller"), targetOf(obj), text(obj, "class")));
             }
             out.put(layer, rows);
         }
@@ -527,6 +527,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             var obj = new JSONObject();
             if (row.id != null) obj.put("id", row.id);
             if (row.port != null) obj.put("port", row.port);
+            if (row.cls != null) obj.put("class", row.cls);
             if (row.vm != null) obj.put("vm", row.vm);
             if (row.controller != null) obj.put("controller", row.controller);
             // Always written, the way the daemon writes it: a row this page is only passing

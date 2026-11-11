@@ -69,7 +69,8 @@ public final class UsbRuleShadow {
     @NonNull
     private static List<String> matcherOf(@NonNull UsbRuleLayer zone, @NonNull DataItem rule) {
         return List.of(zone.hasId ? rule.optString("id", "") : "",
-            zone.hasPort ? rule.optString("port", "") : "");
+            zone.hasPort ? rule.optString("port", "") : "",
+            zone.hasClass ? rule.optString("class", "") : "");
     }
 
     /** Whether this rule is the last word on what it matches; a VM rule never is. */

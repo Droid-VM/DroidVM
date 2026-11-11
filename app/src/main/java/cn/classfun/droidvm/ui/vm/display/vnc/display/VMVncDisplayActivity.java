@@ -769,6 +769,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
         } else if (id == R.id.menu_project_external) {
             projectToExternalDisplay();
             return true;
+        } else if (id == R.id.menu_usb_passthrough) {
+            cn.classfun.droidvm.ui.usb.UsbPassthroughDialog.show(this, vmId, vmName);
+            return true;
         }
         return super.onMenuItemClicked(item);
     }

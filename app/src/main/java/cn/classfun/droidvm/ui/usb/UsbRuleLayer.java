@@ -12,7 +12,7 @@ import java.util.Locale;
 import cn.classfun.droidvm.R;
 
 /**
- * The four layers of the automatic attach rules, in the order the daemon tries them (plan
+ * The five layers of the automatic attach rules, in the order the daemon tries them (plan
  * section 2.4). Each knows its wire key and which fields a rule in it carries. Keeping the
  * device on the host is a legal target everywhere but the last layer: that one catches whatever
  * the others left, and keeping it where it already is would be a rule that matches every device
@@ -22,6 +22,8 @@ public enum UsbRuleLayer {
     EXACT("exact", R.string.usb_rules_layer_exact, true, true),
     PORT("port", R.string.usb_rules_layer_port, false, true),
     DEVICE("device", R.string.usb_rules_layer_device, true, false),
+    /** Every device of a USB class (HID: keyboards and mice); the rule carries {@code class}. */
+    CLASS("class", R.string.usb_rules_layer_class, false, false, true),
     ANY("any", R.string.usb_rules_layer_any, false, false);
 
     /** Key of this layer's list inside the rules object. */
@@ -32,12 +34,20 @@ public enum UsbRuleLayer {
     public final boolean hasId;
     /** Whether a rule here names a physical port path. */
     public final boolean hasPort;
+    /** Whether a rule here names a USB class (UsbClasses). */
+    public final boolean hasClass;
 
     UsbRuleLayer(@NonNull String key, @StringRes int titleRes, boolean hasId, boolean hasPort) {
+        this(key, titleRes, hasId, hasPort, false);
+    }
+
+    UsbRuleLayer(@NonNull String key, @StringRes int titleRes, boolean hasId, boolean hasPort,
+                 boolean hasClass) {
         this.key = key;
         this.titleRes = titleRes;
         this.hasId = hasId;
         this.hasPort = hasPort;
+        this.hasClass = hasClass;
     }
 
     /** 1-based position: the layer number the dry run reports and the page shows. */
@@ -47,7 +57,7 @@ public enum UsbRuleLayer {
 
     /** Whether a rule here needs a device or port picked before a target. */
     public boolean needsSubject() {
-        return hasId || hasPort;
+        return hasId || hasPort || hasClass;
     }
 
     @Nullable
