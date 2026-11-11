@@ -1515,6 +1515,10 @@
     <string name="peripheral_fgs_title">外設使用中</string>
     <string name="peripheral_fgs_text">執行中的 VM 使用了需要 DroidVM 保持在前景的裝置。</string>
     <string name="notif_channel_peripheral_foreground">虛擬機器外設</string>
+    <string name="notif_channel_external_output">外部顯示器上的 VM</string>
+    <string name="external_output_title">VM 畫面在外部顯示器</string>
+    <string name="external_output_text">虛擬機器的畫面正顯示在外部顯示器上。</string>
+    <string name="external_output_stop">拉回本機</string>
     <string name="notif_channel_peripheral_foreground_desc">當 VM 使用相機等 Android 只允許在前景使用的裝置時顯示。</string>
     <string name="record_audio_permission_title">允許使用麥克風？</string>
     <string name="record_audio_permission_message">這台 VM 加了麥克風，執行期間會錄取手機的麥克風。允許麥克風權限，客體才聽得到。</string>

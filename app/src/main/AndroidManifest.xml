@@ -39,6 +39,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- ExternalOutputService: a VM's screen kept on an external display while the app is not in
+         front, a use none of the other foreground service types describes. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
     <application
@@ -304,6 +307,17 @@
             android:name=".lib.peripheral.PeripheralForegroundService"
             android:exported="false"
             android:foregroundServiceType="camera|location" />
+
+        <!-- Holds a VM screen's picture on an external display (a Presentation on the service's
+             window context), so it outlives the console activity. -->
+        <service
+            android:name=".ui.vm.display.external.ExternalOutputService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a virtual machine's screen on an external display while the app is not in front" />
+        </service>
 
     </application>
 </manifest>
