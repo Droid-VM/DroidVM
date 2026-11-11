@@ -899,6 +899,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             "--virtio-mmio-input", "--virtio-mmio-net", "--virtio-mmio-gpu"}) {
             if (!extra.contains(flag)) args.add(flag);
         }
+        // The virtio-console switch only when there is a console device: it moves the configured
+        // virtio-console ports and the GNSS receiver's named port (buildSerialCommand).
+        boolean console = gnssPort != null;
+        for (var rs : resolvedSerials)
+            if (rs.port.getHardware() == SerialHardware.VIRTIO_CONSOLE) console = true;
+        if (console && !extra.contains("--virtio-mmio-console")) args.add("--virtio-mmio-console");
     }
 
     private void buildNetCommand(@NonNull List<String> args) {
