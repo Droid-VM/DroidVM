@@ -53,6 +53,7 @@ import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
  */
 final class ScreenBindingRow {
     private static final int VNC_PASSWORD_LENGTH = 8;
+    private static final int WEBRTC_TOKEN_LENGTH = 16;
     /** The size bounds the editor saves within; the menu and its dialog both honour them. */
     private static final int MIN_EDGE = ScreenResolutionOptions.MIN_EDGE;
     private static final int MAX_EDGE = 8192;
@@ -87,6 +88,25 @@ final class ScreenBindingRow {
     private final SwitchRowWidget swPasswordAuth;
     private final View passwordOptions;
     private final TextInputEditText etPassword;
+    private final View webrtcOptions;
+    private final SwitchRowWidget swTokenAuth;
+    private final View tokenOptions;
+    private final TextInputLayout tilToken;
+    private final TextInputEditText etToken;
+    private final SwitchRowWidget swH265;
+    private final TextInputLayout tilBitrate;
+    private final TextInputEditText etBitrate;
+    private final SwitchRowWidget swAdapt;
+    /**
+     * VNC and WebRTC share the host menu and the port field, but keep separate values. This is
+     * which exporter's values the two widgets show; the other one's wait in the stash below.
+     */
+    @NonNull
+    private DisplayExporter listenerShown = DisplayExporter.VNC;
+    @NonNull
+    private String stashedHost = "";
+    @NonNull
+    private String stashedPort = "";
 
     /**
      * The geometry as picked, rather than as typed.
@@ -159,6 +179,20 @@ final class ScreenBindingRow {
         btnClear.setOnClickListener(v -> etPassword.setText(""));
         btnGenerate.setOnClickListener(v ->
             etPassword.setText(generateRandomPassword(VNC_PASSWORD_LENGTH)));
+        webrtcOptions = block.findViewById(R.id.screen_webrtc_options);
+        swTokenAuth = block.findViewById(R.id.sw_screen_webrtc_token_auth);
+        tokenOptions = block.findViewById(R.id.screen_webrtc_token_options);
+        tilToken = block.findViewById(R.id.til_screen_webrtc_token);
+        etToken = block.findViewById(R.id.et_screen_webrtc_token);
+        swH265 = block.findViewById(R.id.sw_screen_webrtc_h265);
+        tilBitrate = block.findViewById(R.id.til_screen_webrtc_bitrate);
+        etBitrate = block.findViewById(R.id.et_screen_webrtc_bitrate);
+        swAdapt = block.findViewById(R.id.sw_screen_webrtc_adapt);
+        MaterialButton btnTokenClear = block.findViewById(R.id.btn_screen_webrtc_token_clear);
+        MaterialButton btnTokenGenerate = block.findViewById(R.id.btn_screen_webrtc_token_generate);
+        btnTokenClear.setOnClickListener(v -> etToken.setText(""));
+        btnTokenGenerate.setOnClickListener(v ->
+            etToken.setText(generateRandomPassword(WEBRTC_TOKEN_LENGTH)));
         // Which rate this screen has -- and whether it has a DPI at all -- is a property of the
         // device, not of anything the user can change, so both are settled once here rather than
         // in the visibility pass. One rate row either way; only its hint and its bounds differ.
@@ -179,6 +213,7 @@ final class ScreenBindingRow {
         // since only edit mode ever calls load().
         chooseExporter.configure(DisplayExporter.class, defaultExporter);
         applyTransportOptions(defaultExporter, null);
+        showListenerOf(defaultExporter);
         swEnabled.setChecked(defaultEnabled);
         // The absolute devices are what a screen has unless the user says otherwise, so a new VM
         // and a config written before the key both come up with them on.
@@ -195,9 +230,11 @@ final class ScreenBindingRow {
             // The ladder belongs to the edge, so changing who is on the far end of it changes
             // which rungs exist -- not just which are reachable.
             applyTransportOptions(getExporter(), null);
+            showListenerOf(getExporter());
             onChanged.run();
         });
         swPasswordAuth.setOnCheckedChangeListener(onChanged);
+        swTokenAuth.setOnCheckedChangeListener(onChanged);
     }
 
     /**
@@ -463,6 +500,46 @@ final class ScreenBindingRow {
         return new int[]{bounds.width(), bounds.height()};
     }
 
+    /** Points the shared host and port widgets at [exporter]'s listener, stashing the other's. */
+    private void showListenerOf(@NonNull DisplayExporter exporter) {
+        var target = exporter == DisplayExporter.WEBRTC ? DisplayExporter.WEBRTC : DisplayExporter.VNC;
+        if (target == listenerShown) return;
+        var host = vncHost;
+        var port = getEditText(etPort);
+        vncHost = stashedHost;
+        etPort.setText(stashedPort);
+        stashedHost = host;
+        stashedPort = port;
+        listenerShown = target;
+        tilHost.setError(null);
+        etPort.setError(null);
+        bindHostMenu();
+    }
+
+    /**
+     * Whether the WebRTC token and bitrate this row holds are ones crosvm accepts, said on the
+     * fields that hold them.
+     */
+    boolean validateWebrtc() {
+        tilToken.setError(null);
+        tilBitrate.setError(null);
+        var ctx = tilToken.getContext();
+        if (swTokenAuth.isChecked() && !VMScreenConfig.isWebrtcTokenValid(getEditText(etToken))) {
+            tilToken.setError(ctx.getString(R.string.create_vm_error_webrtc_token));
+            return false;
+        }
+        var bitrate = getEditText(etBitrate);
+        if (bitrate.isEmpty()) return true;
+        try {
+            var kbps = Long.parseLong(bitrate);
+            if (kbps == 0 || (kbps >= VMScreenConfig.WEBRTC_MIN_BITRATE
+                && kbps <= VMScreenConfig.WEBRTC_MAX_BITRATE)) return true;
+        } catch (NumberFormatException ignored) {
+        }
+        tilBitrate.setError(ctx.getString(R.string.create_vm_error_webrtc_bitrate));
+        return false;
+    }
+
     /**
      * Rebuilds the transport menu for [exporter] and settles on a value.
      *
@@ -570,9 +647,13 @@ final class ScreenBindingRow {
         chooseTransport.setVisibility(
             enabled && exporter != DisplayExporter.NONE && exporter != DisplayExporter.KMS
                 ? VISIBLE : GONE);
+        var webrtc = exporter == DisplayExporter.WEBRTC;
         vncOptions.setVisibility(
-            enabled && exporter == DisplayExporter.VNC ? VISIBLE : GONE);
-        passwordOptions.setVisibility(swPasswordAuth.isChecked() ? VISIBLE : GONE);
+            enabled && (exporter == DisplayExporter.VNC || webrtc) ? VISIBLE : GONE);
+        swPasswordAuth.setVisibility(webrtc ? GONE : VISIBLE);
+        passwordOptions.setVisibility(!webrtc && swPasswordAuth.isChecked() ? VISIBLE : GONE);
+        webrtcOptions.setVisibility(webrtc ? VISIBLE : GONE);
+        tokenOptions.setVisibility(swTokenAuth.isChecked() ? VISIBLE : GONE);
     }
 
     /**
@@ -630,12 +711,25 @@ final class ScreenBindingRow {
         // Straight through, empty included: see the field's own note. The menu is rebuilt because
         // the entry list depends on what is selected -- a stored address the scan did not find is
         // appended so it stays selectable.
+        // The shared host/port widgets start on VNC's values with WebRTC's stashed, then follow
+        // the stored exporter.
+        listenerShown = DisplayExporter.VNC;
         vncHost = screen.getVncHost();
-        bindHostMenu();
         var port = screen.getVncPort();
         etPort.setText(port > 0 ? String.valueOf(port) : "");
+        stashedHost = screen.getWebrtcHost();
+        var rtcPort = screen.getWebrtcPort();
+        stashedPort = rtcPort > 0 ? String.valueOf(rtcPort) : "";
+        showListenerOf(screen.getExporter());
+        bindHostMenu();
         swPasswordAuth.setChecked(screen.isVncPasswordAuth());
         etPassword.setText(screen.getVncPassword());
+        swTokenAuth.setChecked(screen.isWebrtcTokenAuth());
+        etToken.setText(screen.getWebrtcToken());
+        swH265.setChecked(!VMScreenConfig.WEBRTC_CODEC_H264.equals(screen.getWebrtcCodec()));
+        var bitrate = screen.getWebrtcBitrate();
+        etBitrate.setText(bitrate > 0 ? String.valueOf(bitrate) : "");
+        swAdapt.setChecked(screen.isWebrtcAdapt());
     }
 
     void save(@NonNull DataItem config) {
@@ -679,6 +773,18 @@ final class ScreenBindingRow {
             var auth = swPasswordAuth.isChecked();
             screen.setVncPasswordAuth(auth);
             if (auth) screen.setVncPassword(getEditText(etPassword));
+        } else if (exporter == DisplayExporter.WEBRTC) {
+            screen.setWebrtcHost(vncHost);
+            var portStr = getEditText(etPort);
+            screen.setWebrtcPort(portStr.isEmpty() ? -1 : parseInt(portStr));
+            var auth = swTokenAuth.isChecked();
+            screen.setWebrtcTokenAuth(auth);
+            if (auth) screen.setWebrtcToken(getEditText(etToken));
+            screen.setWebrtcCodec(swH265.isChecked()
+                ? VMScreenConfig.WEBRTC_CODEC_AUTO : VMScreenConfig.WEBRTC_CODEC_H264);
+            var bitrate = getEditText(etBitrate);
+            screen.setWebrtcBitrate(bitrate.isEmpty() ? 0 : Long.parseLong(bitrate));
+            screen.setWebrtcAdapt(swAdapt.isChecked());
         }
     }
 

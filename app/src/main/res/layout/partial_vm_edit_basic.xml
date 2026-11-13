@@ -31,6 +31,14 @@
             app:ti_mode="size"
             app:ti_precision="1MiB" />
 
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_memory_auto"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_memory"
+            android:subtitle="@string/create_vm_memory_auto_hint"
+            android:text="@string/create_vm_memory_auto" />
+
         <!-- The icon button opens the per-vCPU affinity editor: its row list is a
              function of this field's value, so it reads the count on open instead
              of tracking edits to it. -->

@@ -47,6 +47,14 @@ public final class VMScreenConfig {
 
     /** Sub-object holding this screen's VNC server settings, when its exporter is VNC. */
     private static final String KEY_VNC = "vnc";
+    /** Sub-object holding this screen's WebRTC endpoint settings, when its exporter is WEBRTC. */
+    private static final String KEY_WEBRTC = "webrtc";
+    /** Codec tokens crosvm's {@code codec=} takes: H.265 when every viewer can, or H.264 only. */
+    public static final String WEBRTC_CODEC_AUTO = "auto";
+    public static final String WEBRTC_CODEC_H264 = "h264";
+    /** crosvm's accepted {@code bitrate=} range, kbit/s; 0 means derive it from the size. */
+    public static final long WEBRTC_MIN_BITRATE = 500;
+    public static final long WEBRTC_MAX_BITRATE = 100000;
     // The VNC sub-object used to carry an "h264_port" for the H.264 side channel. There is no side
     // channel any more -- the stream rides the RFB connection as encoding 50 -- so nothing reads
     // the key. A config written before the change still has it, and that is not a migration:
@@ -354,6 +362,88 @@ public final class VMScreenConfig {
         vnc().set("password", password);
     }
 
+    /** This screen's WebRTC sub-object, created if it is not there yet. */
+    @NonNull
+    public DataItem webrtc() {
+        var rtc = item.opt(KEY_WEBRTC, (DataItem) null);
+        if (rtc == null || !rtc.is(DataItem.Type.OBJECT)) {
+            item.set(KEY_WEBRTC, DataItem.newObject());
+            rtc = item.get(KEY_WEBRTC);
+        }
+        return rtc;
+    }
+
+    /** Listen address; empty means crosvm's default (the IPv4 wildcard). */
+    @NonNull
+    public String getWebrtcHost() {
+        return str(webrtc().optString("host", ""));
+    }
+
+    public void setWebrtcHost(@NonNull String host) {
+        webrtc().set("host", host);
+    }
+
+    /** Listen port, or -1 to let the daemon pick one on start. */
+    public long getWebrtcPort() {
+        return webrtc().optLong("port", -1);
+    }
+
+    public void setWebrtcPort(long port) {
+        webrtc().set("port", port);
+    }
+
+    /** Whether the viewer page needs {@code ?token=}. On by default: the page is on the LAN. */
+    public boolean isWebrtcTokenAuth() {
+        return webrtc().optBoolean("token_auth", true);
+    }
+
+    public void setWebrtcTokenAuth(boolean auth) {
+        webrtc().set("token_auth", auth);
+    }
+
+    /** The token; empty with auth on makes the daemon generate one per start. */
+    @NonNull
+    public String getWebrtcToken() {
+        return str(webrtc().optString("token", ""));
+    }
+
+    public void setWebrtcToken(@NonNull String token) {
+        webrtc().set("token", token);
+    }
+
+    @NonNull
+    public String getWebrtcCodec() {
+        return WEBRTC_CODEC_H264.equalsIgnoreCase(webrtc().optString("codec", ""))
+            ? WEBRTC_CODEC_H264 : WEBRTC_CODEC_AUTO;
+    }
+
+    public void setWebrtcCodec(@NonNull String codec) {
+        webrtc().set("codec", codec);
+    }
+
+    /** Encoder bitrate in kbit/s, or 0 to derive it from the screen size. */
+    public long getWebrtcBitrate() {
+        return webrtc().optLong("bitrate", 0);
+    }
+
+    public void setWebrtcBitrate(long kbps) {
+        webrtc().set("bitrate", kbps);
+    }
+
+    /** Follow the viewers' REMB estimate down from the bitrate. */
+    public boolean isWebrtcAdapt() {
+        return webrtc().optBoolean("adapt", true);
+    }
+
+    public void setWebrtcAdapt(boolean adapt) {
+        webrtc().set("adapt", adapt);
+    }
+
+    /** A token both crosvm's raw query comparison and its option parser pass through intact. */
+    public static boolean isWebrtcTokenValid(@NonNull String token) {
+        return token.length() <= 128 && token.matches("[A-Za-z0-9._~-]*");
+    }
+
     @StringRes
     public int getNameStringId() {
         return isGpu() ? R.string.create_vm_screen_gpu0 : R.string.create_vm_screen_simplefb;
@@ -449,6 +539,7 @@ public final class VMScreenConfig {
             case NATIVE:
                 return true;
             case VNC:
+            case WEBRTC:
                 return ceiling != DisplayTransportCap.CPU;
             default:
                 return false;

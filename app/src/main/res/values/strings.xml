@@ -173,6 +173,9 @@
     <string name="create_vm_category_basic">Basic</string>
     <string name="create_vm_name_hint">Name</string>
     <string name="create_vm_memory_hint">Memory</string>
+    <string name="create_vm_memory_auto">Use all available hugepages (auto)</string>
+    <string name="create_vm_memory_auto_hint">Gunyah only. Stops zygote, sizes the module to device RAM, then gives this VM all acquired pages after the module’s system_reserve_mb reserve.</string>
+    <string name="create_vm_memory_auto_gunyah_only">Automatic memory requires the CROSVM backend with Gunyah selected.</string>
     <string name="create_vm_cpu_hint">CPU Count</string>
     <string name="create_vm_backend">Backend</string>
     <string name="create_vm_backend_crosvm">CrosVM</string>
@@ -1788,4 +1791,21 @@
     <string name="hugepage_operation_reconcile">Reconcile usage counters</string>
     <string name="hugepage_operation_migrate">Migrate legacy settings</string>
     <string name="hugepage_operation_failed">Operation failed: %1$s</string>
+    <string name="create_vm_screen_exporter_webrtc">WebRTC (browser)</string>
+    <string name="vm_info_console_webrtc_select">Share WebRTC link</string>
+    <string name="create_vm_webrtc_token_auth">Access token</string>
+    <string name="create_vm_webrtc_token">Token</string>
+    <string name="create_vm_webrtc_token_hint">Empty generates one at each start</string>
+    <string name="create_vm_webrtc_token_clear">Clear token</string>
+    <string name="create_vm_webrtc_token_generate">Generate token</string>
+    <string name="create_vm_webrtc_h265">Allow H.265 (when every viewer supports it)</string>
+    <string name="create_vm_webrtc_bitrate">Bitrate (kbit/s)</string>
+    <string name="create_vm_webrtc_bitrate_hint">Empty: derived from the screen size; 500 to 100000</string>
+    <string name="create_vm_webrtc_adapt">Follow viewer bandwidth estimate</string>
+    <string name="create_vm_error_webrtc_token">Only letters, digits and - _ . ~ are allowed.</string>
+    <string name="create_vm_error_webrtc_bitrate">Give 500 to 100000 kbit/s, or leave empty.</string>
+    <string name="create_vm_error_webrtc_only_crosvm">WebRTC export only applies to CrosVM backend.</string>
+    <string name="webrtc_share_title">Copy a WebRTC viewer link</string>
+    <string name="webrtc_share_copied">Link copied</string>
+    <string name="webrtc_share_failed">Cannot get the WebRTC link</string>
 </resources>

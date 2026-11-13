@@ -29,6 +29,9 @@ public enum DisplayExporter implements StringEnum {
     // by which constant happens to be first.
     NATIVE(1, "native", R.string.create_vm_screen_exporter_native),
     VNC(2, "vnc", R.string.create_vm_screen_exporter_vnc),
+    // crosvm's own WebRTC endpoint: a viewer page plus hardware-encoded H.264/H.265 for browsers.
+    // crosvm only; input rides the page's DataChannel into crosvm's per-binding devices.
+    WEBRTC(4, "webrtc", R.string.create_vm_screen_exporter_webrtc),
     // The panel itself: crosvm scans the guest out over DRM/KMS while the daemon holds the
     // Android display stack stopped. Only gpu-0, crosvm only, and no other exporter beside it
     // (crosvm swaps its whole backend list for KMS). There is no console for it in this app --

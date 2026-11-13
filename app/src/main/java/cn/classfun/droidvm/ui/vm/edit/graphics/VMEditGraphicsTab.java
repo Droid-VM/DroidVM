@@ -864,8 +864,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
             if (!row.isScreenEnabled()) continue;
             if (row.getExporter() == DisplayExporter.NATIVE && !crosvm)
                 return showValidateFailed(R.string.create_vm_error_native_display_only_crosvm);
-            if (row.getExporter() != DisplayExporter.VNC) continue;
+            if (row.getExporter() == DisplayExporter.WEBRTC && !crosvm)
+                return showValidateFailed(R.string.create_vm_error_webrtc_only_crosvm);
+            if (row.getExporter() != DisplayExporter.VNC
+                && row.getExporter() != DisplayExporter.WEBRTC) continue;
             if (!row.validateVncHost()) return false;
+            if (row.getExporter() == DisplayExporter.WEBRTC && !row.validateWebrtc()) return false;
             if (!checkInputField(row.portField(), true, 1024, 65535)) return false;
         }
         return validateNoPortCollision();
@@ -879,7 +883,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         var fields = new ArrayList<TextInputEditText>();
         var ports = new ArrayList<Integer>();
         for (var row : new ScreenBindingRow[]{screenGpu0, screenFb}) {
-            if (!row.isScreenEnabled() || row.getExporter() != DisplayExporter.VNC) continue;
+            if (!row.isScreenEnabled() || (row.getExporter() != DisplayExporter.VNC
+                && row.getExporter() != DisplayExporter.WEBRTC)) continue;
             fields.add(row.portField());
             ports.add(row.typedVncPort());
         }

@@ -169,6 +169,9 @@
     <string name="create_vm_category_basic">基本</string>
     <string name="create_vm_name_hint">名称</string>
     <string name="create_vm_memory_hint">内存</string>
+    <string name="create_vm_memory_auto">自动使用可用大页</string>
+    <string name="create_vm_memory_auto_hint">仅 Gunyah。停止 zygote，将模块目标设为设备总内存，再把模块实际获取的大页全部分配给此虚拟机；系统保留量使用模块的 system_reserve_mb 设置。</string>
+    <string name="create_vm_memory_auto_gunyah_only">自动内存仅支持选择 Gunyah 的 CROSVM 虚拟机。</string>
     <string name="create_vm_cpu_hint">CPU 数量</string>
     <string name="create_vm_backend">后端</string>
     <string name="create_vm_backend_crosvm">CrosVM</string>
@@ -1730,4 +1733,21 @@
     <string name="hugepage_operation_reconcile">重新核对占用统计</string>
     <string name="hugepage_operation_migrate">迁移旧版设置</string>
     <string name="hugepage_operation_failed">操作失败：%1$s</string>
+    <string name="create_vm_screen_exporter_webrtc">WebRTC（浏览器）</string>
+    <string name="vm_info_console_webrtc_select">分享 WebRTC 链接</string>
+    <string name="create_vm_webrtc_token_auth">访问令牌</string>
+    <string name="create_vm_webrtc_token">令牌</string>
+    <string name="create_vm_webrtc_token_hint">留空则每次启动时自动生成</string>
+    <string name="create_vm_webrtc_token_clear">清空令牌</string>
+    <string name="create_vm_webrtc_token_generate">生成令牌</string>
+    <string name="create_vm_webrtc_h265">允许 H.265（所有观看端都支持时）</string>
+    <string name="create_vm_webrtc_bitrate">码率（kbit/s）</string>
+    <string name="create_vm_webrtc_bitrate_hint">留空按屏幕尺寸推算；范围 500–100000</string>
+    <string name="create_vm_webrtc_adapt">跟随观看端带宽估计</string>
+    <string name="create_vm_error_webrtc_token">只能使用字母、数字和 - _ . ~</string>
+    <string name="create_vm_error_webrtc_bitrate">请填写 500–100000 kbit/s，或留空。</string>
+    <string name="create_vm_error_webrtc_only_crosvm">WebRTC 导出只在使用CrosVM后端时有效</string>
+    <string name="webrtc_share_title">选择要复制的 WebRTC 观看链接</string>
+    <string name="webrtc_share_copied">链接已复制</string>
+    <string name="webrtc_share_failed">无法获取 WebRTC 链接</string>
 </resources>

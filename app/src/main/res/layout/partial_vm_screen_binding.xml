@@ -289,6 +289,107 @@
 
             </LinearLayout>
 
+            <!-- WebRTC shares the host and port row above; ScreenBindingRow swaps which exporter's
+                 values it shows and hides the VNC password rows. -->
+            <LinearLayout
+                android:id="@+id/screen_webrtc_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                    android:id="@+id/sw_screen_webrtc_token_auth"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:icon="@drawable/ic_lock"
+                    android:text="@string/create_vm_webrtc_token_auth" />
+
+                <LinearLayout
+                    android:id="@+id/screen_webrtc_token_options"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:id="@+id/til_screen_webrtc_token"
+                        style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="@string/create_vm_webrtc_token"
+                        app:helperText="@string/create_vm_webrtc_token_hint"
+                        app:endIconMode="password_toggle">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/et_screen_webrtc_token"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:inputType="textPassword" />
+                    </com.google.android.material.textfield.TextInputLayout>
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_screen_webrtc_token_clear"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:contentDescription="@string/create_vm_webrtc_token_clear"
+                        app:icon="@drawable/ic_close" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btn_screen_webrtc_token_generate"
+                        style="@style/Widget.Material3.Button.IconButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:contentDescription="@string/create_vm_webrtc_token_generate"
+                        app:icon="@drawable/ic_refresh" />
+
+                </LinearLayout>
+
+                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                    android:id="@+id/sw_screen_webrtc_h265"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:icon="@drawable/ic_monitor"
+                    android:text="@string/create_vm_webrtc_h265" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_screen_webrtc_bitrate"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginTop="8dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginBottom="8dp"
+                    android:hint="@string/create_vm_webrtc_bitrate"
+                    app:helperText="@string/create_vm_webrtc_bitrate_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_screen_webrtc_bitrate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        tools:ignore="VisualLintTextFieldSize" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                    android:id="@+id/sw_screen_webrtc_adapt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:checked="true"
+                    android:icon="@drawable/ic_speedometer"
+                    android:text="@string/create_vm_webrtc_adapt" />
+
+            </LinearLayout>
+
         </LinearLayout>
 
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
