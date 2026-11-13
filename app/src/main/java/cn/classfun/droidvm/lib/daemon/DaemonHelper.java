@@ -124,8 +124,10 @@ public final class DaemonHelper {
         // Clearing app data or reinstalling leaves the old daemon running on a deleted run
         // directory, invisible to the new lock: kill it and the helpers it leaves behind.
         run(KILL_STALE).printLog("droidvmd-stale");
+        // The app's shell pipes disappear when zygote stops. The detached daemon
+        // writes persistent logs to daemon.log and must not retain those pipes.
         var cmd = fmt(
-            "%s %s --data-dir %s --apk %s%s --configuration-owner",
+            "%s %s --data-dir %s --apk %s%s --configuration-owner </dev/null >/dev/null 2>&1",
             escapedString(getAssetBinaryPath("daemon")),
             escapedString(getAssetBinaryPath("droidvmd")),
             escapedString(DATA_DIR),
