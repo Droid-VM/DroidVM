@@ -52,6 +52,16 @@ public final class NicLeaseAllocatorTest {
     }
 
     @Test
+    public void leaseQueriesDoNotMaterializeEmptyLease() {
+        var vm = new VMConfig();
+        var nic = DataItem.newObject(); nic.set("network_id", "n");
+        var nics = DataItem.newArray(); nics.append(nic); vm.item.set("networks", nics);
+        var before = nics.toString();
+        vm.forEachNic(n -> { n.isDhcp4LeaseEnabled(); n.isDhcp6LeaseEnabled(); n.getDhcp4Forwards(); });
+        assertEquals(before, vm.item.get("networks").toString());
+    }
+
+    @Test
     public void missingNetworkRejectsAllocation() {
         var target = vm(network("10.0.0.1/24"), 0);
         assertThrows(IllegalStateException.class, () -> NicLeaseAllocator.resolve(target, new VMStore(), new NetworkStore()));
