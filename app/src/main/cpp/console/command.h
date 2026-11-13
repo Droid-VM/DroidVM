@@ -41,6 +41,13 @@ extern void print_response(const Json::Value &resp);
 
 extern int vm_action(const char *command, const char *vm_id_input);
 
+// Writes the in-memory history (last 1 MiB) to stdout in 64 KiB pages.
+extern void print_console_history(const std::string &vm_id, const std::string &stream);
+
+// Writes the whole persistent log to stdout in pages; false when the daemon
+// keeps no persistent copy for this stream (nothing has been written then).
+extern bool print_console_log(const std::string &vm_id, const std::string &stream);
+
 extern void command_register_ping(CommandRegistry &registry);
 
 extern void command_register_list(CommandRegistry &registry);

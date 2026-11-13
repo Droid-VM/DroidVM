@@ -13,6 +13,7 @@ import static cn.classfun.droidvm.lib.utils.ProcessUtils.shellKillProcess;
 import static cn.classfun.droidvm.lib.utils.RunUtils.escapedString;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
+import static cn.classfun.droidvm.lib.utils.StringUtils.urlDecodeBytesAll;
 import static cn.classfun.droidvm.lib.utils.ThreadUtils.runOnPool;
 
 import android.content.res.ColorStateList;
@@ -38,7 +39,11 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.termux.terminal.TerminalSession;
 import com.termux.terminal.TerminalSessionClient;
 
-import java.net.URLDecoder;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -235,26 +240,79 @@ public final class VMConsoleActivity extends AppCompatActivity {
         ));
     }
 
-    /** Fetch the full console history via IPC; {@code onText} receives the decoded text. */
+    /** Fetch the full console log via paged IPC; {@code onText} receives the decoded text. */
     private void fetchConsoleText(Consumer<String> onText) {
-        DaemonConnection.OnError err = e -> {
-            Log.w(TAG, fmt("Failed to fetch log for %s stream %s", vmName, streamName), e);
-            runOnUiThread(() ->
-                Toast.makeText(this, R.string.vm_info_logs_no_logs, LENGTH_SHORT).show());
-        };
-        DaemonConnection.OnUnsuccessful failed = resp ->
-            err.onError(new Exception(resp.optString("message", "Unknown error")));
-        DaemonConnection.OnResponse success = resp -> {
-            var data = resp.optString(streamName, "");
-            onText.accept(URLDecoder.decode(data, StandardCharsets.UTF_8));
-        };
-        runOnPool(() -> DaemonConnection.getInstance().buildRequest("vm_console_history")
+        runOnPool(() -> {
+            try {
+                // Bytes are joined before decoding so UTF-8 split across pages survives.
+                var out = new ByteArrayOutputStream();
+                // The persistent log keeps the whole run; the ring only the last 1 MiB.
+                if (!readConsoleLog(out)) readConsoleHistory(out);
+                onText.accept(new String(out.toByteArray(), StandardCharsets.UTF_8));
+            } catch (IOException | JSONException e) {
+                Log.w(TAG, fmt("Failed to fetch log for %s stream %s", vmName, streamName), e);
+                runOnUiThread(() ->
+                    Toast.makeText(this, R.string.vm_info_logs_no_logs, LENGTH_SHORT).show());
+            }
+        });
+    }
+
+    @NonNull
+    private JSONObject consoleRequest(@NonNull String command) throws JSONException {
+        return new JSONObject()
+            .put("command", command)
             .put("vm_id", vmId)
-            .put("stream", streamName)
-            .onResponse(success)
-            .onUnsuccessful(failed)
-            .onError(err)
-            .invoke());
+            .put("stream", streamName);
+    }
+
+    private static void appendEncoded(@NonNull ByteArrayOutputStream out, @NonNull String encoded) {
+        var bytes = urlDecodeBytesAll(encoded);
+        out.write(bytes, 0, bytes.length);
+    }
+
+    /** Pages the persistent log; false when the daemon keeps no copy of this stream. */
+    private boolean readConsoleLog(@NonNull ByteArrayOutputStream out) throws IOException, JSONException {
+        var conn = DaemonConnection.getInstance();
+        var req = consoleRequest("vm_console_log").put("offset", 0L);
+        long target = -1;
+        for (;;) {
+            var resp = conn.request(req);
+            if (!resp.optBoolean("success", false)) {
+                if (target < 0) return false;
+                throw new IOException(resp.optString("message", "Unknown error"));
+            }
+            var data = resp.getJSONObject("data");
+            // Cleared or restarted mid-read: keep what was already collected.
+            if (target >= 0 && data.optBoolean("reset")) return true;
+            appendEncoded(out, data.optString("bytes", ""));
+            long next = data.getLong("next");
+            if (target < 0) target = data.getLong("size");
+            if (next >= target || next == data.getLong("offset")) return true;
+            req.put("offset", next);
+        }
+    }
+
+    /** Pages the in-memory history (last 1 MiB) up to the end seen first. */
+    private void readConsoleHistory(@NonNull ByteArrayOutputStream out) throws IOException, JSONException {
+        var conn = DaemonConnection.getInstance();
+        var req = consoleRequest("vm_console_history").put("paged", true);
+        long target = -1;
+        for (;;) {
+            var resp = conn.request(req);
+            if (!resp.optBoolean("success", false))
+                throw new IOException(resp.optString("message", "Unknown error"));
+            var data = resp.optJSONObject("data");
+            if (data == null) {
+                // Older daemon without paging: the whole history in one field.
+                appendEncoded(out, resp.optString(streamName, ""));
+                return;
+            }
+            appendEncoded(out, data.optString("bytes", ""));
+            long next = data.getLong("next"), end = data.getLong("end");
+            if (target < 0) target = end;
+            if (next >= end || next >= target) return;
+            req.put("generation", data.getString("generation")).put("offset", next);
+        }
     }
 
     private void onSaveLogResult(@Nullable Uri uri) {
