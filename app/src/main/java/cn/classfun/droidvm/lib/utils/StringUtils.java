@@ -26,6 +26,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Formatter;
 import java.util.Locale;
@@ -370,5 +371,27 @@ public final class StringUtils {
     @NonNull
     public static String urlEncodeBytesAll(@NonNull byte[] data) {
         return urlEncodeBytesAll(data, 0, data.length);
+    }
+
+    /** Inverse of {@link #urlEncodeBytesAll}; other characters pass through as single bytes. */
+    @NonNull
+    public static byte[] urlDecodeBytesAll(@NonNull String data) {
+        var out = new byte[data.length()];
+        int j = 0;
+        for (int i = 0; i < data.length(); ) {
+            char c = data.charAt(i);
+            if (c == '%' && i + 2 < data.length()) {
+                int hi = Character.digit(data.charAt(i + 1), 16);
+                int lo = Character.digit(data.charAt(i + 2), 16);
+                if (hi >= 0 && lo >= 0) {
+                    out[j++] = (byte) (hi << 4 | lo);
+                    i += 3;
+                    continue;
+                }
+            }
+            out[j++] = (byte) c;
+            i++;
+        }
+        return Arrays.copyOf(out, j);
     }
 }

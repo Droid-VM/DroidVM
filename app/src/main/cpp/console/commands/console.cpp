@@ -187,21 +187,7 @@ void ConsoleCommand::console_attach(
         raw.c_cc[VTIME] = 0;
         tcsetattr(STDIN_FILENO, TCSANOW, &raw);
     }
-    {
-        Json::Value req;
-        req["command"] = "vm_console_history";
-        req["vm_id"] = vm_id;
-        req["stream"] = stream;
-        auto resp = ipc->send_request(req);
-        auto buf = resp.get(stream, "").asString();
-        if (!buf.empty()) {
-            auto chunk = url_decode_all(buf);
-            if (!chunk.empty()) {
-                fwrite(chunk.c_str(), 1, chunk.size(), stdout);
-                fflush(stdout);
-            }
-        }
-    }
+    print_console_history(vm_id, stream);
     {
         Json::Value req;
         req["command"] = "vm_console_info";

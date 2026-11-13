@@ -15,18 +15,10 @@ public:
 };
 
 int ConsoleHistoryCommand::run(int, char *argv[]) {
-    auto ipc = IPCClient::get();
     auto vm_id = resolve_vm_id(argv[2]);
-    Json::Value req;
-    req["command"] = "vm_console_history";
-    req["vm_id"] = vm_id;
-    req["stream"] = argv[3];
-    auto resp = ipc->send_request(req);
-    auto data = resp.get(argv[3], "");
-    if (data.empty()) return 0;
-    auto chunk = url_decode_all(data.asString());
-    if (chunk.empty()) return 0;
-    fwrite(chunk.c_str(), 1, chunk.size(), stdout);
+    // The persistent log keeps the whole run; the ring only the last 1 MiB.
+    if (!print_console_log(vm_id, argv[3]))
+        print_console_history(vm_id, argv[3]);
     fwrite("\r\n", 1, 2, stdout);
     fflush(stdout);
     return 0;

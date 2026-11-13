@@ -1,6 +1,7 @@
 #include "command.h"
 #include "ipc_proto.h"
 #include <cstdio>
+#include <optional>
 
 void CommandRegistry::register_command(std::unique_ptr<Command> cmd) {
     auto *ptr = cmd.get();
@@ -64,6 +65,73 @@ int vm_action(const char *command, const char *vm_id_input) {
     auto resp = ipc->send_request(req);
     print_response(resp);
     return 0;
+}
+
+static void write_encoded(const Json::Value &encoded) {
+    if (!encoded.isString()) return;
+    auto chunk = url_decode_all(encoded.asString());
+    if (chunk.empty()) return;
+    fwrite(chunk.c_str(), 1, chunk.size(), stdout);
+    fflush(stdout);
+}
+
+void print_console_history(const std::string &vm_id, const std::string &stream) {
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "vm_console_history";
+    req["vm_id"] = vm_id;
+    req["stream"] = stream;
+    req["paged"] = true;
+    // Stop at the end seen first, so a chatty guest cannot keep us paging;
+    // newer output arrives as live events.
+    std::optional<uint64_t> target;
+    for (;;) {
+        auto resp = ipc->send_request(req);
+        const auto &data = resp["data"];
+        if (!data.isObject()) {
+            // Older daemon without paging: the whole history in one field.
+            write_encoded(resp[stream]);
+            return;
+        }
+        if (target && data["reset"].asBool())
+            fprintf(stderr, "\n[droidvm] History was overwritten while reading; some output is missing.\n");
+        write_encoded(data["bytes"]);
+        const auto next = data["next"].asUInt64(), end = data["end"].asUInt64();
+        if (!target) target = end;
+        if (next >= end || next >= *target) return;
+        req["generation"] = data["generation"];
+        req["offset"] = Json::UInt64(next);
+    }
+}
+
+bool print_console_log(const std::string &vm_id, const std::string &stream) {
+    auto ipc = IPCClient::get();
+    Json::Value req;
+    req["command"] = "vm_console_log";
+    req["vm_id"] = vm_id;
+    req["stream"] = stream;
+    req["offset"] = Json::UInt64(0);
+    std::optional<uint64_t> target;
+    for (;;) {
+        Json::Value resp;
+        try {
+            resp = ipc->send_request(req);
+        } catch (const std::exception &) {
+            // No persistent copy (or an older daemon): let the caller fall back.
+            if (!target) return false;
+            throw;
+        }
+        const auto &data = resp["data"];
+        if (target && data["reset"].asBool()) {
+            fprintf(stderr, "\n[droidvm] Log was cleared or restarted while reading.\n");
+            return true;
+        }
+        write_encoded(data["bytes"]);
+        const auto next = data["next"].asUInt64();
+        if (!target) target = data["size"].asUInt64();
+        if (next >= *target || next == data["offset"].asUInt64()) return true;
+        req["offset"] = Json::UInt64(next);
+    }
 }
 
 // --- Registry creation ---
