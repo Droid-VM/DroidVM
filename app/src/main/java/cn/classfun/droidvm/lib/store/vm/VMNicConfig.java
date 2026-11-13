@@ -79,20 +79,27 @@ public final class VMNicConfig {
         return s;
     }
 
+    /** Getters must not materialize an empty lease: start compares configs structurally. */
+    @NonNull
+    private DataItem readLease(@NonNull String key) {
+        var s = item.opt(key, null);
+        return s != null && s.is(DataItem.Type.OBJECT) ? s : DataItem.newObject();
+    }
+
     public boolean isDhcp4LeaseEnabled() {
-        return lease("dhcp4_lease").optBoolean("enabled", false);
+        return readLease("dhcp4_lease").optBoolean("enabled", false);
     }
 
     public long getDhcp4Offset() {
-        return lease("dhcp4_lease").optLong("offset", 64);
+        return readLease("dhcp4_lease").optLong("offset", 64);
     }
 
     public boolean isDhcp6LeaseEnabled() {
-        return lease("dhcp6_lease").optBoolean("enabled", false);
+        return readLease("dhcp6_lease").optBoolean("enabled", false);
     }
 
     public long getDhcp6Offset() {
-        return lease("dhcp6_lease").optLong("offset", 64);
+        return readLease("dhcp6_lease").optLong("offset", 64);
     }
 
     /**
@@ -146,7 +153,7 @@ public final class VMNicConfig {
     @NonNull
     private List<PortForward> forwards(@NonNull String key) {
         var out = new ArrayList<PortForward>();
-        var arr = lease(key).opt("forwards", null);
+        var arr = readLease(key).opt("forwards", null);
         if (arr == null || !arr.is(DataItem.Type.ARRAY)) return out;
         for (var e : arr.asArray()) {
             if (!e.is(DataItem.Type.OBJECT)) continue;
