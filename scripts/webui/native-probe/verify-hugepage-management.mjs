@@ -41,11 +41,19 @@ try {
     await page.evaluate(() => document.activeElement?.blur())
     await page.screenshot({ path: join(output, `${name}-320.png`), fullPage: true })
   }
-  const group = async name => {
-    await ui(`tab-${name}`).click()
-    await expect(ui(`group-${name}`)).toBeVisible()
+  // The main page mirrors the App; parameters, CMA lever and maintenance live on the
+  // advanced page. Switches are md-switch elements, reached by role for enabled checks.
+  const main = async () => {
+    if (!(await ui('advanced-link').isVisible())) await page.locator('a[href="#/hugepages"]').first().click()
+    await expect(ui('advanced-link')).toBeVisible()
     await noOverflow()
   }
+  const advanced = async () => {
+    if (await ui('advanced-link').isVisible()) await ui('advanced-link').click()
+    await expect(ui('group-advanced')).toBeVisible()
+    await noOverflow()
+  }
+  const toggle = name => page.getByRole('switch', { name, exact: true })
   const mode = async name => {
     await fixture.command(`hugepage-mode ${name}`)
     const fingerprint = (await state()).fingerprint
@@ -56,9 +64,10 @@ try {
   }
   const action = async (name, risk = false) => {
     const before = writes.length
-    await expect(ui(name)).toBeEnabled()
-    await ui(name).click()
-    const dialog = page.getByRole('dialog')
+    const control = typeof name === 'string' ? ui(name) : name
+    await expect(control).toBeEnabled()
+    await control.click()
+    const dialog = page.getByRole('dialog').last()
     await expect(dialog).toBeVisible()
     if (risk) {
       await expect(ui('confirm')).toBeDisabled()
@@ -82,20 +91,24 @@ try {
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(ui('page')).toBeVisible()
   assert((await get('session')).server.capabilities.includes('host.hugepages.manage.v1'))
-  for (const name of ['overview', 'reserve', 'module', 'cma', 'advanced', 'maintenance']) await group(name)
-  checks.push('six-categories-at-320px')
+  await advanced()
+  for (const name of ['advanced', 'cma', 'maintenance']) await expect(ui(`group-${name}`)).toBeVisible()
+  checks.push('advanced-sections-at-320px')
+  await main()
+  await expect(ui('cma-lent')).toContainText('GiB')
+  checks.push('cma-lent-shown')
 
-  await group('module')
   await expect(ui('runtime-disable')).toBeDisabled()
-  await expect(ui('unload')).toBeDisabled()
-  const boot = await action('boot-disable')
+  const boot = await action(toggle('开机加载模块'))
   assert.equal(boot.saved, true)
   assert.equal(boot.applied, false)
   assert.equal((await state()).loaded, true)
+  await advanced()
+  await expect(ui('unload')).toBeDisabled()
   checks.push('consumers-block-disable-and-unload', 'boot-save-does-not-unload')
   await capture('module')
 
-  await group('advanced')
+  await ui('advanced-system_reserve_mb').click()
   await ui('advanced-input-system_reserve_mb').fill('896')
   const reserve = await action('advanced-save-system_reserve_mb', true)
   assert.equal(reserve.saved, true)
@@ -103,6 +116,7 @@ try {
   let row = (await state()).advanced.find(item => item.key === 'system_reserve_mb')
   assert.equal(row.saved, '896'); assert.equal(row.live, '512'); assert.equal(row.reloadRequired, true)
   await mode('readonly')
+  await ui('advanced-cma_reservoir_floor_mb').click()
   await ui('advanced-input-cma_reservoir_floor_mb').fill('96')
   const floor = await action('advanced-save-cma_reservoir_floor_mb')
   assert.equal(floor.saved, true); assert.equal(floor.applied, false)
@@ -111,40 +125,44 @@ try {
   checks.push('system-reserve-explicit-risk-confirmation', 'readonly-advanced-saved-only')
   await capture('advanced')
 
+  // The CMA switch saves like the App: off persists 0, on persists the with-CMA size above
+  // using the lever chosen on the advanced page.
   await mode('idle')
-  await group('cma')
-  await ui('cma-trial-target').fill('3072')
+  await main()
+  const off = await action(toggle('启用 CMA'))
+  assert.equal(off.saved, true); assert.equal(off.applied, true)
+  assert.equal((await state()).actualCmaPages, '0')
+  await advanced()
   await ui('cma-lever').selectOption('hook')
-  const trial = await action('cma-trial', true)
-  assert.equal(trial.saved, false); assert.equal(trial.applied, true)
-  assert.equal((await state()).actualCmaPages, '3072')
+  await main()
+  const on = await action(toggle('启用 CMA'), true)
+  assert.equal(on.saved, true); assert.equal(on.applied, true)
+  assert.equal(writes.at(-1).operation.persist, true)
+  assert.equal((await state()).actualCmaPages, '2048')
   assert.equal((await state()).savedCmaPages, '2048')
-  const save = await action('cma-save')
-  assert.equal(save.saved, true); assert.equal(save.applied, false)
-  assert.equal(writes.at(-1).operation.kind, 'cma-save')
-  assert.equal((await state()).savedCmaPages, '3072')
-  checks.push('cma-trial-does-not-save', 'cma-save-does-not-repeat-trial')
+  assert.equal((await state()).cma.savedLever, 'hook')
+  checks.push('cma-switch-saves-off-and-on')
   await capture('cma')
 
-  await group('module')
   await action('runtime-disable')
   assert.equal((await state()).loaded, true)
   assert.equal((await state()).actualPoolPages, '0')
+  await advanced()
   await action('unload', true)
   assert.equal((await state()).loaded, false)
+  await main()
   await action('runtime-enable')
   assert.equal((await state()).loaded, true)
   checks.push('soft-disable-keeps-module', 'explicit-unload-and-runtime-enable')
 
   await mode('legacy')
-  await group('cma')
-  await expect(ui('cma-trial')).toBeDisabled()
-  await group('maintenance')
-  await action('migrate-settings')
+  await expect(toggle('启用 CMA')).toHaveCount(0)
   await action('dismiss-crash')
+  await advanced()
+  await action('migrate-settings')
   assert.equal((await state()).hasLegacySettings, false)
   assert.equal((await state()).hasCrash, false)
-  checks.push('legacy-capability-disables-cma', 'explicit-migration-and-crash-acknowledgement')
+  checks.push('legacy-capability-hides-cma', 'explicit-migration-and-crash-acknowledgement')
   await noOverflow()
   assert.deepEqual(errors, [])
   const stats = await fixture.command('hugepage-stats')

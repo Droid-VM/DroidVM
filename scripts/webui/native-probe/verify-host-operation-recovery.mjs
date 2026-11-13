@@ -113,19 +113,18 @@ try {
       }
     } else {
       assert.equal(before.bootEnabled, true)
-      await hp('tab-module').click()
-      await expect(hp('boot-disable')).toBeEnabled()
+      const bootSwitch = () => page.getByRole('switch', { name: messages.hugepagesBootModule, exact: true })
+      await expect(bootSwitch()).toBeEnabled()
       status = hp('receipt')
-      unlocked = () => hp('boot-enable')
+      unlocked = bootSwitch
       query = () => hp('query').click()
       refresh = () => hp('refresh').click()
       openAfterReload = async () => {
         await expect(hp('page')).toBeVisible()
-        await hp('tab-module').click()
-        await expect(hp('tracking-restored')).toBeVisible()
+        await expect(hp('receipt')).toBeVisible()
       }
       submit = async () => {
-        await hp('boot-disable').click()
+        await bootSwitch().click()
         await hp('confirm').click()
       }
     }

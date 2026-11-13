@@ -71,9 +71,9 @@ try {
   await noOverflow()
   await page.screenshot({ path: join(output, 'hugepages-ready-320.png'), fullPage: true })
 
-  await ui('tab-reserve').click()
-  await ui('pool-target').fill('1536')
-  await ui('cma-target').fill('2048')
+  // Targets are entered in GiB like the App: 3 GiB = 1536 and 4 GiB = 2048 pages of 2 MiB.
+  await ui('pool-target').fill('3')
+  await ui('cma-target').fill('4')
   await ui('save').click()
   await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
   await expect(async () => assert.equal((await get('host/hugepages')).actualPoolPages, '1536')).toPass()

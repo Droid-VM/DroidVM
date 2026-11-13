@@ -61,9 +61,7 @@ export async function verifyRescue({ page, expect, post, get, waitTask, diskId, 
     assert.equal((await tab.request.get(`${fixture.origin}/api/v1/agent-rescue-terminals/${id}`)).status(), 404)
   } finally { await other.close() }
   await page.locator('.agent-status').getByRole('link', { name: '打开救援终端', exact: true }).click()
-  const connect = page.getByTestId('terminal-connect')
-  await expect(connect).toBeEnabled()
-  await connect.click()
+  // Opening the rescue terminal connects by itself.
   await expect(page.getByTestId('terminal-status')).toHaveAttribute('data-state', 'connected')
   await expect(page.getByTestId('terminal-output')).toContainText('DroidVM rescue shell')
   const input = page.locator('.xterm-helper-textarea')
@@ -79,7 +77,7 @@ export async function verifyRescue({ page, expect, post, get, waitTask, diskId, 
   // Reload recovers this login's session without replaying the Agent action.
   await page.reload()
   await expect(page.locator('.rescue-panel')).toContainText(id)
-  await expect(page.getByTestId('terminal-connect')).toBeEnabled()
+  await expect(page.getByTestId('terminal-status')).toHaveAttribute('data-state', 'connected')
   assert.equal(writes.filter(row => row.path.endsWith('/agent-operations')).length, 1)
   await page.locator('.rescue-panel').getByRole('button', { name: '关闭救援虚拟机', exact: true }).click()
   await dialog.getByRole('checkbox').check()
