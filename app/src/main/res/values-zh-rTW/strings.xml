@@ -1725,4 +1725,21 @@
     <string name="hugepage_operation_reconcile">重新核對佔用統計</string>
     <string name="hugepage_operation_migrate">遷移舊版設定</string>
     <string name="hugepage_operation_failed">操作失敗：%1$s</string>
+    <string name="create_vm_screen_exporter_webrtc">WebRTC（瀏覽器）</string>
+    <string name="vm_info_console_webrtc_select">分享 WebRTC 連結</string>
+    <string name="create_vm_webrtc_token_auth">存取權杖</string>
+    <string name="create_vm_webrtc_token">權杖</string>
+    <string name="create_vm_webrtc_token_hint">留空則每次啟動時自動產生</string>
+    <string name="create_vm_webrtc_token_clear">清除權杖</string>
+    <string name="create_vm_webrtc_token_generate">產生權杖</string>
+    <string name="create_vm_webrtc_h265">允許 H.265（所有觀看端都支援時）</string>
+    <string name="create_vm_webrtc_bitrate">位元率（kbit/s）</string>
+    <string name="create_vm_webrtc_bitrate_hint">留空依螢幕尺寸推算；範圍 500–100000</string>
+    <string name="create_vm_webrtc_adapt">跟隨觀看端頻寬估計</string>
+    <string name="create_vm_error_webrtc_token">只能使用字母、數字和 - _ . ~</string>
+    <string name="create_vm_error_webrtc_bitrate">請填寫 500–100000 kbit/s，或留空。</string>
+    <string name="create_vm_error_webrtc_only_crosvm">WebRTC 匯出只在使用CrosVM後端時有效</string>
+    <string name="webrtc_share_title">選擇要複製的 WebRTC 觀看連結</string>
+    <string name="webrtc_share_copied">連結已複製</string>
+    <string name="webrtc_share_failed">無法取得 WebRTC 連結</string>
 </resources>

@@ -54,6 +54,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private static final int MAX_VCPUS = 64;
     private TextInputRowWidget inputName;
     private TextInputRowWidget inputMemory;
+    private SwitchRowWidget swMemoryAuto;
     private TextInputRowWidget inputCpu;
     private TextInputRowWidget inputSwiotlb;
     private SwitchRowWidget swBalloon;
@@ -99,6 +100,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         tvNotesSummary = view.findViewById(R.id.tv_notes_summary);
         btnEditNotes = view.findViewById(R.id.btn_edit_notes);
         inputMemory = view.findViewById(R.id.input_memory);
+        swMemoryAuto = view.findViewById(R.id.sw_memory_auto);
         inputCpu = view.findViewById(R.id.input_cpu);
         inputSwiotlb = view.findViewById(R.id.input_swiotlb);
         swBalloon = view.findViewById(R.id.sw_balloon);
@@ -150,14 +152,18 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend.setOnValueChangedListener((oldValue, newValue) -> {
             parent.put("backend", newValue);
             updateProtectedModes();
+            updateMemoryAutoVisibility();
         });
         chooseHypervisor.setOnValueChangedListener((oldValue, newValue) -> {
             parent.put("hypervisor", newValue);
             updateProtectedModes();
+            updateMemoryAutoVisibility();
         });
+        swMemoryAuto.setOnCheckedChangeListener(this::updateMemoryAutoVisibility);
         chooseProtectedVm.setOnValueChangedListener((oldValue, newValue) -> updateProtectedVisibility());
         updateProtectedModes();
         updateProtectedVisibility();
+        updateMemoryAutoVisibility();
         initCpuTopology();
     }
 
@@ -185,6 +191,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         notes = config.getNotes();
         showNotesSummary();
         inputMemory.setValue(item.optLong("memory_mb", 512), SizeUnit.MB);
+        swMemoryAuto.setChecked(item.optBoolean("memory_auto", false));
         inputCpu.setValue(item.optLong("cpu_count", 1));
         inputSwiotlb.setValue(item.optLong("swiotlb_mb", 256), SizeUnit.MB);
         swBalloon.setChecked(item.optBoolean("balloon", false));
@@ -228,6 +235,16 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         loadCpuTopology(item);
         updateProtectedModes();
         updateProtectedVisibility();
+        updateMemoryAutoVisibility();
+    }
+
+    private void updateMemoryAutoVisibility() {
+        VMBackend backend = chooseBackend.getSelectedItem();
+        VMHypervisor selected = chooseHypervisor.getSelectedItem();
+        VMHypervisor resolved = VMHypervisor.resolveConfigured(backend, selected);
+        boolean supported = backend == VMBackend.CROSVM && resolved == VMHypervisor.GUNYAH;
+        swMemoryAuto.setVisibility(supported ? VISIBLE : GONE);
+        inputMemory.setVisibility(swMemoryAuto.isChecked() && supported ? GONE : VISIBLE);
     }
 
     private void updateProtectedModes() {
@@ -368,6 +385,12 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     }
 
     private boolean validateInputMemory(@NonNull VMStore ignored) {
+        if (swMemoryAuto.isChecked()) {
+            VMBackend backend = chooseBackend.getSelectedItem();
+            VMHypervisor resolved = VMHypervisor.resolveConfigured(backend, chooseHypervisor.getSelectedItem());
+            return backend == VMBackend.CROSVM && resolved == VMHypervisor.GUNYAH ||
+                showValidateFailed(R.string.create_vm_memory_auto_gunyah_only);
+        }
         inputMemory.setError(null);
         if (!inputMemory.isInputValid()) {
             inputMemory.setError(parent.getString(R.string.create_vm_error_invalid_number));
@@ -488,7 +511,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         var item = config.item;
         config.setName(inputName.getText());
         config.setNotes(notes);
-        item.set("memory_mb", inputMemory.getValue(SizeUnit.MB));
+        item.set("memory_auto", swMemoryAuto.isChecked());
+        if (!swMemoryAuto.isChecked()) item.set("memory_mb", inputMemory.getValue(SizeUnit.MB));
         item.set("cpu_count", inputCpu.getValue());
         item.set("swiotlb_mb", inputSwiotlb.getValue(SizeUnit.MB));
         item.set("balloon", swBalloon.isChecked());

@@ -3,6 +3,7 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.console;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
@@ -21,6 +22,7 @@ import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.ui.vm.display.nativedisplay.display.VMNativeDisplayActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.base.BaseVncActivity;
 import cn.classfun.droidvm.ui.vm.display.vnc.display.VMVncDisplayActivity;
+import cn.classfun.droidvm.ui.vm.display.webrtc.WebrtcShareDialog;
 
 /**
  * Shared "open the VM's default view" routing, so the VM-info screen (a console
@@ -48,6 +50,8 @@ public final class VMConsoleRouter {
             var screen = bound.get(0);
             if (screen.getExporter() == DisplayExporter.NATIVE)
                 openNative(ctx, vmId, config, screen.id);
+            else if (screen.getExporter() == DisplayExporter.WEBRTC)
+                openWebrtc(ctx, vmId, config, screen.id);
             else
                 openVnc(ctx, vmId, config, screen.id);
             return;
@@ -140,6 +144,14 @@ public final class VMConsoleRouter {
         intent.putExtra(BaseVncActivity.EXTRA_SCREEN, screenId);
         intent.putExtra(BaseVncActivity.EXTRA_INPUT_ENABLED, inputEnabled(config.item, screenId));
         ctx.startActivity(intent);
+    }
+    /**
+     * Shares the link to [screenId]'s WebRTC viewer page. There is no in-app viewer: WebRTC is
+     * for other devices, and this phone has the native display for itself.
+     */
+    public static void openWebrtc(@NonNull Context ctx, @NonNull UUID vmId,
+                                  @NonNull VMConfig config, @NonNull String screenId) {
+        if (ctx instanceof Activity) WebrtcShareDialog.show((Activity) ctx, vmId.toString(), screenId);
     }
     // openVncExt retired: projecting to an external display is now an action inside the VNC
     // console's own menu (VMVncDisplayActivity#projectToExternalDisplay), not a chooser entry.

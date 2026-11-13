@@ -46,7 +46,7 @@ public enum DisplayTransportCap implements StringEnum {
     GPU(1, "gpu", R.string.create_vm_screen_transport_gpu),
     /** Native display only: the sink lends its render target and the content never crosses. */
     ZERO(2, "zero", R.string.create_vm_screen_transport_zero),
-    /** VNC only: the blit's result goes to a hardware video encoder rather than into RFB. */
+    /** VNC and WebRTC: the blit's result goes to a hardware video encoder. */
     GPU_HW(3, "gpu-hw", R.string.create_vm_screen_transport_gpu_hw);
 
     private final int value;
@@ -119,6 +119,9 @@ public enum DisplayTransportCap implements StringEnum {
                     : new DisplayTransportCap[]{CPU, GPU};
             case VNC:
                 return new DisplayTransportCap[]{CPU, GPU, GPU_HW};
+            case WEBRTC:
+                // No plain GPU rung: it forbids the encoder, and crosvm refuses it for WebRTC.
+                return new DisplayTransportCap[]{CPU, GPU_HW};
             default:
                 return new DisplayTransportCap[0];
         }
@@ -153,6 +156,8 @@ public enum DisplayTransportCap implements StringEnum {
                 return cap == CPU || cap == GPU;
             case VNC:
                 return cap == CPU || cap == GPU || cap == GPU_HW;
+            case WEBRTC:
+                return cap == CPU || cap == GPU_HW;
             default:
                 return false;
         }

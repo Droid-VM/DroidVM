@@ -229,6 +229,9 @@ public final class ConsoleButton {
                 // the VNC console (its menu), not a console to pick from the chooser.
                 rows.add(new Row(displayTitle(R.string.vm_info_console_vnc_select, screen, named),
                     "vnc", screen.id, R.drawable.ic_remote_desktop, false));
+            } else if (screen.getExporter() == DisplayExporter.WEBRTC) {
+                rows.add(new Row(displayTitle(R.string.vm_info_console_webrtc_select, screen, named),
+                    "webrtc", screen.id, R.drawable.ic_share, false));
             }
         }
         if (rows.isEmpty() && !sawStd) {
@@ -251,6 +254,9 @@ public final class ConsoleButton {
                 openNativeDisplay(row.screenId);
             } else if (row.name.equals("vnc")) {
                 openVncDisplay(row.screenId);
+            } else if (row.name.equals("webrtc")) {
+                if (parent.config != null)
+                    VMConsoleRouter.openWebrtc(parent, parent.vmId, parent.config, row.screenId);
             } else {
                 openConsole(row.name);
             }
