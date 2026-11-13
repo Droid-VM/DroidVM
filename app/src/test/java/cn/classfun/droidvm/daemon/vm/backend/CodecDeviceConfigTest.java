@@ -27,6 +27,7 @@ import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
+import cn.classfun.droidvm.lib.store.vm.VpuDecoderBackend;
 
 /**
  * The codec devices the video-acceleration switch buys: which {@code --virtio-media} lines a VM
@@ -95,6 +96,26 @@ public final class CodecDeviceConfigTest {
                 "--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123",
                 "--virtio-media", "kind=encoder,card=\"droidvm encoder\",uid=10123"),
             emit(vpuVm()));
+    }
+
+    /**
+     * A chosen decoder backend is one more key on the decoder's line and nothing on the
+     * encoder's, which has no choice; MediaCodec, crosvm's own default, is no key at all, so a VM
+     * nobody touched starts with the bytes pinned above.
+     */
+    @Test
+    public void aChosenDecoderBackendIsAKeyOnTheDecoderLineOnly() {
+        var item = vpuVm();
+        VpuConfig.setDecoderBackend(item, VpuDecoderBackend.MSM_VIDC);
+        assertEquals(List.of(
+                "--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123,backend=msm-vidc",
+                "--virtio-media", "kind=encoder,card=\"droidvm encoder\",uid=10123"),
+            emit(item));
+        VpuConfig.setDecoderBackend(item, VpuDecoderBackend.AUTO);
+        assertEquals("kind=decoder,card=\"droidvm decoder\",uid=10123,backend=auto",
+            emit(item).get(1));
+        VpuConfig.setDecoderBackend(item, VpuDecoderBackend.MEDIACODEC);
+        assertEquals("kind=decoder,card=\"droidvm decoder\",uid=10123", emit(item).get(1));
     }
 
     /**

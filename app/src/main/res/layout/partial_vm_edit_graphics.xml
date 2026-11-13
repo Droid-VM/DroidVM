@@ -473,6 +473,35 @@
                 android:icon="@drawable/ic_video"
                 android:text="@string/create_vm_vpu_codec_enabled" />
 
+            <!-- What decodes for the decoder device: the platform's codec service, which every
+                 phone and every guest works with, or the SoC's own codec driver, which writes
+                 frames straight into the guest's buffers. Under the codec switch because it is a
+                 property of those devices and means nothing without them; the note says what the
+                 choice asks of the guest. -->
+            <LinearLayout
+                android:id="@+id/vpu_decoder_backend_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp">
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_vpu_decoder_backend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:title="@string/edit_vm_vpu_decoder_backend"
+                    app:pb_mode="dialog" />
+
+                <TextView
+                    android:id="@+id/tv_vpu_decoder_backend_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="8dp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
             <!-- D76: the CAMERA app op is granted in "foreground" mode, so a sleeping screen
                  makes the app TOP_SLEEPING and cameraserver revokes a session that is already
                  streaming. The foreground service cannot fix that; a wake lock can, and this is

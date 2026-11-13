@@ -38,6 +38,7 @@ public final class VpuConfig {
     public static final String KEY_GUEST_POOL_MB = "vpu_guest_pool_mb";
     public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
     public static final String KEY_CAMERA_KEEP_SCREEN_ON = "camera_keep_screen_on";
+    public static final String KEY_DECODER_BACKEND = "vpu_decoder_backend";
 
     /**
      * The {@code media_host} pool a VM gets when nobody chose a size.
@@ -197,6 +198,22 @@ public final class VpuConfig {
      * never in question, and naming it after the VM would rename a guest device -- something a
      * guest script may well match on -- because somebody renamed the VM in the editor.</p>
      */
+    /**
+     * What decodes for this VM's decoder device ({@link VpuDecoderBackend}). MediaCodec unless
+     * chosen: it is what every VM had before there was a choice, and the one every guest works
+     * with.
+     */
+    @NonNull
+    public static VpuDecoderBackend getDecoderBackend(@NonNull DataItem config) {
+        return optEnum(config, KEY_DECODER_BACKEND, VpuDecoderBackend.MEDIACODEC);
+    }
+
+    public static void setDecoderBackend(
+        @NonNull DataItem config, @NonNull VpuDecoderBackend backend
+    ) {
+        config.set(KEY_DECODER_BACKEND, backend);
+    }
+
     @NonNull
     public static String codecCard(@NonNull String kind) {
         return fmt("droidvm %s", kind);

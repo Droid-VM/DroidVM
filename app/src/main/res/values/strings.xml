@@ -1524,6 +1524,13 @@
     <string name="create_vm_category_vpu">Video acceleration (VPU)</string>
     <string name="create_vm_vpu_enabled">Attach a hardware video encoder and decoder</string>
     <string name="create_vm_vpu_codec_enabled">Attach the codec devices</string>
+    <string name="edit_vm_vpu_decoder_backend">Decoder backend</string>
+    <string name="edit_vm_vpu_decoder_backend_mediacodec">Android MediaCodec</string>
+    <string name="edit_vm_vpu_decoder_backend_auto">Automatic</string>
+    <string name="edit_vm_vpu_decoder_backend_msm_vidc">Qualcomm msm_vidc (direct)</string>
+    <string name="edit_vm_vpu_decoder_backend_note_mediacodec">The phone\'s hardware codecs through Android\'s codec service. Works with every guest; each frame is converted and copied into the guest.</string>
+    <string name="edit_vm_vpu_decoder_backend_note_auto">The phone\'s own codec driver for the sessions that ask for frames in decode order, which only it gives; MediaCodec for every other session, and on a phone that has no such driver.</string>
+    <string name="edit_vm_vpu_decoder_backend_note_msm_vidc">Qualcomm\'s codec driver writes frames straight into the guest\'s buffers, with no copy. The guest\'s driver has to lend buffers of its own memory and read 10-bit video as P010; a guest that does not cannot decode this way. MediaCodec is used where the driver does not take the stream or the phone has no such driver.</string>
     <string name="create_vm_vpu_camera_keep_screen_on">Keep the screen on while the camera is in use</string>
     <string name="create_vm_vpu_camera_keep_screen_on_sub">Android only lets this app stream from the camera while it counts as foreground, and a sleeping screen does not count. Leave this on and a capture keeps running with the phone unattended; turn it off and the guest loses the camera the moment the screen goes dark, and has to reopen it after the screen wakes.</string>
     <string name="create_vm_vpu_host_pool_mb">Host pool size (MB)</string>

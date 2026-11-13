@@ -1484,6 +1484,13 @@
     <string name="create_vm_category_vpu">视频加速 (VPU)</string>
     <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
     <string name="create_vm_vpu_codec_enabled">挂载编解码装置</string>
+    <string name="edit_vm_vpu_decoder_backend">解码后端</string>
+    <string name="edit_vm_vpu_decoder_backend_mediacodec">Android MediaCodec</string>
+    <string name="edit_vm_vpu_decoder_backend_auto">自动</string>
+    <string name="edit_vm_vpu_decoder_backend_msm_vidc">Qualcomm msm_vidc（直通）</string>
+    <string name="edit_vm_vpu_decoder_backend_note_mediacodec">通过 Android 的 codec 服务使用手机的硬件解码器。任何 guest 都能用；每一帧会转换后再复制进 guest。</string>
+    <string name="edit_vm_vpu_decoder_backend_note_auto">guest 要求按解码顺序输出的 session 交给手机自己的 codec 驱动（只有它做得到），其余 session 以及没有这种驱动的手机用 MediaCodec。</string>
+    <string name="edit_vm_vpu_decoder_backend_note_msm_vidc">Qualcomm 的 codec 驱动直接把画面写进 guest 的缓冲区，不经复制。guest 的驱动必须借出自己内存的缓冲区，并把 10 位视频当 P010 读；做不到的 guest 无法用这种方式解码。驱动不接受的码流或没有这种驱动的手机改用 MediaCodec。</string>
     <string name="create_vm_vpu_camera_keep_screen_on">摄像头使用中时保持屏幕常亮</string>
     <string name="create_vm_vpu_camera_keep_screen_on_sub">Android 只在这个 app 算前台时才允许串流摄像头，而屏幕睡着就不算前台。开着它，采集可以在没人看着手机时继续跑；关掉它，屏幕一暗客户机就会失去摄像头，要等屏幕醒来再重开。</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
