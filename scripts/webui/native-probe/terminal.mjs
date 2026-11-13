@@ -118,8 +118,7 @@ export async function verifyTerminal({ page, post, fixture, output, expect, requ
   });
   await page.goto(`${base}/#/vms/native-http-vm/terminal`);
   const connectButton = page.getByTestId("terminal-connect");
-  await expect(connectButton).toBeEnabled();
-  await connectButton.click();
+  // Entering the terminal connects by itself; the button remains for reconnects.
   await expect(page.getByTestId("terminal-status")).toHaveAttribute("data-state", "connected");
   await expect(page.getByTestId("terminal-output")).toContainText("中文输出");
   const paste = async (text) => {

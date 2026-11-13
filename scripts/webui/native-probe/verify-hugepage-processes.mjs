@@ -83,10 +83,12 @@ try {
   await refresh(); await screenshot('ko')
   checks.push('auth-csrf-context-and-fixed-signal', 'stale-birth-has-no-effect', 'legacy-owner-cannot-be-signalled', 'private-fields-filtered')
 
-  await ui('source').selectOption('scan')
+  // The source choice lives in the overflow menu, as in the App.
+  const source = async name => { await ui('menu').locator('summary').click(); await ui(`source-${name}`).click() }
+  await source('scan')
   await expect(ui('42421')).toHaveCount(0)
   assert.equal((await state('scan')).coverage, 'running-vms')
-  await ui('source').selectOption('auto')
+  await source('auto')
   await mode('legacy')
   assert.equal((await state()).entries[0].expected.source, 'scan')
   assert.equal((await state()).entries[0].attributionVerified, false)
