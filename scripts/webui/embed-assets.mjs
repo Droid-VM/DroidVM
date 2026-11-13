@@ -16,7 +16,8 @@ async function visit(directory, prefix = '') {
     if (info.isSymbolicLink()) throw new Error('Symlinks are not production assets')
     if (info.isDirectory() && relative === 'assets') await visit(path, relative + '/')
     else if (info.isFile() && (relative === 'index.html' || /^assets\/[a-zA-Z0-9_.-]+-[a-zA-Z0-9_-]{8,}\.(js|css|svg|png|webp|woff2)$/.test(relative))) {
-      if (!info.size || info.size > 1024 * 1024) throw new Error(`Asset size exceeds bound: ${relative}`)
+      // The generated contract validators are one module and cannot be split further.
+      if (!info.size || info.size > 2 * 1024 * 1024) throw new Error(`Asset size exceeds bound: ${relative}`)
       files.push({ relative, body: await readFile(path) })
     } else throw new Error(`Unexpected production output: ${relative}`)
   }
