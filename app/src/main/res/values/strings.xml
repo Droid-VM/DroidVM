@@ -1594,6 +1594,11 @@
     <string name="edit_vm_sound_preset_voice_communication">Call</string>
     <string name="edit_vm_sound_preset_unprocessed">Raw</string>
     <string name="edit_vm_sound_preset_voice_performance">Performance</string>
+    <string name="edit_vm_sound_purpose_performance">Latency</string>
+    <string name="edit_vm_sound_performance_default">Power saving (default)</string>
+    <string name="edit_vm_sound_performance_power_saving">Power saving</string>
+    <string name="edit_vm_sound_performance_none">Standard</string>
+    <string name="edit_vm_sound_performance_low_latency">Low latency</string>
     <string name="edit_vm_sound_mode_speaker">Speaker</string>
     <string name="edit_vm_sound_mode_microphone">Microphone</string>
     <string name="edit_vm_sound_buffer">Buffer</string>

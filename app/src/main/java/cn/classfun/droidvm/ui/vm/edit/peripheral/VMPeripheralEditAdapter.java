@@ -993,7 +993,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         var stored = new ArrayList<String>();
         // Leaving it to the platform is a real answer, and the first one: most endpoints want
         // exactly that.
-        labels.add(context.getString(R.string.edit_vm_sound_purpose_unset));
+        labels.add(context.getString(SoundPurpose.unsetTitleFor(attribute)));
         stored.add("");
         for (var choice : choices) {
             labels.add(context.getString(choice.titleId));

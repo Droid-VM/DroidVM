@@ -1566,6 +1566,11 @@
     <string name="edit_vm_sound_preset_voice_communication">مكالمة صوتية</string>
     <string name="edit_vm_sound_preset_unprocessed">صوت خام (دون معالجة)</string>
     <string name="edit_vm_sound_preset_voice_performance">الأداء الصوتي المتقدم</string>
+    <string name="edit_vm_sound_purpose_performance">وضع زمن الاستجابة</string>
+    <string name="edit_vm_sound_performance_default">توفير الطاقة (افتراضي)</string>
+    <string name="edit_vm_sound_performance_power_saving">توفير الطاقة</string>
+    <string name="edit_vm_sound_performance_none">قياسي</string>
+    <string name="edit_vm_sound_performance_low_latency">زمن استجابة منخفض</string>
     <string name="edit_vm_sound_mode_speaker">مكبر صوت</string>
     <string name="edit_vm_sound_mode_microphone">ميكروفون</string>
     <string name="edit_vm_sound_buffer">المخزن المؤقت (Buffer)</string>

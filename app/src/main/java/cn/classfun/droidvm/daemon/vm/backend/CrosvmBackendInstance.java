@@ -900,6 +900,12 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             "--virtio-mmio-input", "--virtio-mmio-net", "--virtio-mmio-gpu"}) {
             if (!extra.contains(flag)) args.add(flag);
         }
+        // The sound card's switch only when there is a card: it moves every --virtio-snd the
+        // peripheral list emits, and a VM without one has nothing for it to move.
+        boolean sound = false;
+        for (var peripheral : VMPeripheralConfig.listOf(config.item))
+            if (peripheral.getType() == PeripheralType.VIRTIO_SOUND) sound = true;
+        if (sound && !extra.contains("--virtio-mmio-snd")) args.add("--virtio-mmio-snd");
         // The virtio-console switch only when there is a console device: it moves the configured
         // virtio-console ports and the GNSS receiver's named port (buildSerialCommand).
         boolean console = gnssPort != null;

@@ -1553,6 +1553,11 @@
     <string name="edit_vm_sound_preset_voice_communication">通讯</string>
     <string name="edit_vm_sound_preset_unprocessed">未处理</string>
     <string name="edit_vm_sound_preset_voice_performance">演出</string>
+    <string name="edit_vm_sound_purpose_performance">延迟模式</string>
+    <string name="edit_vm_sound_performance_default">省电（默认）</string>
+    <string name="edit_vm_sound_performance_power_saving">省电</string>
+    <string name="edit_vm_sound_performance_none">标准</string>
+    <string name="edit_vm_sound_performance_low_latency">低延迟</string>
     <string name="edit_vm_sound_mode_speaker">扬声器</string>
     <string name="edit_vm_sound_mode_microphone">麦克风</string>
     <string name="edit_vm_sound_buffer">缓冲</string>
