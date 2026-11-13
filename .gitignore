@@ -32,3 +32,4 @@ local.properties
 # Python bytecode from the scripts/ci checks.
 __pycache__/
 *.pyc
+docs/
