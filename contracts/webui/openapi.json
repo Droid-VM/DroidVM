@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "DroidVM WebUI API",
-    "version": "0.47.0",
+    "version": "0.48.0",
     "description": "HTTP/WS，同源部署。磁盘条件任务与详情、宿主能力、资源目录、USB 条件目标/规则任务、只读规则预览及配置提交复用原生服务，精确整数大小和偏移使用字符串。完整资源管理与设备验收继续实施。"
   },
   "paths": {
@@ -1098,7 +1098,65 @@
         }
       }
     },
-    "/api/v1/vm-logs/read": {
+    "/api/v1/vm-logs/clear": {
+      "post": {
+        "operationId": "clearVmLog",
+        "security": [
+          {
+            "browserSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Origin"
+          },
+          {
+            "$ref": "#/components/parameters/Csrf"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "需要 vm.logs.clear.v1。清空指定流的内存历史与持久日志文件（与 App 清空日志相同）；之后读取返回 reset=true。",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmLogClearRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已清空",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigEmpty"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "501": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },    "/api/v1/vm-logs/read": {
       "post": {
         "operationId": "readVmLog",
         "security": [
@@ -5262,7 +5320,7 @@
             "browserSession": []
           }
         ],
-        "description": "host.android-display.v1. Read who owns the Android panel: the Android framework, a KMS-exported VM, or a manual browser stop. GET never stops or restores Android. supported=false means this host cannot hand over its panel; watchdog.verified=false blocks stops with the stated reason.",
+        "description": "host.android-display.v1. Read who owns the Android panel: the Android framework, a KMS-exported VM, or a manual browser stop. GET never stops or restores Android. supported=false means this host cannot hand over its panel; watchdog.verified=false blocks stops with the stated reason; watchdog.kick says whether the driver has accepted DroidVM as a caller.",
         "responses": {
           "200": {
             "description": "Android display ownership observation.",
@@ -5306,7 +5364,7 @@
             "browserSession": []
           }
         ],
-        "description": "Administrator/task permission, Origin, CSRF and context required. stop freezes system_server and stops SurfaceFlinger plus the display HAL (display tier only: zygote, netd and wpa_supplicant keep running, so Wi-Fi and this daemon stay reachable). A detached sentinel restores Android on request, on daemon death, after autoRestoreSeconds (default 1800) and, with restoreOnNetworkLoss (default true), once the default-route link has stayed down for 30 s. restore is refused while a VM owns the panel. Unknown admission is queried, never replayed.",
+        "description": "Administrator/task permission, Origin, CSRF and context required. stop freezes system_server and stops SurfaceFlinger plus the display HAL; tier=zygote also stops zygote to reclaim app-framework memory, while tier=display keeps network services reachable. A detached sentinel restores Android on request, on daemon death, after autoRestoreSeconds (default 1800) and, with restoreOnNetworkLoss (default true), once the default-route link has stayed down for 30 s. restore is refused while a VM owns the panel. Unknown admission is queried, never replayed.",
         "parameters": [
           {
             "name": "X-DroidVM-CSRF",
@@ -5807,6 +5865,12 @@
               },
               "uplinkMode": {
                 "type": "string",
+                "maxLength": 128
+              },
+              "uplink": {
+                "description": "仅桥接（l2）网络：配置的上行接口名。",
+                "type": "string",
+                "minLength": 1,
                 "maxLength": 128
               },
               "vlans": {
@@ -7780,6 +7844,49 @@
             "additionalProperties": false,
             "required": [
               "action",
+              "diskId",
+              "snapshot"
+            ],
+            "description": "qcow2 内部快照，原地修改镜像；磁盘不能被运行中的虚拟机占用，也不能有子盘。",
+            "properties": {
+              "action": {
+                "enum": [
+                  "snapshot-create",
+                  "snapshot-apply",
+                  "snapshot-delete"
+                ]
+              },
+              "cpus": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1024,
+                "uniqueItems": true,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1023
+                }
+              },
+              "diskId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "snapshot": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-][^\\u0000-\\u001f\\u007f]*$",
+                "description": "创建时为新快照名；回滚/删除时为快照名或 ID。"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "action",
               "diskId"
             ],
             "properties": {
@@ -8010,10 +8117,81 @@
                   null
                 ],
                 "description": "按需只读检查所得实际压缩；缺失或 null 表示未检查或无法确定。不可从头声明推断。"
+              },
+              "snapshots": {
+                "description": "qcow2 内部快照（qemu-img info）；仅 state=ready 时出现，缺失表示旧服务或未检查。",
+                "type": "array",
+                "maxItems": 1024,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "name",
+                    "vmStateBytes",
+                    "createdAtMs",
+                    "vmClockMs"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 128
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 1024
+                    },
+                    "vmStateBytes": {
+                      "type": "string",
+                      "pattern": "^(0|[1-9][0-9]{0,19})$",
+                      "maxLength": 20
+                    },
+                    "createdAtMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "vmClockMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
               }
             }
           }
         }
+      },
+      "VmLogClearRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "context",
+          "vmId",
+          "instanceId",
+          "stream"
+        ],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/ServerContext"
+          },
+          "vmId": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "instanceId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$"
+          },
+          "stream": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        }
+      },      "VmUsageCounter": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]{0,19})$",
+        "maxLength": 20
       },
       "DiskByteCount": {
         "type": [
@@ -8111,6 +8289,45 @@
           },
           "selectable": {
             "type": "boolean"
+          },
+          "format": {
+            "description": "仅列表返回：按镜像头识别（qcow2/vmdk/vhdx/raw），null 表示文件不可读。",
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 16
+          },
+          "virtualBytes": {
+            "description": "仅列表返回：镜像头声明的虚拟大小；raw 为文件长度。",
+            "$ref": "#/components/schemas/DiskByteCount"
+          },
+          "allocatedBytes": {
+            "description": "仅列表返回：文件实际占用（st_blocks）。",
+            "$ref": "#/components/schemas/DiskByteCount"
+          },
+          "users": {
+            "description": "仅列表返回：配置中直接挂载此路径的虚拟机（最多 16 个）。",
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "vmId",
+                "vmName"
+              ],
+              "properties": {
+                "vmId": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "vmName": {
+                  "type": "string",
+                  "maxLength": 4096
+                }
+              }
+            }
           }
         }
       },
@@ -8148,6 +8365,30 @@
             "items": {
               "$ref": "#/components/schemas/NetworkVlanResource"
             }
+          },
+          "state": {
+            "description": "仅列表返回；读取列表时的网络运行态快照，缺失表示旧服务或运行时不可用。操作前仍需读取详情取得 generation。",
+            "type": "string",
+            "enum": [
+              "STOPPED",
+              "STARTING",
+              "RUNNING",
+              "RECOVERING",
+              "STOPPING",
+              "FAILED"
+            ]
+          },
+          "uplink": {
+            "description": "仅桥接（l2）网络：配置的上行接口名；NAT 网络随默认路由，不返回。",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "vmCount": {
+            "description": "仅列表返回：配置中有网卡接入此网络的虚拟机数量；缺失表示旧服务或配置不可读。",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 4096
           }
         }
       },
@@ -8757,7 +8998,9 @@
           "stop",
           "reboot",
           "suspend",
-          "resume"
+          "resume",
+          "powerbtn",
+          "sleepbtn"
         ]
       },
       "VmObservation": {
@@ -9437,6 +9680,35 @@
             "pattern": "^(0|[1-9][0-9]{0,19})$",
             "maxLength": 20,
             "description": "Elapsed monotonic milliseconds since the current owned VMM process started; includes suspension. Null if no current live process is observed. Never inferred from persisted configuration."
+          },
+          "usage": {
+            "description": "仅 RUNNING 且能读取 /proc 时出现。累计计数，客户端用两次采样的差值除以 sampledAtMs 差值得到速率；CPU 时间与 IO 为进程树合计，RSS 为主进程。",
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cpuTimeMs",
+              "rssBytes",
+              "readBytes",
+              "writeBytes",
+              "sampledAtMs"
+            ],
+            "properties": {
+              "cpuTimeMs": {
+                "$ref": "#/components/schemas/VmUsageCounter"
+              },
+              "rssBytes": {
+                "$ref": "#/components/schemas/VmUsageCounter"
+              },
+              "readBytes": {
+                "$ref": "#/components/schemas/VmUsageCounter"
+              },
+              "writeBytes": {
+                "$ref": "#/components/schemas/VmUsageCounter"
+              },
+              "sampledAtMs": {
+                "$ref": "#/components/schemas/VmUsageCounter"
+              }
+            }
           },
           "ipAddresses": {
             "type": [
@@ -12018,11 +12290,39 @@
               "not-running",
               "input-disabled",
               "unsupported",
-              "invalid-endpoint"
+              "invalid-endpoint",
+              "webrtc"
             ]
           },
           "inputEnabled": {
             "type": "boolean"
+          },
+          "webrtc": {
+            "$ref": "#/components/schemas/VmDisplayWebrtc"
+          }
+        }
+      },
+      "VmDisplayWebrtc": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "host",
+          "port",
+          "token"
+        ],
+        "properties": {
+          "host": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "token": {
+            "type": "string",
+            "maxLength": 128
           }
         }
       },
@@ -12605,6 +12905,9 @@
           },
           "systemReserveDefaultMb": {
             "$ref": "#/components/schemas/HugepageNullableQuantity"
+          },
+          "cmaLentPages": {
+            "$ref": "#/components/schemas/HugepageNullableQuantity"
           }
         }
       },
@@ -12816,6 +13119,9 @@
             }
           },
           "systemReserveDefaultMb": {
+            "$ref": "#/components/schemas/HugepageNullableQuantity"
+          },
+          "cmaLentPages": {
             "$ref": "#/components/schemas/HugepageNullableQuantity"
           }
         }
@@ -14469,11 +14775,21 @@
             "additionalProperties": false,
             "required": [
               "verified",
-              "reason"
+              "reason",
+              "kick"
             ],
             "properties": {
               "verified": {
                 "type": "boolean"
+              },
+              "kick": {
+                "description": "not-required means hangdetect is absent and the independent sentinel runs without feeding a watchdog. Otherwise unproven becomes accepted only after the sentinel's first driver kick, before any Android mutation; rejected blocks further stops until the daemon restarts. verified describes readiness of the selected path.",
+                "enum": [
+                  "unproven",
+                  "accepted",
+                  "rejected",
+                  "not-required"
+                ]
               },
               "reason": {
                 "anyOf": [
@@ -14527,6 +14843,13 @@
                 "type": "integer",
                 "minimum": 60,
                 "maximum": 86400
+              },
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "display",
+                  "zygote"
+                ]
               },
               "restoreOnNetworkLoss": {
                 "type": "boolean"
