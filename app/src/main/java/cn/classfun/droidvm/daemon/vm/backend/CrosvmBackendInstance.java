@@ -82,6 +82,7 @@ import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 import cn.classfun.droidvm.lib.store.vm.VmmLogLevel;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuDecoderBackend;
+import cn.classfun.droidvm.lib.store.vm.VpuEncoderBackend;
 
 @SuppressWarnings("FieldCanBeLocal")
 public final class CrosvmBackendInstance extends VMBackendInstance {
@@ -1874,9 +1875,10 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
             return;
         }
         var decoderBackend = VpuConfig.getDecoderBackend(item);
+        var encoderBackend = VpuConfig.getEncoderBackend(item);
         for (var kind : VpuConfig.CODEC_KINDS) {
             args.add("--virtio-media");
-            args.add(buildCodecConfig(kind, uid, decoderBackend));
+            args.add(buildCodecConfig(kind, uid, decoderBackend, encoderBackend));
         }
     }
 
@@ -1897,15 +1899,17 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
     // Package-private and static for CodecDeviceConfigTest, as buildCameraConfig is.
     @NonNull
     static String buildCodecConfig(
-        @NonNull String kind, int appUid, @NonNull VpuDecoderBackend decoderBackend
+        @NonNull String kind, int appUid, @NonNull VpuDecoderBackend decoderBackend,
+        @NonNull VpuEncoderBackend encoderBackend
     ) {
         var cfg = fmt("kind=%s,card=\"%s\",uid=%d",
             kind, quotable(VpuConfig.codecCard(kind)), appUid);
-        // The decoder's backend, when one was chosen: crosvm's own default is MediaCodec, so the
-        // key is left out for it and a VM nobody touched keeps the command line it had. Only the
-        // decoder has a choice; the encoder is MediaCodec's on every phone.
+        // Each device's backend, when one was chosen: crosvm's own default is MediaCodec, so the
+        // key is left out for it and a VM nobody touched keeps the command line it had.
         if (kind.equals("decoder") && decoderBackend != VpuDecoderBackend.MEDIACODEC)
             cfg += fmt(",backend=%s", decoderBackend.crosvmName());
+        if (kind.equals("encoder") && encoderBackend != VpuEncoderBackend.MEDIACODEC)
+            cfg += fmt(",backend=%s", encoderBackend.crosvmName());
         Log.i(TAG, fmt("codec device: %s", cfg));
         return cfg;
     }

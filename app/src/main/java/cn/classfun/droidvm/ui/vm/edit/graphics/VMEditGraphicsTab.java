@@ -29,6 +29,7 @@ import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuDecoderBackend;
+import cn.classfun.droidvm.lib.store.vm.VpuEncoderBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
@@ -94,6 +95,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private View vpuDecoderBackendOptions;
     private PickerButtonWidget chooseVpuDecoderBackend;
     private TextView tvVpuDecoderBackendNote;
+    private PickerButtonWidget chooseVpuEncoderBackend;
+    private TextView tvVpuEncoderBackendNote;
     private SwitchRowWidget swCameraKeepScreenOn;
     private View vpuOptions;
     private TextView tvVpuCameraOffNote;
@@ -164,6 +167,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         chooseVpuDecoderBackend = view.findViewById(R.id.btn_vpu_decoder_backend);
         tvVpuDecoderBackendNote = view.findViewById(R.id.tv_vpu_decoder_backend_note);
         chooseVpuDecoderBackend.configure(VpuDecoderBackend.class, VpuDecoderBackend.MEDIACODEC);
+        chooseVpuEncoderBackend = view.findViewById(R.id.btn_vpu_encoder_backend);
+        tvVpuEncoderBackendNote = view.findViewById(R.id.tv_vpu_encoder_backend_note);
+        chooseVpuEncoderBackend.configure(VpuEncoderBackend.class, VpuEncoderBackend.MEDIACODEC);
         swCameraKeepScreenOn = view.findViewById(R.id.sw_camera_keep_screen_on);
         vpuOptions = view.findViewById(R.id.vpu_options);
         tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
@@ -269,6 +275,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swVpuEnabled.setOnCheckedChangeListener(() -> updateVpuVisibility());
         swVpuCodecEnabled.setOnCheckedChangeListener(() -> updateVpuVisibility());
         chooseVpuDecoderBackend.setOnValueChangedListener(() -> updateVpuDecoderBackendNote());
+        chooseVpuEncoderBackend.setOnValueChangedListener(() -> updateVpuEncoderBackendNote());
         // RT is only offered on top of a cpuset with cores in it. The switch is inside the
         // cpuset block, so it is already hidden when the block is off; this catches the one
         // reachable gap -- the block on, but every core cleared in the picker.
@@ -460,6 +467,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swVpuCodecEnabled.setChecked(VpuConfig.isCodecEnabled(item));
         chooseVpuDecoderBackend.setSelectedItem(VpuConfig.getDecoderBackend(item));
         updateVpuDecoderBackendNote();
+        chooseVpuEncoderBackend.setSelectedItem(VpuConfig.getEncoderBackend(item));
+        updateVpuEncoderBackendNote();
         swCameraKeepScreenOn.setChecked(VpuConfig.isCameraKeepScreenOn(item));
         etMediaHostPoolMb.setText(String.valueOf(VpuConfig.getHostPoolMb(item)));
         etMediaGuestPoolMb.setText(String.valueOf(VpuConfig.getGuestPoolMb(item)));
@@ -663,12 +672,21 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
                 : R.string.edit_vm_vpu_decoder_backend_note_mediacodec);
     }
 
+    /** What the chosen encoder backend is, under its picker. */
+    private void updateVpuEncoderBackendNote() {
+        VpuEncoderBackend backend = chooseVpuEncoderBackend.getSelectedItem();
+        tvVpuEncoderBackendNote.setText(
+            backend == VpuEncoderBackend.MSM_VIDC ? R.string.edit_vm_vpu_encoder_backend_note_msm_vidc
+                : backend == VpuEncoderBackend.AUTO ? R.string.edit_vm_vpu_encoder_backend_note_auto
+                : R.string.edit_vm_vpu_encoder_backend_note_mediacodec);
+    }
+
     private void updateVpuVisibility() {
         boolean enabled = swVpuEnabled.isChecked();
         vpuOptions.setVisibility(enabled ? VISIBLE : GONE);
         mediaGuestPoolOptions.setVisibility(
             enabled && VpuConfig.guestPoolApplies(currentProtectedVm()) ? VISIBLE : GONE);
-        // The decoder's backend is a property of the codec devices: no devices, no choice.
+        // The backends are a property of the codec devices: no devices, no choice.
         vpuDecoderBackendOptions.setVisibility(
             enabled && swVpuCodecEnabled.isChecked() ? VISIBLE : GONE);
         // The cross-tab consequence, on its own view outside the block: it is the switch being
@@ -788,6 +806,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         VpuConfig.setCodecEnabled(item, swVpuCodecEnabled.isChecked());
         // Stored whatever the two switches say, for the same reason.
         VpuConfig.setDecoderBackend(item, chooseVpuDecoderBackend.getSelectedItem());
+        VpuConfig.setEncoderBackend(item, chooseVpuEncoderBackend.getSelectedItem());
         // Stored for every VM, like the two above, and read only by a VM that has a camera:
         // the daemon asks for it while it is walking the peripheral rows, so a VM without one
         // is unaffected either way and adding a camera later does not need this set again.

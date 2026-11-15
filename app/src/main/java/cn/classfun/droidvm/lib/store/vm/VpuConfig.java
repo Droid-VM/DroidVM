@@ -39,6 +39,7 @@ public final class VpuConfig {
     public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
     public static final String KEY_CAMERA_KEEP_SCREEN_ON = "camera_keep_screen_on";
     public static final String KEY_DECODER_BACKEND = "vpu_decoder_backend";
+    public static final String KEY_ENCODER_BACKEND = "vpu_encoder_backend";
 
     /**
      * The {@code media_host} pool a VM gets when nobody chose a size.
@@ -212,6 +213,21 @@ public final class VpuConfig {
         @NonNull DataItem config, @NonNull VpuDecoderBackend backend
     ) {
         config.set(KEY_DECODER_BACKEND, backend);
+    }
+
+    /**
+     * What encodes for this VM's encoder device ({@link VpuEncoderBackend}). MediaCodec unless
+     * chosen, as the decoder's: what every VM had before there was a choice.
+     */
+    @NonNull
+    public static VpuEncoderBackend getEncoderBackend(@NonNull DataItem config) {
+        return optEnum(config, KEY_ENCODER_BACKEND, VpuEncoderBackend.MEDIACODEC);
+    }
+
+    public static void setEncoderBackend(
+        @NonNull DataItem config, @NonNull VpuEncoderBackend backend
+    ) {
+        config.set(KEY_ENCODER_BACKEND, backend);
     }
 
     @NonNull

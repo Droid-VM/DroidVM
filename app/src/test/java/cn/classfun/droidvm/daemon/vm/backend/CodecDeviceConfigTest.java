@@ -28,6 +28,7 @@ import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuDecoderBackend;
+import cn.classfun.droidvm.lib.store.vm.VpuEncoderBackend;
 
 /**
  * The codec devices the video-acceleration switch buys: which {@code --virtio-media} lines a VM
@@ -100,8 +101,8 @@ public final class CodecDeviceConfigTest {
 
     /**
      * A chosen decoder backend is one more key on the decoder's line and nothing on the
-     * encoder's, which has no choice; MediaCodec, crosvm's own default, is no key at all, so a VM
-     * nobody touched starts with the bytes pinned above.
+     * encoder's, which has its own choice; MediaCodec, crosvm's own default, is no key at all, so
+     * a VM nobody touched starts with the bytes pinned above.
      */
     @Test
     public void aChosenDecoderBackendIsAKeyOnTheDecoderLineOnly() {
@@ -116,6 +117,25 @@ public final class CodecDeviceConfigTest {
             emit(item).get(1));
         VpuConfig.setDecoderBackend(item, VpuDecoderBackend.MEDIACODEC);
         assertEquals("kind=decoder,card=\"droidvm decoder\",uid=10123", emit(item).get(1));
+    }
+
+    /** The encoder's backend is the same key on the encoder's line, and only there. */
+    @Test
+    public void aChosenEncoderBackendIsAKeyOnTheEncoderLineOnly() {
+        var item = vpuVm();
+        VpuConfig.setEncoderBackend(item, VpuEncoderBackend.AUTO);
+        assertEquals(List.of(
+                "--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123",
+                "--virtio-media", "kind=encoder,card=\"droidvm encoder\",uid=10123,backend=auto"),
+            emit(item));
+        VpuConfig.setEncoderBackend(item, VpuEncoderBackend.MSM_VIDC);
+        VpuConfig.setDecoderBackend(item, VpuDecoderBackend.AUTO);
+        assertEquals(List.of(
+                "--virtio-media", "kind=decoder,card=\"droidvm decoder\",uid=10123,backend=auto",
+                "--virtio-media", "kind=encoder,card=\"droidvm encoder\",uid=10123,backend=msm-vidc"),
+            emit(item));
+        VpuConfig.setEncoderBackend(item, VpuEncoderBackend.MEDIACODEC);
+        assertEquals("kind=encoder,card=\"droidvm encoder\",uid=10123", emit(item).get(3));
     }
 
     /**
