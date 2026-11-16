@@ -52,13 +52,21 @@ final class VmStartSession {
         return new VmStartSession(backend, persisted);
     }
 
-    /** Only call after this flow's explicit field save has succeeded. */
+    /**
+     * Only call after this flow's explicit field save has succeeded.
+     *
+     * <p>Adopt the whole row the daemon now holds instead of copying just {@code key}: saving goes
+     * through the daemon's {@code migrate_vm}, which may add or rewrite fields the App model does
+     * not carry (boot/uefi/serial migrations). Copying one field left {@code expected} different
+     * from the persisted row, so the start check then failed with "VM configuration changed during
+     * startup checks" — every image-booting (non-Windows) guest that showed the boot menu and
+     * remembered a choice hit this, while disk/UEFI guests never saved anything and started fine.
+     */
     synchronized void savedField(VMConfig selected, String key) throws Exception {
         if (backend == null) return;
-        var detached = new VMConfig(selected.toJson());
-        var value = detached.item.opt(key, null);
-        if (value == null) expected.item.remove(key);
-        else expected.item.set(key, value);
+        var observed = backend.read();
+        if (observed.config == null) throw new IOException("VM no longer exists; reload before starting");
+        expected.item.set(observed.config.item);
     }
 
     synchronized boolean start(VMConfig selected, String bootEntry, boolean clearLogs) throws Exception {
