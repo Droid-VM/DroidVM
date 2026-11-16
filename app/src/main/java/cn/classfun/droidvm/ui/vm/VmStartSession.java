@@ -72,13 +72,21 @@ final class VmStartSession {
     synchronized boolean start(VMConfig selected, String bootEntry, boolean clearLogs) throws Exception {
         if (backend == null) return false;
         if (submitted) throw new IOException("Start already submitted; reload state before retrying");
-        var plan = VmStartPlan.between(expected.item, selected.item);
-        // Our explicit field saves can advance the global revision. A fresh
-        // version is usable only when its entire target still matches our expectation.
         var observed = backend.read();
         var current = observed.config;
-        if (current == null || !current.item.equals(expected.item))
-            throw new IOException("VM configuration changed during startup checks; reload before starting");
+        if (current == null) throw new IOException("VM no longer exists; reload before starting");
+        // The daemon rewrites a VM row whenever it stores it (store/vm_config.cpp migrate_vm:
+        // use_uefi / boot / nic forwards / screens / serial defaults / xhci). Any save made by the
+        // start flow itself therefore leaves `expected` one migration behind what is on disk, and
+        // a byte-exact comparison rejected the start with "configuration changed during startup
+        // checks" - which is exactly what every image-booting guest (boot menu -> remembered
+        // choice) hit. Rebase on the daemon's current row and compute the overrides from there;
+        // the daemon applies them against that same revision, so nothing stale is written.
+        if (!current.item.equals(expected.item)) {
+            android.util.Log.w("DVM-START", "rebase: expected=" + expected.item.toJson() + " current=" + current.item.toJson());
+            expected.item.set(current.item);
+        }
+        var plan = VmStartPlan.between(expected.item, selected.item);
         submitted = true;
         backend.start(observed, plan, bootEntry, clearLogs);
         return true;
