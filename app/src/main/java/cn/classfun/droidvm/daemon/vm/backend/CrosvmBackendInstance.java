@@ -656,6 +656,8 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         // VpuConfig.CODEC_KINDS in turn so each one that arrives leaves the earlier ones put.
         buildCodecCommand(args, hypervisor);
         buildSerialCommand(args);
+        appendMbiOptions(args, item, hypervisor,
+            boot.uefi ? (boot.firmware.isEmpty() ? PATH_EDK2_FIRMWARE : boot.firmware) : null);
         item.opt("extra_options", DataItem.newArray())
             .forEach(arg -> args.add(arg.getValue().asString()));
         if (boot.uefi) {
@@ -1800,6 +1802,84 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
      * the forwarding, D60 for this end of it; {@code deploy/vpu/README.md}, "Measurement
      * traps").</p>
      */
+    /** The GIC MBI SPIs a Gunyah VM gets for its PCI devices' MSI/MSI-X vectors. */
+    static final int MBI_SPIS = 64;
+
+    /**
+     * Where an EDK2 image may start its code at the earliest for a VM with MBI SPIs: past 128 KB of
+     * room for the device tree (see appendMbiOptions).
+     */
+    static final long MBI_MIN_FIRMWARE_CODE_OFFSET = 0x20000;
+
+    /**
+     * PCI MSI/MSI-X on Gunyah ({@code pci_msi}, on unless switched off): crosvm's
+     * {@code --mbi-spis} puts a GICv2m-style MSI frame in front of {@link #MBI_SPIS} SPIs, so each
+     * virtio-pci queue and the xHCI get an edge interrupt of their own instead of sharing INTx
+     * lines. Nothing here asks what the guest is: each guest finds the frame or not -- Linux by the
+     * device tree's {@code msi-parent}, Windows by the GIC MSI Frame edk2-gunyah writes into the
+     * MADT -- and one that knows neither keeps INTx. Only Gunyah has the frame (the other irq
+     * chips refuse it and the VM would not start), and a count the user put in
+     * {@code extra_options} wins.
+     *
+     * <p>{@code firmware} is the UEFI image the VM boots, or null for a direct kernel boot. Gunyah
+     * takes a VM's irqfds only from the device tree at start, so the lines are all there from the
+     * first instruction and the resource manager adds a doorbell node for each: the tree grows by
+     * about 9 KB. EDK2's PrePi copies the tree into the room after its image header, which
+     * edk2-gunyah kept at 32 KB until a7903f0 -- an older image copies the tree over its own code
+     * and the VM dies before UEFI prints a line. A firmware without the room is left without MSI
+     * rather than not booted ({@link #firmwareCodeOffset}).</p>
+     *
+     * <p>Package-private and static so the tests can pin the tokens without a VM.</p>
+     */
+    static void appendMbiOptions(
+        @NonNull List<String> args,
+        @NonNull DataItem item,
+        @NonNull VMHypervisor hypervisor,
+        @Nullable String firmware
+    ) {
+        if (hypervisor != VMHypervisor.GUNYAH || !item.optBoolean("pci_msi", true)) return;
+        var given = new boolean[1];
+        item.opt("extra_options", DataItem.newArray()).forEach(arg -> {
+            if ("--mbi-spis".equals(arg.getValue().asString())) given[0] = true;
+        });
+        if (given[0]) return;
+        if (firmware != null) {
+            long code = firmwareCodeOffset(firmware);
+            if (code < MBI_MIN_FIRMWARE_CODE_OFFSET) {
+                Log.w(TAG, fmt("PCI MSI off: %s starts its code at %d, under %d (an older edk2-gunyah)",
+                    firmware, code, MBI_MIN_FIRMWARE_CODE_OFFSET));
+                return;
+            }
+        }
+        args.add("--mbi-spis");
+        args.add(String.valueOf(MBI_SPIS));
+    }
+
+    /**
+     * Where an EDK2 image of the arm64-Linux-header kind (edk2-gunyah's) starts its code: its
+     * first word is {@code adr x1, .} and its second a {@code b} over the room PrePi copies the
+     * device tree into, so the branch target is the end of that room. -1 for a file that does not
+     * start that way or cannot be read.
+     */
+    static long firmwareCodeOffset(@NonNull String path) {
+        var bytes = new byte[8];
+        try (var in = new java.io.FileInputStream(path)) {
+            int n = 0;
+            while (n < bytes.length) {
+                int got = in.read(bytes, n, bytes.length - n);
+                if (got < 0) return -1;
+                n += got;
+            }
+        } catch (IOException e) {
+            return -1;
+        }
+        var words = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        int code0 = words.getInt(0), code1 = words.getInt(4);
+        // A forward branch only: imm26 is signed, and a header that branches back has no room.
+        if (code0 != 0x10000001 || (code1 & 0xfe000000) != 0x14000000) return -1;
+        return 4 + 4L * (code1 & 0x01ffffff);
+    }
+
     // Package-private and static, not private, so VmmLogLevelTest can assert the exact tokens
     // and their position without standing up a VM.
     static void appendLogLevel(@NonNull List<String> args, @NonNull DataItem item) {

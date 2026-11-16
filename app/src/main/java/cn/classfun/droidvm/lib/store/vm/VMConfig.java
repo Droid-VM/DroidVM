@@ -26,6 +26,7 @@ public class VMConfig extends DataConfig {
     public static final boolean NEW_VM_DEFAULT_PMU = true;
     public static final boolean NEW_VM_DEFAULT_RNG = true;
     public static final boolean NEW_VM_DEFAULT_SMT = true;
+    public static final boolean NEW_VM_DEFAULT_PCI_MSI = true;
     public static final boolean NEW_VM_DEFAULT_USB = true;
     public static final ProtectedVM NEW_VM_DEFAULT_PROTECTED_VM =
         ProtectedVM.PSEUDO_UNPROTECTED;
@@ -72,6 +73,7 @@ public class VMConfig extends DataConfig {
         item.set("pmu", NEW_VM_DEFAULT_PMU);
         item.set("rng", NEW_VM_DEFAULT_RNG);
         item.set("smt", NEW_VM_DEFAULT_SMT);
+        item.set("pci_msi", NEW_VM_DEFAULT_PCI_MSI);
         item.set("sandbox", false);
         item.set("hugepages", NEW_VM_DEFAULT_HUGEPAGES);
         item.set(VirtioTransport.KEY, VirtioTransport.DEFAULT);

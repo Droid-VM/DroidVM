@@ -61,6 +61,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swPmu;
     private SwitchRowWidget swRng;
     private SwitchRowWidget swSmt;
+    private SwitchRowWidget swPciMsi;
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
     private SwitchRowWidget swDebug;
@@ -107,6 +108,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPmu = view.findViewById(R.id.sw_pmu);
         swRng = view.findViewById(R.id.sw_rng);
         swSmt = view.findViewById(R.id.sw_smt);
+        swPciMsi = view.findViewById(R.id.sw_pci_msi);
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
         swDebug = view.findViewById(R.id.sw_debug);
@@ -138,6 +140,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPmu.setChecked(VMConfig.NEW_VM_DEFAULT_PMU);
         swRng.setChecked(VMConfig.NEW_VM_DEFAULT_RNG);
         swSmt.setChecked(VMConfig.NEW_VM_DEFAULT_SMT);
+        swPciMsi.setChecked(VMConfig.NEW_VM_DEFAULT_PCI_MSI);
         swSandbox.setChecked(false);
         swHugepages.setChecked(VMConfig.NEW_VM_DEFAULT_HUGEPAGES);
         swDebug.setChecked(false);
@@ -195,6 +198,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swPmu.setChecked(item.optBoolean("pmu", false));
         swRng.setChecked(item.optBoolean("rng", false));
         swSmt.setChecked(item.optBoolean("smt", false));
+        // A VM saved before the switch existed has no key: it gets MSI, as the daemon reads it.
+        swPciMsi.setChecked(item.optBoolean("pci_msi", true));
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
         swDebug.setChecked(item.optBoolean("strace", false));
@@ -504,6 +509,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("pmu", swPmu.isChecked());
         item.set("rng", swRng.isChecked());
         item.set("smt", swSmt.isChecked());
+        item.set("pci_msi", swPciMsi.isChecked());
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
         VirtioTransport transport = chooseVirtioTransport.getSelectedItem();

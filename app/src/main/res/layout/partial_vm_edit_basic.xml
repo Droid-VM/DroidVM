@@ -148,6 +148,14 @@
             android:text="@string/create_vm_smt" />
 
         <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_pci_msi"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:icon="@drawable/ic_large_chip"
+            android:text="@string/create_vm_pci_msi" />
+
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
             android:id="@+id/sw_debug"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

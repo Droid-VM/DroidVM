@@ -201,6 +201,7 @@
     <string name="create_vm_pmu">PMU (效能監視器)</string>
     <string name="create_vm_rng">RNG (隨機數生成器)</string>
     <string name="create_vm_smt">SMT (同步多執行緒)</string>
+    <string name="create_vm_pci_msi">PCI MSI 中斷 (Gunyah)</string>
     <string name="create_vm_debug">除錯追蹤</string>
     <string name="create_vm_protected_vm">保護模式</string>
     <string name="create_vm_swiotlb_hint">SWIOTLB 大小（保護模式）</string>

@@ -206,6 +206,7 @@
     <string name="create_vm_pmu">وحدة مراقبة الأداء (PMU)</string>
     <string name="create_vm_rng">مولّد الأرقام العشوائية (RNG)</string>
     <string name="create_vm_smt">تعدد خيوط المعالجة المتزامن (SMT)</string>
+    <string name="create_vm_pci_msi">مقاطعات PCI MSI (Gunyah)</string>
     <string name="create_vm_debug">تتبع تصحيح الأخطاء (Debug trace)</string>
     <string name="create_vm_protected_vm">جهاز افتراضي محمي (Protected VM)</string>
     <string name="create_vm_swiotlb_hint">حجم SWIOTLB (للأجهزة الافتراضية المحمية)</string>
