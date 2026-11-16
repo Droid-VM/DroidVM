@@ -66,7 +66,12 @@ final class VmStartSession {
         if (backend == null) return;
         var observed = backend.read();
         if (observed.config == null) throw new IOException("VM no longer exists; reload before starting");
+        // Adopt the row the daemon actually stores into BOTH sides of the later comparison. Saving
+        // runs the daemon's migrate_vm (use_uefi / boot / screens / serial / xhci), so the stored row
+        // is not byte-identical to what the App uploaded; copying one field (or only `expected`)
+        // leaves the start check or VmStartPlan looking at two different shapes.
         expected.item.set(observed.config.item);
+        selected.item.set(observed.config.item);
     }
 
     synchronized boolean start(VMConfig selected, String bootEntry, boolean clearLogs) throws Exception {
@@ -83,8 +88,13 @@ final class VmStartSession {
         // choice) hit. Rebase on the daemon's current row and compute the overrides from there;
         // the daemon applies them against that same revision, so nothing stale is written.
         if (!current.item.equals(expected.item)) {
+            // Only re-base what the user has not re-selected since the session opened: if the
+            // selection still equals the old expectation there are no unsaved edits to protect,
+            // and the difference is just the daemon's row migration.
+            var selectionUnchanged = selected.item.equals(expected.item);
             android.util.Log.w("DVM-START", "rebase: expected=" + expected.item.toJson() + " current=" + current.item.toJson());
             expected.item.set(current.item);
+            if (selectionUnchanged) selected.item.set(current.item);
         }
         var plan = VmStartPlan.between(expected.item, selected.item);
         submitted = true;
