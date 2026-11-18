@@ -16,9 +16,12 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  * piece of hardware to whoever ticks the box, and there is no host on which one would work and the
  * other would not.</p>
  *
- * <p>Stored but not yet acted on: crosvm carries no virtio-media codec device, so the backends
- * read this and attach nothing. It lives here rather than in the tab so that the day the device
- * lands, the config it needs is already in every VM that asked for it.</p>
+ * <p>The crosvm backend turns {@link #KEY_ENABLED} into one {@code --virtio-media
+ * kind=decoder,uid=…} and one {@code kind=encoder,uid=…} argument and
+ * {@link #KEY_HOST_POOL_MB} into the {@code media-host-mb=} key of the launch's
+ * {@code --pre-alloc}, so the choice survives a tablet reboot without any
+ * {@code setprop}. A VM whose config predates these keys reads as off with the
+ * default pool, exactly like a VM that never ticked the box.</p>
  */
 public final class VpuConfig {
     public static final String KEY_ENABLED = "vpu_enabled";

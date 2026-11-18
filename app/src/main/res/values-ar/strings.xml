@@ -1559,7 +1559,7 @@
     <string name="create_vm_vpu_enabled">إرفاق مشفّر وفك ترميز فيديو عتادي</string>
     <string name="create_vm_vpu_host_pool_mb">حجم تجمع ذاكرة المضيف (ميغابايت)</string>
     <string name="create_vm_vpu_guest_pool_mb">حجم تجمع ذاكرة النظام الضيف (ميغابايت)</string>
-    <string name="create_vm_vpu_note">لم تُفعّل بعد: تُحفظ هذه الإعدادات مع الجهاز الافتراضي، لكن لن يتم إرفاق أي جهاز فيديو حتى صدور هذه الميزة رسميًا.</string>
+    <string name="create_vm_vpu_note">تسري التغييرات عند التشغيل التالي لهذا الجهاز الافتراضي: يرى النظام الضيف مفكك ترميز ومشفّرًا كجهازي virtio-media، ويُحجز تجمع ذاكرة المضيف من ذاكرة المضيف عند الإقلاع.</string>
     <string name="edit_vm_peripheral_camera_missing">لا يحتوي هذا الهاتف على مثل هذه الكاميرا؛ لن يبدأ تشغيل الجهاز.</string>
     <string name="edit_vm_peripheral_host_camera">كاميرا المضيف</string>
     <string name="peripheral_fgs_title">ملحق قيد الاستخدام</string>
