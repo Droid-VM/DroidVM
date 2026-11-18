@@ -9,7 +9,6 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
 import android.util.Log;
@@ -34,41 +33,39 @@ import cn.classfun.droidvm.ui.main.MainActivity;
  * lets it through -- measured: an unmanaged setuid'd process gets frames precisely while some
  * other process of the same uid is foreground, and ERROR_CAMERA_DISABLED otherwise.</p>
  *
- * <p>Nothing here names a kind of peripheral. The type mask comes from
- * {@code PeripheralType.getForegroundServiceType}, so a device that starts needing this only has
- * to say so there.</p>
+ * <p>Nothing here names a kind of peripheral: the mask arrives in {@link #EXTRA_TYPES}, worked out
+ * by the daemon from the devices its running VMs really attach.</p>
+ *
+ * <p>The daemon raises it, because only it knows when a VM starts (one can be started over IPC
+ * with no UI open) and only a root caller may start a foreground service while the app is in the
+ * background: {@code ActiveServices} exempts uid 0, and lets it address this non-exported
+ * component. The native daemon does it as root through the shell, which passes a null caller --
+ * the one shape of the call a process outside ActivityManager can make
+ * (daemon/services/peripheral_foreground.cpp):</p>
+ * <pre>
+ * am start-foreground-service --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS} --ei types &lt;mask&gt;
+ * am stopservice --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS}
+ * </pre>
+ * <p>A start {@code am} reports as refused is not remembered there: the daemon asks again, after
+ * a short delay and on the next VM state change, rather than believing the mask is up.</p>
  */
 public final class PeripheralForegroundService extends Service {
     private static final String TAG = "PeripheralFgs";
     private static final String CHANNEL_ID = "peripheral_foreground";
     private static final int NOTIF_ID = 0x45_00_00_01;
-    private static final String EXTRA_TYPES = "types";
+    /**
+     * The service types to carry ({@code ServiceInfo.FOREGROUND_SERVICE_TYPE_*}), the union over
+     * every running VM; 0 stops the service. MUST match the daemon's {@code --ei types}.
+     */
+    public static final String EXTRA_TYPES = "types";
 
     /**
-     * Brings the service in line with {@code typeMask}: starts or re-types it when non-zero,
-     * stops it when zero. Safe to call with the value it already has.
-     *
-     * <p>Called from the daemon, which is uid 0: {@code ActiveServices} exempts a root caller by
-     * app id, and the background-start check seeds itself from that same verdict, so this works
-     * with no app process in the foreground and no UI open. An app-process caller would be
-     * refused in exactly that case, which is why the decision does not live there.</p>
+     * The class half of the component the daemon names. MUST match the daemon's
+     * {@code peripheral_foreground_service}; the package half is the build's application id,
+     * which the daemon is built with ({@code DROIDVM_PACKAGE_NAME}).
      */
-    public static void apply(@NonNull Context context, int typeMask) {
-        var intent = new Intent(context, PeripheralForegroundService.class);
-        if (typeMask == 0) {
-            context.stopService(intent);
-            return;
-        }
-        intent.putExtra(EXTRA_TYPES, typeMask);
-        try {
-            context.startForegroundService(intent);
-        } catch (Exception e) {
-            // Background-start restrictions, or a missing FOREGROUND_SERVICE_* permission. The VM
-            // still runs; only the peripheral that wanted this is affected, and it will report its
-            // own failure to open.
-            Log.w(TAG, "could not raise the peripheral foreground service", e);
-        }
-    }
+    public static final String SERVICE_CLASS =
+        "cn.classfun.droidvm.lib.peripheral.PeripheralForegroundService";
 
     @Nullable
     @Override
