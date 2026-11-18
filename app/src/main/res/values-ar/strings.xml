@@ -1170,6 +1170,10 @@
     <string name="usb_input_no_device">لم يتم العثور على لوحة مفاتيح أو فأرة USB</string>
     <string name="usb_input_status">إدخال USB: %1$d لوحة مفاتيح، %2$d فأرة</string>
     <string name="vnc_menu_rotate">تدوير الشاشة</string>
+    <string name="display_rotate_left">تدوير العرض لليسار (ثم يدوّر الضيف نفسه)</string>
+    <string name="display_rotate_right">تدوير العرض لليمين (ثم يدوّر الضيف نفسه)</string>
+    <string name="screen_rotate">تدوير الشاشة (يدوّرها Android)</string>
+    <string name="display_rotation_unsupported">لا يستطيع crosvm الخاص بهذا الجهاز الافتراضي تدوير العرض؛ قم بتحديثه</string>
 
     <string name="vnc_op_mouse_move">تحريك الفأرة</string>
     <string name="vnc_op_left_click">نقر بالزر الأيسر</string>
