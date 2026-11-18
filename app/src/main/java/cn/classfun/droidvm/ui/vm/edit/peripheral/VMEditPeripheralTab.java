@@ -185,6 +185,12 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             return showValidateFailed(R.string.edit_vm_peripheral_gnss_crosvm_only);
         if (receivers > 1)
             return showValidateFailed(R.string.edit_vm_peripheral_gnss_once);
+        // One vibrator: the phone has one motor, and crosvm's device is bound to one socket.
+        int vibrators = 0;
+        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+            if (peripheral.getType() == PeripheralType.VIRTIO_VIBRATOR) vibrators++;
+        if (vibrators > 1)
+            return showValidateFailed(R.string.edit_vm_peripheral_vibrator_once);
         // Two endpoints pointed at one host device in the same direction would open two AAudio
         // streams onto it: allowed by the platform, but never what someone meant to configure.
         // The direction is part of the identity, so a microphone and a speaker cannot collide.

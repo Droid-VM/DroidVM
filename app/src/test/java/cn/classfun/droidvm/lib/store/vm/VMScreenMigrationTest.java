@@ -370,13 +370,13 @@ public class VMScreenMigrationTest {
         assertEquals(
             NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_SIMPLEFB, NativeDisplay.MOUSE),
             NativeDisplay.inputSocketPath(vmId, VMScreenConfig.ID_GPU0, NativeDisplay.MOUSE));
-        // Seven sockets for a two-screen VM -- three devices per screen plus the VM's pointer --
-        // and no two of them the same file.
+        // Twelve sockets for a two-screen VM -- four per screen (touch, tablet, keyboard, pen) plus
+        // the VM's four (pointer, motion sensors, trackpad, vibrator) -- and no two the same file.
         var seen = new HashSet<String>();
         for (int ch = 0; ch < NativeDisplay.CHANNEL_COUNT; ch++)
             for (var id : VMScreenConfig.IDS)
                 seen.add(NativeDisplay.inputSocketPath(vmId, id, ch));
-        assertEquals(7, seen.size());
+        assertEquals(12, seen.size());
     }
 
     @Test

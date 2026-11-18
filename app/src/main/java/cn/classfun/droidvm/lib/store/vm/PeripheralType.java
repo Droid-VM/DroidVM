@@ -74,7 +74,15 @@ public enum PeripheralType implements StringEnum {
      * location as a foreground capability, which the running VM's foreground service supplies.
      * Appended last, for the ordinal reason {@link #XHCI_USB} gives.</p>
      */
-    VIRTIO_GNSS(R.string.edit_vm_peripheral_type_virtio_gnss, R.drawable.ic_location, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+    VIRTIO_GNSS(R.string.edit_vm_peripheral_type_virtio_gnss, R.drawable.ic_location, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION),
+    /**
+     * A vibrator: crosvm's {@code --input vibrator}, a virtio-input device declaring force feedback
+     * (FF_RUMBLE) whose rumble the daemon plays on the phone's motor ({@code daemon/input/host_vibrator},
+     * through the vibrator HAL as root). One per VM, and only with a screen exported: its socket
+     * rides the console's input bridge. Needs no foreground service. Appended last, for the ordinal
+     * reason {@link #XHCI_USB} gives.
+     */
+    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;

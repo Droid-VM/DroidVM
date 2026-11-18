@@ -256,6 +256,18 @@
 
         </LinearLayout>
 
+        <!-- ===== VirtIO Vibrator: nothing to set; says whether this phone has a motor to play it ===== -->
+        <TextView
+            android:id="@+id/tv_vibrator_note"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:textSize="12sp"
+            android:visibility="gone"
+            tools:text="@string/edit_vm_vibrator_note"
+            tools:visibility="visible" />
+
         <!-- ===== VirtIO GNSS: where its fixes come from, and whether they say so ===== -->
         <LinearLayout
             android:id="@+id/group_virtio_gnss"

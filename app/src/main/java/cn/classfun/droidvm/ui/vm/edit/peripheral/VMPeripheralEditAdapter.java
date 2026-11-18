@@ -10,6 +10,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.os.Vibrator;
 import android.view.Menu;
 import android.view.View;
 import android.view.LayoutInflater;
@@ -183,6 +184,18 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 appendItem(VMPeripheralConfig.createDefaultGyroscope().item);
                 return;
             }
+            if (type == PeripheralType.VIRTIO_VIBRATOR) {
+                // One per VM: the phone has one motor, and the guest one device to drive it.
+                if (hasType(PeripheralType.VIRTIO_VIBRATOR)) {
+                    Toast.makeText(context, R.string.edit_vm_peripheral_vibrator_once,
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                var config = new VMPeripheralConfig(DataItem.newObject());
+                config.setType(type);
+                appendItem(config.item);
+                return;
+            }
             if (type == PeripheralType.VIRTIO_GNSS) {
                 // One receiver per VM: the guest has one port of that name.
                 if (hasType(PeripheralType.VIRTIO_GNSS)) {
@@ -224,9 +237,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         // Anything that can capture needs the host mic permission asked for, and the two sound
         // kinds both start with a microphone on them. A USB controller captures nothing itself
         // -- what hangs off it is the host's device, already the host's to grant -- and the motion
-        // sensors read the phone's sensors, which need no permission.
+        // sensors read the phone's sensors and the vibrator only plays on its motor, neither of
+        // which needs a permission.
         if (type != PeripheralType.XHCI_USB && type != PeripheralType.VIRTIO_GYROSCOPE
-            && micPermissionGate != null) {
+            && type != PeripheralType.VIRTIO_VIBRATOR && micPermissionGate != null) {
             micPermissionGate.accept(add);
             return;
         }
@@ -249,6 +263,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupVirtioGyroscope.setVisibility(
             type == PeripheralType.VIRTIO_GYROSCOPE ? VISIBLE : GONE);
         holder.groupVirtioGnss.setVisibility(type == PeripheralType.VIRTIO_GNSS ? VISIBLE : GONE);
+        holder.tvVibratorNote.setVisibility(type == PeripheralType.VIRTIO_VIBRATOR ? VISIBLE : GONE);
 
         switch (type) {
             case VIRTIO_SOUND:
@@ -268,6 +283,12 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 break;
             case VIRTIO_GNSS:
                 bindGnss(holder, peripheral);
+                break;
+            case VIRTIO_VIBRATOR:
+                holder.tvWarning.setVisibility(GONE);
+                var motor = context.getSystemService(Vibrator.class);
+                holder.tvVibratorNote.setText(motor != null && motor.hasVibrator()
+                    ? R.string.edit_vm_vibrator_note : R.string.edit_vm_vibrator_note_none);
                 break;
         }
 

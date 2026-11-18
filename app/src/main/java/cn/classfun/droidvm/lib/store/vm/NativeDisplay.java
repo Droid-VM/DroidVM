@@ -70,7 +70,24 @@ public final class NativeDisplay {
      * has the device.
      */
     public static final int SENSOR = 4;
-    public static final int CHANNEL_COUNT = 5;
+    /**
+     * A screen's pen (crosvm {@code --input stylus}). Reserved: the number is taken so the channels
+     * keep the values the console's pen will use; nothing binds it yet. Per screen, as the tablet.
+     */
+    public static final int PEN = 5;
+    /**
+     * The VM's trackpad (crosvm {@code --input trackpad}). Reserved like {@link #PEN}; VM-wide, as
+     * the relative mouse.
+     */
+    public static final int TRACKPAD = 6;
+    /**
+     * The VM's vibrator (crosvm {@code --input vibrator}): nothing is written to it; what the guest
+     * sends back on it, the rumble it wants, is the daemon's to play on the phone's motor
+     * ({@code daemon/input/host_vibrator}). The VM's, one per VM, bound only when the VM has the
+     * device.
+     */
+    public static final int VIBRATOR = 7;
+    public static final int CHANNEL_COUNT = 8;
 
     /**
      * Broadcast the daemon (running as root) sends to hand its INativeDisplayRootService binder to
@@ -90,7 +107,7 @@ public final class NativeDisplay {
     // crosvm device kinds they pair with are "mouse" (relative) and "absolute-mouse". Short
     // because the whole path has to fit sun_path (see the class note); still self-describing,
     // because the next person reading `ls run/` deserves to know which inode is the touchscreen.
-    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen"};
+    private static final String[] CHANNEL_TAGS = {"mt", "kbd", "ms", "tab", "sen", "pen", "tp", "vib"};
 
     /**
      * Socket filename tag per screen, positionally paired with {@link VMScreenConfig#IDS}. A
@@ -192,7 +209,7 @@ public final class NativeDisplay {
      * every channel, so a channel moving across this line needs no change on that side.</p>
      */
     public static boolean isPerScreen(int channel) {
-        return channel == MULTITOUCH || channel == TABLET || channel == KEYBOARD;
+        return channel == MULTITOUCH || channel == TABLET || channel == KEYBOARD || channel == PEN;
     }
 
     /**
@@ -325,6 +342,9 @@ public final class NativeDisplay {
 
     /** The evdev name of the VM's motion sensors; one per VM, so nothing to tell apart. */
     public static final String MOTION_DEVICE_NAME = "DroidVM Motion Sensors";
+
+    /** The evdev name of the VM's vibrator; one per VM. MUST match the daemon's. */
+    public static final String VIBRATOR_DEVICE_NAME = "DroidVM Vibrator";
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */
     @NonNull

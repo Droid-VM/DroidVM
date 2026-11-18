@@ -1634,6 +1634,10 @@
     <string name="edit_vm_gnss_note_location">يتلقى الضيف موقع الهاتف (Wi-Fi أو أبراج الاتصال أو GNSS، أيًّا كان ما استخدمه الهاتف) مع مجموعة ثابتة من أقمار GPS المصطنعة.</string>
     <string name="edit_vm_gnss_note_no_receiver">لا يحتوي هذا الهاتف على مستقبل GNSS: يتلقى الضيف موقع الهاتف مع مجموعة ثابتة من أقمار GPS المصطنعة.</string>
     <string name="edit_vm_gnss_mark_simulated">وسم التحديدات بأنها محاكاة (تتجاهلها بعض برامج الضيف)</string>
+    <string name="edit_vm_peripheral_type_virtio_vibrator">VirtIO Vibrator</string>
+    <string name="edit_vm_peripheral_vibrator_once">للآلة الافتراضية جهاز VirtIO Vibrator واحد فقط</string>
+    <string name="edit_vm_vibrator_note">يُشغَّل اهتزاز الضيف (force feedback) على محرك الاهتزاز في الهاتف. يتطلب شاشة مُصدَّرة (وحدة التحكم أو VNC).</string>
+    <string name="edit_vm_vibrator_note_none">لا يحتوي هذا الهاتف على محرك اهتزاز: سيحصل الضيف على هزّاز لا يُصدر شيئًا.</string>
     <string name="location_permission_title">السماح بالوصول إلى الموقع؟</string>
     <string name="location_permission_message">يُبلغ ملحق GNSS الضيفَ بموقع هذا الهاتف، فقط أثناء عمل الآلة الافتراضية. وبدون هذا الإذن سيظهر في القائمة لكنه لن يحصل على تحديد أبدًا.</string>
     <string name="location_permission_allow">السماح</string>
