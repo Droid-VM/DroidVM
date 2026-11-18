@@ -39,6 +39,7 @@ import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.size.SizeUnit;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.QemuGenieZoneCapability;
 import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
@@ -401,6 +402,10 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         VMBackend backend = chooseBackend.getSelectedItem();
         VMHypervisor hypervisor = chooseHypervisor.getSelectedItem();
         if (!VMHypervisor.isBackendSupported(backend, hypervisor))
+            return showValidateFailed(R.string.create_vm_error_hypervisor_not_supported);
+        if (backend == VMBackend.QEMU
+            && hypervisor == VMHypervisor.GENIEZONE
+            && !QemuGenieZoneCapability.isAvailable())
             return showValidateFailed(R.string.create_vm_error_hypervisor_not_supported);
         return true;
     }

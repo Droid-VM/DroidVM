@@ -49,6 +49,7 @@ import cn.classfun.droidvm.lib.store.vm.SharedDirCache;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMHypervisor;
+import cn.classfun.droidvm.lib.store.vm.QemuGenieZoneCapability;
 import cn.classfun.droidvm.lib.store.vm.VMPeripheralConfig;
 import cn.classfun.droidvm.lib.store.vm.VMXhciConfig;
 
@@ -175,6 +176,12 @@ public final class QemuBackendInstance extends VMBackendInstance {
             case GUNYAH:
                 args.add("gunyah");
                 defProtectedMode = ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+                break;
+            case GENIEZONE:
+                if (!QemuGenieZoneCapability.isAvailable())
+                    throw new RuntimeException(
+                        "QEMU-GZVM accelerator is unavailable: /dev/gzvm and gzvm in -accel help are required");
+                args.add("gzvm");
                 break;
             case SOFT:
                 args.add("tcg,thread=multi,tb-size=128");

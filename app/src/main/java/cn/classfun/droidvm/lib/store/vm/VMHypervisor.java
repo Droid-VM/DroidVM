@@ -13,6 +13,7 @@ import java.util.List;
 
 import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.store.enums.StringEnum;
+import cn.classfun.droidvm.lib.store.vm.QemuGenieZoneCapability;
 
 public enum VMHypervisor implements StringEnum {
     AUTO(R.string.create_vm_hypervisor_auto, null),
@@ -59,6 +60,7 @@ public enum VMHypervisor implements StringEnum {
                 case SOFT:
                 case KVM:
                 case GUNYAH:
+                case GENIEZONE:
                     return true;
             } break;
             case CROSVM: switch (hypervisor) {
@@ -80,6 +82,9 @@ public enum VMHypervisor implements StringEnum {
             if (hypervisor.getDevicePath() == null) continue;
             if (!isBackendSupported(backend, hypervisor)) continue;
             if (!hypervisor.isSupported()) continue;
+            if (backend == VMBackend.QEMU
+                && hypervisor == GENIEZONE
+                && !QemuGenieZoneCapability.isAvailable()) continue;
             return hypervisor;
         }
         if (allowed.contains(SOFT) && isBackendSupported(backend, SOFT))
