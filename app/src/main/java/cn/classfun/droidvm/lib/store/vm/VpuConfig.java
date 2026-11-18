@@ -4,9 +4,12 @@
 package cn.classfun.droidvm.lib.store.vm;
 
 import static cn.classfun.droidvm.lib.store.enums.Enums.optEnum;
+import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
+import java.util.List;
 
 import cn.classfun.droidvm.lib.store.base.DataItem;
 
@@ -20,15 +23,20 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
  *
  * <p>What the switch buys is the whole virtio-media transport: with it on, the daemon's crosvm
  * command line carries the two pools ({@code media-host-mb} / {@code media-guest-mb}, Gunyah
- * only) and the huge-page preflight budgets for the guest one. With it off none of that is
- * passed. The choice is stored with the VM, so it survives a reboot without any
- * {@code setprop}; a VM whose config predates these keys reads as off with the default pools,
- * exactly like a VM that never ticked the box.</p>
+ * only), the huge-page preflight budgets for the guest one, and the codec devices are attached
+ * -- a hardware decoder and encoder ({@link #CODEC_KINDS}), which are in no peripheral list
+ * because they are what having a VPU means. With it off none of that is passed. The choice is
+ * stored with the VM, so it survives a reboot without any {@code setprop}; a VM whose config
+ * predates these keys reads as off with the default pools, exactly like a VM that never ticked
+ * the box.</p>
  */
 public final class VpuConfig {
     public static final String KEY_ENABLED = "vpu_enabled";
     public static final String KEY_HOST_POOL_MB = "vpu_host_pool_mb";
     public static final String KEY_GUEST_POOL_MB = "vpu_guest_pool_mb";
+    public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
+    public static final String KEY_DECODER_BACKEND = "vpu_decoder_backend";
+    public static final String KEY_ENCODER_BACKEND = "vpu_encoder_backend";
 
     /**
      * The {@code media_host} pool a VM gets when nobody chose a size.
@@ -53,6 +61,14 @@ public final class VpuConfig {
      * memory beside the VM's RAM, so it is added to the huge-page preflight.</p>
      */
     public static final int DEFAULT_GUEST_POOL_MB = 192;
+
+    /**
+     * The codec devices the switch attaches, spelt as the {@code kind=} value crosvm's
+     * {@code --virtio-media} parses, in command-line order -- and so the order the guest numbers
+     * their {@code /dev/videoN} nodes among themselves. Append rather than insert: the decoder
+     * stays first so a guest that already names its node keeps it when the encoder arrives.
+     */
+    public static final List<String> CODEC_KINDS = List.of("decoder", "encoder");
 
     private VpuConfig() {
     }
@@ -99,6 +115,76 @@ public final class VpuConfig {
     public static boolean guestPoolApplies(@Nullable ProtectedVM pvm) {
         return pvm == ProtectedVM.PROTECTED_PROTECTED
             || pvm == ProtectedVM.PROTECTED_WITHOUT_FIRMWARE;
+    }
+
+    /**
+     * Whether this VM attaches the codec devices, given that video acceleration is on at all.
+     *
+     * <p>Default on: the switch promises a hardware encoder and decoder. The key exists for the
+     * case where the devices are the problem rather than the point -- a host whose codec store
+     * has no usable hardware codec ends the helper, which crosvm reports as a device crash, so
+     * every VM with video acceleration on would stop booting. Turning this off leaves the VM its
+     * pools and its camera and takes only the codec nodes away. It is a subtraction from the
+     * switch, never a second switch: with video acceleration off it answers nothing
+     * ({@link #codecDevicesAttached}).</p>
+     */
+    public static boolean isCodecEnabled(@NonNull DataItem config) {
+        return config.optBoolean(KEY_CODEC_ENABLED, true);
+    }
+
+    public static void setCodecEnabled(@NonNull DataItem config, boolean enabled) {
+        config.set(KEY_CODEC_ENABLED, enabled);
+    }
+
+    /** Whether this VM is given the {@link #CODEC_KINDS} devices: the switch, then the override. */
+    public static boolean codecDevicesAttached(@NonNull DataItem config) {
+        return mediaDevicesAttached(config) && isCodecEnabled(config);
+    }
+
+    /**
+     * Whether this VM attaches virtio-media devices at all. The switch is the whole answer: a
+     * virtio-media device and the pools it is served out of are one thing, not two.
+     */
+    public static boolean mediaDevicesAttached(@NonNull DataItem config) {
+        return isEnabled(config);
+    }
+
+    /**
+     * The V4L2 card name the guest reads for the codec device of {@code kind}: the name crosvm's
+     * helper falls back to, passed explicitly by the daemon. Not the VM's name, which would
+     * rename a guest device whenever the VM is renamed.
+     */
+    @NonNull
+    public static String codecCard(@NonNull String kind) {
+        return fmt("droidvm %s", kind);
+    }
+
+    /**
+     * What decodes for this VM's decoder device ({@link VpuDecoderBackend}). MediaCodec unless
+     * chosen: what every VM had before there was a choice, and the one every guest works with.
+     * The daemon passes it in the spelling the installed crosvm knows, or logs that it cannot.
+     */
+    @NonNull
+    public static VpuDecoderBackend getDecoderBackend(@NonNull DataItem config) {
+        return optEnum(config, KEY_DECODER_BACKEND, VpuDecoderBackend.MEDIACODEC);
+    }
+
+    public static void setDecoderBackend(
+        @NonNull DataItem config, @NonNull VpuDecoderBackend backend
+    ) {
+        config.set(KEY_DECODER_BACKEND, backend);
+    }
+
+    /** What encodes for this VM's encoder device ({@link VpuEncoderBackend}); MediaCodec unless chosen. */
+    @NonNull
+    public static VpuEncoderBackend getEncoderBackend(@NonNull DataItem config) {
+        return optEnum(config, KEY_ENCODER_BACKEND, VpuEncoderBackend.MEDIACODEC);
+    }
+
+    public static void setEncoderBackend(
+        @NonNull DataItem config, @NonNull VpuEncoderBackend backend
+    ) {
+        config.set(KEY_ENCODER_BACKEND, backend);
     }
 
     /**

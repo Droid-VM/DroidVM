@@ -12,6 +12,7 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.getEditText;
 
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -27,6 +28,8 @@ import cn.classfun.droidvm.lib.store.vm.VMStore;
 import cn.classfun.droidvm.lib.store.vm.DisplayExporter;
 import cn.classfun.droidvm.lib.store.vm.VMScreenConfig;
 import cn.classfun.droidvm.lib.store.vm.VpuConfig;
+import cn.classfun.droidvm.lib.store.vm.VpuDecoderBackend;
+import cn.classfun.droidvm.lib.store.vm.VpuEncoderBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuApi;
 import cn.classfun.droidvm.lib.store.vm.GpuBackend;
 import cn.classfun.droidvm.lib.store.vm.GpuBlitProvider;
@@ -43,6 +46,7 @@ import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
 import cn.classfun.droidvm.ui.widgets.tools.CpuCorePickerDialog;
+import cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +91,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
     private View vpuOptions;
+    private SwitchRowWidget swVpuCodecEnabled;
+    private View vpuCodecBackendOptions;
+    private PickerButtonWidget chooseVpuDecoderBackend;
+    private TextView tvVpuDecoderBackendNote;
+    private PickerButtonWidget chooseVpuEncoderBackend;
+    private TextView tvVpuEncoderBackendNote;
     private View mediaGuestPoolOptions;
     private TextInputEditText etMediaHostPoolMb;
     private TextInputEditText etMediaGuestPoolMb;
@@ -150,6 +160,14 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
+        swVpuCodecEnabled = view.findViewById(R.id.sw_vpu_codec_enabled);
+        vpuCodecBackendOptions = view.findViewById(R.id.vpu_codec_backend_options);
+        chooseVpuDecoderBackend = view.findViewById(R.id.btn_vpu_decoder_backend);
+        tvVpuDecoderBackendNote = view.findViewById(R.id.tv_vpu_decoder_backend_note);
+        chooseVpuDecoderBackend.configure(VpuDecoderBackend.class, VpuDecoderBackend.MEDIACODEC);
+        chooseVpuEncoderBackend = view.findViewById(R.id.btn_vpu_encoder_backend);
+        tvVpuEncoderBackendNote = view.findViewById(R.id.tv_vpu_encoder_backend_note);
+        chooseVpuEncoderBackend.configure(VpuEncoderBackend.class, VpuEncoderBackend.MEDIACODEC);
         mediaGuestPoolOptions = view.findViewById(R.id.media_guest_pool_options);
         etMediaHostPoolMb = view.findViewById(R.id.et_media_host_pool_mb);
         etMediaGuestPoolMb = view.findViewById(R.id.et_media_guest_pool_mb);
@@ -250,6 +268,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         });
         rowGpuCgroupCpus.setOnClickListener(v -> showGpuCpusPicker());
         swVpuEnabled.setOnCheckedChangeListener(() -> updateVpuVisibility());
+        swVpuCodecEnabled.setOnCheckedChangeListener(() -> updateVpuVisibility());
+        chooseVpuDecoderBackend.setOnValueChangedListener(() -> updateVpuBackendNotes());
+        chooseVpuEncoderBackend.setOnValueChangedListener(() -> updateVpuBackendNotes());
         // RT is only offered on top of a cpuset with cores in it. The switch is inside the
         // cpuset block, so it is already hidden when the block is off; this catches the one
         // reachable gap -- the block on, but every core cleared in the picker.
@@ -438,6 +459,10 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         updateVramAllocVisibility();
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
         swVpuEnabled.setChecked(VpuConfig.isEnabled(item));
+        swVpuCodecEnabled.setChecked(VpuConfig.isCodecEnabled(item));
+        chooseVpuDecoderBackend.setSelectedItem(VpuConfig.getDecoderBackend(item));
+        chooseVpuEncoderBackend.setSelectedItem(VpuConfig.getEncoderBackend(item));
+        updateVpuBackendNotes();
         etMediaHostPoolMb.setText(String.valueOf(VpuConfig.getHostPoolMb(item)));
         etMediaGuestPoolMb.setText(String.valueOf(VpuConfig.getGuestPoolMb(item)));
         updateVpuVisibility();
@@ -633,6 +658,23 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         vpuOptions.setVisibility(enabled ? VISIBLE : GONE);
         mediaGuestPoolOptions.setVisibility(
             enabled && VpuConfig.guestPoolApplies(currentProtectedVm()) ? VISIBLE : GONE);
+        // The backends are a property of the codec devices: no devices, no choice.
+        vpuCodecBackendOptions.setVisibility(
+            enabled && swVpuCodecEnabled.isChecked() ? VISIBLE : GONE);
+    }
+
+    /** What each chosen codec backend is and asks of the guest, under its picker. */
+    private void updateVpuBackendNotes() {
+        VpuDecoderBackend decoder = chooseVpuDecoderBackend.getSelectedItem();
+        tvVpuDecoderBackendNote.setText(
+            decoder == VpuDecoderBackend.MSM_VIDC ? R.string.edit_vm_vpu_decoder_backend_note_msm_vidc
+                : decoder == VpuDecoderBackend.AUTO ? R.string.edit_vm_vpu_decoder_backend_note_auto
+                : R.string.edit_vm_vpu_decoder_backend_note_mediacodec);
+        VpuEncoderBackend encoder = chooseVpuEncoderBackend.getSelectedItem();
+        tvVpuEncoderBackendNote.setText(
+            encoder == VpuEncoderBackend.MSM_VIDC ? R.string.edit_vm_vpu_encoder_backend_note_msm_vidc
+                : encoder == VpuEncoderBackend.AUTO ? R.string.edit_vm_vpu_encoder_backend_note_auto
+                : R.string.edit_vm_vpu_encoder_backend_note_mediacodec);
     }
 
     @Override
@@ -704,6 +746,12 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // decides whether a media_guest pool is created is VpuConfig.guestPoolMbFor, not whether
         // the field was on screen.
         VpuConfig.setGuestPoolMb(item, parseInt(getEditText(etMediaGuestPoolMb)));
+        // Stored whatever the switch says, like the pool sizes: they are subtractions from and
+        // choices within video acceleration, and keeping them lets turning it off and on again
+        // give back the VM that was there before.
+        VpuConfig.setCodecEnabled(item, swVpuCodecEnabled.isChecked());
+        VpuConfig.setDecoderBackend(item, chooseVpuDecoderBackend.getSelectedItem());
+        VpuConfig.setEncoderBackend(item, chooseVpuEncoderBackend.getSelectedItem());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_CPUS, gpuCgroupCpus.trim());
     }

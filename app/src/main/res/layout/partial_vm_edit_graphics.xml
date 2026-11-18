@@ -460,6 +460,63 @@
             android:visibility="gone"
             tools:visibility="visible">
 
+            <!-- The codec V4L2 nodes, on by default: a hardware decoder and encoder are what
+                 the switch above promises. They can be taken away on their own because each codec
+                 helper reads the host's codec store when it starts and ends the VM if the phone
+                 has no usable hardware codec, which would otherwise leave a VM with a camera
+                 unable to boot at all. Inside the block, so it is only offered on a VM that has
+                 a VPU. -->
+            <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+                android:id="@+id/sw_vpu_codec_enabled"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:icon="@drawable/ic_video"
+                android:text="@string/create_vm_vpu_codec_enabled" />
+
+            <!-- What decodes and encodes for the codec devices: the platform's codec service,
+                 which every phone and every guest works with, or the SoC's own codec driver.
+                 Under the codec switch because it is a property of those devices and means
+                 nothing without them; each note says what the choice asks of the guest. -->
+            <LinearLayout
+                android:id="@+id/vpu_codec_backend_options"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingHorizontal="16dp">
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_vpu_decoder_backend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:title="@string/edit_vm_vpu_decoder_backend"
+                    app:pb_mode="dialog" />
+
+                <TextView
+                    android:id="@+id/tv_vpu_decoder_backend_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="8dp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
+
+                <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
+                    android:id="@+id/btn_vpu_encoder_backend"
+                    android:layout_width="wrap_content"
+                    android:layout_height="48dp"
+                    android:title="@string/edit_vm_vpu_encoder_backend"
+                    app:pb_mode="dialog" />
+
+                <TextView
+                    android:id="@+id/tv_vpu_encoder_backend_note"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="8dp"
+                    android:textColor="?attr/colorOnSurfaceVariant"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
             <!-- Where the host puts the buffers it allocates. The guest maps them at
                  pool base + the offset the host returns, which is what virtio-media's mmap
                  command already does, so this is the whole of the protected-VM story for
