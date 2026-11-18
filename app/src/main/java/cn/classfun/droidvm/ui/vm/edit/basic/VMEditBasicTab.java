@@ -64,6 +64,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private SwitchRowWidget swSmt;
     private SwitchRowWidget swSandbox;
     private SwitchRowWidget swHugepages;
+    private SwitchRowWidget swPciMsi;
     private SwitchRowWidget swDebug;
     private ChooseRowWidget choosePrepareLendMthp;
     private ChooseRowWidget chooseProtectedVm;
@@ -111,6 +112,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSmt = view.findViewById(R.id.sw_smt);
         swSandbox = view.findViewById(R.id.sw_sandbox);
         swHugepages = view.findViewById(R.id.sw_hugepages);
+        swPciMsi = view.findViewById(R.id.sw_pci_msi);
         swDebug = view.findViewById(R.id.sw_debug);
         choosePrepareLendMthp = view.findViewById(R.id.choose_prepare_lend_mthp);
         chooseProtectedVm = view.findViewById(R.id.choose_protected_vm);
@@ -142,6 +144,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSmt.setChecked(VMConfig.NEW_VM_DEFAULT_SMT);
         swSandbox.setChecked(false);
         swHugepages.setChecked(VMConfig.NEW_VM_DEFAULT_HUGEPAGES);
+        swPciMsi.setChecked(VMConfig.NEW_VM_DEFAULT_PCI_MSI);
         swDebug.setChecked(false);
         chooseProtectedVm.configure(
             ProtectedVM.class, VMConfig.NEW_VM_DEFAULT_PROTECTED_VM);
@@ -204,6 +207,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         swSmt.setChecked(item.optBoolean("smt", false));
         swSandbox.setChecked(item.optBoolean("sandbox", false));
         swHugepages.setChecked(item.optBoolean("hugepages", false));
+        // A VM saved before the switch existed has no key: it gets MSI, as the daemon reads it.
+        swPciMsi.setChecked(item.optBoolean("pci_msi", true));
         swDebug.setChecked(item.optBoolean("strace", false));
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
@@ -530,6 +535,7 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("smt", swSmt.isChecked());
         item.set("sandbox", swSandbox.isChecked());
         item.set("hugepages", swHugepages.isChecked());
+        item.set("pci_msi", swPciMsi.isChecked());
         VirtioTransport transport = chooseVirtioTransport.getSelectedItem();
         item.set(VirtioTransport.KEY, transport);
         item.set("strace", swDebug.isChecked());

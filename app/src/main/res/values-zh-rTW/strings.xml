@@ -207,6 +207,7 @@
     <string name="create_vm_swiotlb_hint">SWIOTLB 大小（保護模式）</string>
     <string name="create_vm_sandbox">沙箱</string>
     <string name="create_vm_hugepages">大頁記憶體</string>
+    <string name="create_vm_pci_msi">PCI MSI 中斷 (Gunyah)</string>
     <string name="create_vm_prepare_lend_mthp">預分配大頁</string>
     <string name="create_vm_prepare_lend_mthp_disabled">停用</string>
     <string name="create_vm_prepare_lend_mthp_single">單次 (整塊借出)</string>

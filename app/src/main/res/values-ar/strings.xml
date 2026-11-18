@@ -212,6 +212,7 @@
     <string name="create_vm_swiotlb_hint">حجم SWIOTLB (للأجهزة الافتراضية المحمية)</string>
     <string name="create_vm_sandbox">بيئة العزل (Sandbox)</string>
     <string name="create_vm_hugepages">صفحات الذاكرة الضخمة (Hugepages)</string>
+    <string name="create_vm_pci_msi">مقاطعات PCI MSI (Gunyah)</string>
     <string name="create_vm_prepare_lend_mthp">إعداد إعارة الذاكرة عبر mTHP</string>
     <string name="create_vm_prepare_lend_mthp_disabled">معطّل</string>
     <string name="create_vm_prepare_lend_mthp_single">كتلة واحدة (المنطقة بأكملها)</string>

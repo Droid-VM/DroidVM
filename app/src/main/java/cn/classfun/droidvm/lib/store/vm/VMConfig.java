@@ -23,6 +23,8 @@ import cn.classfun.droidvm.lib.store.base.DataItem;
 
 public class VMConfig extends DataConfig {
     public static final boolean NEW_VM_DEFAULT_HUGEPAGES = true;
+    // PCI MSI/MSI-X on Gunyah (the daemon's --mbi-spis); absent reads as on.
+    public static final boolean NEW_VM_DEFAULT_PCI_MSI = true;
     public static final boolean NEW_VM_DEFAULT_PMU = true;
     public static final boolean NEW_VM_DEFAULT_RNG = true;
     public static final boolean NEW_VM_DEFAULT_SMT = true;

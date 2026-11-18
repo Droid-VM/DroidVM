@@ -214,6 +214,7 @@
     <string name="create_vm_swiotlb_hint">SWIOTLB Size (Protected VM)</string>
     <string name="create_vm_sandbox">Sandbox</string>
     <string name="create_vm_hugepages">Hugepages</string>
+    <string name="create_vm_pci_msi">PCI MSI interrupts (Gunyah)</string>
     <string name="create_vm_prepare_lend_mthp">Prepare Lend mTHP</string>
     <string name="create_vm_prepare_lend_mthp_disabled">Disabled</string>
     <string name="create_vm_prepare_lend_mthp_single">Single (whole region)</string>

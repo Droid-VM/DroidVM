@@ -8,6 +8,7 @@
   "smt": true,
   "sandbox": false,
   "hugepages": true,
+  "pci_msi": true,
   "virtio_transport": "PCI",
   "strace": false,
   "gpu_vram_folio_threshold_kb": 1024,
