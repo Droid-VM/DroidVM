@@ -1533,7 +1533,10 @@
     <string name="edit_vm_vpu_encoder_backend_note_mediacodec">透過 Android 的 codec 服務使用手機的硬體編碼器。</string>
     <string name="edit_vm_vpu_encoder_backend_note_auto">手機自己的編碼驅動接得下的串流都交給它，其餘以及沒有這種驅動的手機用 MediaCodec。guest 看不出差別。</string>
     <string name="edit_vm_vpu_encoder_backend_note_msm_vidc">Qualcomm 的編碼驅動處理所有可變或固定碼率的 H.264 與 HEVC 串流：guest 要的碼率和關鍵幀原樣送到硬體。其餘用 MediaCodec。guest 看不出差別。</string>
-    <string name="create_vm_vpu_note">下次啟動 VM 時生效：客體中會出現解碼器、編碼器兩個 virtio-media 裝置，主機緩衝池在啟動時從主機記憶體中預留。</string>
+    <string name="create_vm_vpu_note">下次啟動 VM 時生效。在 Gunyah 上，開啟後會依上面的大小保留緩衝池，並掛上這台 VM 的視訊裝置。在「外設」頁加的 virtio-media 相機用的是同一套硬體，只有開啟時才會掛上；USB 攝影機不需要它。</string>
+    <string name="create_vm_vpu_note_camera_off">這台 VM 在「外設」頁有 virtio-media 相機。視訊加速關閉時不會掛上：相機是 virtio-media 裝置，需要這個開關保留的緩衝池。</string>
+    <string name="edit_vm_peripheral_camera_enabled_vpu">已開啟視訊加速：virtio-media 相機需要它</string>
+
     <string name="edit_vm_peripheral_camera_missing">這台手機沒有這個相機，該裝置不會啟動。</string>
     <string name="edit_vm_peripheral_host_camera">主機相機</string>
     <string name="peripheral_fgs_title">外設使用中</string>

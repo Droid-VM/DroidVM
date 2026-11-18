@@ -1578,7 +1578,10 @@
     <string name="edit_vm_vpu_encoder_backend_note_mediacodec">The phone\'s hardware encoders through Android\'s codec service.</string>
     <string name="edit_vm_vpu_encoder_backend_note_auto">The phone\'s own encoder driver for every stream it takes, MediaCodec for the rest and on a phone that has no such driver. The guest sees no difference.</string>
     <string name="edit_vm_vpu_encoder_backend_note_msm_vidc">Qualcomm\'s encoder driver for every H.264 and HEVC stream at a variable or constant bitrate: the bitrate and key frames the guest asks for go to the hardware as they are. MediaCodec for the rest. The guest sees no difference.</string>
-    <string name="create_vm_vpu_note">Changes take effect the next time this VM starts: the guest sees a decoder and an encoder as two virtio-media devices, and the host pool is reserved from host memory at launch.</string>
+    <string name="create_vm_vpu_note">Takes effect the next time this VM starts. On Gunyah this reserves the pool sizes shown above and attaches the VM\'s video devices. A virtio-media camera added on the Peripheral tab rides the same hardware, so it is attached only while this is on; a USB camera does not need it.</string>
+    <string name="create_vm_vpu_note_camera_off">This VM has a virtio-media camera on the Peripheral tab. It will not be attached while video acceleration is off: the camera is a virtio-media device and needs the pools this switch reserves.</string>
+    <string name="edit_vm_peripheral_camera_enabled_vpu">Video acceleration turned on: the virtio-media camera needs it</string>
+
     <string name="edit_vm_peripheral_camera_missing">This phone has no such camera; the device will not start.</string>
     <string name="edit_vm_peripheral_host_camera">Host camera</string>
     <string name="peripheral_fgs_title">Peripheral in use</string>

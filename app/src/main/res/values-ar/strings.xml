@@ -1573,7 +1573,10 @@
     <string name="edit_vm_vpu_encoder_backend_note_mediacodec">المشفرات العتادية في الهاتف عبر خدمة الترميز في Android.</string>
     <string name="edit_vm_vpu_encoder_backend_note_auto">برنامج تشغيل المشفّر الخاص بالهاتف لكل بث يقبله، وMediaCodec للباقي وعلى الهواتف التي لا تملك مثل هذا البرنامج. لا يرى النظام الضيف أي فرق.</string>
     <string name="edit_vm_vpu_encoder_backend_note_msm_vidc">برنامج تشغيل المشفّر من Qualcomm لكل بث H.264 وHEVC بمعدل بت متغير أو ثابت: يصل معدل البت والإطارات المفتاحية التي يطلبها النظام الضيف إلى العتاد كما هي. وMediaCodec للباقي. لا يرى النظام الضيف أي فرق.</string>
-    <string name="create_vm_vpu_note">تسري التغييرات عند التشغيل التالي لهذا الجهاز الافتراضي: يرى النظام الضيف مفكك ترميز ومشفّرًا كجهازي virtio-media، ويُحجز تجمع ذاكرة المضيف من ذاكرة المضيف عند الإقلاع.</string>
+    <string name="create_vm_vpu_note">تسري عند التشغيل التالي لهذا الجهاز الافتراضي. على Gunyah يحجز هذا الخيار أحجام التجمعات المعروضة أعلاه ويُرفق أجهزة الفيديو بالجهاز الافتراضي. تعتمد كاميرا virtio-media المضافة في تبويب الملحقات على العتاد نفسه، لذا لا تُرفق إلا عند تفعيله؛ أما كاميرا USB فلا تحتاج إليه.</string>
+    <string name="create_vm_vpu_note_camera_off">لدى هذا الجهاز الافتراضي كاميرا virtio-media في تبويب الملحقات. لن تُرفق ما دام تسريع الفيديو معطلًا: فالكاميرا جهاز virtio-media وتحتاج إلى التجمعات التي يحجزها هذا الخيار.</string>
+    <string name="edit_vm_peripheral_camera_enabled_vpu">تم تفعيل تسريع الفيديو: كاميرا virtio-media تحتاج إليه</string>
+
     <string name="edit_vm_peripheral_camera_missing">لا يحتوي هذا الهاتف على مثل هذه الكاميرا؛ لن يبدأ تشغيل الجهاز.</string>
     <string name="edit_vm_peripheral_host_camera">كاميرا المضيف</string>
     <string name="peripheral_fgs_title">ملحق قيد الاستخدام</string>

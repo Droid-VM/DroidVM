@@ -42,6 +42,7 @@ import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
 import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
+import cn.classfun.droidvm.ui.vm.edit.peripheral.VMEditPeripheralTab;
 import cn.classfun.droidvm.ui.widgets.row.ChooseRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget;
 import cn.classfun.droidvm.ui.widgets.row.TextRowWidget;
@@ -91,6 +92,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swGpuCgroup;
     private SwitchRowWidget swVpuEnabled;
     private View vpuOptions;
+    private TextView tvVpuCameraOffNote;
     private SwitchRowWidget swVpuCodecEnabled;
     private View vpuCodecBackendOptions;
     private PickerButtonWidget chooseVpuDecoderBackend;
@@ -160,6 +162,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup = view.findViewById(R.id.sw_gpu_cgroup);
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
+        tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
         swVpuCodecEnabled = view.findViewById(R.id.sw_vpu_codec_enabled);
         vpuCodecBackendOptions = view.findViewById(R.id.vpu_codec_backend_options);
         chooseVpuDecoderBackend = view.findViewById(R.id.btn_vpu_decoder_backend);
@@ -607,7 +610,8 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // pool is offered at all. Nothing tells this tab when that changes, so ask on the way in.
         updateVramAllocVisibility();
         // Same reason: the media guest pool is only offered to a VM whose memory the host cannot
-        // read, which is also decided over there.
+        // read, which is also decided over there -- and the camera-off note depends on the
+        // peripheral tab's rows, which loadConfig() cannot see and the user may have changed.
         updateVpuVisibility();
     }
 
@@ -661,6 +665,39 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // The backends are a property of the codec devices: no devices, no choice.
         vpuCodecBackendOptions.setVisibility(
             enabled && swVpuCodecEnabled.isChecked() ? VISIBLE : GONE);
+        // The cross-tab consequence, on its own view outside the block: it is the switch being
+        // *off* that makes it true, and the block is hidden in exactly that case. Turning the
+        // switch off is not blocked -- someone may be freeing the memory and know what it costs
+        // them -- but a camera row that will not be attached is not something to find out from a
+        // log line after the VM boots without it.
+        tvVpuCameraOffNote.setVisibility(!enabled && hasMediaPeripheral() ? VISIBLE : GONE);
+    }
+
+    /**
+     * Whether the peripheral tab's unsaved rows carry a device that only exists with the VPU on.
+     * Live from that tab, for the reason the protection mode is read live from the basic one;
+     * {@code onTabShown} asks again on the way in, since this tab is loaded before that one.
+     */
+    private boolean hasMediaPeripheral() {
+        try {
+            var peripheral = (VMEditPeripheralTab) parent.getTab(VMEditTab.TAB_PERIPHERAL);
+            return peripheral.hasVpuPeripheral();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * Turns video acceleration on for a media peripheral that was just added on another tab.
+     * Returns true when this actually changed something, so the caller only tells the user about
+     * a switch it moved. Made on the widget: it is where the pending value lives until
+     * {@link #saveConfig} writes it.
+     */
+    public boolean enableVpuForMediaDevice() {
+        if (swVpuEnabled.isChecked()) return false;
+        // Fires the checked-change listener, which is what refreshes the pool fields and note.
+        swVpuEnabled.setChecked(true);
+        return true;
     }
 
     /** What each chosen codec backend is and asks of the guest, under its picker. */

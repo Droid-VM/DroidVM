@@ -44,6 +44,7 @@ import cn.classfun.droidvm.ui.vm.edit.VMEditActivity;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditBaseTab;
 import cn.classfun.droidvm.ui.vm.edit.base.VMEditTab;
 import cn.classfun.droidvm.ui.vm.edit.basic.VMEditBasicTab;
+import cn.classfun.droidvm.ui.vm.edit.graphics.VMEditGraphicsTab;
 import cn.classfun.droidvm.ui.vm.edit.peripheral.XhciBindingDiff.Row;
 import cn.classfun.droidvm.ui.widgets.container.CardItemListView;
 
@@ -102,6 +103,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
         adapter.setLocationPermissionGate(parent.getLocationPermission()::requireThen);
+        adapter.setOnVpuPeripheralAdded(this::enableVpuForNewPeripheral);
         adapter.setXhciHost(this);
         serialAdapter = listSerialPorts.setAdapter(VMSerialEditAdapter.class);
         serialAdapter.refreshUsbAcm();
@@ -139,6 +141,45 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
 
     public void refreshUsbAcm() {
         if (serialAdapter != null) serialAdapter.refreshUsbAcm();
+    }
+
+    /**
+     * Turns the VM's video acceleration on, because the row just added needs it.
+     *
+     * <p>A virtio-media camera is served out of the {@code media_host} pool the VPU switch buys,
+     * so a camera on a VM with the switch off is a row the daemon skips at boot. Rather than let
+     * someone configure that and find out from a log line, adding the row turns the switch on --
+     * and says so, because it is a setting on another tab that the user did not touch, and it
+     * costs memory. The switch is the graphics tab's own view: the tabs share no live config, so
+     * that widget is where the pending value lives until it is saved.</p>
+     */
+    private void enableVpuForNewPeripheral() {
+        try {
+            var graphics = (VMEditGraphicsTab) parent.getTab(VMEditTab.TAB_GRAPHICS);
+            if (!graphics.enableVpuForMediaDevice()) return;
+        } catch (Exception e) {
+            // Nothing to enable is not a reason to lose the peripheral that was just added.
+            Log.w(TAG, "could not turn the VPU switch on for a media peripheral", e);
+            return;
+        }
+        showHint(parent.getString(R.string.edit_vm_peripheral_camera_enabled_vpu));
+    }
+
+    /**
+     * Whether the unsaved peripheral rows carry a device that only exists with the VPU on.
+     *
+     * <p>Asked by the graphics tab, which is loaded first, so the list may not have rows yet:
+     * that is "no", not an error.</p>
+     */
+    public boolean hasVpuPeripheral() {
+        if (listPeripherals == null) return false;
+        var items = listPeripherals.getItems();
+        if (items == null) return false;
+        var wrapper = DataItem.newObject();
+        wrapper.set(VMXhciConfig.KEY_PERIPHERALS, items);
+        for (var peripheral : VMPeripheralConfig.listOf(wrapper))
+            if (peripheral.getType().needsVpu()) return true;
+        return false;
     }
 
     /** Whether the unsaved peripheral rows give the guest a host microphone. */

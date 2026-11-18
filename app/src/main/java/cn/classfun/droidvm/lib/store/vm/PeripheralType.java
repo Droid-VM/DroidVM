@@ -10,6 +10,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.StringRes;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.enums.StringEnum;
 
 /**
@@ -24,13 +25,13 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  */
 public enum PeripheralType implements StringEnum {
     /** virtio-snd, one PCM direction per device. Served by an unprivileged vhost-user helper. */
-    VIRTIO_SOUND(R.string.edit_vm_peripheral_type_virtio_sound, R.drawable.ic_speaker, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    VIRTIO_SOUND(R.string.edit_vm_peripheral_type_virtio_sound, R.drawable.ic_speaker, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * Intel HD Audio codec: one card, playback and capture together. Present so the model is
      * honest about what a guest could have -- Windows has an in-box driver for it, which
      * virtio-snd does not -- but crosvm emulates no HDA controller, so nothing can serve it yet.
      */
-    INTEL_HDA(R.string.edit_vm_peripheral_type_intel_hda, R.drawable.ic_microphone, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    INTEL_HDA(R.string.edit_vm_peripheral_type_intel_hda, R.drawable.ic_microphone, false, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * virtio-media capture device: one host camera, seen by the guest as one {@code /dev/videoX}.
      *
@@ -39,10 +40,15 @@ public enum PeripheralType implements StringEnum {
      * capabilities come from a single config word, so a second camera is a second device. A VM
      * that wants front and back carries two of these.</p>
      *
-     * <p>Unavailable until crosvm carries the device; the host half (Camera2 NDK through
-     * {@code android_camera}) exists, the virtio-media capture device on top of it does not.</p>
+     * <p>Available: the daemon builds a {@code --virtio-media kind=camera} device with the app's
+     * uid on it, and a VM carrying one raises the camera foreground service for as long as it is
+     * not stopped. A crosvm without the device leaves the row out and says so.</p>
+     *
+     * <p>Needs the VPU: it is a virtio-media device, so it exists only on a VM whose video
+     * acceleration switch is on. See {@link #needsVpu()}. The emulated USB camera, which needs
+     * no VPU, is {@link #USB_CAMERA}.</p>
      */
-    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
+    VIRTIO_CAMERA(R.string.edit_vm_peripheral_type_virtio_camera, R.drawable.ic_camera, true, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA),
     /**
      * xHCI USB controller: the root the guest's USB devices hang off.
      *
@@ -55,7 +61,7 @@ public enum PeripheralType implements StringEnum {
      * peripheral is added, and storage is by {@code name()}, so appending is the only position
      * that leaves every stored config reading as what it says.</p>
      */
-    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    XHCI_USB(R.string.edit_vm_peripheral_type_xhci, R.drawable.ic_usb, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * crosvm's virtio-input motion device: an accelerometer and a gyroscope fed from the phone's
      * own sensors. One per VM -- crosvm has one such device -- with a switch for whether a console
@@ -65,7 +71,7 @@ public enum PeripheralType implements StringEnum {
      * a virtio-mmio VM its place among the input devices fixes the guest addresses. Appended last,
      * for the ordinal reason {@link #XHCI_USB} gives.</p>
      */
-    VIRTIO_GYROSCOPE(R.string.edit_vm_peripheral_type_virtio_gyroscope, R.drawable.ic_screen_rotation, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    VIRTIO_GYROSCOPE(R.string.edit_vm_peripheral_type_virtio_gyroscope, R.drawable.ic_screen_rotation, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * A GNSS receiver: a named virtio-console port streaming NMEA ({@link Gnss}), fed with the
      * phone's GNSS receiver or its location ({@link GnssSource}). One per VM.
@@ -74,7 +80,7 @@ public enum PeripheralType implements StringEnum {
      * location as a foreground capability, which the running VM's foreground service supplies.
      * Appended last, for the ordinal reason {@link #XHCI_USB} gives.</p>
      */
-    VIRTIO_GNSS(R.string.edit_vm_peripheral_type_virtio_gnss, R.drawable.ic_location, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION),
+    VIRTIO_GNSS(R.string.edit_vm_peripheral_type_virtio_gnss, R.drawable.ic_location, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION),
     /**
      * A vibrator: crosvm's {@code --input vibrator}, a virtio-input device declaring force feedback
      * (FF_RUMBLE) whose rumble the daemon plays on the phone's motor ({@code daemon/input/host_vibrator},
@@ -82,7 +88,7 @@ public enum PeripheralType implements StringEnum {
      * rides the console's input bridge. Needs no foreground service. Appended last, for the ordinal
      * reason {@link #XHCI_USB} gives.
      */
-    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
     /**
      * USB camera: one host camera, seen by the guest as one USB video device.
      *
@@ -100,18 +106,20 @@ public enum PeripheralType implements StringEnum {
      * <p>Typed {@code camera} for the reason {@link #VIRTIO_CAMERA} is. Appended last, for the
      * ordinal reason {@link #XHCI_USB} gives.</p>
      */
-    USB_CAMERA(R.string.edit_vm_peripheral_type_usb_camera, R.drawable.ic_camera, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+    USB_CAMERA(R.string.edit_vm_peripheral_type_usb_camera, R.drawable.ic_camera, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;
     private final boolean available;
+    private final boolean needsVpu;
     private final int foregroundServiceType;
 
     PeripheralType(@StringRes int titleId, @DrawableRes int iconId, boolean available,
-                   int foregroundServiceType) {
+                   boolean needsVpu, int foregroundServiceType) {
         this.titleId = titleId;
         this.iconId = iconId;
         this.available = available;
+        this.needsVpu = needsVpu;
         this.foregroundServiceType = foregroundServiceType;
     }
 
@@ -129,6 +137,41 @@ public enum PeripheralType implements StringEnum {
      *  backends skip it rather than starting a VM that lies about its hardware. */
     public boolean isAvailable() {
         return available;
+    }
+
+    /**
+     * Whether this device is carried by the VM's virtio-media transport, and so exists only
+     * while that VM's video-acceleration switch is on.
+     *
+     * <p>A virtio-media camera is not a device beside the VPU, it is a device <em>of</em> it: the
+     * same {@code --virtio-media} transport, out of the same {@code media_host} pool, which crosvm
+     * only creates when the pool is there. One switch decides both, so on Gunyah there is no
+     * configuration in which a row is attached and the memory it needs is not.</p>
+     *
+     * <p>The same rule on every hypervisor, and that is a choice rather than an oversight. Only
+     * Gunyah refuses the device without the pool; on KVM and GenieZone no pools are passed at
+     * all and crosvm would fall back to a PCI shm BAR, so the switch is not technically required
+     * there. It still decides, because one rule someone can hold in their head is worth more
+     * than a per-hypervisor one whose edges are invisible from the editor -- and the daemon
+     * attaches the device on Gunyah only, since the BAR fallback is a path nothing has run.</p>
+     *
+     * <p>Three readers, one rule: the daemon skips such a row on a VM with the switch off, its
+     * foreground-service rule does not count it, and the editor turns the switch on when one is
+     * added.</p>
+     */
+    public boolean needsVpu() {
+        return needsVpu;
+    }
+
+    /**
+     * Whether a row of this type on {@code config} is a device the VM gets, as far as the stored
+     * config can say: can anything on the host serve this type at all ({@link #isAvailable}),
+     * and if it rides the virtio-media transport ({@link #needsVpu}), does this VM have it
+     * ({@link VpuConfig#mediaDevicesAttached}). The daemon adds what only the launch knows -- the
+     * hypervisor, the app uid and what the installed crosvm takes.
+     */
+    public boolean isAttachedTo(@NonNull DataItem config) {
+        return isAvailable() && (!needsVpu() || VpuConfig.mediaDevicesAttached(config));
     }
 
     /**
