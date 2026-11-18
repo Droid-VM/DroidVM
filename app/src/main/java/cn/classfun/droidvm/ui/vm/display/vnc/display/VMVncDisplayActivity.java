@@ -51,6 +51,7 @@ import cn.classfun.droidvm.display.INativeDisplayRootService;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.ui.DragTouchListener;
 import cn.classfun.droidvm.lib.ui.MaterialMenu;
+import cn.classfun.droidvm.ui.usb.UsbPassthroughDialog;
 import cn.classfun.droidvm.ui.vm.display.base.DaemonDisplayAttach;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayChromeController;
 import cn.classfun.droidvm.ui.vm.display.base.DisplayExtraKeysPanel;
@@ -737,6 +738,9 @@ public final class VMVncDisplayActivity extends BaseVncActivity {
             return true;
         } else if (id == R.id.menu_project_external) {
             projectToExternalDisplay();
+            return true;
+        } else if (id == R.id.menu_usb_passthrough) {
+            UsbPassthroughDialog.show(this, vmId, vmName);
             return true;
         }
         return super.onMenuItemClicked(item);

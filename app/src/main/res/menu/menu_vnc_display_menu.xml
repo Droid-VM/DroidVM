@@ -26,4 +26,9 @@
         android:icon="@drawable/ic_open_in"
         android:title="@string/vnc_menu_external_app" />
 
+    <item
+        android:id="@+id/menu_usb_passthrough"
+        android:icon="@drawable/ic_usb"
+        android:title="@string/usb_pass_menu" />
+
 </menu>

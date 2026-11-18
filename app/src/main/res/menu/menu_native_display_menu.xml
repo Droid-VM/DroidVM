@@ -11,4 +11,9 @@
         android:icon="@drawable/ic_rotate"
         android:title="@string/vnc_menu_rotate" />
 
+    <item
+        android:id="@+id/menu_usb_passthrough"
+        android:icon="@drawable/ic_usb"
+        android:title="@string/usb_pass_menu" />
+
 </menu>
