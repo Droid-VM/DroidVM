@@ -1576,6 +1576,8 @@
     <string name="create_vm_vpu_note">تسري عند التشغيل التالي لهذا الجهاز الافتراضي. على Gunyah يحجز هذا الخيار أحجام التجمعات المعروضة أعلاه ويُرفق أجهزة الفيديو بالجهاز الافتراضي. تعتمد كاميرا virtio-media المضافة في تبويب الملحقات على العتاد نفسه، لذا لا تُرفق إلا عند تفعيله؛ أما كاميرا USB فلا تحتاج إليه.</string>
     <string name="create_vm_vpu_note_camera_off">لدى هذا الجهاز الافتراضي كاميرا virtio-media في تبويب الملحقات. لن تُرفق ما دام تسريع الفيديو معطلًا: فالكاميرا جهاز virtio-media وتحتاج إلى التجمعات التي يحجزها هذا الخيار.</string>
     <string name="edit_vm_peripheral_camera_enabled_vpu">تم تفعيل تسريع الفيديو: كاميرا virtio-media تحتاج إليه</string>
+    <string name="create_vm_vpu_camera_keep_screen_on">إبقاء الشاشة مضاءة أثناء استخدام الكاميرا</string>
+    <string name="create_vm_vpu_camera_keep_screen_on_sub">لا يسمح Android لهذا التطبيق ببث الكاميرا إلا حين يُعدّ في الواجهة، والشاشة النائمة لا تُعدّ كذلك. اترك هذا الخيار مفعّلًا ليستمر الالتقاط والهاتف دون مراقبة؛ وإن عطّلته يفقد النظام الضيف الكاميرا لحظة إظلام الشاشة، ويجب إعادة فتحها بعد استيقاظها.</string>
 
     <string name="edit_vm_peripheral_camera_missing">لا يحتوي هذا الهاتف على مثل هذه الكاميرا؛ لن يبدأ تشغيل الجهاز.</string>
     <string name="edit_vm_peripheral_host_camera">كاميرا المضيف</string>

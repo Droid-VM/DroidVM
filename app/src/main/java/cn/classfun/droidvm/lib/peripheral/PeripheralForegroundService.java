@@ -45,11 +45,18 @@ import cn.classfun.droidvm.ui.main.MainActivity;
  * the one shape of the call a process outside ActivityManager can make
  * (daemon/services/peripheral_foreground.cpp):</p>
  * <pre>
- * am start-foreground-service --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS} --ei types &lt;mask&gt; [--ei gnss_sources &lt;bits&gt;]
+ * am start-foreground-service --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS} --ei types &lt;mask&gt; [--ei gnss_sources &lt;bits&gt;] [--ez keep_screen_on true]
  * am stopservice --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS}
  * </pre>
  * <p>A start {@code am} reports as refused is not remembered there: the daemon asks again, after
  * a short delay and on the next VM state change, rather than believing the mask is up.</p>
+ *
+ * <p>It also carries the display hold ({@link ScreenWakeLock}), for the same reason and over the
+ * same lifetime. A foreground service makes the uid's <em>procstate</em> foreground, but a phone
+ * whose screen has gone to sleep drops the app to {@code TOP_SLEEPING} and AppOps stops resolving
+ * the {@code foreground}-mode {@code CAMERA} op, killing a streaming session that is already
+ * running. So the service holds the procstate and the wake lock the screen, per VM opt-out
+ * ({@code camera_keep_screen_on}, default on), arriving as {@link #EXTRA_KEEP_SCREEN_ON}.</p>
  */
 public final class PeripheralForegroundService extends Service {
     private static final String TAG = "PeripheralFgs";
@@ -78,9 +85,24 @@ public final class PeripheralForegroundService extends Service {
      */
     public static final String EXTRA_GNSS_SOURCES = "gnss_sources";
 
+    /**
+     * Whether a running VM's camera wants the display held on, {@code camera_keep_screen_on}
+     * folded over every VM raising the camera type. Absent reads as false, which releases the
+     * lock. MUST match the daemon's {@code --ez keep_screen_on}.
+     */
+    public static final String EXTRA_KEEP_SCREEN_ON = "keep_screen_on";
+
     /** The phone's receiver and location for the VMs' GNSS ports, while the type is carried. */
     @Nullable
     private GnssFeeder gnssFeeder;
+
+    /**
+     * The display hold, created with the service and released with it: the service is the one
+     * thing in this app whose lifetime is "a VM that needs the app to look foreground is running",
+     * which is exactly the lifetime the lock has to have.
+     */
+    @Nullable
+    private ScreenWakeLock screenLock;
 
     @Nullable
     @Override
@@ -88,9 +110,20 @@ public final class PeripheralForegroundService extends Service {
         return null;
     }
 
-    /** Every way the service ends lets go of the phone's location. */
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        screenLock = ScreenWakeLock.of(this);
+    }
+
+    /**
+     * Every way the service ends -- the daemon's stop, {@code stopSelf} after a refused
+     * {@code startForeground}, the system killing it -- lets go of the phone's location and of
+     * the display.
+     */
     @Override
     public void onDestroy() {
+        if (screenLock != null) screenLock.set(false);
         setGnssSources(0);
         super.onDestroy();
     }
@@ -109,6 +142,7 @@ public final class PeripheralForegroundService extends Service {
         }
         if (typeMask == 0) {
             setGnssSources(0);
+            if (screenLock != null) screenLock.set(false);
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -130,6 +164,10 @@ public final class PeripheralForegroundService extends Service {
         // is not let near the phone's location.
         setGnssSources((typeMask & ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) != 0
             && intent != null ? intent.getIntExtra(EXTRA_GNSS_SOURCES, 0) : 0);
+        // Only once the service is really foreground: a wake lock taken by a service that then
+        // failed to carry its type would hold the display on for a camera the guest never gets.
+        if (screenLock != null)
+            screenLock.set(intent != null && intent.getBooleanExtra(EXTRA_KEEP_SCREEN_ON, false));
         // Not sticky: the policy re-applies from the live VM states, so a restart by the system
         // with no VM running would raise a service nothing asked for.
         return START_NOT_STICKY;

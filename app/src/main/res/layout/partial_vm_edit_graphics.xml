@@ -593,6 +593,20 @@
             android:visibility="gone"
             tools:visibility="visible" />
 
+        <!-- The CAMERA app op is granted in "foreground" mode, so a sleeping screen makes the app
+             TOP_SLEEPING and cameraserver revokes a session that is already streaming. The
+             foreground service cannot fix that; a wake lock can, and this is the user's say over
+             whether it is taken. Outside the VPU block, because a USB camera needs no VPU, and
+             shown whether or not the Peripheral tab has a camera today: the row can be added
+             after this is set. -->
+        <cn.classfun.droidvm.ui.widgets.row.SwitchRowWidget
+            android:id="@+id/sw_camera_keep_screen_on"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:icon="@drawable/ic_camera"
+            android:subtitle="@string/create_vm_vpu_camera_keep_screen_on_sub"
+            android:text="@string/create_vm_vpu_camera_keep_screen_on" />
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
 

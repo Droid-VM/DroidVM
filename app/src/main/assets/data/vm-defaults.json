@@ -64,6 +64,7 @@
   "vpu_enabled": false,
   "vpu_host_pool_mb": 320,
   "vpu_guest_pool_mb": 192,
+  "camera_keep_screen_on": true,
   "peripherals": [
     {
       "type": "virtio_sound",

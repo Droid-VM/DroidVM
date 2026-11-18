@@ -1541,6 +1541,8 @@
     <string name="create_vm_vpu_note">下次启动 VM 时生效。在 Gunyah 上，开启后会按上面的大小保留缓冲池，并挂上这台 VM 的视频设备。在“外设”页加的 virtio-media 摄像头用的是同一套硬件，只有开启时才会挂上；USB 摄像头不需要它。</string>
     <string name="create_vm_vpu_note_camera_off">这台 VM 在“外设”页有 virtio-media 摄像头。视频加速关闭时不会挂上：摄像头是 virtio-media 设备，需要这个开关保留的缓冲池。</string>
     <string name="edit_vm_peripheral_camera_enabled_vpu">已开启视频加速：virtio-media 摄像头需要它</string>
+    <string name="create_vm_vpu_camera_keep_screen_on">摄像头使用中时保持屏幕常亮</string>
+    <string name="create_vm_vpu_camera_keep_screen_on_sub">Android 只在这个 app 算前台时才允许串流摄像头，而屏幕睡着就不算前台。开着它，采集可以在没人看着手机时继续跑；关掉它，屏幕一暗客户机就会失去摄像头，要等屏幕醒来再重开。</string>
 
     <string name="edit_vm_peripheral_camera_missing">这台手机没有这个摄像头，该设备不会启动。</string>
     <string name="edit_vm_peripheral_host_camera">主机摄像头</string>

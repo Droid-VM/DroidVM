@@ -37,6 +37,7 @@ public final class VpuConfig {
     public static final String KEY_CODEC_ENABLED = "vpu_codec_enabled";
     public static final String KEY_DECODER_BACKEND = "vpu_decoder_backend";
     public static final String KEY_ENCODER_BACKEND = "vpu_encoder_backend";
+    public static final String KEY_CAMERA_KEEP_SCREEN_ON = "camera_keep_screen_on";
 
     /**
      * The {@code media_host} pool a VM gets when nobody chose a size.
@@ -185,6 +186,30 @@ public final class VpuConfig {
         @NonNull DataItem config, @NonNull VpuEncoderBackend backend
     ) {
         config.set(KEY_ENCODER_BACKEND, backend);
+    }
+
+    /**
+     * Whether this VM holds the screen awake for as long as it is using a camera.
+     *
+     * <p>Default on. The app's {@code CAMERA} AppOps mode is {@code foreground}, so cameraserver
+     * only lets a <em>streaming</em> operation through while the uid is in a foreground procstate,
+     * and a screen that goes to sleep drops the app to {@code TOP_SLEEPING} -- revoking the access
+     * mid-capture, after which the guest's next {@code VIDIOC_DQBUF} answers {@code ENODEV} and the
+     * session has to be reopened. Changing the mode is the phone owner's decision, so the app
+     * instead keeps the screen from sleeping while a camera VM runs, with an ordinary wake lock
+     * held by the peripheral foreground service. A switch, because a display held on for hours is
+     * a cost only the owner can weigh; with it off the camera stops when the screen does.</p>
+     *
+     * <p>Not gated on the peripheral list here: whether this VM has a camera at all -- a
+     * virtio-media camera it really attaches, or a USB camera -- is asked by the daemon where it
+     * walks the rows. Not the VPU switch either: a USB camera needs no VPU.</p>
+     */
+    public static boolean isCameraKeepScreenOn(@NonNull DataItem config) {
+        return config.optBoolean(KEY_CAMERA_KEEP_SCREEN_ON, true);
+    }
+
+    public static void setCameraKeepScreenOn(@NonNull DataItem config, boolean keepOn) {
+        config.set(KEY_CAMERA_KEEP_SCREEN_ON, keepOn);
     }
 
     /**

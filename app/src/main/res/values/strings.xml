@@ -1581,6 +1581,8 @@
     <string name="create_vm_vpu_note">Takes effect the next time this VM starts. On Gunyah this reserves the pool sizes shown above and attaches the VM\'s video devices. A virtio-media camera added on the Peripheral tab rides the same hardware, so it is attached only while this is on; a USB camera does not need it.</string>
     <string name="create_vm_vpu_note_camera_off">This VM has a virtio-media camera on the Peripheral tab. It will not be attached while video acceleration is off: the camera is a virtio-media device and needs the pools this switch reserves.</string>
     <string name="edit_vm_peripheral_camera_enabled_vpu">Video acceleration turned on: the virtio-media camera needs it</string>
+    <string name="create_vm_vpu_camera_keep_screen_on">Keep the screen on while a camera is in use</string>
+    <string name="create_vm_vpu_camera_keep_screen_on_sub">Android only lets this app stream from the camera while it counts as foreground, and a sleeping screen does not count. Leave this on and a capture keeps running with the phone unattended; turn it off and the guest loses the camera the moment the screen goes dark, and has to reopen it after the screen wakes.</string>
 
     <string name="edit_vm_peripheral_camera_missing">This phone has no such camera; the device will not start.</string>
     <string name="edit_vm_peripheral_host_camera">Host camera</string>

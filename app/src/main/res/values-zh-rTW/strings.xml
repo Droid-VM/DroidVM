@@ -1536,6 +1536,8 @@
     <string name="create_vm_vpu_note">下次啟動 VM 時生效。在 Gunyah 上，開啟後會依上面的大小保留緩衝池，並掛上這台 VM 的視訊裝置。在「外設」頁加的 virtio-media 相機用的是同一套硬體，只有開啟時才會掛上；USB 攝影機不需要它。</string>
     <string name="create_vm_vpu_note_camera_off">這台 VM 在「外設」頁有 virtio-media 相機。視訊加速關閉時不會掛上：相機是 virtio-media 裝置，需要這個開關保留的緩衝池。</string>
     <string name="edit_vm_peripheral_camera_enabled_vpu">已開啟視訊加速：virtio-media 相機需要它</string>
+    <string name="create_vm_vpu_camera_keep_screen_on">相機使用中時保持螢幕亮著</string>
+    <string name="create_vm_vpu_camera_keep_screen_on_sub">Android 只在這個 app 算前景時才允許串流相機，而螢幕睡著就不算前景。開著它，擷取可以在沒人看著手機時繼續跑；關掉它，螢幕一暗客戶機就會失去相機，要等螢幕醒來再重開。</string>
 
     <string name="edit_vm_peripheral_camera_missing">這台手機沒有這個相機，該裝置不會啟動。</string>
     <string name="edit_vm_peripheral_host_camera">主機相機</string>

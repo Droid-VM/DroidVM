@@ -93,6 +93,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
     private SwitchRowWidget swVpuEnabled;
     private View vpuOptions;
     private TextView tvVpuCameraOffNote;
+    private SwitchRowWidget swCameraKeepScreenOn;
     private SwitchRowWidget swVpuCodecEnabled;
     private View vpuCodecBackendOptions;
     private PickerButtonWidget chooseVpuDecoderBackend;
@@ -163,6 +164,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swVpuEnabled = view.findViewById(R.id.sw_vpu_enabled);
         vpuOptions = view.findViewById(R.id.vpu_options);
         tvVpuCameraOffNote = view.findViewById(R.id.tv_vpu_camera_off_note);
+        swCameraKeepScreenOn = view.findViewById(R.id.sw_camera_keep_screen_on);
         swVpuCodecEnabled = view.findViewById(R.id.sw_vpu_codec_enabled);
         vpuCodecBackendOptions = view.findViewById(R.id.vpu_codec_backend_options);
         chooseVpuDecoderBackend = view.findViewById(R.id.btn_vpu_decoder_backend);
@@ -463,6 +465,7 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         swGpuCgroup.setChecked(item.optBoolean(CpuPlacementPlan.KEY_GPU_CGROUP, false));
         swVpuEnabled.setChecked(VpuConfig.isEnabled(item));
         swVpuCodecEnabled.setChecked(VpuConfig.isCodecEnabled(item));
+        swCameraKeepScreenOn.setChecked(VpuConfig.isCameraKeepScreenOn(item));
         chooseVpuDecoderBackend.setSelectedItem(VpuConfig.getDecoderBackend(item));
         chooseVpuEncoderBackend.setSelectedItem(VpuConfig.getEncoderBackend(item));
         updateVpuBackendNotes();
@@ -787,6 +790,9 @@ public final class VMEditGraphicsTab extends VMEditBaseTab {
         // choices within video acceleration, and keeping them lets turning it off and on again
         // give back the VM that was there before.
         VpuConfig.setCodecEnabled(item, swVpuCodecEnabled.isChecked());
+        // Stored for every VM and read only by one that runs a camera: the daemon asks for it while
+        // walking the peripheral rows, so adding a camera later does not need this set again.
+        VpuConfig.setCameraKeepScreenOn(item, swCameraKeepScreenOn.isChecked());
         VpuConfig.setDecoderBackend(item, chooseVpuDecoderBackend.getSelectedItem());
         VpuConfig.setEncoderBackend(item, chooseVpuEncoderBackend.getSelectedItem());
         item.set(CpuPlacementPlan.KEY_GPU_CGROUP_PATH, getEditText(etGpuCgroupPath).trim());
