@@ -13,6 +13,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.List;
@@ -24,7 +25,7 @@ import java.util.regex.Pattern;
 import cn.classfun.droidvm.daemon.server.RequestException;
 
 /**
- * The automatic USB attach rules: one global file of four ordered layers, each an ordered list.
+ * The automatic USB attach rules: one global file of five ordered layers, each an ordered list.
  * Order is priority, within a layer and across them. Rules are not per VM on purpose -- which VM
  * gets a device when two of them want it is part of the rule, and a per-VM list has nowhere to
  * say it.
@@ -53,12 +54,21 @@ public final class UsbRules {
         Pattern.compile("^[0-9a-fA-F]{4}:[0-9a-fA-F]{4}(:.+)?$");
     /** A port chain: {@code 1.2.2}, {@code 1.4}, or a root port {@code 3}. */
     public static final Pattern PORT_PATTERN = Pattern.compile("^\\d+(\\.\\d+)*$");
+    /** A USB class, two hex digits as bDeviceClass and bInterfaceClass give it. */
+    public static final Pattern CLASS_PATTERN = Pattern.compile("^[0-9a-fA-F]{2}$");
+    /** HID: keyboards, mice, game controllers -- the class the console's "HID devices" names. */
+    public static final String CLASS_HID = "03";
 
-    /** The four layers, in the order they are consulted. */
+    /**
+     * The five layers, in the order they are consulted. A class rule speaks for every device
+     * of a class -- one with an interface of it, or of it as a whole -- after the rules that
+     * name a device, before the catch-all.
+     */
     public enum Layer {
         EXACT("exact"),
         PORT("port"),
         DEVICE("device"),
+        CLASS("class"),
         ANY("any");
 
         /** The key this layer goes under in the JSON file and on the wire. */
@@ -127,6 +137,9 @@ public final class UsbRules {
         public final String controller;
         @NonNull
         public final Target target;
+        /** The USB class a class rule speaks for, two lowercase hex digits; null elsewhere. */
+        @Nullable
+        public final String cls;
 
         /**
          * The four-field form, where the VM says the target: that is what a rule written before
@@ -139,16 +152,29 @@ public final class UsbRules {
 
         public Rule(@Nullable String id, @Nullable String port, @Nullable String vm,
                     @Nullable String controller, @NonNull Target target) {
+            this(id, port, vm, controller, target, null);
+        }
+
+        public Rule(@Nullable String id, @Nullable String port, @Nullable String vm,
+                    @Nullable String controller, @NonNull Target target, @Nullable String cls) {
             this.id = id;
             this.port = port;
             this.vm = vm;
             this.controller = controller;
             this.target = target;
+            this.cls = cls;
         }
 
         /** Whether the device with [deviceId] at [devicePort] is one this rule speaks about. */
         public boolean matches(@NonNull String deviceId, @NonNull String devicePort) {
+            return matches(deviceId, devicePort, Collections.emptySet());
+        }
+
+        /** As above, for a device of [classes] (its own class and its interfaces'). */
+        public boolean matches(@NonNull String deviceId, @NonNull String devicePort,
+                               @NonNull Collection<String> classes) {
             if (id != null && !id.equals(deviceId)) return false;
+            if (cls != null && !classes.contains(cls)) return false;
             return port == null || port.equals(devicePort);
         }
     }
@@ -220,6 +246,14 @@ public final class UsbRules {
         var where = fmt("%s[%d]", layer.key, index);
         var wantsId = layer == Layer.EXACT || layer == Layer.DEVICE;
         var wantsPort = layer == Layer.EXACT || layer == Layer.PORT;
+        var wantsClass = layer == Layer.CLASS;
+        if (wantsClass && rule.cls == null)
+            throw new RequestException(fmt("%s: missing class", where));
+        if (!wantsClass && rule.cls != null)
+            throw new RequestException(fmt("%s: a %s rule takes no class", where, layer.key));
+        if (rule.cls != null && !CLASS_PATTERN.matcher(rule.cls).matches())
+            throw new RequestException(fmt(
+                "%s: bad class %s (want two hex digits, such as 03)", where, rule.cls));
         if (wantsId && rule.id == null)
             throw new RequestException(fmt("%s: missing id", where));
         if (!wantsId && rule.id != null)
@@ -262,7 +296,8 @@ public final class UsbRules {
                     ? fmt("%s: VM not found: %s", where, rule.vm)
                     : fmt("%s: VM %s has no USB controller %s", where, rule.vm, rule.controller));
         }
-        return new Rule(id, rule.port, rule.vm, rule.controller, rule.target);
+        return new Rule(id, rule.port, rule.vm, rule.controller, rule.target,
+            rule.cls == null ? null : rule.cls.toLowerCase(Locale.ROOT));
     }
 
     /** The rules of [layer], in priority order; never null. */
@@ -324,7 +359,7 @@ public final class UsbRules {
         while (keys.hasNext()) {
             var key = keys.next();
             if ("id".equals(key) || "port".equals(key) || "vm".equals(key)
-                || "controller".equals(key) || "target".equals(key)) continue;
+                || "controller".equals(key) || "target".equals(key) || "class".equals(key)) continue;
             throw new RequestException(fmt("%s[%d]: unknown field %s", layer, index, key));
         }
         var vm = optString(item, "vm");
@@ -338,7 +373,7 @@ public final class UsbRules {
         if (target == null)
             throw new RequestException(fmt("%s[%d]: unknown target %s", layer, index, wanted));
         return new Rule(optString(item, "id"), optString(item, "port"), vm,
-            optString(item, "controller"), target);
+            optString(item, "controller"), target, optString(item, "class"));
     }
 
     /**
@@ -374,11 +409,16 @@ public final class UsbRules {
         // inferred is one a reader has to know the default of.
         obj.put("enabled", enabled);
         for (var layer : Layer.values()) {
+            // An empty class layer is left out: a file without one is the file a daemon from
+            // before the layer existed reads -- it refuses a key it does not know, and would drop
+            // every rule with it -- so a user who never wrote a class rule can still go back.
+            if (layer == Layer.CLASS && layer(layer).isEmpty()) continue;
             var array = new JSONArray();
             for (var rule : layer(layer)) {
                 var item = new JSONObject();
                 if (rule.id != null) item.put("id", rule.id);
                 if (rule.port != null) item.put("port", rule.port);
+                if (rule.cls != null) item.put("class", rule.cls);
                 // Always written, because a reader that has to infer the outcome from the other
                 // fields is a second answer to a question this key already answers.
                 item.put("target", rule.target.key);

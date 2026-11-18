@@ -21,7 +21,7 @@ public final class UsbRuleLayerTest {
         assertEquals(1, UsbRuleLayer.EXACT.number());
         assertEquals(2, UsbRuleLayer.PORT.number());
         assertEquals(3, UsbRuleLayer.DEVICE.number());
-        assertEquals(4, UsbRuleLayer.ANY.number());
+        assertEquals(5, UsbRuleLayer.ANY.number());
     }
 
     @Test
@@ -38,9 +38,9 @@ public final class UsbRuleLayerTest {
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue("PORT"));
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue(2));
         assertEquals(UsbRuleLayer.PORT, UsbRuleLayer.fromValue("2"));
-        assertEquals(UsbRuleLayer.ANY, UsbRuleLayer.fromValue(4L));
+        assertEquals(UsbRuleLayer.ANY, UsbRuleLayer.fromValue(5L));
         assertNull(UsbRuleLayer.fromValue(0));
-        assertNull(UsbRuleLayer.fromValue(5));
+        assertNull(UsbRuleLayer.fromValue(6));
         assertNull(UsbRuleLayer.fromValue("five"));
         assertNull(UsbRuleLayer.fromValue(null));
     }

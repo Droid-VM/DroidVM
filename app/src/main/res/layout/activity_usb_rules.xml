@@ -106,6 +106,22 @@
             <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:title="@string/usb_rules_layer_class">
+
+                <cn.classfun.droidvm.ui.widgets.container.CardItemListView
+                    android:id="@+id/list_class"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/usb_rules_empty_class"
+                    android:icon="@drawable/ic_add"
+                    android:text="@string/usb_rules_add"
+                    app:reorderable="true" />
+
+            </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
+
+            <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
                 android:title="@string/usb_rules_layer_any">
 
                 <cn.classfun.droidvm.ui.widgets.container.CardItemListView

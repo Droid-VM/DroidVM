@@ -172,8 +172,9 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         // One lookup for the whole card: the name and the context line are two things said
         // about the same device, and resolving it twice is how they come to disagree.
         var device = UsbDeviceNames.deviceFor(layer, id, port, devices);
+        var cls = rule.optString("class", "");
         for (var i = 0; i < UsbRuleLines.LINES; i++)
-            bindLine(holder, i, slots[i], id, port, device);
+            bindLine(holder, i, slots[i], id, port, cls, device);
         bindTarget(holder, rule);
         // Recomputed here rather than kept: every edit rebinds the rows it can have changed --
         // an add and a drop rebind the lot, a delete and a target change everything below them
@@ -201,7 +202,8 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
     /** One line of the left column: what it says, how it is drawn, and what a tap on it opens. */
     private void bindLine(@NonNull UsbRuleViewHolder holder, int index,
                           @NonNull UsbRuleLines.Slot slot, @NonNull String id,
-                          @NonNull String port, @Nullable UsbHostDeviceInfo device) {
+                          @NonNull String port, @NonNull String cls,
+                          @Nullable UsbHostDeviceInfo device) {
         var view = holder.lines[index];
         if (slot == UsbRuleLines.Slot.NONE) {
             view.setVisibility(GONE);
@@ -210,7 +212,7 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
             return;
         }
         view.setVisibility(VISIBLE);
-        view.setText(lineText(slot, id, port, device));
+        view.setText(lineText(slot, id, port, cls, device));
         view.setTextAppearance(slot.strong ? strongAppearance : weakAppearance);
         view.setTextColor(slot.strong ? strongColor : weakColor);
         // Monospace for the two lines that are a value read off the device, as the management
@@ -234,8 +236,12 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
 
     @NonNull
     private String lineText(@NonNull UsbRuleLines.Slot slot, @NonNull String id,
-                            @NonNull String port, @Nullable UsbHostDeviceInfo device) {
+                            @NonNull String port, @NonNull String cls,
+                            @Nullable UsbHostDeviceInfo device) {
         switch (slot) {
+            case MATCH_CLASS:
+                return context.getString(R.string.usb_rules_match_class_fmt,
+                    UsbClasses.label(context, cls));
             case MATCH_ID:
                 return context.getString(R.string.usb_rules_match_id_fmt, orAbsent(id));
             case MATCH_PORT:
@@ -278,6 +284,17 @@ public final class UsbRuleAdapter extends CardItemAdapter<UsbRuleViewHolder> {
         int at = holder.getBindingAdapterPosition();
         if (at == RecyclerView.NO_POSITION) return;
         var rule = items.get(at);
+        if (layer.hasClass) {
+            // A class rule's one question is the class; deleting it is the card's own button.
+            UsbClasses.pick(context, rule.optString("class", null), cls -> {
+                int pos = holder.getBindingAdapterPosition();
+                if (pos == RecyclerView.NO_POSITION) return;
+                items.get(pos).set("class", cls);
+                notifyItemRangeChanged(pos, getItemCount() - pos);
+                listener.onRulesChanged();
+            });
+            return;
+        }
         UsbRuleEditDialog.edit(context, layer, devices, rule.optString("id", ""),
             rule.optString("port", ""), new UsbRuleEditDialog.Listener() {
                 @Override

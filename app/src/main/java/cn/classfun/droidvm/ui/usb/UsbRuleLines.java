@@ -37,6 +37,8 @@ final class UsbRuleLines {
         MATCH_PORT(true),
         /** "every device": the catch-all zone's whole matcher. */
         MATCH_ANY(true),
+        /** The USB class a class rule matches on. */
+        MATCH_CLASS(true),
         /** The identifier of whatever the matcher resolves to now. Context, not the rule. */
         INFO_ID(false),
         /** The port whatever the matcher resolves to is in now. Context, not the rule. */
@@ -76,6 +78,9 @@ final class UsbRuleLines {
                 return new Slot[]{Slot.MATCH_PORT, Slot.INFO_ID, Slot.NAME};
             case DEVICE:
                 return new Slot[]{Slot.MATCH_ID, Slot.INFO_PORT, Slot.NAME};
+            case CLASS:
+                // The class is the whole of the rule, and it resolves to no one device.
+                return new Slot[]{Slot.MATCH_CLASS, Slot.NONE, Slot.NONE};
             case ANY:
             default:
                 // Nothing is matched on and nothing is resolved, so there is nothing to say

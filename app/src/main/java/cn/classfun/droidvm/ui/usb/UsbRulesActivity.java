@@ -116,6 +116,7 @@ public final class UsbRulesActivity extends AppCompatActivity
         bindList(R.id.list_exact, UsbRuleLayer.EXACT);
         bindList(R.id.list_port, UsbRuleLayer.PORT);
         bindList(R.id.list_device, UsbRuleLayer.DEVICE);
+        bindList(R.id.list_class, UsbRuleLayer.CLASS);
         bindList(R.id.list_any, UsbRuleLayer.ANY);
     }
 
@@ -357,26 +358,29 @@ public final class UsbRulesActivity extends AppCompatActivity
         // ones an earlier host or idle rule has already answered for are dimmed rather than
         // refused. A second VM rule there is not pointless -- it is what runs when the first
         // VM is not.
-        if (layer.needsSubject())
+        if (layer.hasClass)
+            UsbClasses.pick(this, null, cls -> askTarget(layer, null, null, cls));
+        else if (layer.needsSubject())
             UsbRuleEditDialog.add(this, layer, devices, new UsbRuleEditDialog.Listener() {
                 @Override
                 public void onConfirm(@Nullable String id, @Nullable String port) {
-                    askTarget(layer, id, port);
+                    askTarget(layer, id, port, null);
                 }
 
                 @Override
                 public void onDelete() {
                 }
             });
-        else askTarget(layer, null, null);
+        else askTarget(layer, null, null, null);
     }
 
     private void askTarget(@NonNull UsbRuleLayer layer, @Nullable String id,
-                           @Nullable String port) {
+                           @Nullable String port, @Nullable String cls) {
         UsbTargetPickerDialog.pick(this, vms, vmControllers, null, target -> {
             var rule = DataItem.newObject();
             if (layer.hasId) rule.set("id", id);
             if (layer.hasPort) rule.set("port", port);
+            if (layer.hasClass) rule.set("class", cls);
             rule.set("target", target.toRuleTarget());
             if (target.kind == UsbRules.Target.VM) {
                 rule.set("vm", target.vmId);

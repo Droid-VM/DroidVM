@@ -34,7 +34,8 @@ import cn.classfun.droidvm.lib.ui.MenuDialogBuilder;
 public final class UsbRuleZoneDialog {
     /** Called with the zone chosen and the fields that zone stores; the rest stay null. */
     public interface OnPicked {
-        void onPicked(@NonNull UsbRuleLayer layer, @Nullable String id, @Nullable String port);
+        void onPicked(@NonNull UsbRuleLayer layer, @Nullable String id, @Nullable String port,
+                      @Nullable String cls);
     }
 
     private UsbRuleZoneDialog() {
@@ -53,14 +54,18 @@ public final class UsbRuleZoneDialog {
             .setMenu(menu)
             .setListener(item -> {
                 var layer = UsbRuleLayer.values()[item.getItemId()];
+                if (layer.hasClass) {
+                    UsbClasses.pick(context, null, cls -> onPicked.onPicked(layer, null, null, cls));
+                    return true;
+                }
                 if (!layer.needsSubject()) {
-                    onPicked.onPicked(layer, null, null);
+                    onPicked.onPicked(layer, null, null, null);
                     return true;
                 }
                 UsbRuleEditDialog.add(context, layer, devices, new UsbRuleEditDialog.Listener() {
                     @Override
                     public void onConfirm(@Nullable String id, @Nullable String port) {
-                        onPicked.onPicked(layer, id, port);
+                        onPicked.onPicked(layer, id, port, null);
                     }
 
                     @Override

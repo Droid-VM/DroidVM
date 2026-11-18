@@ -6532,6 +6532,7 @@
                   "exact",
                   "port",
                   "device",
+                  "class",
                   "any"
                 ]
               },
@@ -6856,6 +6857,10 @@
             "type": "string",
             "minLength": 1
           },
+          "class": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{2}$"
+          },
           "target": {
             "enum": [
               "host",
@@ -6904,6 +6909,12 @@
             }
           },
           "device": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsbRule"
+            }
+          },
+          "class": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/UsbRule"
