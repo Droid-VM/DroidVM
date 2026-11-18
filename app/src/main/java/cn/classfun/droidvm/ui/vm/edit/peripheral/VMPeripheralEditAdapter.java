@@ -223,7 +223,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         // A camera is gated on consent rather than merely asking for it: without the grant the
         // device could be listed but never opened, so adding one anyway would write a config that
         // is guaranteed to disappoint.
-        if (type == PeripheralType.VIRTIO_CAMERA) {
+        if (type == PeripheralType.VIRTIO_CAMERA || type == PeripheralType.USB_CAMERA) {
             if (cameraPermissionGate != null) cameraPermissionGate.accept(add);
             else add.run();
             return;
@@ -258,7 +258,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupVirtioSound.setVisibility(type == PeripheralType.VIRTIO_SOUND ? VISIBLE : GONE);
         holder.groupIntelHda.setVisibility(type == PeripheralType.INTEL_HDA ? VISIBLE : GONE);
         holder.groupVirtioCamera.setVisibility(
-            type == PeripheralType.VIRTIO_CAMERA ? VISIBLE : GONE);
+            type == PeripheralType.VIRTIO_CAMERA || type == PeripheralType.USB_CAMERA ? VISIBLE : GONE);
         holder.groupXhci.setVisibility(type == PeripheralType.XHCI_USB ? VISIBLE : GONE);
         holder.groupVirtioGyroscope.setVisibility(
             type == PeripheralType.VIRTIO_GYROSCOPE ? VISIBLE : GONE);
@@ -273,6 +273,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 bindIntelHda(holder, peripheral);
                 break;
             case VIRTIO_CAMERA:
+            case USB_CAMERA:
                 bindVirtioCamera(holder, peripheral);
                 break;
             case XHCI_USB:

@@ -1545,6 +1545,7 @@
     <string name="audio_device_line">مخرج الصوت التناظري (Line out)</string>
     <!-- Camera peripheral -->
     <string name="edit_vm_peripheral_type_virtio_camera">كاميرا virtio-media</string>
+    <string name="edit_vm_peripheral_type_usb_camera">كاميرا USB (UVC)</string>
     <string name="camera_permission_title">السماح بالوصول إلى الكاميرا؟</string>
     <string name="camera_permission_message">يقوم ملحق الكاميرا بتمرير إحدى كاميرات هذا الهاتف إلى النظام الضيف. يسمح نظام Android بفتح الكاميرا فقط أثناء امتلاك هذا التطبيق للإذن، لذا بدون منحه سيظهر الجهاز بالقائمة لكنه لن يعمل أبدًا.</string>
     <string name="camera_permission_allow">سماح</string>

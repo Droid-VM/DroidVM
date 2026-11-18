@@ -82,7 +82,25 @@ public enum PeripheralType implements StringEnum {
      * rides the console's input bridge. Needs no foreground service. Appended last, for the ordinal
      * reason {@link #XHCI_USB} gives.
      */
-    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    /**
+     * USB camera: one host camera, seen by the guest as one USB video device.
+     *
+     * <p>One entry is one camera, unlike the sound card above. That is the device's shape rather
+     * than a UI choice: an emulated camera is a USB device with one video function, so a second
+     * camera is a second device. A VM that wants front and back carries two of these.</p>
+     *
+     * <p>The guest sees an emulated USB camera (UVC 1.1, MJPEG): the one class Windows, Linux
+     * and macOS all carry a driver for, so nothing has to be installed in the guest. crosvm
+     * attaches it to its xHCI controller ({@code --uvc-camera}) and streams the host camera named
+     * by the row's {@code host_device} -- the platform camera id, or empty for "the one at this
+     * row's position". Two of these are two USB devices. Only a crosvm built with the UVC backend
+     * has the flag; the daemon leaves the row out, and says so, on one that does not.</p>
+     *
+     * <p>Typed {@code camera} for the reason {@link #VIRTIO_CAMERA} is. Appended last, for the
+     * ordinal reason {@link #XHCI_USB} gives.</p>
+     */
+    USB_CAMERA(R.string.edit_vm_peripheral_type_usb_camera, R.drawable.ic_camera, true, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;
