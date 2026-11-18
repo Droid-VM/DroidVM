@@ -9,6 +9,7 @@ import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MULTITOUCH;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.SENSOR;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.PEN;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.TABLET;
+import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.TRACKPAD;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import cn.classfun.droidvm.ui.vm.display.base.InputMode;
@@ -50,9 +51,12 @@ public final class InputForwarder {
     private final InputSink sink;
     // Stateful touch encoder (pointer-id -> slot, contact count); single-threaded on the worker.
     private final EvdevEncoder encoder = new EvdevEncoder();
+    // The trackpad's fingers, likewise.
+    private final TrackpadEncoder trackpad;
 
     // Current pointer mode; set from the UI thread, read on the worker. Volatile suffices: a change
-    // just takes effect on the next event. TOUCH -> multi-touch, MOUSE -> relative, TABLET -> single.
+    // just takes effect on the next event. TOUCH -> multi-touch, MOUSE -> relative, TABLET -> single,
+    // TRACKPAD -> the VM's trackpad.
     private volatile InputMode inputMode = InputMode.TOUCH;
     // Mouse-mode gesture state (InputMode.MOUSE); touched only on the worker thread.
     private float mouseLastX, mouseLastY, mouseDownX, mouseDownY;
@@ -123,13 +127,25 @@ public final class InputForwarder {
         }
     }
 
-    public InputForwarder(@NonNull InputSink sink) {
+    /** @param trackpadSide the VM trackpad's range on both axes ({@link TrackpadEncoder#sideUnits}) */
+    public InputForwarder(@NonNull InputSink sink, int trackpadSide) {
         this.sink = sink;
+        this.trackpad = new TrackpadEncoder(trackpadSide);
     }
 
-    /** Switches pointer mode at runtime; takes effect on the next touch event. */
+    /**
+     * Switches pointer mode at runtime; takes effect on the next touch event. Fingers resting on
+     * the trackpad when the console leaves it are lifted, or the guest would hold them down.
+     */
     public void setInputMode(@NonNull InputMode mode) {
+        var was = this.inputMode;
         this.inputMode = mode;
+        if (was == InputMode.TRACKPAD && mode != InputMode.TRACKPAD) {
+            submit("trackpadRelease", () -> {
+                byte[] data = trackpad.encodeRelease();
+                if (data != null) sink.write(TRACKPAD, data);
+            });
+        }
     }
 
     /** The guest pointer device the current mode routes host mouse/stylus events to. */
@@ -286,8 +302,8 @@ public final class InputForwarder {
     }
 
     /**
-     * @param scaleX guestWidth / viewWidth
-     * @param scaleY guestHeight / viewHeight
+     * @param scaleX guestWidth / viewWidth (TRACKPAD: the trackpad's units per view pixel)
+     * @param scaleY guestHeight / viewHeight (likewise)
      */
     public void sendTouchEvent(@NonNull MotionEvent event, float scaleX, float scaleY) {
         var copy = MotionEvent.obtainNoHistory(event);
@@ -321,6 +337,12 @@ public final class InputForwarder {
                 case TABLET: {
                     byte[] data = encoder.encodeTablet(event, scaleX, scaleY);
                     if (data != null) sink.write(TABLET, data);
+                    break;
+                }
+                case TRACKPAD: {
+                    byte[] data = trackpad.encode(event, scaleX, scaleY);
+                    if (data != null) sink.write(TRACKPAD, data);
+                    scheduleTouchKeepalive();
                     break;
                 }
                 case TOUCH:
@@ -398,10 +420,13 @@ public final class InputForwarder {
     }
 
     // Worker thread only. One tick in flight at a time; the chain ends itself when the last
-    // contact lifts (encodeTouchKeepalive returns null) or the mode leaves TOUCH, and any touch
-    // event while contacts are down restarts it.
+    // contact lifts (the keepalive encoders return null) or the mode leaves TOUCH and TRACKPAD,
+    // and any touch event while contacts are down restarts it. The trackpad's fingers get the same
+    // ticks: a touchpad scans on while they rest, and a guest times holds by its frames.
     private void scheduleTouchKeepalive() {
-        if (keepaliveScheduled || !encoder.hasTouchContacts()) return;
+        boolean down = inputMode == InputMode.TRACKPAD
+            ? trackpad.hasContacts() : encoder.hasTouchContacts();
+        if (keepaliveScheduled || !down) return;
         keepaliveScheduled = true;
         try {
             worker.schedule(this::touchKeepaliveTick, TOUCH_KEEPALIVE_MS, TimeUnit.MILLISECONDS);
@@ -413,10 +438,16 @@ public final class InputForwarder {
     private void touchKeepaliveTick() {
         keepaliveScheduled = false;
         try {
-            if (inputMode != InputMode.TOUCH) return;
-            byte[] data = encoder.encodeTouchKeepalive();
-            if (data == null) return;
-            sink.write(MULTITOUCH, data);
+            if (inputMode == InputMode.TRACKPAD) {
+                byte[] data = trackpad.encodeKeepalive();
+                if (data == null) return;
+                sink.write(TRACKPAD, data);
+            } else {
+                if (inputMode != InputMode.TOUCH) return;
+                byte[] data = encoder.encodeTouchKeepalive();
+                if (data == null) return;
+                sink.write(MULTITOUCH, data);
+            }
         } catch (Exception e) {
             Log.e(TAG, "touch keepalive failed", e);
         }

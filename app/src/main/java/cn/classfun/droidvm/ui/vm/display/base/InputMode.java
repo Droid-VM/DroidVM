@@ -21,15 +21,19 @@ import cn.classfun.droidvm.R;
  *       for guests that want relative motion (FPS games, desktops with pointer acceleration).</li>
  *   <li>{@link #TABLET} -- absolute single pointer (stylus/graphics-tablet): one contact mapped to
  *       absolute guest coordinates, no multi-finger gestures.</li>
+ *   <li>{@link #TRACKPAD} -- the screen as the VM's multi-finger trackpad: every finger's position
+ *       on it, in millimetres, for the guest's own pointer, taps and gestures. Shares the mouse
+ *       button with {@link #MOUSE}: tapping it again switches between the two.</li>
  * </ul>
  *
  * The ordinal is persisted (SharedPreferences {@code display_input_mode}); TOUCH/MOUSE keep their
- * historical 0/1 values so existing settings stay valid, TABLET is appended as 2.
+ * historical 0/1 values so existing settings stay valid, TABLET is appended as 2, TRACKPAD as 3.
  */
 public enum InputMode {
     TOUCH(R.string.vnc_menu_input_mode_touch),
     MOUSE(R.string.vnc_menu_input_mode_mouse),
-    TABLET(R.string.vnc_menu_input_mode_tablet);
+    TABLET(R.string.vnc_menu_input_mode_tablet),
+    TRACKPAD(R.string.vnc_menu_input_mode_trackpad);
 
     @StringRes
     public final int labelResId;
@@ -45,10 +49,8 @@ public enum InputMode {
         return (ordinal >= 0 && ordinal < values.length) ? values[ordinal] : TOUCH;
     }
 
-    /** The next mode in the cycle, for a single toggle button that rotates TOUCH -> MOUSE -> TABLET. */
-    @NonNull
-    public InputMode next() {
-        InputMode[] values = values();
-        return values[(ordinal() + 1) % values.length];
+    /** Whether the mode drives one of the VM's pointers rather than a screen's own device. */
+    public boolean isVmPointer() {
+        return this == MOUSE || this == TRACKPAD;
     }
 }

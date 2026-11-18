@@ -7,6 +7,8 @@ import static cn.classfun.droidvm.lib.Constants.DATA_DIR;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 import static cn.classfun.droidvm.lib.utils.StringUtils.pathJoin;
 
+import android.util.DisplayMetrics;
+
 import androidx.annotation.NonNull;
 
 import java.nio.charset.StandardCharsets;
@@ -78,8 +80,9 @@ public final class NativeDisplay {
      */
     public static final int PEN = 5;
     /**
-     * The VM's trackpad (crosvm {@code --input trackpad}). Reserved like {@link #PEN}; VM-wide, as
-     * the relative mouse.
+     * The VM's trackpad (crosvm {@code --input trackpad[contacts=...]}): the console's fingers as a
+     * multi-finger trackpad, for {@code InputMode.TRACKPAD}. The VM's rather than a screen's, as the
+     * relative mouse is: a trackpad's positions are on its own surface, not on any output.
      */
     public static final int TRACKPAD = 6;
     /**
@@ -356,6 +359,31 @@ public final class NativeDisplay {
 
     /** The evdev name of the VM's vibrator; one per VM. MUST match the daemon's. */
     public static final String VIBRATOR_DEVICE_NAME = "DroidVM Vibrator";
+
+    /** The evdev name of the VM's trackpad; one per VM. */
+    public static final String TRACKPAD_DEVICE_NAME = "DroidVM Trackpad";
+
+    /**
+     * The trackpad's fingers and units. MUST equal what the daemon passes as {@code contacts=} and
+     * {@code res=}: five fingers, as many as evdev counts (BTN_TOOL_QUINTTAP) and a Windows Precision
+     * Touchpad reports, and twenty units per millimetre (508 DPI, above the 300 a Precision Touchpad
+     * must have).
+     */
+    public static final int TRACKPAD_CONTACTS = 5;
+    public static final int TRACKPAD_UNITS_PER_MM = 20;
+
+    /**
+     * The trackpad's side in its units: a square as wide as the phone's screen is long, so the
+     * console's surface fits it whichever way the phone is turned. From the screen's real size in
+     * pixels and its physical density; the daemon sizes the device with this and the console clamps
+     * to it, so both must be handed the same display's real metrics.
+     */
+    public static int trackpadSideUnits(@NonNull DisplayMetrics real) {
+        float xdpi = real.xdpi > 0 ? real.xdpi : 160f;
+        float ydpi = real.ydpi > 0 ? real.ydpi : 160f;
+        float mm = Math.max(real.widthPixels / xdpi, real.heightPixels / ydpi) * 25.4f;
+        return (int) Math.ceil(mm) * TRACKPAD_UNITS_PER_MM;
+    }
 
     /** Keep socket/service names to a filesystem- and binder-safe charset. */
     @NonNull
