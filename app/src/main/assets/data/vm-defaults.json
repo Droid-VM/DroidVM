@@ -62,8 +62,8 @@
   "gpu_cgroup_path": "/dev/cpuset/gpuworker",
   "gpu_cgroup_cpus": "",
   "vpu_enabled": false,
-  "vpu_host_pool_mb": 256,
-  "vpu_guest_pool_mb": 128,
+  "vpu_host_pool_mb": 320,
+  "vpu_guest_pool_mb": 192,
   "peripherals": [
     {
       "type": "virtio_sound",
