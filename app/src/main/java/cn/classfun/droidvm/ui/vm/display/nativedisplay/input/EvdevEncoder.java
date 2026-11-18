@@ -59,6 +59,31 @@ public final class EvdevEncoder {
     private static final short REL_Y = 0x01;
     private static final short REL_WHEEL = 0x08;
     private static final short REL_HWHEEL = 0x06;
+    // Motion sensors (crosvm --input motion): EV_MSC timestamps, and the first angular-velocity
+    // axis (ABS_RX; RY and RZ follow it as Y and Z follow ABS_X).
+    private static final short EV_MSC = 0x04;
+    private static final short MSC_TIMESTAMP = 0x05;
+    private static final short ABS_RX = 0x03;
+    /**
+     * The motion sensors' units and bounds: per g of acceleration and per degree per second of
+     * angular velocity. MUST equal crosvm's MOTION_ACCEL_PER_G, MOTION_ACCEL_MAX,
+     * MOTION_GYRO_PER_DEG_S and MOTION_GYRO_MAX (devices/src/virtio/input/defaults.rs).
+     */
+    public static final int MOTION_ACCEL_PER_G = 256;
+    public static final int MOTION_ACCEL_MAX = 16 * MOTION_ACCEL_PER_G;
+    public static final int MOTION_GYRO_PER_DEG_S = 16;
+    public static final int MOTION_GYRO_MAX = 32767;
+    /**
+     * The magnetometer's axes and units on a motion device that has one: the field on the first
+     * three hat axes per microtesla, the heading on the fourth in hundredths of a degree. MUST equal
+     * crosvm's MOTION_MAGN_FIRST_AXIS, MOTION_HEADING_AXIS, MOTION_MAGN_PER_UT, MOTION_MAGN_MAX and
+     * MOTION_HEADING_PER_DEG (devices/src/virtio/input/defaults.rs).
+     */
+    private static final short ABS_HAT0X = 0x10;
+    private static final short ABS_HAT1Y = 0x13;
+    public static final int MOTION_MAGN_PER_UT = 16;
+    public static final int MOTION_MAGN_MAX = 32767;
+    public static final int MOTION_HEADING_PER_DEG = 100;
     public static final short BTN_LEFT = 0x110;
     public static final short BTN_RIGHT = 0x111;
     public static final short BTN_MIDDLE = 0x112;
@@ -124,6 +149,39 @@ public final class EvdevEncoder {
     public static byte[] encodeMouseButton(short button, boolean down) {
         var events = new ArrayList<Event>(2);
         events.add(new Event(EV_KEY, button, down ? 1 : 0));
+        events.add(new Event(EV_SYN, SYN_REPORT, 0));
+        return encode(events);
+    }
+
+    /**
+     * One motion-sensor frame: three axes (acceleration on ABS_X/Y/Z, or with [angularVelocity] on
+     * ABS_RX/RY/RZ) in the device's units, the timestamp, SYN.
+     */
+    @NonNull
+    public static byte[] encodeMotion(boolean angularVelocity, int x, int y, int z,
+                                      long timestampNs) {
+        short first = angularVelocity ? ABS_RX : ABS_X;
+        return encode(List.of(
+            new Event(EV_ABS, first, x),
+            new Event(EV_ABS, (short) (first + 1), y),
+            new Event(EV_ABS, (short) (first + 2), z),
+            // Microseconds, wrapping, as crosvm's own feed and hid-playstation send it.
+            new Event(EV_MSC, MSC_TIMESTAMP, (int) (timestampNs / 1000)),
+            new Event(EV_SYN, SYN_REPORT, 0)));
+    }
+
+    /**
+     * One magnetometer frame for the motion device: the field (device units) and the heading, or
+     * a negative heading when there is none to give (free fall, a field along gravity).
+     */
+    @NonNull
+    public static byte[] encodeMagnetic(int x, int y, int z, int heading, long timestampNs) {
+        var events = new ArrayList<Event>(List.of(
+            new Event(EV_ABS, ABS_HAT0X, x),
+            new Event(EV_ABS, (short) (ABS_HAT0X + 1), y),
+            new Event(EV_ABS, (short) (ABS_HAT0X + 2), z)));
+        if (heading >= 0) events.add(new Event(EV_ABS, ABS_HAT1Y, heading));
+        events.add(new Event(EV_MSC, MSC_TIMESTAMP, (int) (timestampNs / 1000)));
         events.add(new Event(EV_SYN, SYN_REPORT, 0));
         return encode(events);
     }

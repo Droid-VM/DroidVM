@@ -54,6 +54,34 @@ public final class VMPeripheralConfig {
         return config;
     }
 
+    /** A VirtIO GyroScope row, correcting for the console like a VM with no setting does. */
+    @NonNull
+    public static VMPeripheralConfig createDefaultGyroscope() {
+        var config = new VMPeripheralConfig(DataItem.newObject());
+        config.setType(PeripheralType.VIRTIO_GYROSCOPE);
+        config.setCorrect(MotionSensors.DEFAULT_CORRECT);
+        config.setMagnetometer(MotionSensors.DEFAULT_MAGNETOMETER);
+        return config;
+    }
+
+    /** A VirtIO GyroScope row's correction switch (MotionSensors has what it does). */
+    public boolean getCorrect() {
+        return item.optBoolean(MotionSensors.KEY_CORRECT, MotionSensors.DEFAULT_CORRECT);
+    }
+
+    public void setCorrect(boolean correct) {
+        item.set(MotionSensors.KEY_CORRECT, correct);
+    }
+
+    /** A VirtIO GyroScope row's magnetometer switch (MotionSensors has what it does). */
+    public boolean getMagnetometer() {
+        return item.optBoolean(MotionSensors.KEY_MAGNETOMETER, MotionSensors.DEFAULT_MAGNETOMETER);
+    }
+
+    public void setMagnetometer(boolean magnetometer) {
+        item.set(MotionSensors.KEY_MAGNETOMETER, magnetometer);
+    }
+
     /**
      * Creates an xHCI USB controller with the default root-port counts.
      *

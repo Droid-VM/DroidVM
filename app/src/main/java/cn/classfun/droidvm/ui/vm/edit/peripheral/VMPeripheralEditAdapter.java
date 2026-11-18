@@ -16,6 +16,7 @@ import android.view.LayoutInflater;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -163,6 +164,16 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 appendItem(VMPeripheralConfig.createDefaultVirtioSound().item);
                 return;
             }
+            if (type == PeripheralType.VIRTIO_GYROSCOPE) {
+                // crosvm has one motion device; a second row would be a device that never exists.
+                if (hasGyroscope()) {
+                    Toast.makeText(context, R.string.edit_vm_peripheral_gyroscope_once,
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                appendItem(VMPeripheralConfig.createDefaultGyroscope().item);
+                return;
+            }
             if (type == PeripheralType.XHCI_USB) {
                 // Through the tab, because minting the id is also what moves the VM's counter
                 // past it: a controller that handed itself one could hand out the same id twice.
@@ -187,8 +198,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         }
         // Anything that can capture needs the host mic permission asked for, and the two sound
         // kinds both start with a microphone on them. A USB controller captures nothing itself
-        // -- what hangs off it is the host's device, already the host's to grant.
-        if (type != PeripheralType.XHCI_USB && micPermissionGate != null) {
+        // -- what hangs off it is the host's device, already the host's to grant -- and the motion
+        // sensors read the phone's sensors, which need no permission.
+        if (type != PeripheralType.XHCI_USB && type != PeripheralType.VIRTIO_GYROSCOPE
+            && micPermissionGate != null) {
             micPermissionGate.accept(add);
             return;
         }
@@ -208,6 +221,8 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupVirtioCamera.setVisibility(
             type == PeripheralType.VIRTIO_CAMERA ? VISIBLE : GONE);
         holder.groupXhci.setVisibility(type == PeripheralType.XHCI_USB ? VISIBLE : GONE);
+        holder.groupVirtioGyroscope.setVisibility(
+            type == PeripheralType.VIRTIO_GYROSCOPE ? VISIBLE : GONE);
 
         switch (type) {
             case VIRTIO_SOUND:
@@ -221,6 +236,9 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 break;
             case XHCI_USB:
                 bindXhci(holder, peripheral, position);
+                break;
+            case VIRTIO_GYROSCOPE:
+                bindGyroscope(holder, peripheral);
                 break;
         }
 
@@ -417,6 +435,35 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 notifyItemChangedSafe(pos);
             });
         });
+    }
+
+    private void bindGyroscope(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral
+    ) {
+        // The card's shared warning line belongs to the host-endpoint cards.
+        holder.tvWarning.setVisibility(GONE);
+        // Detached first: a recycled row would otherwise write this row's value into the last one.
+        holder.swGyroscopeCorrect.setOnCheckedChangeListener(null);
+        holder.swGyroscopeCorrect.setChecked(peripheral.getCorrect());
+        holder.swGyroscopeCorrect.setOnCheckedChangeListener((button, checked) -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            new VMPeripheralConfig(items.get(pos)).setCorrect(checked);
+        });
+        holder.swGyroscopeMagnetometer.setOnCheckedChangeListener(null);
+        holder.swGyroscopeMagnetometer.setChecked(peripheral.getMagnetometer());
+        holder.swGyroscopeMagnetometer.setOnCheckedChangeListener((button, checked) -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            new VMPeripheralConfig(items.get(pos)).setMagnetometer(checked);
+        });
+    }
+
+    private boolean hasGyroscope() {
+        for (int i = 0; i < items.size(); i++)
+            if (new VMPeripheralConfig(items.get(i)).getType() == PeripheralType.VIRTIO_GYROSCOPE)
+                return true;
+        return false;
     }
 
     /**

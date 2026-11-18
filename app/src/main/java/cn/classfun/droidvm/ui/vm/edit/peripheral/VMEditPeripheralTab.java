@@ -29,6 +29,7 @@ import cn.classfun.droidvm.daemon.usb.UsbRules;
 import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
+import cn.classfun.droidvm.lib.store.vm.MotionSensors;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SerialBackend;
 import cn.classfun.droidvm.lib.store.vm.VMBackend;
@@ -149,6 +150,8 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
 
     @Override
     public void loadConfig(@NonNull VMConfig config) {
+        // Motion sensors set before they were a peripheral show up as their row.
+        MotionSensors.migrate(config.item);
         listPeripherals.setItems(
             config.item.opt(VMXhciConfig.KEY_PERIPHERALS, DataItem.newArray()));
         xhciNext = config.item.optLong(VMXhciConfig.KEY_NEXT, 0);
@@ -163,6 +166,15 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
 
     @Override
     public boolean validateInput(@NonNull VMStore store) {
+        // The motion device is crosvm's, and crosvm has one: a second row (a hand-edited config;
+        // the add menu refuses one) would be a device that never exists.
+        int gyroscopes = 0;
+        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+            if (peripheral.getType() == PeripheralType.VIRTIO_GYROSCOPE) gyroscopes++;
+        if (gyroscopes > 0 && backend() != VMBackend.CROSVM)
+            return showValidateFailed(R.string.edit_vm_peripheral_gyroscope_crosvm_only);
+        if (gyroscopes > 1)
+            return showValidateFailed(R.string.edit_vm_peripheral_gyroscope_once);
         // Two endpoints pointed at one host device in the same direction would open two AAudio
         // streams onto it: allowed by the platform, but never what someone meant to configure.
         // The direction is part of the identity, so a microphone and a speaker cannot collide.
@@ -209,6 +221,9 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         config.item.set(VMXhciConfig.KEY_PERIPHERALS,
             requireNonNull(listPeripherals.getItems()));
         config.item.set(VMSerialConfig.KEY, requireNonNull(listSerialPorts.getItems()));
+        // The row is the setting now; the VM-level switches it replaced must not outlive it.
+        config.item.remove(MotionSensors.LEGACY_KEY);
+        config.item.remove(MotionSensors.LEGACY_KEY_CORRECT);
         // Never below what the config already handed out: an id is only safe to mint once.
         config.item.set(VMXhciConfig.KEY_NEXT,
             Math.max(xhciNext, config.item.optLong(VMXhciConfig.KEY_NEXT, 0)));

@@ -8,6 +8,7 @@
   "smt": true,
   "sandbox": false,
   "hugepages": true,
+  "virtio_transport": "PCI",
   "strace": false,
   "gpu_vram_folio_threshold_kb": 1024,
   "backend": "crosvm",
