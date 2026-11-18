@@ -11,7 +11,6 @@ import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
-import android.content.pm.ActivityInfo;
 import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.content.Intent;
@@ -157,12 +156,10 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     // knows nothing of it: crosvm's buffers keep the guest's size and SurfaceFlinger turns them, and
     // touches are turned back here before they go to the guest.
     private int displayQuarterTurns = 0;
-    // The Screen orientation: locked, the activity keeps its rotation and the guest turns its own
-    // UI (what a turn of the Display implies); unlocked, Android turns the activity as
-    // screenOrientationRequest asks (USER_PORTRAIT/USER_LANDSCAPE, so the system's rotation lock
-    // still holds) and the guest stays upright in it. Both are kept per screen of a VM.
-    private boolean screenRotationLocked = false;
-    private int screenOrientationRequest = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    // The Screen orientation: forced landscape or portrait, or following the system. How the system
+    // answered a forced one is screenOutcome. Both orientations are kept per screen of a VM.
+    private ScreenMode screenMode = ScreenMode.FOLLOW_SYSTEM;
+    private ScreenMode.Outcome screenOutcome = ScreenMode.Outcome.FOLLOWING;
 
     // True while a finger is on the container in relative-pointer mode. This is the gate for
     // viewport follow: a cursor move from a REMOTE DESKTOP session is byte-identical to one the
@@ -203,8 +200,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     private static final String INPUT_PREFS = "droidvm_prefs";
     private static final String KEY_INPUT_MODE = "display_input_mode";
     private static final String KEY_DISPLAY_TURNS = "display_quarter_turns_";
-    private static final String KEY_SCREEN_LOCKED = "screen_rotation_locked_";
-    private static final String KEY_SCREEN_REQUEST = "screen_orientation_request_";
+    private static final String KEY_SCREEN_MODE = "screen_mode_";
     // Chrome memory, shared with the VNC path: extra-keys on/off per typing surface + whether
     // the physical keyboard is up.
     private static final String KEY_KEYBOARD_MODE = "display_keyboard_mode";
@@ -1069,7 +1065,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         keyboardRow.setPaddingRelative(keyboardRow.getPaddingStart(), keyboardRow.getPaddingTop(),
             keyboardRow.getPaddingEnd(), Math.round(2 * getResources().getDisplayMetrics().density));
         header.addView(keyboardRow);
-        header.addView(buildRotationRow(popup));
+        header.addView(buildRotationRow());
         popup.setHeaderView(header);
         popup.setOnMenuItemClickListener(this::onMenuItemClicked);
         popup.show();
@@ -1145,93 +1141,135 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         }
     }
 
-    // Menu header row, segmented like the two above it: turn the Display left or right, rotate the
-    // Screen. The turns are actions, so their buttons are unchecked again at once; the screen
-    // button stays checked, with a lock, while the guest does the rotating.
-    private View buildRotationRow(@NonNull MaterialMenu popup) {
+    // Menu header row, segmented like the two above it: turn the Display left, the Screen
+    // orientation in turn (forced landscape, forced portrait, the system's; the icon says which),
+    // turn the Display right. All three are actions, unchecked again at once.
+    private View buildRotationRow() {
         var group = (com.google.android.material.button.MaterialButtonToggleGroup)
             getLayoutInflater().inflate(R.layout.view_rotation_row, null);
-        MaterialButton screen = group.findViewById(R.id.rotate_screen);
-        Runnable showLock = () -> {
-            if (screenRotationLocked) group.check(R.id.rotate_screen);
-            else group.uncheck(R.id.rotate_screen);
-            screen.setIconResource(screenRotationLocked
-                ? R.drawable.ic_screen_rotation_lock : R.drawable.ic_screen_rotation);
+        MaterialButton screen = group.findViewById(R.id.screen_mode);
+        Runnable showMode = () -> {
+            screen.setIconResource(screenModeIcon(screenMode));
+            var label = getString(screenModeLabel(screenMode));
+            screen.setContentDescription(label);
+            screen.setTooltipText(label);
         };
-        showLock.run();
+        showMode.run();
         group.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
-            if (checkedId == R.id.rotate_display_left || checkedId == R.id.rotate_display_right) {
-                if (!isChecked) return;
-                g.uncheck(checkedId);
+            if (!isChecked) return;
+            g.uncheck(checkedId);
+            if (checkedId == R.id.screen_mode) {
+                setScreenMode(screenMode.next());
+                showMode.run();
+            } else {
                 turnDisplay(checkedId == R.id.rotate_display_left ? -1 : 1);
-                showLock.run();
-            } else if (checkedId == R.id.rotate_screen && isChecked != screenRotationLocked) {
-                // A tap, not showLock: either way it rotates the screen and unlocks.
-                rotateScreen();
-                popup.dismiss();
             }
         });
         return group;
     }
 
+    private static int screenModeIcon(@NonNull ScreenMode mode) {
+        switch (mode) {
+            case LANDSCAPE:
+                return R.drawable.ic_screen_landscape;
+            case PORTRAIT:
+                return R.drawable.ic_screen_portrait;
+            default:
+                return R.drawable.ic_screen_rotation;
+        }
+    }
+
+    private static int screenModeLabel(@NonNull ScreenMode mode) {
+        switch (mode) {
+            case LANDSCAPE:
+                return R.string.screen_force_landscape;
+            case PORTRAIT:
+                return R.string.screen_force_portrait;
+            default:
+                return R.string.screen_follow_system;
+        }
+    }
+
     /**
-     * Turn the guest's picture a quarter turn (Display orientation). From then on the guest turns
-     * its own UI, so the Screen locks where it is: Android must not rotate the activity under it.
+     * Turn the guest's picture a quarter turn (Display orientation). The guest's panel keeps its
+     * size; corrected motion sensors turn with the picture. The Screen stays as it is.
      */
     private void turnDisplay(int quarterTurns) {
         int turns = (displayQuarterTurns + quarterTurns) & 3;
+        if (turns == displayQuarterTurns) return;
         if (displaySource == null || !displaySource.setQuarterTurns(turns)) {
             Toast.makeText(this, R.string.display_rotation_unsupported, Toast.LENGTH_LONG).show();
             return;
         }
         displayQuarterTurns = turns;
-        screenRotationLocked = true;
-        applyScreenOrientation();
         applyDisplayTurns();
         saveRotationState();
     }
 
     /**
-     * Rotate the Screen: portrait from landscape and the other way round, and hand the rotation
-     * back to Android (unlocked). The system's own rotation lock still holds -- USER_PORTRAIT and
-     * USER_LANDSCAPE only choose the shape. The Display orientation stays.
+     * Force the Screen landscape or portrait, or let it follow the system. The Display orientation
+     * stays. A forced one the system does not turn the display for is said so once it has answered.
      */
-    private void rotateScreen() {
-        boolean landscape = getResources().getConfiguration().orientation
-            == android.content.res.Configuration.ORIENTATION_LANDSCAPE;
-        screenOrientationRequest = landscape
-            ? ActivityInfo.SCREEN_ORIENTATION_USER_PORTRAIT
-            : ActivityInfo.SCREEN_ORIENTATION_USER_LANDSCAPE;
-        screenRotationLocked = false;
+    private void setScreenMode(@NonNull ScreenMode mode) {
+        screenMode = mode;
         applyScreenOrientation();
         saveRotationState();
+        // An ignored request changes no configuration, so the answer is looked at after a while.
+        mainHandler.postDelayed(() -> checkScreenOutcome(true), 1000);
     }
 
     private void applyScreenOrientation() {
-        setRequestedOrientation(screenRotationLocked
-            ? ActivityInfo.SCREEN_ORIENTATION_LOCKED : screenOrientationRequest);
+        setRequestedOrientation(screenMode.request);
+        checkScreenOutcome(false);
+    }
+
+    @Override
+    public void onConfigurationChanged(@NonNull android.content.res.Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        checkScreenOutcome(false);
+    }
+
+    /**
+     * How the system answered the Screen orientation (ScreenMode.Outcome); [tell] says a forced one
+     * it did not turn the display for. A display seen keeping its shape is remembered: a forced
+     * orientation that matches it later is only the device held that way, not held still.
+     */
+    private void checkScreenOutcome(boolean tell) {
+        var wm = getWindowManager();
+        var display = wm.getMaximumWindowMetrics().getBounds();
+        var window = wm.getCurrentWindowMetrics().getBounds();
+        screenOutcome = screenMode.outcome(display.width(), display.height(), window.width(),
+            window.height());
+        if (tell && screenOutcome == ScreenMode.Outcome.LETTERBOXED)
+            Toast.makeText(this, R.string.screen_letterboxed, Toast.LENGTH_LONG).show();
+        else if (tell && screenOutcome == ScreenMode.Outcome.IGNORED)
+            Toast.makeText(this, R.string.screen_request_ignored, Toast.LENGTH_LONG).show();
+        updateMotionPicture();
+    }
+
+    // Corrected motion sensors turn the phone's motion by the window's turn and the picture's.
+    private void updateMotionPicture() {
+        if (motionSensor != null) motionSensor.setPicture(displayQuarterTurns);
     }
 
     // The picture's new shape: the viewport fits it, and the cursor overlay follows.
     private void applyDisplayTurns() {
         if (viewport != null) viewport.setContentSize(shownWidth(), shownHeight());
         positionCursorOverlay();
+        updateMotionPicture();
     }
 
     private void restoreRotationState() {
         var prefs = getSharedPreferences(INPUT_PREFS, MODE_PRIVATE);
         displayQuarterTurns = prefs.getInt(KEY_DISPLAY_TURNS + vmKey, 0) & 3;
-        screenRotationLocked = prefs.getBoolean(KEY_SCREEN_LOCKED + vmKey, false);
-        screenOrientationRequest = prefs.getInt(KEY_SCREEN_REQUEST + vmKey,
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        screenMode = ScreenMode.fromOrdinal(prefs.getInt(KEY_SCREEN_MODE + vmKey, 0));
         applyScreenOrientation();
     }
 
     private void saveRotationState() {
         getSharedPreferences(INPUT_PREFS, MODE_PRIVATE).edit()
             .putInt(KEY_DISPLAY_TURNS + vmKey, displayQuarterTurns)
-            .putBoolean(KEY_SCREEN_LOCKED + vmKey, screenRotationLocked)
-            .putInt(KEY_SCREEN_REQUEST + vmKey, screenOrientationRequest)
+            .putInt(KEY_SCREEN_MODE + vmKey, screenMode.ordinal())
             .apply();
     }
 
@@ -1367,6 +1405,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
         SystemGestureGuard.enterDisplay();
         keyboardGrab.setResumed(true);
         resumed = true;
+        updateMotionPicture();
         if (motionSensor != null) motionSensor.start();
     }
 
@@ -1401,8 +1440,8 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
     }
 
     // (Re)built with every forwarder: a re-attach makes a new one, and the old sensor feed dies
-    // with the old forwarder. This console shows the guest's picture unturned, so only the
-    // window's own rotation turns the phone's motion.
+    // with the old forwarder. The phone's motion is turned by the window's rotation and then by
+    // the Display orientation (updateMotionPicture).
     private void setupMotionSensor() {
         if (motionSensor != null) {
             motionSensor.stop();
@@ -1415,6 +1454,7 @@ public final class VMNativeDisplayActivity extends AppCompatActivity
             var display = getDisplay();
             return display == null ? 0 : display.getRotation();
         }, motionMagnetometer);
+        updateMotionPicture();
         if (resumed) motionSensor.start();
     }
 
