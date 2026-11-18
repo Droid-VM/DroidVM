@@ -71,8 +71,10 @@ public final class NativeDisplay {
      */
     public static final int SENSOR = 4;
     /**
-     * A screen's pen (crosvm {@code --input stylus}). Reserved: the number is taken so the channels
-     * keep the values the console's pen will use; nothing binds it yet. Per screen, as the tablet.
+     * A screen's pen (crosvm {@code --input stylus}): the phone's stylus as a pen digitizer, with
+     * its pressure, hover distance, tilt and barrel buttons. Not an input mode either: a stylus on
+     * the console always goes here, whatever the fingers drive. Per screen, as the tablet: its
+     * coordinates belong to one output.
      */
     public static final int PEN = 5;
     /**
@@ -338,6 +340,15 @@ public final class NativeDisplay {
     @NonNull
     public static String keyboardDeviceName(@NonNull String screenId) {
         return fmt("DroidVM Keyboard (%s)", screenId);
+    }
+
+    /**
+     * The evdev name [screenId]'s pen carries, for the same reason the tablet's is fixed: a pen's
+     * coordinates belong to one output, and the name is how a guest is told which.
+     */
+    @NonNull
+    public static String penDeviceName(@NonNull String screenId) {
+        return fmt("DroidVM Pen (%s)", screenId);
     }
 
     /** The evdev name of the VM's motion sensors; one per VM, so nothing to tell apart. */

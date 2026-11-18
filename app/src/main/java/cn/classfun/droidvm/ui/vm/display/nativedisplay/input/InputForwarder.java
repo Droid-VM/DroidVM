@@ -7,6 +7,7 @@ import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.KEYBOARD;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MOUSE;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.MULTITOUCH;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.SENSOR;
+import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.PEN;
 import static cn.classfun.droidvm.lib.store.vm.NativeDisplay.TABLET;
 import static cn.classfun.droidvm.lib.utils.StringUtils.fmt;
 
@@ -74,6 +75,16 @@ public final class InputForwarder {
 
     // Newest pending ACTION_MOVE, coalesced so a fast finger can't outrun the synchronous IPC.
     private final AtomicReference<TouchFrame> pendingMove = new AtomicReference<>();
+    // Newest pending pen move (touching or hovering), coalesced the same way.
+    private final AtomicReference<PenFrame> pendingPenMove = new AtomicReference<>();
+    // The pen leaves range this long after a HOVER_EXIT or an UP unless another of its events
+    // comes first: Android sends HOVER_EXIT just before a stylus touches down and HOVER_ENTER just
+    // after it lifts, and a stylus that cannot hover sends nothing after its UP, so neither event
+    // alone means the pen has gone.
+    private static final long PEN_LEAVE_MS = 60;
+    // Counts the pen events sent, so a scheduled leave can tell whether one came after it; worker
+    // thread only.
+    private int penGeneration;
 
     // Pending-motion slots for the MOUSE/TABLET gesture paths, guarded by motionLock. Each slot
     // has at most one drain task in the worker queue (the *Pending flag); producers on the UI
@@ -85,6 +96,20 @@ public final class InputForwarder {
     private boolean absMovePending;
     private int pendHoverX, pendHoverY;     // hover position, newest wins (guest px)
     private boolean hoverPending;
+
+    private static final class PenFrame {
+        final MotionEvent event;
+        final float scaleX;
+        final float scaleY;
+        final float distanceMax;
+
+        PenFrame(@NonNull MotionEvent event, float scaleX, float scaleY, float distanceMax) {
+            this.event = event;
+            this.scaleX = scaleX;
+            this.scaleY = scaleY;
+            this.distanceMax = distanceMax;
+        }
+    }
 
     private static final class TouchFrame {
         final MotionEvent event;
@@ -313,6 +338,65 @@ public final class InputForwarder {
         }
     }
 
+    /**
+     * A stylus event (touch, hover or a barrel button) for the screen's pen device, whatever the
+     * input mode: the fingers may drive a mouse, the pen stays a pen. Coordinates as
+     * {@link #sendTouchEvent}'s; [distanceMax] is the stylus' AXIS_DISTANCE maximum (0 if none).
+     */
+    public void sendPenEvent(@NonNull MotionEvent event, float scaleX, float scaleY,
+                             float distanceMax) {
+        var copy = MotionEvent.obtainNoHistory(event);
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE || action == MotionEvent.ACTION_HOVER_MOVE) {
+            var prev = pendingPenMove.getAndSet(new PenFrame(copy, scaleX, scaleY, distanceMax));
+            if (prev != null) {
+                prev.event.recycle();
+            } else {
+                submit("penMove", this::drainPenMove);
+            }
+        } else {
+            submit("penEvent", () -> sendPenNow(copy, scaleX, scaleY, distanceMax));
+        }
+    }
+
+    private void drainPenMove() {
+        var frame = pendingPenMove.getAndSet(null);
+        if (frame == null) return;
+        sendPenNow(frame.event, frame.scaleX, frame.scaleY, frame.distanceMax);
+    }
+
+    private void sendPenNow(@NonNull MotionEvent event, float scaleX, float scaleY,
+                            float distanceMax) {
+        try {
+            penGeneration++;
+            int action = event.getActionMasked();
+            byte[] data = action == MotionEvent.ACTION_CANCEL
+                ? encoder.encodePenLeave()
+                : encoder.encodePen(event, scaleX, scaleY, distanceMax);
+            if (data != null) sink.write(PEN, data);
+            if (action == MotionEvent.ACTION_HOVER_EXIT || action == MotionEvent.ACTION_UP)
+                schedulePenLeave();
+        } catch (Exception e) {
+            Log.e(TAG, "encode/send pen failed", e);
+        } finally {
+            event.recycle();
+        }
+    }
+
+    // Worker thread only.
+    private void schedulePenLeave() {
+        int generation = penGeneration;
+        try {
+            worker.schedule(() -> {
+                if (generation != penGeneration) return;
+                byte[] data = encoder.encodePenLeave();
+                if (data != null) sink.write(PEN, data);
+            }, PEN_LEAVE_MS, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            Log.d(TAG, fmt("pen leave dropped: %s", e.getMessage()));
+        }
+    }
+
     // Worker thread only. One tick in flight at a time; the chain ends itself when the last
     // contact lifts (encodeTouchKeepalive returns null) or the mode leaves TOUCH, and any touch
     // event while contacts are down restarts it.
@@ -448,5 +532,7 @@ public final class InputForwarder {
         worker.shutdownNow();
         var frame = pendingMove.getAndSet(null);
         if (frame != null) frame.event.recycle();
+        var pen = pendingPenMove.getAndSet(null);
+        if (pen != null) pen.event.recycle();
     }
 }
