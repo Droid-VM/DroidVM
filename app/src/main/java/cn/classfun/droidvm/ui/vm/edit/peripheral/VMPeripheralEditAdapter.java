@@ -33,6 +33,9 @@ import cn.classfun.droidvm.R;
 import cn.classfun.droidvm.lib.data.HostAudioDevices;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.data.HostCameraDevices;
+import cn.classfun.droidvm.lib.store.enums.EnumPicker.EnumPickerChanged;
+import cn.classfun.droidvm.lib.store.vm.Gnss;
+import cn.classfun.droidvm.lib.store.vm.GnssSource;
 import cn.classfun.droidvm.lib.store.vm.PeripheralType;
 import cn.classfun.droidvm.lib.store.vm.SoundBuffer;
 import cn.classfun.droidvm.lib.store.vm.SoundMode;
@@ -99,6 +102,8 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     private Consumer<Runnable> micPermissionGate;
     /** Asks for CAMERA before a camera device is added, and drops the add if refused. */
     private Consumer<Runnable> cameraPermissionGate;
+    /** Asks for location before a GNSS receiver is added, and drops the add if refused. */
+    private Consumer<Runnable> locationPermissionGate;
     // What the phone reported last time we looked, so binding a row is not a binder call each
     // time it scrolls past. Dropped by refreshHostDevices().
     private List<HostAudioDevices.Entry> outputCache;
@@ -120,6 +125,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
 
     public void setCameraPermissionGate(@Nullable Consumer<Runnable> gate) {
         this.cameraPermissionGate = gate;
+    }
+
+    public void setLocationPermissionGate(@Nullable Consumer<Runnable> gate) {
+        this.locationPermissionGate = gate;
     }
 
     void setXhciHost(@Nullable XhciHost host) {
@@ -174,6 +183,16 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 appendItem(VMPeripheralConfig.createDefaultGyroscope().item);
                 return;
             }
+            if (type == PeripheralType.VIRTIO_GNSS) {
+                // One receiver per VM: the guest has one port of that name.
+                if (hasType(PeripheralType.VIRTIO_GNSS)) {
+                    Toast.makeText(context, R.string.edit_vm_peripheral_gnss_once,
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                appendItem(VMPeripheralConfig.createDefaultGnss().item);
+                return;
+            }
             if (type == PeripheralType.XHCI_USB) {
                 // Through the tab, because minting the id is also what moves the VM's counter
                 // past it: a controller that handed itself one could hand out the same id twice.
@@ -193,6 +212,12 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         // is guaranteed to disappoint.
         if (type == PeripheralType.VIRTIO_CAMERA) {
             if (cameraPermissionGate != null) cameraPermissionGate.accept(add);
+            else add.run();
+            return;
+        }
+        // The same for a GNSS receiver, on location: without it the receiver never has a fix.
+        if (type == PeripheralType.VIRTIO_GNSS) {
+            if (locationPermissionGate != null) locationPermissionGate.accept(add);
             else add.run();
             return;
         }
@@ -223,6 +248,7 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupXhci.setVisibility(type == PeripheralType.XHCI_USB ? VISIBLE : GONE);
         holder.groupVirtioGyroscope.setVisibility(
             type == PeripheralType.VIRTIO_GYROSCOPE ? VISIBLE : GONE);
+        holder.groupVirtioGnss.setVisibility(type == PeripheralType.VIRTIO_GNSS ? VISIBLE : GONE);
 
         switch (type) {
             case VIRTIO_SOUND:
@@ -239,6 +265,9 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 break;
             case VIRTIO_GYROSCOPE:
                 bindGyroscope(holder, peripheral);
+                break;
+            case VIRTIO_GNSS:
+                bindGnss(holder, peripheral);
                 break;
         }
 
@@ -460,10 +489,52 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
     }
 
     private boolean hasGyroscope() {
+        return hasType(PeripheralType.VIRTIO_GYROSCOPE);
+    }
+
+    private boolean hasType(@NonNull PeripheralType type) {
         for (int i = 0; i < items.size(); i++)
-            if (new VMPeripheralConfig(items.get(i)).getType() == PeripheralType.VIRTIO_GYROSCOPE)
-                return true;
+            if (new VMPeripheralConfig(items.get(i)).getType() == type) return true;
         return false;
+    }
+
+    /** What [source] comes to on this phone, said on the card. */
+    private int gnssNoteFor(@NonNull GnssSource source) {
+        boolean receiver = Gnss.hostHasReceiver(context);
+        var resolved = source.resolve(receiver);
+        return resolved == GnssSource.AUTO ? R.string.edit_vm_gnss_note_auto
+            : resolved == GnssSource.RECEIVER ? R.string.edit_vm_gnss_note_receiver
+            : receiver ? R.string.edit_vm_gnss_note_location
+            : R.string.edit_vm_gnss_note_no_receiver;
+    }
+
+    /**
+     * The GNSS card: where the receiver's fixes come from, and whether they say they are
+     * simulated. The note names what AUTO comes to on this phone, because "automatic" alone does
+     * not say whether the guest gets the sky or only a position.
+     */
+    private void bindGnss(
+        @NonNull VMPeripheralEditViewHolder holder, @NonNull VMPeripheralConfig peripheral
+    ) {
+        holder.tvWarning.setVisibility(GONE);
+        // Detached first: configure() fires the listener, and on a recycled row that is the last
+        // bind's -- it would write this row's value into another and touch the list mid-layout.
+        holder.btnGnssSource.setOnValueChangedListener((EnumPickerChanged<Enum<?>>) null);
+        holder.btnGnssSource.configure(GnssSource.class, peripheral.getGnssSource());
+        holder.tvGnssNote.setText(gnssNoteFor(peripheral.getGnssSource()));
+        holder.btnGnssSource.setOnValueChangedListener((oldVal, newVal) -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            new VMPeripheralConfig(items.get(pos)).setGnssSource((GnssSource) newVal);
+            holder.tvGnssNote.setText(gnssNoteFor((GnssSource) newVal));
+        });
+        holder.swGnssSimulated.setOnCheckedChangeListener(null);
+        holder.swGnssSimulated.setChecked(peripheral.getGnssMarkSimulated());
+        holder.swGnssSimulated.setOnCheckedChangeListener((button, checked) -> {
+            int pos = holder.getBindingAdapterPosition();
+            if (pos == RecyclerView.NO_POSITION) return;
+            new VMPeripheralConfig(items.get(pos)).setGnssMarkSimulated(checked);
+        });
     }
 
     /**

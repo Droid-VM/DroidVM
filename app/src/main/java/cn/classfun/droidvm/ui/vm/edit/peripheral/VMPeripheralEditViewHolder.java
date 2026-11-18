@@ -57,6 +57,10 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
     final View groupVirtioGyroscope;
     final MaterialSwitch swGyroscopeCorrect;
     final MaterialSwitch swGyroscopeMagnetometer;
+    final View groupVirtioGnss;
+    final PickerButtonWidget btnGnssSource;
+    final TextView tvGnssNote;
+    final MaterialSwitch swGnssSimulated;
     final MaterialButton btnHdaOut;
     final MaterialButton btnHdaIn;
 
@@ -95,6 +99,10 @@ public final class VMPeripheralEditViewHolder extends RecyclerView.ViewHolder {
         groupVirtioGyroscope = itemView.findViewById(R.id.group_virtio_gyroscope);
         swGyroscopeCorrect = itemView.findViewById(R.id.sw_gyroscope_correct);
         swGyroscopeMagnetometer = itemView.findViewById(R.id.sw_gyroscope_magnetometer);
+        groupVirtioGnss = itemView.findViewById(R.id.group_virtio_gnss);
+        btnGnssSource = itemView.findViewById(R.id.btn_gnss_source);
+        tvGnssNote = itemView.findViewById(R.id.tv_gnss_note);
+        swGnssSimulated = itemView.findViewById(R.id.sw_gnss_simulated);
         btnHdaOut = itemView.findViewById(R.id.btn_hda_out);
         btnHdaIn = itemView.findViewById(R.id.btn_hda_in);
     }

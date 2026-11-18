@@ -101,6 +101,7 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
         adapter = listPeripherals.setAdapter(VMPeripheralEditAdapter.class);
         adapter.setMicPermissionGate(parent::ensureRecordAudioThen);
         adapter.setCameraPermissionGate(parent.getCameraPermission()::requireThen);
+        adapter.setLocationPermissionGate(parent.getLocationPermission()::requireThen);
         adapter.setXhciHost(this);
         serialAdapter = listSerialPorts.setAdapter(VMSerialEditAdapter.class);
         serialAdapter.refreshUsbAcm();
@@ -175,6 +176,15 @@ public final class VMEditPeripheralTab extends VMEditBaseTab
             return showValidateFailed(R.string.edit_vm_peripheral_gyroscope_crosvm_only);
         if (gyroscopes > 1)
             return showValidateFailed(R.string.edit_vm_peripheral_gyroscope_once);
+        // The GNSS receiver is one named virtio-console port, which only crosvm gets: a second
+        // row would be a second port of the same name.
+        int receivers = 0;
+        for (var peripheral : VMPeripheralConfig.listOf(wrap()))
+            if (peripheral.getType() == PeripheralType.VIRTIO_GNSS) receivers++;
+        if (receivers > 0 && backend() != VMBackend.CROSVM)
+            return showValidateFailed(R.string.edit_vm_peripheral_gnss_crosvm_only);
+        if (receivers > 1)
+            return showValidateFailed(R.string.edit_vm_peripheral_gnss_once);
         // Two endpoints pointed at one host device in the same direction would open two AAudio
         // streams onto it: allowed by the platform, but never what someone meant to configure.
         // The direction is part of the identity, so a microphone and a speaker cannot collide.

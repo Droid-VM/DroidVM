@@ -37,6 +37,7 @@ import cn.classfun.droidvm.lib.daemon.DaemonConnection;
 import cn.classfun.droidvm.lib.daemon.VmConfigClient;
 import cn.classfun.droidvm.lib.ui.BackAskHelper;
 import cn.classfun.droidvm.lib.ui.CameraPermission;
+import cn.classfun.droidvm.lib.ui.LocationPermission;
 import cn.classfun.droidvm.lib.ui.RecordAudioPermission;
 import cn.classfun.droidvm.lib.ui.SwipeableTabActivity;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
@@ -61,6 +62,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
     public UUID editVMId = null;
     private RecordAudioPermission recordAudioPermission;
     private CameraPermission cameraPermission;
+    private LocationPermission locationPermission;
     /** A microphone permission choice has already been offered during this edit session. */
     private boolean micPermissionHandled = false;
     private boolean saving = false;
@@ -99,6 +101,12 @@ public final class VMEditActivity extends SwipeableTabActivity {
         return cameraPermission;
     }
 
+    /** Host location permission gate, shared with the peripheral tab; refuses like the camera's. */
+    @NonNull
+    public LocationPermission getLocationPermission() {
+        return locationPermission;
+    }
+
     private void pickerResult(Uri uri) {
         if (currentPicker != null && uri != null)
             currentPicker.accept(uri);
@@ -119,6 +127,7 @@ public final class VMEditActivity extends SwipeableTabActivity {
         // before the activity reaches STARTED.
         recordAudioPermission = new RecordAudioPermission(this);
         cameraPermission = new CameraPermission(this);
+        locationPermission = new LocationPermission(this);
         tabs = createTabInstances();
         collapsingToolbar = findViewById(R.id.collapsing_toolbar);
         tabLayout = findViewById(R.id.tab_layout);

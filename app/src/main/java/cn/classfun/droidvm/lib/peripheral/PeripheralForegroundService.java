@@ -10,6 +10,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -18,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import cn.classfun.droidvm.R;
+import cn.classfun.droidvm.lib.ui.LocationPermission;
 import cn.classfun.droidvm.ui.main.MainActivity;
 
 /**
@@ -43,7 +45,7 @@ import cn.classfun.droidvm.ui.main.MainActivity;
  * the one shape of the call a process outside ActivityManager can make
  * (daemon/services/peripheral_foreground.cpp):</p>
  * <pre>
- * am start-foreground-service --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS} --ei types &lt;mask&gt;
+ * am start-foreground-service --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS} --ei types &lt;mask&gt; [--ei gnss_sources &lt;bits&gt;]
  * am stopservice --user &lt;user&gt; -n &lt;applicationId&gt;/{@value #SERVICE_CLASS}
  * </pre>
  * <p>A start {@code am} reports as refused is not remembered there: the daemon asks again, after
@@ -67,16 +69,46 @@ public final class PeripheralForegroundService extends Service {
     public static final String SERVICE_CLASS =
         "cn.classfun.droidvm.lib.peripheral.PeripheralForegroundService";
 
+    /**
+     * Which of the phone's location sources the running VMs' GNSS receivers want
+     * ({@code Gnss.SOURCE_*} bits, AUTO resolved by the daemon against this phone), for the
+     * {@link GnssFeeder} this service runs while it carries the location type. Beside the mask
+     * because it is decided by the same walk of the same VMs. MUST match the daemon's
+     * {@code --ei gnss_sources}.
+     */
+    public static final String EXTRA_GNSS_SOURCES = "gnss_sources";
+
+    /** The phone's receiver and location for the VMs' GNSS ports, while the type is carried. */
+    @Nullable
+    private GnssFeeder gnssFeeder;
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
         return null;
     }
 
+    /** Every way the service ends lets go of the phone's location. */
+    @Override
+    public void onDestroy() {
+        setGnssSources(0);
+        super.onDestroy();
+    }
+
     @Override
     public int onStartCommand(@Nullable Intent intent, int flags, int startId) {
         int typeMask = intent == null ? 0 : intent.getIntExtra(EXTRA_TYPES, 0);
+        // Location is the one type a user can have refused while the VM still runs fine without
+        // it -- its receiver just never gets a fix. Asking for it anyway would make
+        // startForeground throw and take the camera's capability down with it, so it is dropped
+        // here and the rest is raised.
+        if ((typeMask & ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) != 0
+            && !LocationPermission.isGranted(this)) {
+            Log.w(TAG, "location permission not granted: VM GNSS receivers stay without a fix");
+            typeMask &= ~ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        }
         if (typeMask == 0) {
+            setGnssSources(0);
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -90,12 +122,28 @@ public final class PeripheralForegroundService extends Service {
             // no capability, and leaving it up would show a notification that promises otherwise.
             Log.w(TAG, fmt("startForeground rejected for types 0x%s",
                 Integer.toHexString(typeMask)), e);
+            setGnssSources(0);
             stopSelf();
             return START_NOT_STICKY;
         }
+        // The feeder only once the service carries the location type: before that the app's uid
+        // is not let near the phone's location.
+        setGnssSources((typeMask & ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) != 0
+            && intent != null ? intent.getIntExtra(EXTRA_GNSS_SOURCES, 0) : 0);
         // Not sticky: the policy re-applies from the live VM states, so a restart by the system
         // with no VM running would raise a service nothing asked for.
         return START_NOT_STICKY;
+    }
+
+    /** Starts, re-points or stops the GNSS feeder; 0 stops it. */
+    private void setGnssSources(int sources) {
+        if (sources == 0) {
+            if (gnssFeeder != null) gnssFeeder.close();
+            gnssFeeder = null;
+            return;
+        }
+        if (gnssFeeder == null) gnssFeeder = new GnssFeeder(this);
+        gnssFeeder.apply(sources);
     }
 
     @NonNull

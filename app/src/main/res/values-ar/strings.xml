@@ -1621,6 +1621,25 @@
     <string name="edit_vm_peripheral_gyroscope_magnetometer">مقياس المغناطيسية (بوصلة الهاتف: المجال المغناطيسي والاتجاه)</string>
     <string name="edit_vm_peripheral_gyroscope_once">لكل جهاز افتراضي VirtIO GyroScope واحد فقط</string>
     <string name="edit_vm_peripheral_gyroscope_crosvm_only">يتطلب VirtIO GyroScope الواجهة الخلفية crosvm</string>
+    <!-- VirtIO GNSS peripheral -->
+    <string name="edit_vm_peripheral_type_virtio_gnss">VirtIO GNSS</string>
+    <string name="edit_vm_peripheral_gnss_once">للآلة الافتراضية مستقبل VirtIO GNSS واحد فقط</string>
+    <string name="edit_vm_peripheral_gnss_crosvm_only">يتطلب VirtIO GNSS الواجهة الخلفية crosvm</string>
+    <string name="edit_vm_gnss_source">المصدر</string>
+    <string name="edit_vm_gnss_source_auto">تلقائي</string>
+    <string name="edit_vm_gnss_source_receiver">مستقبل GNSS في الهاتف</string>
+    <string name="edit_vm_gnss_source_location">موقع الهاتف فقط</string>
+    <string name="edit_vm_gnss_note_auto">يتلقى الضيف تحديدات GNSS من الهاتف وكل قمر صناعي يتتبعه؛ وعندما لا يكون لدى المستقبل تحديد (في الأماكن المغلقة، أو عندما يوقفه توفير الطاقة في الهاتف) يتلقى موقع الهاتف بدلاً من ذلك، مع مجموعة ثابتة من أقمار GPS المصطنعة، موسومًا بأنه تقديري.</string>
+    <string name="edit_vm_gnss_note_receiver">مستقبل GNSS في الهاتف فقط: تحديداته وكل قمر صناعي يتتبعه (GPS وGLONASS وGalileo وBeiDou وQZSS، بحسب ما يدعمه الهاتف)؛ ولا تحديد ما دام المستقبل بلا تحديد. يبقى المستقبل قيد التشغيل طوال عمل الآلة الافتراضية.</string>
+    <string name="edit_vm_gnss_note_location">يتلقى الضيف موقع الهاتف (Wi-Fi أو أبراج الاتصال أو GNSS، أيًّا كان ما استخدمه الهاتف) مع مجموعة ثابتة من أقمار GPS المصطنعة.</string>
+    <string name="edit_vm_gnss_note_no_receiver">لا يحتوي هذا الهاتف على مستقبل GNSS: يتلقى الضيف موقع الهاتف مع مجموعة ثابتة من أقمار GPS المصطنعة.</string>
+    <string name="edit_vm_gnss_mark_simulated">وسم التحديدات بأنها محاكاة (تتجاهلها بعض برامج الضيف)</string>
+    <string name="location_permission_title">السماح بالوصول إلى الموقع؟</string>
+    <string name="location_permission_message">يُبلغ ملحق GNSS الضيفَ بموقع هذا الهاتف، فقط أثناء عمل الآلة الافتراضية. وبدون هذا الإذن سيظهر في القائمة لكنه لن يحصل على تحديد أبدًا.</string>
+    <string name="location_permission_allow">السماح</string>
+    <string name="location_permission_cancel">إلغاء</string>
+    <string name="location_permission_declined">لم يُسمح بالوصول إلى الموقع، لذا لم يُضَف مستقبل GNSS.</string>
+    <string name="location_permission_approximate">الموقع التقريبي فقط مسموح به: يحتاج مستقبل GNSS في الهاتف إلى الموقع الدقيق، لذا سيبقى المستقبل الذي يستخدمه بلا تحديد.</string>
     <string name="edit_vm_xhci_rules_note">تُدار عمليات الربط ضمن قواعد التمرير المباشر لـ USB على مستوى التطبيق.</string>
     <string name="edit_vm_xhci_passthrough_off">التمرير المباشر لـ USB معطّل: يتجاهل الجهاز الافتراضي أجهزة USB عند بدء تشغيله. يمكنك تفعيله من الإعدادات -&gt; قواعد التمرير المباشر لـ USB.</string>
     <string name="edit_vm_xhci_device_add">إضافة جهاز</string>
