@@ -47,6 +47,14 @@ public final class SoundPurpose {
     public static final String ATTR_USAGE = "usage";
     public static final String ATTR_CONTENT = "content";
     public static final String ATTR_PRESET = "preset";
+    /**
+     * How the host trades latency against power for the stream (AAudio's performance mode). Left
+     * unset, the backend saves power: on a phone the platform's own default puts an output on the
+     * primary mixer, which wakes every few milliseconds, and a guest playing only silence kept
+     * the host's audio stack at about a core that way. Low latency is for what needs the fast
+     * path, a game's effects or monitoring a microphone live.
+     */
+    public static final String ATTR_PERFORMANCE = "performance";
 
     private static final Choice[] USAGE = {
         new Choice("media", R.string.edit_vm_sound_usage_media),
@@ -83,6 +91,12 @@ public final class SoundPurpose {
         new Choice("voice_performance", R.string.edit_vm_sound_preset_voice_performance),
     };
 
+    private static final Choice[] PERFORMANCE = {
+        new Choice("power_saving", R.string.edit_vm_sound_performance_power_saving),
+        new Choice("none", R.string.edit_vm_sound_performance_none),
+        new Choice("low_latency", R.string.edit_vm_sound_performance_low_latency),
+    };
+
     /** The attributes offered for one direction, in the order they are asked about. */
     @NonNull
     public static List<String> attributesFor(boolean input) {
@@ -93,6 +107,7 @@ public final class SoundPurpose {
             out.add(ATTR_USAGE);
             out.add(ATTR_CONTENT);
         }
+        out.add(ATTR_PERFORMANCE);
         return out;
     }
 
@@ -102,6 +117,7 @@ public final class SoundPurpose {
             case ATTR_USAGE: return USAGE;
             case ATTR_CONTENT: return CONTENT;
             case ATTR_PRESET: return PRESET;
+            case ATTR_PERFORMANCE: return PERFORMANCE;
             default: return new Choice[0];
         }
     }
@@ -111,8 +127,21 @@ public final class SoundPurpose {
         switch (attribute) {
             case ATTR_USAGE: return R.string.edit_vm_sound_purpose_usage;
             case ATTR_CONTENT: return R.string.edit_vm_sound_purpose_content;
+            case ATTR_PERFORMANCE: return R.string.edit_vm_sound_purpose_performance;
             default: return R.string.edit_vm_sound_purpose_preset;
         }
+    }
+
+    /**
+     * What leaving the attribute unset means. For most it is the platform's default; for the
+     * performance mode it is the backend's, which saves power, so it is named as such rather than
+     * as a default the user would take to be the platform's.
+     */
+    @StringRes
+    public static int unsetTitleFor(@NonNull String attribute) {
+        return ATTR_PERFORMANCE.equals(attribute)
+            ? R.string.edit_vm_sound_performance_default
+            : R.string.edit_vm_sound_purpose_unset;
     }
 
     /** The label for a stored value, or null when it is not one this build offers. */
