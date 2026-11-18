@@ -6,10 +6,10 @@ package cn.classfun.droidvm.ui.vm.display.nativedisplay.input;
 /**
  * Computes per-axis touch scale from view size to the guest device's fixed normalized ABS range
  * ({@link EvdevEncoder#NORMALIZED_ABS_MAX}) -- independent of the guest resolution, so it survives
- * guest auto-resize. The touch listener is attached to the SurfaceView, which is itself sized to
- * the guest aspect ratio (see {@code VMNativeDisplayActivity#updateAspectRatio}), so its bounds
- * carry no letterbox/pillarbox bars: there is no offset and scale is simply NORMALIZED_ABS_MAX/view
- * per axis.
+ * guest auto-resize. Touches are taken into the SurfaceView's own space, and the view is itself
+ * sized to the guest aspect ratio (see {@code VMNativeDisplayActivity#updateAspectRatio}), so its
+ * bounds carry no letterbox/pillarbox bars: there is no offset and scale is simply
+ * NORMALIZED_ABS_MAX/view per axis.
  */
 public final class TouchScaleCalculator {
     private TouchScaleCalculator() {
