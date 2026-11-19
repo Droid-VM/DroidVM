@@ -1513,7 +1513,7 @@
     <string name="host_camera_unknown">摄像头 %1$s</string>
     <string name="host_camera_none">此主机没有摄像头</string>
     <string name="create_vm_category_vpu">视频加速 (VPU)</string>
-    <string name="create_vm_vpu_enabled">挂载硬件视频编码器与解码器</string>
+    <string name="create_vm_vpu_enabled">视频加速 (VPU)</string>
     <string name="create_vm_vpu_host_pool_mb">主机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_guest_pool_mb">客户机缓冲池大小 (MB)</string>
     <string name="create_vm_vpu_codec_enabled">挂载编解码装置</string>

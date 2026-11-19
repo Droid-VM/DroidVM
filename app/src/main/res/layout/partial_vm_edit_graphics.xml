@@ -484,6 +484,13 @@
                 android:orientation="vertical"
                 android:paddingHorizontal="16dp">
 
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/edit_vm_vpu_decoder_backend"
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
+
                 <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
                     android:id="@+id/btn_vpu_decoder_backend"
                     android:layout_width="wrap_content"
@@ -499,6 +506,13 @@
                     android:layout_marginBottom="8dp"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/edit_vm_vpu_encoder_backend"
+                    android:textAppearance="?attr/textAppearanceLabelLarge" />
 
                 <cn.classfun.droidvm.ui.widgets.tools.PickerButtonWidget
                     android:id="@+id/btn_vpu_encoder_backend"

@@ -1548,7 +1548,7 @@
     <string name="host_camera_unknown">الكاميرا %1$s</string>
     <string name="host_camera_none">لا توجد كاميرا على هذا الجهاز المضيف</string>
     <string name="create_vm_category_vpu">تسريع الفيديو العتادي (VPU)</string>
-    <string name="create_vm_vpu_enabled">إرفاق مشفّر وفك ترميز فيديو عتادي</string>
+    <string name="create_vm_vpu_enabled">تسريع الفيديو (VPU)</string>
     <string name="create_vm_vpu_host_pool_mb">حجم تجمع ذاكرة المضيف (ميغابايت)</string>
     <string name="create_vm_vpu_guest_pool_mb">حجم تجمع ذاكرة النظام الضيف (ميغابايت)</string>
     <string name="create_vm_vpu_codec_enabled">إرفاق أجهزة الترميز وفك الترميز</string>
