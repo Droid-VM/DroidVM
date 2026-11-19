@@ -1658,6 +1658,15 @@
     <string name="create_vm_virtio_transport">Virtio 传输</string>
     <string name="create_vm_virtio_transport_pci">PCI（一般 guest）</string>
     <string name="create_vm_virtio_transport_mmio">MMIO（没有 PCI 的 guest，例如 iPadOS）</string>
+    <string name="create_vm_virtio_transport_custom">自定义（按设备选择）</string>
+    <string name="create_vm_virtio_mmio_hint">勾选的设备走 virtio-mmio，其余走 PCI。适用于两种驱动都有的 guest，例如 macOS。</string>
+    <string name="create_vm_virtio_mmio_block">磁盘</string>
+    <string name="create_vm_virtio_mmio_input">输入</string>
+    <string name="create_vm_virtio_mmio_net">网卡</string>
+    <string name="create_vm_virtio_mmio_gpu">GPU</string>
+    <string name="create_vm_virtio_mmio_snd">声卡</string>
+    <string name="create_vm_virtio_mmio_media">视频编解码</string>
+    <string name="create_vm_virtio_mmio_console">Console</string>
     <string name="edit_vm_virtio_crosvm_only">Virtio MMIO 需要 crosvm 后端</string>
     <string name="edit_vm_serial_empty">没有串口</string>
     <string name="edit_vm_serial_add">添加串口</string>

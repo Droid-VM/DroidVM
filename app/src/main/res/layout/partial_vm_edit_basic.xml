@@ -76,6 +76,29 @@
             android:icon="@drawable/ic_cpu"
             android:text="@string/create_vm_virtio_transport" />
 
+        <!-- CUSTOM: the device classes that go to virtio-mmio; the rest stay on PCI. -->
+        <LinearLayout
+            android:id="@+id/virtio_mmio_options"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingHorizontal="16dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/create_vm_virtio_mmio_hint"
+                android:textColor="?attr/colorOnSurfaceVariant"
+                android:textSize="12sp" />
+
+            <com.google.android.material.chip.ChipGroup
+                android:id="@+id/chips_virtio_mmio"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp" />
+        </LinearLayout>
+
     </cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer>
 
     <cn.classfun.droidvm.ui.widgets.container.CollapsibleContainer

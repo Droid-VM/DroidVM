@@ -3,6 +3,8 @@
 // Additional permissions apply; see ADDITIONAL-PERMISSIONS in the repository root.
 package cn.classfun.droidvm.ui.vm.edit.basic;
 
+import com.google.android.material.chip.Chip;
+import com.google.android.material.chip.ChipGroup;
 import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 import static java.lang.Integer.parseInt;
@@ -71,6 +73,8 @@ public final class VMEditBasicTab extends VMEditBaseTab {
     private ChooseRowWidget chooseBackend;
     private ChooseRowWidget chooseHypervisor;
     private ChooseRowWidget chooseVirtioTransport;
+    private View virtioMmioOptions;
+    private ChipGroup chipsVirtioMmio;
     private TextView tvNotesSummary;
     private MaterialButton btnEditNotes;
     private ActivityResultLauncher<Intent> notesLauncher;
@@ -119,6 +123,17 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         chooseBackend = view.findViewById(R.id.choose_backend);
         chooseHypervisor = view.findViewById(R.id.choose_hypervisor);
         chooseVirtioTransport = view.findViewById(R.id.choose_virtio_transport);
+        virtioMmioOptions = view.findViewById(R.id.virtio_mmio_options);
+        chipsVirtioMmio = view.findViewById(R.id.chips_virtio_mmio);
+        for (int i = 0; i < VirtioTransport.MMIO_CLASSES.length; i++) {
+            var chip = new Chip(view.getContext(), null,
+                com.google.android.material.R.attr.chipStyle);
+            chip.setCheckable(true);
+            chip.setText(VirtioTransport.MMIO_CLASS_NAMES[i]);
+            chip.setTag(VirtioTransport.MMIO_CLASSES[i]);
+            chipsVirtioMmio.addView(chip);
+        }
+        chooseVirtioTransport.setOnValueChangedListener(this::updateVirtioMmioOptions);
         etExtraOptions = view.findViewById(R.id.et_extra_options);
         etEnvironmentVariables = view.findViewById(R.id.et_environment_variables);
     }
@@ -213,6 +228,16 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         choosePrepareLendMthp.setSelectedItem(LendMthpMode.fromItem(item));
         chooseBackend.setSelectedItem(optEnum(item, "backend", VMBackend.DEFAULT));
         chooseVirtioTransport.setSelectedItem(VirtioTransport.fromItem(item));
+        var mmio = item.opt(VirtioTransport.MMIO_KEY, null);
+        for (int i = 0; i < chipsVirtioMmio.getChildCount(); i++) {
+            var chip = (Chip) chipsVirtioMmio.getChildAt(i);
+            boolean on = false;
+            if (mmio != null && mmio.is(DataItem.Type.ARRAY))
+                for (int j = 0; j < mmio.size(); j++)
+                    on |= chip.getTag().equals(mmio.optString(j, ""));
+            chip.setChecked(on);
+        }
+        updateVirtioMmioOptions();
         var backend = optEnum(item, "backend", VMBackend.DEFAULT);
         var configuredHypervisor = optEnum(item, "hypervisor", VMHypervisor.DEFAULT);
         var hypervisor = VMHypervisor.resolveConfigured(backend, configuredHypervisor);
@@ -453,6 +478,11 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         return true;
     }
 
+    private void updateVirtioMmioOptions() {
+        virtioMmioOptions.setVisibility(
+            chooseVirtioTransport.getSelectedItem() == VirtioTransport.CUSTOM ? View.VISIBLE : View.GONE);
+    }
+
     @Override
     public boolean validateInput(@NonNull VMStore store) {
         if (!validateInputName(store)) return false;
@@ -538,6 +568,12 @@ public final class VMEditBasicTab extends VMEditBaseTab {
         item.set("pci_msi", swPciMsi.isChecked());
         VirtioTransport transport = chooseVirtioTransport.getSelectedItem();
         item.set(VirtioTransport.KEY, transport);
+        var mmio = DataItem.newArray();
+        for (int i = 0; i < chipsVirtioMmio.getChildCount(); i++) {
+            var chip = (Chip) chipsVirtioMmio.getChildAt(i);
+            if (chip.isChecked()) mmio.append(DataItem.newString((String) chip.getTag()));
+        }
+        item.set(VirtioTransport.MMIO_KEY, mmio);
         item.set("strace", swDebug.isChecked());
         LendMthpMode lendMthpMode = choosePrepareLendMthp.getSelectedItem();
         item.set(LendMthpMode.KEY, lendMthpMode);

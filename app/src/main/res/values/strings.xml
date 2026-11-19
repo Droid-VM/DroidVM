@@ -1699,6 +1699,15 @@
     <string name="create_vm_virtio_transport">Virtio transport</string>
     <string name="create_vm_virtio_transport_pci">PCI (most guests)</string>
     <string name="create_vm_virtio_transport_mmio">MMIO (guests without PCI, e.g. iPadOS)</string>
+    <string name="create_vm_virtio_transport_custom">Custom (choose per device)</string>
+    <string name="create_vm_virtio_mmio_hint">The devices checked here go to virtio-mmio; the rest stay on PCI. For guests that have drivers for both, such as macOS.</string>
+    <string name="create_vm_virtio_mmio_block">Disks</string>
+    <string name="create_vm_virtio_mmio_input">Input</string>
+    <string name="create_vm_virtio_mmio_net">Network</string>
+    <string name="create_vm_virtio_mmio_gpu">GPU</string>
+    <string name="create_vm_virtio_mmio_snd">Sound</string>
+    <string name="create_vm_virtio_mmio_media">Video codecs</string>
+    <string name="create_vm_virtio_mmio_console">Console</string>
     <string name="edit_vm_virtio_crosvm_only">Virtio over MMIO needs the crosvm backend</string>
     <string name="edit_vm_serial_empty">No serial ports</string>
     <string name="edit_vm_serial_add">Add serial port</string>

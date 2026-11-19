@@ -1653,6 +1653,15 @@
     <string name="create_vm_virtio_transport">Virtio 傳輸</string>
     <string name="create_vm_virtio_transport_pci">PCI（一般 guest）</string>
     <string name="create_vm_virtio_transport_mmio">MMIO（沒有 PCI 的 guest，例如 iPadOS）</string>
+    <string name="create_vm_virtio_transport_custom">自訂（依裝置選擇）</string>
+    <string name="create_vm_virtio_mmio_hint">勾選的裝置走 virtio-mmio，其餘走 PCI。適用於兩種驅動程式都有的 guest，例如 macOS。</string>
+    <string name="create_vm_virtio_mmio_block">磁碟</string>
+    <string name="create_vm_virtio_mmio_input">輸入</string>
+    <string name="create_vm_virtio_mmio_net">網路卡</string>
+    <string name="create_vm_virtio_mmio_gpu">GPU</string>
+    <string name="create_vm_virtio_mmio_snd">音效卡</string>
+    <string name="create_vm_virtio_mmio_media">視訊編解碼</string>
+    <string name="create_vm_virtio_mmio_console">Console</string>
     <string name="edit_vm_virtio_crosvm_only">Virtio MMIO 需要 crosvm 後端</string>
     <string name="edit_vm_serial_empty">沒有序列埠</string>
     <string name="edit_vm_serial_add">新增序列埠</string>

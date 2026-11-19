@@ -20,9 +20,24 @@ import cn.classfun.droidvm.lib.store.enums.StringEnum;
  */
 public enum VirtioTransport implements StringEnum {
     PCI(R.string.create_vm_virtio_transport_pci),
-    MMIO(R.string.create_vm_virtio_transport_mmio);
+    MMIO(R.string.create_vm_virtio_transport_mmio),
+    /** Each device class on the bus {@link #MMIO_KEY} says: a guest with drivers for both. */
+    CUSTOM(R.string.create_vm_virtio_transport_custom);
 
     public static final String KEY = "virtio_transport";
+    /**
+     * For {@link #CUSTOM}: the device classes that go to virtio-mmio, the rest staying on PCI.
+     * The keys the daemon reads; {@link #MMIO_CLASS_NAMES} labels them in the same order.
+     */
+    public static final String MMIO_KEY = "virtio_mmio";
+    public static final String[] MMIO_CLASSES = {"block", "input", "net", "gpu", "snd", "media", "console"};
+    @StringRes
+    public static final int[] MMIO_CLASS_NAMES = {
+        R.string.create_vm_virtio_mmio_block, R.string.create_vm_virtio_mmio_input,
+        R.string.create_vm_virtio_mmio_net, R.string.create_vm_virtio_mmio_gpu,
+        R.string.create_vm_virtio_mmio_snd, R.string.create_vm_virtio_mmio_media,
+        R.string.create_vm_virtio_mmio_console,
+    };
     // A config from before this key is a PCI VM: what crosvm did with no flag.
     public static final VirtioTransport DEFAULT = PCI;
 

@@ -1681,6 +1681,15 @@
     <string name="create_vm_virtio_transport">نقل Virtio</string>
     <string name="create_vm_virtio_transport_pci">PCI (معظم الأنظمة الضيفة)</string>
     <string name="create_vm_virtio_transport_mmio">MMIO (أنظمة ضيفة بلا PCI، مثل iPadOS)</string>
+    <string name="create_vm_virtio_transport_custom">مخصص (اختر لكل جهاز)</string>
+    <string name="create_vm_virtio_mmio_hint">الأجهزة المحددة هنا تستخدم virtio-mmio، والباقي يبقى على PCI. للأنظمة الضيفة التي تملك برامج تشغيل للنوعين، مثل macOS.</string>
+    <string name="create_vm_virtio_mmio_block">الأقراص</string>
+    <string name="create_vm_virtio_mmio_input">الإدخال</string>
+    <string name="create_vm_virtio_mmio_net">الشبكة</string>
+    <string name="create_vm_virtio_mmio_gpu">GPU</string>
+    <string name="create_vm_virtio_mmio_snd">الصوت</string>
+    <string name="create_vm_virtio_mmio_media">ترميز الفيديو</string>
+    <string name="create_vm_virtio_mmio_console">Console</string>
     <string name="edit_vm_virtio_crosvm_only">يتطلب Virtio عبر MMIO الواجهة الخلفية crosvm</string>
     <string name="edit_vm_serial_empty">لا توجد منافذ تسلسلية</string>
     <string name="edit_vm_serial_add">إضافة منفذ تسلسلي</string>
