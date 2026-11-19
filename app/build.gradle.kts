@@ -2,6 +2,7 @@
 
 import java.net.URI
 import java.security.MessageDigest
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.android.application)
@@ -55,6 +56,15 @@ val webUiAssetsCpp = layout.buildDirectory.file("generated/webui/webui_assets.cp
 
 println("Version name: $generatedVersionName")
 println("Version code: $generatedVersionCode")
+
+// Optional release-style signing for every build type, from the untracked
+// local.properties: droidvm.signing.storeFile / storePassword / keyAlias /
+// keyPassword. Without them the build keeps the default debug key.
+val signingProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.isFile) file.inputStream().use { load(it) }
+}
+val signingStoreFile = signingProperties.getProperty("droidvm.signing.storeFile")
 
 android {
     namespace = "cn.classfun.droidvm"
@@ -110,12 +120,23 @@ android {
         }
     }
 
+    signingConfigs {
+        if (signingStoreFile != null) create("droidvm") {
+            storeFile = file(signingStoreFile)
+            storePassword = signingProperties.getProperty("droidvm.signing.storePassword")
+            keyAlias = signingProperties.getProperty("droidvm.signing.keyAlias")
+            keyPassword = signingProperties.getProperty("droidvm.signing.keyPassword")
+        }
+    }
+
     buildTypes {
         debug {
             externalNativeBuild.cmake.arguments += "-DDROIDVM_BUILD_TYPE=debug"
+            signingConfigs.findByName("droidvm")?.let { signingConfig = it }
         }
         release {
             externalNativeBuild.cmake.arguments += "-DDROIDVM_BUILD_TYPE=release"
+            signingConfigs.findByName("droidvm")?.let { signingConfig = it }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
