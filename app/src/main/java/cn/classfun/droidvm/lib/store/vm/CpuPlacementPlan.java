@@ -60,6 +60,15 @@ public final class CpuPlacementPlan {
     public static final String KEY_GPU_CGROUP = "gpu_cgroup_enabled";
     public static final String KEY_GPU_CGROUP_PATH = "gpu_cgroup_path";
     public static final String KEY_GPU_CGROUP_CPUS = "gpu_cgroup_cpus";
+    /**
+     * With no {@link #KEY_AFFINITY} of its own, a VM still gets one host core per vCPU, chosen
+     * on the phone it runs on ({@link #autoAffinity}). For a guest that must not float: an XNU
+     * guest on Gunyah (the UniXNU VMs) flushes some TLB entries on the current physical core
+     * only, so a vCPU the hypervisor moves leaves stale translations behind on its old core and
+     * the guest falls over within seconds. A VM template carries this instead of one phone's
+     * core numbers; a vmpkg import turns it into an affinity of the importing phone's.
+     */
+    public static final String KEY_PIN_AUTO = "cpu_pin_auto";
 
     public static final String DEFAULT_GPU_CGROUP_PATH = "/dev/cpuset/gpuworker";
     /** Separates clusters in the stored {@link #KEY_CLUSTERS} string. */
@@ -93,11 +102,14 @@ public final class CpuPlacementPlan {
      * Resolve a stored config into the placement actually to be applied. An
      * empty affinity string yields an empty plan: capacity and clusters are
      * dropped along with it, since without knowing which host core backs a vCPU
-     * there is nothing truthful to tell the guest.
+     * there is nothing truthful to tell the guest -- unless {@link #KEY_PIN_AUTO}
+     * asks for one core per vCPU, chosen on this phone ({@link #autoAffinity}).
      */
     @NonNull
     public static CpuPlacementPlan of(@NonNull DataItem item) {
         var affinity = parseAffinity(item.optString(KEY_AFFINITY, ""));
+        if (affinity.isEmpty() && item.optBoolean(KEY_PIN_AUTO, false))
+            affinity = autoAffinity((int) Math.max(item.optLong("cpu_count", 1), 1), CpuUtils.getCores());
         if (affinity.isEmpty())
             return new CpuPlacementPlan(affinity, new TreeMap<>(), new ArrayList<>(), false);
         var cores = CpuUtils.getCores();
@@ -318,6 +330,46 @@ public final class CpuPlacementPlan {
             sb.append(fmt("%d=%d", entry.getKey(), entry.getValue()));
         }
         return sb.toString();
+    }
+
+    /**
+     * One host core per vCPU on this phone ({@link #KEY_PIN_AUTO}): the {@code vcpuCount}
+     * strongest cores (capacity, then maximum frequency, then the higher index), leaving cpu0 and
+     * cpu1 to Android when the rest are enough -- the cores its own housekeeping and interrupts
+     * favour -- and given out in ascending core order, so vCPU 0 gets the weakest and the guest
+     * sees its efficiency cores first, as on an Apple SoC. Empty (no pinning) when the phone has
+     * fewer cores than vCPUs.
+     */
+    @NonNull
+    public static Map<Integer, List<Integer>> autoAffinity(int vcpuCount, @NonNull List<CpuUtils.CpuCore> cores) {
+        var out = new TreeMap<Integer, List<Integer>>();
+        if (vcpuCount < 1 || cores.size() < vcpuCount) return out;
+        var pool = new ArrayList<CpuUtils.CpuCore>();
+        for (var core : cores)
+            if (core.index > 1 || cores.size() - 2 < vcpuCount) pool.add(core);
+        pool.sort((a, b) -> a.capacity != b.capacity ? Long.compare(b.capacity, a.capacity)
+            : a.maxFreqKHz != b.maxFreqKHz ? Long.compare(b.maxFreqKHz, a.maxFreqKHz)
+            : Integer.compare(b.index, a.index));
+        var chosen = new TreeSet<Integer>();
+        for (int i = 0; i < vcpuCount; i++) chosen.add(pool.get(i).index);
+        int vcpu = 0;
+        for (var index : chosen) out.put(vcpu++, List.of(index));
+        return out;
+    }
+
+    /**
+     * A VM arriving on this phone (a vmpkg import) with {@link #KEY_PIN_AUTO} and no affinity of
+     * its own: the cores {@link #autoAffinity} picks here become its affinity, which the editor
+     * shows and the user can change, and the flag goes. Nothing changes otherwise.
+     */
+    public static void resolveAutoPin(@NonNull DataItem item, @NonNull List<CpuUtils.CpuCore> cores) {
+        if (!item.optBoolean(KEY_PIN_AUTO, false)) return;
+        if (parseAffinity(item.optString(KEY_AFFINITY, "")).isEmpty()) {
+            var affinity = autoAffinity((int) Math.max(item.optLong("cpu_count", 1), 1), cores);
+            if (affinity.isEmpty()) return;   // too few cores here: left to pin at start, or float
+            item.set(KEY_AFFINITY, formatAffinity(affinity));
+        }
+        item.remove(KEY_PIN_AUTO);
     }
 
     /**

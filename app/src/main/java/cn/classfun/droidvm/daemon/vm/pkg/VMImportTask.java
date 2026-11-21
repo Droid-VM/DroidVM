@@ -47,9 +47,11 @@ import cn.classfun.droidvm.lib.pkg.Phase;
 import cn.classfun.droidvm.lib.pkg.VolumeSet;
 import cn.classfun.droidvm.lib.store.base.DataItem;
 import cn.classfun.droidvm.lib.store.network.NetworkConfig;
+import cn.classfun.droidvm.lib.store.vm.CpuPlacementPlan;
 import cn.classfun.droidvm.lib.store.vm.NicLeaseOffsets;
 import cn.classfun.droidvm.lib.store.vm.VMConfig;
 import cn.classfun.droidvm.lib.store.vm.VMNicConfig;
+import cn.classfun.droidvm.lib.utils.CpuUtils;
 import cn.classfun.droidvm.lib.utils.ImageUtils;
 
 public final class VMImportTask {
@@ -177,6 +179,9 @@ public final class VMImportTask {
         relinkBackingChains();
         remapDiskPaths(vm, placedDisks);
         remapBootPaths(vm, placedBoots);
+        // A package made for any phone names no cores; one that wants its vCPUs pinned gets
+        // this phone's here, where the editor shows them.
+        CpuPlacementPlan.resolveAutoPin(vm.item, CpuUtils.getCores());
         importedVM = vm;
     }
 
