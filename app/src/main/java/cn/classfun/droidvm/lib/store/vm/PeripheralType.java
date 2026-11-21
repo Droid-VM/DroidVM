@@ -92,7 +92,16 @@ public enum PeripheralType implements StringEnum {
      * the platform lets through from the background. Appended last, for the ordinal reason
      * {@link #XHCI_USB} gives.
      */
-    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
+    VIRTIO_VIBRATOR(R.string.edit_vm_peripheral_type_virtio_vibrator, R.drawable.ic_vibration, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE),
+    /**
+     * A battery: crosvm's goldfish battery ({@code --battery type=goldfish}), which mirrors the
+     * phone's own (charge level, charging, health) to the guest. One per VM. Linux has a driver
+     * for it in the kernel (goldfish_battery); the UniXNU guests' DroidVMBattery publishes it as
+     * the system's power source. A device of its own rather than part of the screen or the
+     * sensors, so a guest that has no use for it (Windows has no driver) simply goes without.
+     * Appended last, for the ordinal reason {@link #XHCI_USB} gives.
+     */
+    GOLDFISH_BATTERY(R.string.edit_vm_peripheral_type_goldfish_battery, R.drawable.ic_battery, true, false, ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE);
 
     private final @StringRes int titleId;
     private final @DrawableRes int iconId;

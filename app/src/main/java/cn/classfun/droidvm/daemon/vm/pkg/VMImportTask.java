@@ -24,14 +24,15 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.RandomAccessFile;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.LongConsumer;
 
 import cn.classfun.droidvm.daemon.server.Server;
 import cn.classfun.droidvm.lib.archive.TarReader;
@@ -393,31 +394,61 @@ public final class VMImportTask {
         data.set("bytes_done", 0);
         data.set("bytes_total", size);
         emit(data, Phase.PACK);
-        try (var os = new FileOutputStream(out)) {
-            var buf = new byte[BUFFER];
-            long rem = size;
-            long written = 0;
-            long lastEmit = System.currentTimeMillis();
-            while (rem > 0) {
-                int toRead = (int) Math.min(buf.length, rem);
-                int n = in.read(buf, 0, toRead);
-                if (n <= 0) throw new IOException(fmt(
-                    "entry %s: short read", out.getName()
-                ));
-                os.write(buf, 0, n);
-                rem -= n;
-                written += n;
-                var now = System.currentTimeMillis();
-                if (now - lastEmit >= PROGRESS_INTERVAL_MS) {
-                    data.set("bytes_done", written);
-                    emit(data, Phase.PACK);
-                    lastEmit = now;
-                }
-            }
-        }
+        var lastEmit = new long[]{System.currentTimeMillis()};
+        copySparse(in, out, size, written -> {
+            var now = System.currentTimeMillis();
+            if (now - lastEmit[0] < PROGRESS_INTERVAL_MS) return;
+            data.set("bytes_done", written);
+            emit(data, Phase.PACK);
+            lastEmit[0] = now;
+        });
         data.set("done", doneItems + 1);
         data.set("bytes_done", size);
         emit(data, Phase.PACK);
+    }
+
+    /**
+     * Copies {@code size} bytes of {@code in} to a new {@code out}, sparsely: a buffer of zeros is
+     * skipped rather than written and the length set at the end, so the holes of the packed image
+     * stay holes here. A disk that is mostly empty -- the UniXNU guests' Data store, a fresh
+     * 16-32 GiB file whose only data is its label -- would otherwise take its full size on the
+     * phone the moment it is imported. {@code progress} hears the bytes done after each buffer.
+     */
+    static void copySparse(
+        @NonNull InputStream in,
+        @NonNull File out,
+        long size,
+        @NonNull LongConsumer progress
+    ) throws IOException {
+        try (var os = new RandomAccessFile(out, "rw")) {
+            os.setLength(0);
+            var buf = new byte[BUFFER];
+            long rem = size;
+            long written = 0;
+            while (rem > 0) {
+                int toRead = (int) Math.min(buf.length, rem);
+                int n = 0;
+                while (n < toRead) {
+                    int r = in.read(buf, n, toRead - n);
+                    if (r <= 0) throw new IOException(fmt(
+                        "entry %s: short read", out.getName()
+                    ));
+                    n += r;
+                }
+                if (isZero(buf, n)) os.seek(os.getFilePointer() + n);
+                else os.write(buf, 0, n);
+                rem -= n;
+                written += n;
+                progress.accept(written);
+            }
+            os.setLength(size);
+        }
+    }
+
+    private static boolean isZero(@NonNull byte[] buf, int n) {
+        for (int i = 0; i < n; i++)
+            if (buf[i] != 0) return false;
+        return true;
     }
 
     @NonNull

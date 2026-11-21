@@ -30,6 +30,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.IntSupplier;
 
 import cn.classfun.droidvm.BuildConfig;
@@ -915,6 +916,20 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
         for (var rs : resolvedSerials)
             if (rs.port.getHardware() == SerialHardware.VIRTIO_CONSOLE) console = true;
         if (console && !extra.contains("--virtio-mmio-console")) args.add("--virtio-mmio-console");
+        appendMmioMediaSwitch(args, config.item, extra);
+    }
+
+    /**
+     * On an MMIO VM, the virtio-media switch whenever the VM can have a media device (the codecs,
+     * a camera): all of them ride the video-acceleration switch
+     * ({@link VpuConfig#mediaDevicesAttached}). Left out, they stayed on PCI, which a guest that
+     * serves only virtio-mmio never finds. Not repeated when the extra options carry it.
+     */
+    static void appendMmioMediaSwitch(
+        @NonNull List<String> args, @NonNull DataItem item, @NonNull Set<String> extra
+    ) {
+        if (VpuConfig.mediaDevicesAttached(item) && !extra.contains("--virtio-mmio-media"))
+            args.add("--virtio-mmio-media");
     }
 
     private void buildNetCommand(@NonNull List<String> args) {
@@ -1713,11 +1728,30 @@ public final class CrosvmBackendInstance extends VMBackendInstance {
                 case VIRTIO_VIBRATOR:
                     // An input device: emitted by buildVibratorCommand after the motion sensors.
                     continue;
+                case GOLDFISH_BATTERY:
+                    appendBattery(args, config.item);
+                    break;
                 default:
                     Log.w(TAG, fmt("peripheral %s skipped: no host backend", type));
                     continue;
             }
         }
+    }
+
+    /**
+     * The battery row: crosvm's goldfish battery, which mirrors the phone's. A VM configured
+     * before the row existed passes {@code --battery} among its extra options, and crosvm takes
+     * one battery, so then the row adds nothing.
+     */
+    static void appendBattery(@NonNull List<String> args, @NonNull DataItem item) {
+        for (var arg : item.opt("extra_options", DataItem.newArray())) {
+            if ("--battery".equals(arg.getValue().asString())) {
+                Log.i(TAG, "peripheral goldfish_battery: --battery is among the extra options");
+                return;
+            }
+        }
+        args.add("--battery");
+        args.add("type=goldfish");
     }
 
     /**

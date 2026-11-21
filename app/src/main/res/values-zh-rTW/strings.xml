@@ -1598,6 +1598,9 @@
     <string name="edit_vm_peripheral_vibrator_once">一台 VM 只能有一個 VirtIO Vibrator</string>
     <string name="edit_vm_vibrator_note">guest 的震動（force feedback）會在手機的震動馬達上播放。需要有輸出的畫面（主控台或 VNC）。</string>
     <string name="edit_vm_vibrator_note_none">這支手機沒有震動馬達：guest 會有一個不會動的震動裝置。</string>
+    <string name="edit_vm_peripheral_type_goldfish_battery">電池（goldfish）</string>
+    <string name="edit_vm_peripheral_battery_once">一台 VM 只能有一個電池</string>
+    <string name="edit_vm_battery_note">guest 看到的是手機的電池：電量與是否正在充電。</string>
     <string name="location_permission_title">允許存取位置？</string>
     <string name="location_permission_message">GNSS 周邊會在 VM 執行期間把這支手機的位置提供給 guest。沒有這個權限，它會出現在清單上但永遠沒有定位。</string>
     <string name="location_permission_allow">允許</string>

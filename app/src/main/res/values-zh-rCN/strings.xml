@@ -1598,6 +1598,9 @@
     <string name="edit_vm_peripheral_vibrator_once">一台虚拟机只能有一个 VirtIO Vibrator</string>
     <string name="edit_vm_vibrator_note">客户机的震动（force feedback）会在手机的震动马达上播放。需要有输出的画面（控制台或 VNC）。</string>
     <string name="edit_vm_vibrator_note_none">这部手机没有震动马达：客户机会有一个不会动的震动设备。</string>
+    <string name="edit_vm_peripheral_type_goldfish_battery">电池（goldfish）</string>
+    <string name="edit_vm_peripheral_battery_once">一台虚拟机只能有一个电池</string>
+    <string name="edit_vm_battery_note">客户机看到的是手机的电池：电量与是否正在充电。</string>
     <string name="location_permission_title">允许访问位置？</string>
     <string name="location_permission_message">GNSS 外设会在虚拟机运行期间把这部手机的位置提供给客户机。没有这个权限，它会出现在列表里但永远没有定位。</string>
     <string name="location_permission_allow">允许</string>

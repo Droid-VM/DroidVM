@@ -196,6 +196,18 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 appendItem(VMPeripheralConfig.createDefaultGyroscope().item);
                 return;
             }
+            if (type == PeripheralType.GOLDFISH_BATTERY) {
+                // One per VM: crosvm has one battery device, and the phone one battery to mirror.
+                if (hasType(PeripheralType.GOLDFISH_BATTERY)) {
+                    Toast.makeText(context, R.string.edit_vm_peripheral_battery_once,
+                        Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                var config = new VMPeripheralConfig(DataItem.newObject());
+                config.setType(type);
+                appendItem(config.item);
+                return;
+            }
             if (type == PeripheralType.VIRTIO_VIBRATOR) {
                 // One per VM: the phone has one motor, and the guest one device to drive it.
                 if (hasType(PeripheralType.VIRTIO_VIBRATOR)) {
@@ -255,7 +267,8 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         // -- what hangs off it is the host's device, already the host's to grant -- and the motion
         // sensors read the phone's sensors, which need no permission.
         if (type != PeripheralType.XHCI_USB && type != PeripheralType.VIRTIO_GYROSCOPE
-            && type != PeripheralType.VIRTIO_VIBRATOR && micPermissionGate != null) {
+            && type != PeripheralType.VIRTIO_VIBRATOR && type != PeripheralType.GOLDFISH_BATTERY
+            && micPermissionGate != null) {
             micPermissionGate.accept(add);
             return;
         }
@@ -278,7 +291,9 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
         holder.groupVirtioGyroscope.setVisibility(
             type == PeripheralType.VIRTIO_GYROSCOPE ? VISIBLE : GONE);
         holder.groupVirtioGnss.setVisibility(type == PeripheralType.VIRTIO_GNSS ? VISIBLE : GONE);
-        holder.tvVibratorNote.setVisibility(type == PeripheralType.VIRTIO_VIBRATOR ? VISIBLE : GONE);
+        // The one-line note under a device with no settings: the vibrator's, and the battery's.
+        holder.tvVibratorNote.setVisibility(type == PeripheralType.VIRTIO_VIBRATOR
+            || type == PeripheralType.GOLDFISH_BATTERY ? VISIBLE : GONE);
 
         switch (type) {
             case VIRTIO_SOUND:
@@ -304,6 +319,10 @@ public final class VMPeripheralEditAdapter extends CardItemAdapter<VMPeripheralE
                 var motor = context.getSystemService(Vibrator.class);
                 holder.tvVibratorNote.setText(motor != null && motor.hasVibrator()
                     ? R.string.edit_vm_vibrator_note : R.string.edit_vm_vibrator_note_none);
+                break;
+            case GOLDFISH_BATTERY:
+                holder.tvWarning.setVisibility(GONE);
+                holder.tvVibratorNote.setText(R.string.edit_vm_battery_note);
                 break;
         }
 

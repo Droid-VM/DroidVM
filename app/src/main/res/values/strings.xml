@@ -1639,6 +1639,9 @@
     <string name="edit_vm_peripheral_vibrator_once">A VM has one VirtIO Vibrator</string>
     <string name="edit_vm_vibrator_note">The guest\'s rumble (force feedback) plays on the phone\'s vibration motor. Needs a screen exported (console or VNC).</string>
     <string name="edit_vm_vibrator_note_none">This phone has no vibration motor: the guest gets a vibrator that plays nothing.</string>
+    <string name="edit_vm_peripheral_type_goldfish_battery">Battery (goldfish)</string>
+    <string name="edit_vm_peripheral_battery_once">A VM has one battery</string>
+    <string name="edit_vm_battery_note">The guest sees the phone\'s battery: its charge level and whether it is charging.</string>
     <string name="location_permission_title">Allow location access?</string>
     <string name="location_permission_message">A GNSS peripheral reports this phone\'s location to the guest, only while the VM runs. Without the permission it would be listed but never have a fix.</string>
     <string name="location_permission_allow">Allow</string>
